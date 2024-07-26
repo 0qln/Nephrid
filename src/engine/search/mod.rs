@@ -1,9 +1,5 @@
 use super::{Depth, Move, Position};
 
-pub static mut MODE: Mode = Mode::Normal;
-pub static mut TARGET: Target = Target::default();
-pub static mut LIMIT: Limit = Limit::max(false);
-
 pub struct Limit {
     pub wtime: u64,
     pub btime: u64,
@@ -16,7 +12,7 @@ pub struct Limit {
 }
 
 impl Limit {
-    pub fn max(set_active: bool) -> Self {
+    pub const fn max(set_active: bool) -> Self {
         Self {
             wtime: u64::MAX,
             btime: u64::MAX,
@@ -30,14 +26,20 @@ impl Limit {
     }
 }
 
+impl Default for Limit {
+    fn default() -> Self {
+        Self::max(false)
+    }
+}
+
 pub struct Target {
     pub mate: Depth,
     pub depth: Depth,
     pub searchmoves: Vec<Move>,
 }
 
-impl Target {
-    pub fn default() -> Self {
+impl Default for Target {
+    fn default() -> Self {
         Self {
             mate: Depth::NONE,
             depth: Depth::NONE,
@@ -55,6 +57,6 @@ pub fn reset() {
     todo!()
 }
 
-pub fn go(board: &mut Position) {
+pub fn go(board: &mut Position, limit: Limit, target: Target, mode: Mode) {
     todo!()
 }

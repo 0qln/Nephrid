@@ -1,35 +1,22 @@
 use std::{io::stdin, thread};
+use uci::CancellationToken;
+use engine::Configuration;
 
 mod engine;
 mod uci;
 
-pub struct CancellationToken;
-
-impl CancellationToken {
-    pub fn new() -> Self {
-        CancellationToken
-    }
-
-    pub fn trigger(&self) {
-
-    }
-}
-
-impl Default for CancellationToken {
-    fn default() -> Self {
-        CancellationToken
-    }
-}
-
 fn main() {
     let input_stream = stdin();
-    loop {
+    let configuration = Configuration::default();
+    let cancellation_sender = CancellationToken::default();
+    while !cancellation_sender.is_cancelled() {
         let mut input = String::new();
         match input_stream.read_line(&mut input) {
             Ok(_) => {
-                thread::spawn(move || { engine::execute_uci(input); });
+                let cancellation_receiver = cancellation_sender.clone();
+                thread::spawn(move || { engine::execute_uci(input, configuration, cancellation_receiver) });
             }
-            Err(err) => uci::out(format!("Error: {err}", err)),
+            Err(err) => uci::out(&format!("Error: {err}")),
         }
     }
 }

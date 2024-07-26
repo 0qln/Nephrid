@@ -1,4 +1,4 @@
-use std::{io, iter::Peekable, str::Chars};
+use std::{default, io::{self, Write}, iter::Peekable, str::Chars, sync};
 
 pub struct Tokenizer<'a>(Peekable<Chars<'a>>);
 
@@ -53,7 +53,7 @@ impl<'a> Iterator for Tokenizer<'a> {
     type Item = String;
 
     fn next(&mut self) -> Option<String> {
-        return  self.collect_until_ws();
+        self.collect_until_ws()
     }
 }
 
@@ -67,3 +67,28 @@ pub fn out(msg: &str) {
     let _ = writeln!(&mut stdout.lock(), "{}", msg);
 }
 
+pub struct CancellationToken(sync::Arc<sync::atomic::AtomicBool>);
+
+impl Default for CancellationToken {
+    fn default() -> Self {
+        CancellationToken(sync::Arc::new(sync::atomic::AtomicBool::new(false)))
+    }
+}
+
+impl Clone for CancellationToken {
+    fn clone(&self) -> Self {
+        CancellationToken(self.0.clone())
+    }
+}
+
+impl CancellationToken {
+    /// Cancels the current token.
+    pub fn cancel(&self) {
+        self.0.store(true, sync::atomic::Ordering::Relaxed)
+    }    
+    
+    /// Checks if the current token has been cancelled.
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(sync::atomic::Ordering::Relaxed)
+    }
+}

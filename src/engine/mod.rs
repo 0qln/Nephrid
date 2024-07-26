@@ -1,50 +1,55 @@
-use std::error::Error;
 use super::{uci, CancellationToken};
-use std::{fmt};
+use std::{fmt, error::Error};
 
 mod search;
 mod zobrist;
 mod transposition_table;
 pub mod move_gen;
 
-// pub static mut CANCEL: Box<CancellationToken> = Box::default();
-
-pub static mut POSITION: Position = Position { };
-
-pub static mut POS_INFO: PositionInfo = PositionInfo { prev: None, next: None } ;
-
-pub static mut CONFIG: Vec<ConfigOption> = vec![
-    ConfigOption {
-        cfg_name: String::from("Hash"),
-        cfg_type: ConfigOptionType::Spin {
-            default: 16,
-            min: 1,
-            max: 64 * 1024 * 1024,
-            value: 16,
-        },
-    },
-    ConfigOption {
-        cfg_name: String::from("Threads"),
-        cfg_type: ConfigOptionType::Spin {
-            default: 1,
-            min: 1,
-            max: 1,
-            value: 1,
-        },
-    },
-    ConfigOption {
-        cfg_name: String::from("Clear Hash"),
-        cfg_type: ConfigOptionType::Button {
-            callback: Box::from(|| {
-                todo!("clear hash");
-            }),
-        },
-    },
-];
+pub struct Configuration(Mutex<Vec<ConfigOption>>);
+    
+impl Default for Configuration {
+    fn default() -> Self {
+        Self(vec![
+            ConfigOption {
+                cfg_name: String::from("Hash"),
+                cfg_type: ConfigOptionType::Spin {
+                    default: 16,
+                    min: 1,
+                    max: 64 * 1024 * 1024,
+                    value: 16,
+                },
+            },
+            ConfigOption {
+                cfg_name: String::from("Threads"),
+                cfg_type: ConfigOptionType::Spin {
+                    default: 1,
+                    min: 1,
+                    max: 1,
+                    value: 1,
+                },
+            },
+            ConfigOption {
+                cfg_name: String::from("Clear Hash"),
+                cfg_type: ConfigOptionType::Button {
+                    callback: Box::from(|| {
+                        todo!("clear hash");
+                    }),
+                },
+            },
+        ])
+    }
+}
 
 pub struct PositionInfo {
     next: Option<Box<PositionInfo>>,
     prev: Option<Box<PositionInfo>>,
+}
+
+impl Default for PositionInfo {
+    fn default() -> Self {
+        Self { next: None, prev: None }
+    }
 }
 
 pub struct Position {
@@ -57,13 +62,16 @@ impl Position {
     }
 }
 
-pub fn execute_uci(input: String) {
+pub fn execute_uci(input: String, config: &mut Configuration, cancellation_token: CancellationToken) {
     let mut tokenizer: uci::Tokenizer = uci::tokenize(input.as_str());
     match tokenizer
         .collect_until_ws()
         .unwrap_or(String::new())
         .as_str()
     {
+        "quit"=> {
+            cancellation_token.cancel()
+        }
         "go" => {
             search::reset();
             let mut mode = search::Mode::Normal;
