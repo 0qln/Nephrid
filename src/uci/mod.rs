@@ -1,4 +1,4 @@
-use std::{default, io::{self, Write}, iter::Peekable, str::Chars, sync};
+use std::{default, io::{self, Write}, iter::Peekable, str::Chars, sync::{self, atomic::{AtomicBool, Ordering}, Arc}};
 
 pub struct Tokenizer<'a>(Peekable<Chars<'a>>);
 
@@ -67,11 +67,11 @@ pub fn out(msg: &str) {
     let _ = writeln!(&mut stdout.lock(), "{}", msg);
 }
 
-pub struct CancellationToken(sync::Arc<sync::atomic::AtomicBool>);
+pub struct CancellationToken(Arc<AtomicBool>);
 
 impl Default for CancellationToken {
     fn default() -> Self {
-        CancellationToken(sync::Arc::new(sync::atomic::AtomicBool::new(false)))
+        CancellationToken(Arc::new(AtomicBool::new(false)))
     }
 }
 
@@ -84,11 +84,11 @@ impl Clone for CancellationToken {
 impl CancellationToken {
     /// Cancels the current token.
     pub fn cancel(&self) {
-        self.0.store(true, sync::atomic::Ordering::Relaxed)
+        self.0.store(true, Ordering::Relaxed)
     }    
     
     /// Checks if the current token has been cancelled.
     pub fn is_cancelled(&self) -> bool {
-        self.0.load(sync::atomic::Ordering::Relaxed)
+        self.0.load(Ordering::Relaxed)
     }
 }

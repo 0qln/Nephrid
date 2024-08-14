@@ -5,8 +5,8 @@ pub struct Hash {
     key: zobrist::Hash,
 } 
 
-static mut ENTRIES_COUNT: ConfigOptionType = super::CONFIG.iter().find(|cfg| cfg.cfg_name == "Hash").unwrap().cfg_type;
-static mut ENTRIES: Box<[Hash]> = Box::default();
+// static mut ENTRIES_COUNT: ConfigOptionType = super::CONFIG.iter().find(|cfg| cfg.cfg_name == "Hash").unwrap().cfg_type;
+// static mut ENTRIES: Box<[Hash]> = Box::();
 
 pub fn set(key: zobrist::Hash, entry: Hash) {
    todo!("Comp") 

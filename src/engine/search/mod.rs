@@ -1,3 +1,7 @@
+use std::sync::Arc;
+
+use crate::uci::CancellationToken;
+
 use super::{Depth, Move, Position};
 
 pub struct Limit {
@@ -57,6 +61,6 @@ pub fn reset() {
     todo!()
 }
 
-pub fn go(board: &mut Position, limit: Limit, target: Target, mode: Mode) {
+pub fn go(position: &Position, limit: Limit, target: Target, mode: Mode, cancellation_token: CancellationToken) {
     todo!()
 }
