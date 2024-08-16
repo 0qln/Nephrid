@@ -6,13 +6,14 @@ use crate::engine::{
     fen::Fen,
     castling::CastlingRights,
     coordinates::{Squares, Square, Rank, File},
-    zobrist
+    zobrist,
+    r#move::Move
 };
 
 use super::ply::Ply;
 
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PositionInfo {
     pub next: Option<Box<PositionInfo>>,
     pub prev: Option<Box<PositionInfo>>,
@@ -44,6 +45,7 @@ impl PositionInfo {
 }
 
 
+#[derive(Clone)]
 pub struct Position {
     c_bitboards: [Bitboard; 2],
     t_bitboards: [Bitboard; 7],
@@ -83,6 +85,10 @@ impl Position {
         self.piece_counts[self.get_piece(sq).piece_type as usize] -= 1;
     }  
 
+    pub fn make_move(&mut self, m: Move) {
+        todo!()
+    }
+
 }
 
 impl Default for Position {
@@ -117,11 +123,11 @@ impl Position {
     }
 }
 
-impl Into<String> for Position {
+impl Into<String> for &Position {
     fn into(self) -> String {
         let mut result = String::new();
-        for rank in 7..=0 {
-            result += &(rank + 1).to_string();
+        for rank in (0..=7).rev() {
+            result.push_str(&(rank + 1).to_string());
             result.push(' ');
             for file in 0..=7 {
                 let sq = Square::from((
@@ -131,10 +137,11 @@ impl Into<String> for Position {
                 let piece = self.get_piece(sq);
                 let c: char = piece.into();
                 result.push(c);
+                result.push(' ');
             }
             result.push('\n');
         }
-        result.push_str("   a b c d e f g h");
+        result.push_str("  a b c d e f g h");
         result
     }
 }
@@ -144,21 +151,20 @@ impl<'fen> TryFrom<Fen<'fen>> for Position {
     
     fn try_from(fen: Fen) -> Result<Self, Self::Error> {
         let mut position = Position::new();
-        let mut sq = Squares::H8 as u8;
+        let mut sq = Squares::H8 as i8;
 
         for char in fen.v[0].chars() {
             match char {
                 '/' => continue,
-                '1'..='8' => sq -= char.to_digit(10).unwrap() as u8,        
+                '1'..='8' => sq -= char.to_digit(10).unwrap() as i8,        
                 _ => {
-                    println!("{}", char);
                     let piece = Piece::try_from(char)?;                    
-                    let pos_sq = Square::try_from(sq ^ 7)?;
+                    let pos_sq = Square::try_from((sq ^ 7) as u8)?;
                     position.put_piece(pos_sq, piece);
                     sq -= 1;
                 }
             }
-            if sq == Squares::A1 as u8 {
+            if sq < Squares::A1 as i8 {
                 break;
             }
         }
@@ -176,7 +182,7 @@ impl<'fen> TryFrom<Fen<'fen>> for Position {
 
         // TODO: init zobrist hash
         
-        state.init(&position);
+        // state.init(&position);
         
         Ok(position)
     }

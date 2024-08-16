@@ -49,7 +49,7 @@ impl From<Squares> for Square {
 
 impl From<(File, Rank)> for Square {
     fn from(value: (File, Rank)) -> Self {
-        Square{ v: value.0.v * 8u8 + value.1.v }
+        Square{ v: value.0.v + value.1.v * 8u8 }
     }
 }
 
@@ -59,6 +59,7 @@ impl TryFrom<&str> for Square {
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         let mut chars = value.chars();
         let file = match chars.next() {
+            Some('-') => return Ok(Square::from(Squares::None)),
             Some(c) => File::try_from(c)?,
             None => return Err(anyhow::Error::msg("Empty string")),
         };
