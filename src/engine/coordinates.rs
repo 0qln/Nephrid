@@ -1,3 +1,7 @@
+use crate::uci::tokens::Tokenizer;
+
+use super::fen::{parts, Fen};
+
 #[derive(Debug)]
 pub enum Squares {
     A1, A2, A3, A4, A5, A6, A7, A8,
@@ -15,7 +19,7 @@ pub enum Squares {
 pub struct Square { pub v: u8 }
 
 impl Square {
-    
+        
 }
 
 impl Into<usize> for Square {
@@ -53,21 +57,26 @@ impl From<(File, Rank)> for Square {
     }
 }
 
-impl TryFrom<&str> for Square {
+impl TryFrom<&mut Tokenizer<'_>> for Square {
     type Error = anyhow::Error;
 
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let mut chars = value.chars();
-        let file = match chars.next() {
+    fn try_from(tokens: &mut Tokenizer) -> Result<Self, Self::Error> {
+        let file = match tokens.next_char() {
             Some('-') => return Ok(Square::from(Squares::None)),
             Some(c) => File::try_from(c)?,
             None => return Err(anyhow::Error::msg("Empty string")),
         };
-        let rank = match chars.next() {
+        let rank = match tokens.next_char() {
             Some(c) => Rank::try_from(c)?,
             None => return Err(anyhow::Error::msg("No rank specified")),
         };
         Ok(Square::from((file, rank)))
+    }
+}
+
+impl From<Fen<'_, parts::EnPassantTargetSquare>> for Square {
+    fn from(fen: Fen<parts::EnPassantTargetSquare>) -> Self {
+        Square::from(fen.v)
     }
 }
 
@@ -97,7 +106,29 @@ impl TryFrom<char> for Rank {
 }
 
 
+pub enum Files {
+    A, B, C, D, E, F, G, H
+}
+
+#[derive(PartialEq)]
 pub struct File { v: u8 }
+
+impl File {
+    pub const A: File = File { v: 0 }; 
+    pub const B: File = File { v: 1 }; 
+    pub const C: File = File { v: 2 }; 
+    pub const D: File = File { v: 3 }; 
+    pub const E: File = File { v: 4 }; 
+    pub const F: File = File { v: 5 }; 
+    pub const G: File = File { v: 6 }; 
+    pub const H: File = File { v: 7 };
+}
+
+impl From<Square> for File {
+    fn from(sq: Square) -> Self {
+        File { v: sq.v % 8 }
+    }
+}
 
 impl TryFrom<u8> for File {
     type Error = anyhow::Error;

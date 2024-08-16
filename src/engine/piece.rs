@@ -1,6 +1,13 @@
 use crate::engine::color::Color;
 
-#[derive(Copy, Clone)]
+pub enum PromotionPieceType {
+    Knight = 2,
+    Bishop = 3,
+    Rook = 4,
+    Queen = 5,
+}
+
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
 pub enum PieceType {
     None = 0,
     Pawn = 1,
@@ -11,9 +18,29 @@ pub enum PieceType {
     King = 6,    
 }
 
+// impl PieceType {
+//     pub fn is_promotion(&self) -> bool {
+//         *self >= PieceType::Knight && *self <= PieceType::Knight
+//     }
+// }
+
 impl Default for PieceType {
     fn default() -> Self {
         Self::None
+    }
+}
+
+impl TryFrom<char> for PromotionPieceType {
+    type Error = anyhow::Error;
+ 
+    fn try_from(value: char) -> Result<Self, Self::Error> {
+        match value {
+            'n' => Ok(PromotionPieceType::Knight),
+            'b' => Ok(PromotionPieceType::Bishop),
+            'r' => Ok(PromotionPieceType::Rook),
+            'q' => Ok(PromotionPieceType::Queen),
+            _ => Err(anyhow::Error::msg("Invalid char")),
+        }
     }
 }
 

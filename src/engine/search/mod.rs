@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use crate::uci::CancellationToken;
+use crate::uci::sync::CancellationToken;
 
 use super::{Depth, Move, Position};
 

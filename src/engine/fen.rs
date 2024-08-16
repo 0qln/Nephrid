@@ -1,23 +1,22 @@
-pub struct Fen<'parts> { pub v: [&'parts str; 6] }
+use crate::uci::tokens::Tokenizer;
+use std::marker::PhantomData;
 
-impl<'parts> TryFrom<&'parts str> for Fen<'parts> {
-    type Error = anyhow::Error;
+pub mod parts {
+    pub struct PiecesPlacement;
+    pub struct SideToMove;
+    pub struct CastlingAvailability; 
+    pub struct EnPassantTargetSquare;
+    pub struct HalfMoveClock;
+    pub struct FullMoveCounter;
+}
 
-    /// This only validates the number parts of the FEN, not their contents. 
-    fn try_from(value: &'parts str) -> Result<Self, Self::Error> {
-        let parts = value.split(' ').collect::<Vec<&'parts str>>();
-        match parts.len() {
-            6 => {
-                Ok(Fen { v: [
-                    parts[0].into(),
-                    parts[1].into(),
-                    parts[2].into(),
-                    parts[3].into(),
-                    parts[4].into(),
-                    parts[5].into(),
-                ] })
-            },
-            _ => Err(anyhow::Error::msg("Invalid number of parts")),
-        }
+pub struct Fen<'a, Part> { 
+    pub v: &'a mut Tokenizer<'a> ,
+    part: PhantomData<Part>
+}
+
+impl<'a, Part> Fen<'a, Part> {
+    pub fn new(v: &'a mut Tokenizer<'a>) -> Self {
+        Fen { v, part: PhantomData }
     }
 }
