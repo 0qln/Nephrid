@@ -1,5 +1,6 @@
 use std::{num::ParseIntError, str::FromStr};
 
+#[derive(Debug)]
 pub struct Depth { v: u8 }
 
 impl TryFrom<&str> for Depth {
@@ -25,4 +26,8 @@ impl Depth {
     pub const MIN: Depth = Depth { v: 0 };
     pub const MAX: Depth = Depth { v: 250 }; 
     pub const NONE: Depth = Depth { v: 255 };
+}
+
+impl Default for Depth {
+    fn default() -> Self { Depth::NONE }
 }

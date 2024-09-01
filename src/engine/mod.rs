@@ -32,16 +32,18 @@ pub mod ply;
 
 
 #[derive(Default)]
-pub struct Engine {
+pub struct Engine<'search_target> {
     pub config: Configuration,
     pub position: Position,
+    pub search_limit: search::Limit,
+    pub search_target: search::Target<'search_target>,
+    pub search_mode: search::Mode,
     pub cancellation_token: CancellationToken,    
 }
 
-impl Engine {
+impl Engine<'_> {
     pub fn execute_uci(&mut self, tokenizer: &mut Tokenizer<'_>) {
-        match tokenizer.collect_token().as_deref()
-        {
+        match tokenizer.collect_token().as_deref() {
             Some("d") => {
                 let pos: String = (&self.position).into();
                 sync::out(&pos);
@@ -50,56 +52,42 @@ impl Engine {
                 self.cancellation_token.cancel()
             }
             Some("go") => {
-                search::reset();
-
-                let mut mode = search::Mode::Normal;
-
-                let mut limit = search::Limit {
-                    wtime: u64::MAX, btime: u64::MAX,
-                    winc: 0, binc: 0,
-                    movestogo: 0,
-                    nodes: u64::MAX,
-                    movetime: u64::MAX,
-                    active: true
-                };
-
-                let mut target = search::Target {
-                    mate: Depth::MAX,
-                    depth: Depth::MAX,
-                    searchmoves: Vec::new()
-                };
+                self.search_mode = search::Mode::Normal;
+                let mut limit = Some(search::Limit::default());
+                let mut target = search::Target::default();
+                let mut search_moves = Vec::new();
 
                 macro_rules! collect_and_parse {
                     ($tokenizer:expr, $field:expr, $default:expr) => {{
                         // TODO: clean this up
                         let token = $tokenizer.collect_token();
-                        let token = token.as_deref();
                         if token.is_none() { $field = $default; return ;}
                         let token = token.unwrap();
-                        $field = token.parse().unwrap_or($default);
+                        $field = token.as_str().parse().unwrap_or($default);
                     }};
                 }
 
                 while let Some(token) = tokenizer.collect_token().as_deref() {
                     match token {
-                        "ponder" => mode = search::Mode::Ponder,
-                        "wtime" => collect_and_parse!(tokenizer, limit.wtime, 0),
-                        "btime" => collect_and_parse!(tokenizer, limit.btime, 0),
-                        "winc" => collect_and_parse!(tokenizer, limit.winc, 0),
-                        "binc" => collect_and_parse!(tokenizer, limit.binc, 0),
-                        "movestogo" => collect_and_parse!(tokenizer, limit.movestogo, 0),
+                        "perft" => self.search_mode = search::Mode::Perft,
+                        "ponder" => self.search_mode = search::Mode::Ponder,
+                        "wtime" => collect_and_parse!(tokenizer, limit.unwrap().wtime, 0),
+                        "btime" => collect_and_parse!(tokenizer, limit.unwrap().btime, 0),
+                        "winc" => collect_and_parse!(tokenizer, limit.unwrap().winc, 0),
+                        "binc" => collect_and_parse!(tokenizer, limit.unwrap().binc, 0),
+                        "movestogo" => collect_and_parse!(tokenizer, limit.unwrap().movestogo, 0),
                         "depth" => collect_and_parse!(tokenizer, target.depth, Depth::MIN),
-                        "nodes" => collect_and_parse!(tokenizer, limit.nodes, 0),
+                        "nodes" => collect_and_parse!(tokenizer, limit.unwrap().nodes, 0),
                         "mate" => collect_and_parse!(tokenizer, target.mate, Depth::MIN),
-                        "movetime" => collect_and_parse!(tokenizer, limit.movetime, 0),
-                        "infinite" => limit.active = false,
-                        _ => {
+                        "movetime" => collect_and_parse!(tokenizer, limit.unwrap().movetime, 0),
+                        "infinite" => limit = None,
+                        "searchmoves" | _ => {
                             let move_notation = MoveNotation::<LongAlgebraicNotationUci>::new(
                                 &mut *tokenizer,
                                 &self.position
                             );
                             match Move::try_from(move_notation) {
-                                Ok(m) => target.searchmoves.push(m),
+                                Ok(m) => search_moves.push(m),
                                 Err(e) => sync::out(&format!("Error: {e}"))
                             }
                         },
@@ -107,12 +95,17 @@ impl Engine {
                 }
 
                 // TODO: use config to set up search params
+                // e.g. MutliPV
+                
+                if !search_moves.is_empty() {
+                    target.search_moves.v = &search_moves;
+                }
                 
                 let token = self.cancellation_token.clone();
-                let position = self.position.clone();
+                let mut position = self.position.clone();
 
                 thread::spawn(move || {
-                    search::go(&position, limit, target, mode, token);
+                    search::go(&mut position, limit, target, mode, token);
                 });
             }
             Some("position") => {

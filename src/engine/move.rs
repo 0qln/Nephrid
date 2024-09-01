@@ -47,6 +47,7 @@ pub enum MoveFlag {
 }
 
 
+#[derive(Debug, Default)]
 pub struct Move { v: u16 }
 
 impl Move {
@@ -109,3 +110,11 @@ impl TryFrom<MoveNotation<'_, '_, LongAlgebraicNotationUci>> for Move {
         })
     }
 }
+
+
+#[derive(Debug, Default)]
+pub struct MoveList<'a> {
+    pub v: &'a [Move],
+}
+
+
