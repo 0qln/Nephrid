@@ -1,6 +1,7 @@
 use crate::engine::{
     color::Color,
-    piece::PieceType
+    piece::PieceType,
+    fen::Fen
 };
 
 
@@ -13,17 +14,18 @@ pub enum CastlingSide {
 #[derive(Default, Copy, Clone)]
 pub struct CastlingRights { v: u32 }
 
-impl TryFrom<&str> for CastlingRights {
+impl TryFrom<&mut Fen<'_>> for CastlingRights {
     type Error = anyhow::Error;
     
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
+    fn try_from(value: &mut Fen<'_>) -> Result<Self, Self::Error> {
         let mut result = CastlingRights::default();
-        for c in value.chars() {
+        for c in value.iter_token() {
             match c {
                 'K' => result.set_true(CastlingSide::KingSide, Color::White),
                 'Q' => result.set_true(CastlingSide::QueenSide, Color::White),
                 'k' => result.set_true(CastlingSide::KingSide, Color::Black),
                 'q' => result.set_true(CastlingSide::QueenSide, Color::Black),
+                '-' => return Ok(result),
                 _ => return Err(anyhow::Error::msg("Invalid char")),
             }
         };

@@ -1,13 +1,16 @@
-use crate::engine::{
-    bitboard::Bitboard,
-    color::Color,
-    turn::Turn,
-    piece::{Piece, PieceType},
-    fen::Fen,
-    castling::CastlingRights,
-    coordinates::{Squares, Square, Rank, File},
-    zobrist,
-    r#move::Move
+use crate::{
+    engine::{
+        bitboard::Bitboard, 
+        castling::CastlingRights, 
+        color::Color, 
+        coordinates::{File, Rank, Square, Squares}, 
+        fen::Fen, 
+        r#move::Move, 
+        piece::{Piece, PieceType}, 
+        turn::Turn, 
+        zobrist
+    }, 
+    uci::tokens::Tokenizer
 };
 
 use super::ply::Ply;
@@ -94,14 +97,7 @@ impl Position {
 impl Default for Position {
     fn default() -> Self {
         Position::try_from(
-            Fen { v: [
-                &"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", 
-                &"w", 
-                &"KQkq", 
-                &"-", 
-                &"0", 
-                &"1"
-            ]}
+            &mut Fen::new(&"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
         ).unwrap()
     }
 }
@@ -146,14 +142,14 @@ impl Into<String> for &Position {
     }
 }
 
-impl<'fen> TryFrom<Fen<'fen>> for Position {
+impl TryFrom<&mut Fen<'_>> for Position {
     type Error = anyhow::Error;
     
-    fn try_from(fen: Fen) -> Result<Self, Self::Error> {
+    fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
         let mut position = Position::new();
         let mut sq = Squares::H8 as i8;
 
-        for char in fen.v[0].chars() {
+        for char in fen.iter_token() {
             match char {
                 '/' => continue,
                 '1'..='8' => sq -= char.to_digit(10).unwrap() as i8,        
@@ -169,13 +165,15 @@ impl<'fen> TryFrom<Fen<'fen>> for Position {
             }
         }
         
-        position.turn = fen.v[1].try_into()?;        
+        let char = fen.iter_token().next()
+            .ok_or(anyhow::Error::msg("Missing turn specifier in FEN"))?;
+        position.turn = char.try_into()?;        
         
         let mut state = PositionInfo {
-            castling_rights: CastlingRights::try_from(fen.v[2])?,
-            ep_square: Square::try_from(fen.v[3])?,
-            plys50: Ply::new(fen.v[4].parse()?, position.turn),
-            ply: Ply { v: fen.v[5].parse::<u16>()? },
+            castling_rights: CastlingRights::try_from(&mut *fen)?,
+            ep_square: Square::try_from(fen.iter_token())?,
+            plys50: Ply::new(fen.collect_token().ok_or(anyhow::Error::msg("Missing Halfmove Clock in FEN"))?.parse()?, position.turn),
+            ply: Ply { v: fen.collect_token().ok_or(anyhow::Error::msg("Missing Fullmove counter in FEN"))?.parse::<u16>()? },
             has_threefold_repetition: false,
             ..Default::default()
         };

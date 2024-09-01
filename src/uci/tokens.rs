@@ -1,41 +1,42 @@
 use std::iter::Peekable;
 use std::str::Chars;
 
-pub struct Tokenizer<'chars>(Peekable<Chars<'chars>>);
+pub struct Tokenizer<'chr> { 
+    v: Peekable<Chars<'chr>>, 
+}
 
-impl<'chars> Tokenizer<'chars> {
+impl Iterator for Tokenizer<'_> {
+    type Item = char;
 
-    pub fn new(input: &'chars str) -> Self {
-        Tokenizer(input.chars().peekable())
+    fn next(&mut self) -> Option<Self::Item> {
+        self.v.next_if(|&c| !c.is_whitespace())
+    }
+} 
+
+impl<'chr> Tokenizer<'chr> 
+{
+    pub fn new(v: &'chr str) -> Self {
+        Self { v: v.chars().peekable() }
     }
 
-    pub fn collect_ws(&mut self) {
-        while self.0.next_if(|&c| c.is_whitespace()).is_some() {}
+    fn skip_ws(&mut self) {
+        while self.v.next_if(|&c| c.is_whitespace()).is_some() {}
     }
 
-    pub fn collect_until_ws(&mut self) -> Option<String> {
-        self.collect_ws();
-        let mut buffer = String::new();
-        while let Some(c) = self.next_char_not_ws() {
-            buffer.push(c);
-        }
-
-        if buffer.is_empty() { None } else { Some(buffer) }
-    }
-   
-    pub fn collect_bool(&mut self) -> bool {
-        self.collect_until_ws().is_some_and(|s| s == "true")
+    pub fn collect_token(&mut self) -> Option<String> {
+        self.skip_ws();
+        self.v.peek()?;
+        Some(self.collect::<String>())
     }
 
-    pub fn next_char(&mut self) -> Option<char> {
-        self.0.next()
+    pub fn iter_token(&mut self) -> &mut Self {
+        self.skip_ws();
+        self
     }
 
-    pub fn next_char_not_ws(&mut self) -> Option<char> {
-        self.0.next_if(|&c| !c.is_whitespace())
+    pub fn goto_next_token(&mut self) -> bool {
+        self.skip_ws();
+        self.v.peek().is_some()
     }
 }
 
-pub fn tokenize(input: &str) -> Tokenizer {
-    Tokenizer(input.chars().peekable())
-}

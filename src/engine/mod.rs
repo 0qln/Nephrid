@@ -39,20 +39,17 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn execute_uci(&mut self, tokenizer: &mut Tokenizer) {
-        match tokenizer 
-            .collect_until_ws() 
-            .unwrap_or(String::new()) 
-            .as_str()
+    pub fn execute_uci(&mut self, tokenizer: &mut Tokenizer<'_>) {
+        match tokenizer.collect_token().as_deref()
         {
-            "d" => {
+            Some("d") => {
                 let pos: String = (&self.position).into();
                 sync::out(&pos);
             }
-            "quit"=> {
+            Some("quit")=> {
                 self.cancellation_token.cancel()
             }
-            "go" => {
+            Some("go") => {
                 search::reset();
 
                 let mut mode = search::Mode::Normal;
@@ -73,16 +70,18 @@ impl Engine {
                 };
 
                 macro_rules! collect_and_parse {
-                    ($tokenizer:expr, $field:expr, $default:expr) => {
-                        $field = $tokenizer
-                            .collect_until_ws()
-                            .and_then(|s| s.parse().ok())
-                            .unwrap_or($default)
-                    };
+                    ($tokenizer:expr, $field:expr, $default:expr) => {{
+                        // TODO: clean this up
+                        let token = $tokenizer.collect_token();
+                        let token = token.as_deref();
+                        if token.is_none() { $field = $default; return ;}
+                        let token = token.unwrap();
+                        $field = token.parse().unwrap_or($default);
+                    }};
                 }
 
-                while let Some(token) = tokenizer.collect_until_ws() {
-                    match token.as_str() {
+                while let Some(token) = tokenizer.collect_token().as_deref() {
+                    match token {
                         "ponder" => mode = search::Mode::Ponder,
                         "wtime" => collect_and_parse!(tokenizer, limit.wtime, 0),
                         "btime" => collect_and_parse!(tokenizer, limit.btime, 0),
@@ -115,40 +114,30 @@ impl Engine {
                 thread::spawn(move || {
                     search::go(&position, limit, target, mode, token);
                 });
-            },
-            "position" => {
-                match tokenizer.collect_until_ws() {
-                    Some(token) => {
-                        if token == "fen" {
-                            // let p1 = tokenizer.collect_until_ws().unwrap();
-                            // let p2 = tokenizer.collect_until_ws().unwrap();
-                            // let p3 = tokenizer.collect_until_ws().unwrap();
-                            // let p4 = tokenizer.collect_until_ws().unwrap();
-                            // let p5 = tokenizer.collect_until_ws().unwrap();
-                            // let p6 = tokenizer.collect_until_ws().unwrap();
-                            // let fen = Fen { v: [ p1.as_str(), p2.as_str(), p3.as_str(), p4.as_str(), p5.as_str(), p6.as_str() ] };
-                            match Position::try_from(Fen { 0: &mut *tokenizer }) {
-                                Ok(pos) => self.position = pos,
-                                Err(e) => sync::out(&format!("Error: {e}"))
-                            }
-                        }   
+            }
+            Some("position") => {
+                match tokenizer.collect_token().as_deref() {
+                    Some("fen") => {
+                        let fen: &mut Fen = tokenizer;
+                        match Position::try_from(fen) {
+                            Ok(pos) => self.position = pos,
+                            Err(e) => sync::out(&format!("Error: {e}"))
+                        }
                     },
-                    None => sync::out("Error: Missing arguments")
-                }
-                if tokenizer.collect_until_ws() == Some("moves".to_string()) {
-                    while let Some(token) = tokenizer.collect_until_ws() {
-                        let move_notation = MoveNotation::<LongAlgebraicNotationUci>::new(
-                            &mut *tokenizer,
-                            &self.position
-                        );
+                    None => sync::out("Error: Missing arguments"),
+                    Some(x) => sync::out(&format!("Error: Invalid argument: {}", x))
+                };
+                if tokenizer.collect_token().as_deref() == Some("moves") {
+                    while tokenizer.goto_next_token() {
+                        let move_notation = MoveNotation::<LongAlgebraicNotationUci>::new(&mut *tokenizer, &self.position);
                         match Move::try_from(move_notation) {
                             Ok(m) => self.position.make_move(m),
                             Err(e) => sync::out(&format!("Error: {e}"))
-                        }
+                        };
                     }
                 }
             }
-            "uci" => {
+            Some("uci") => {
                 // Id response
                 sync::out(&"id name Nephrid");
                 sync::out(&"id author 0qln");
@@ -159,15 +148,12 @@ impl Engine {
                 }
                 // Uciok response
                 sync::out("uciok")
-            },
-            "setoption" => {
-                // Skip to name
-                tokenizer.collect_until_ws();
-
+            }
+            Some("setoption") => {
                 // collect name
                 let mut name = String::new();
-                while let Some(token) = tokenizer.collect_until_ws() {
-                    match token.as_str() {
+                while let Some(token) = tokenizer.collect_token().as_deref() {
+                    match token {
                         "value" => break,
                         part => {
                             name.push_str(part);
@@ -181,7 +167,7 @@ impl Engine {
 
                 // collect value
                 let mut new_value = String::new();
-                while let Some(token) = tokenizer.collect_until_ws() {
+                while let Some(token) = tokenizer.collect_token().as_deref() {
                     new_value.push_str(&token);
                     // Reintroduce spaces between parts
                     if !new_value.is_empty() {
@@ -225,13 +211,16 @@ impl Engine {
                         }
                     },
                 }
-            },
-            "ucinewgame" => {
+            }
+            Some("ucinewgame") => {
                 self.position.reset()
-            },
-            unknown => { 
+            }
+            Some(unknown) => { 
                 sync::out(&format!("Unknown UCI command: '{unknown}'")) 
-            },
+            }
+            None => {
+
+            }
         }    
     }
 }

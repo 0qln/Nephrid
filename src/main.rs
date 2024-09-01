@@ -1,8 +1,12 @@
+#![allow(dead_code)]
+#![allow(unused_variables)]
+#![allow(unused_import_braces)]
+
 use std::io::stdin;
 use engine::Engine;
 use uci::{
     sync::out,
-    tokens::tokenize
+    tokens::Tokenizer
 };
 
 mod engine;
@@ -15,7 +19,7 @@ fn main() {
     while !engine.cancellation_token.is_cancelled() {
         let mut input = String::new();
         match input_stream.read_line(&mut input) {
-            Ok(_) => engine.execute_uci(&mut tokenize(input.as_str())),                   
+            Ok(_) => engine.execute_uci(&mut Tokenizer::new(input.as_str())),                   
             Err(err) => out(&format!("Error: {err}")),
         }
     }

@@ -1,7 +1,5 @@
 use crate::uci::tokens::Tokenizer;
 
-use super::fen::{parts, Fen};
-
 #[derive(Debug)]
 pub enum Squares {
     A1, A2, A3, A4, A5, A6, A7, A8,
@@ -60,13 +58,13 @@ impl From<(File, Rank)> for Square {
 impl TryFrom<&mut Tokenizer<'_>> for Square {
     type Error = anyhow::Error;
 
-    fn try_from(tokens: &mut Tokenizer) -> Result<Self, Self::Error> {
-        let file = match tokens.next_char() {
+    fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
+        let file = match tokens.next() {
             Some('-') => return Ok(Square::from(Squares::None)),
             Some(c) => File::try_from(c)?,
             None => return Err(anyhow::Error::msg("Empty string")),
         };
-        let rank = match tokens.next_char() {
+        let rank = match tokens.next() {
             Some(c) => Rank::try_from(c)?,
             None => return Err(anyhow::Error::msg("No rank specified")),
         };
@@ -74,9 +72,9 @@ impl TryFrom<&mut Tokenizer<'_>> for Square {
     }
 }
 
-impl From<Fen<'_, parts::EnPassantTargetSquare>> for Square {
-    fn from(fen: Fen<parts::EnPassantTargetSquare>) -> Self {
-        Square::from(fen.v)
+impl From<&str> for Square {
+    fn from(value: &str) -> Self {
+        todo!()
     }
 }
 

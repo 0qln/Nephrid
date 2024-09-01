@@ -1,6 +1,8 @@
-use crate::{engine::{
-
-    coordinates::{ File, Square}, piece::PieceType, position::Position }, 
+use crate::{
+    engine::{
+        coordinates::{ File, Square}, 
+        piece::PieceType, position::Position 
+    }, 
     uci::tokens::Tokenizer
 };
 use std::marker::PhantomData;
@@ -11,14 +13,14 @@ pub struct LongAlgebraicNotation;
 pub struct LongAlgebraicNotationUci;
 pub struct StandardAlgebraicNotation;
 
-pub struct MoveNotation<'a, Type> {
-    pub tokens: &'a mut Tokenizer<'a>,
-    pub context: &'a Position,
+pub struct MoveNotation<'this, 'tok, Type> {
+    pub tokens: &'this mut Tokenizer<'tok>,
+    pub context: &'this Position,
     r#type: PhantomData<Type>
 }
 
-impl<'a, Type> MoveNotation<'a, Type> {
-    pub fn new(tokens: &'a mut Tokenizer<'a>, context: &'a Position) -> Self {
+impl<'a, 'b, Type> MoveNotation<'a, 'b, Type> {
+    pub fn new(tokens: &'a mut Tokenizer<'b>, context: &'a Position) -> Self {
         MoveNotation {
             tokens,
             context,
@@ -67,10 +69,10 @@ impl From<(Square, Square, MoveFlag)> for Move {
     }
 }
 
-impl TryFrom<MoveNotation<'_, LongAlgebraicNotationUci>> for Move {
+impl TryFrom<MoveNotation<'_, '_, LongAlgebraicNotationUci>> for Move {
     type Error = anyhow::Error;
 
-    fn try_from(move_notation: MoveNotation<'_, LongAlgebraicNotationUci>) -> Result<Self, Self::Error> {
+    fn try_from(move_notation: MoveNotation<'_, '_, LongAlgebraicNotationUci>) -> Result<Self, Self::Error> {
         let from = Square::try_from(&mut *move_notation.tokens)?;
         let to = Square::try_from(&mut *move_notation.tokens)?;
         let moving_p = move_notation.context.get_piece(from);
@@ -84,7 +86,7 @@ impl TryFrom<MoveNotation<'_, LongAlgebraicNotationUci>> for Move {
                 match abs_dist {
                     16 => flag = MoveFlag::DoublePawnPush as u16,
                     7 | 9 if !captures => flag = MoveFlag::EnPassant as u16,
-                    _ => if let Some(c) = move_notation.tokens.next_char_not_ws() {
+                    _ => if let Some(c) = move_notation.tokens.next() {
                         flag = PromotionPieceType::try_from(c)? as u16;
                         if captures { flag += 4 }
                     }

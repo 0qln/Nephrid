@@ -1,22 +1,17 @@
 use crate::uci::tokens::Tokenizer;
-use std::marker::PhantomData;
 
-pub mod parts {
-    pub struct PiecesPlacement;
-    pub struct SideToMove;
-    pub struct CastlingAvailability; 
-    pub struct EnPassantTargetSquare;
-    pub struct HalfMoveClock;
-    pub struct FullMoveCounter;
-}
+pub type Fen<'a> = Tokenizer<'a>;
 
-pub struct Fen<'a, Part> { 
-    pub v: &'a mut Tokenizer<'a> ,
-    part: PhantomData<Part>
-}
+// pub struct Fen<'fen, 'tok> { 
+//     v: &'fen mut Tokenizer<'tok>
+// }
 
-impl<'a, Part> Fen<'a, Part> {
-    pub fn new(v: &'a mut Tokenizer<'a>) -> Self {
-        Fen { v, part: PhantomData }
-    }
-}
+// impl<'fen, 'tok> Fen<'fen, 'tok> {
+//     pub fn new(v: &'fen mut Tokenizer<'tok>) -> Self {
+//         Self { v }
+//     }
+//
+//     pub fn next_part<'a, 'b>(&'a mut self) -> TokenIterator<'b, collecting::UntilWs> {
+//     }
+// }
+
