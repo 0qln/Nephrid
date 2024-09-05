@@ -49,6 +49,14 @@ impl ops::BitXorAssign for Bitboard {
     }
 }
 
+impl ops::Shl for Bitboard {
+    type Output = Self;
+    
+    fn shl(self, rhs: isize) -> Self::Output {
+        Bitboard { v: self.v << rhs }
+    }
+}
+
 impl ops::Sub for Bitboard {
     type Output = Self;
     

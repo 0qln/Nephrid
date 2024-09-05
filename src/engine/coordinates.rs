@@ -1,5 +1,26 @@
 use crate::uci::tokens::Tokenizer;
 
+pub enum CompassRose {
+    Nort = 8,
+    East = 1,
+    Sout = -8,
+    West = -1,
+
+    SoWe = CompassRose::Sout as isize + CompassRose::West as isize,
+    NoWe = CompassRose::Nort as isize + CompassRose::West as isize,
+    SoEa = CompassRose::Sout as isize + CompassRose::East as isize,
+    NoEa = CompassRose::Nort as isize + CompassRose::East as isize,
+
+    NoNoWe = 2 * CompassRose::Nort as isize + CompassRose::West as isize,
+    NoNoEa = 2 * CompassRose::Nort as isize + CompassRose::East as isize,
+    NoWeWe = CompassRose::Nort as isize + 2 * CompassRose::West as isize,
+    NoEaEa = CompassRose::Nort as isize + 2 * CompassRose::East as isize,
+    SoSoWe = 2 * CompassRose::Sout as isize + CompassRose::West as isize,
+    SoSoEa = 2 * CompassRose::Sout as isize + CompassRose::East as isize,
+    SoWeWe = CompassRose::Sout as isize + 2 * CompassRose::West as isize,
+    SoEaEa = CompassRose::Sout as isize + 2 * CompassRose::East as isize
+}
+
 #[derive(Debug)]
 pub enum Squares {
     A1, A2, A3, A4, A5, A6, A7, A8,

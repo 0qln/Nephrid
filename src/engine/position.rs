@@ -62,6 +62,14 @@ impl Position {
     pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
         self.c_bitboards[color as usize] & self.t_bitboards[piece_type as usize]
     }
+
+    pub fn get_color_bb(&self, color: Color) -> Bitboard {
+        self.c_bitboards[color as usize]
+    }
+
+    pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
+        self.t_bitboards[piece_type as usize]
+    }
     
     pub fn get_occupancy(&self) -> Bitboard {
         self.c_bitboards[Color::White as usize] | self.c_bitboards[Color::Black as usize]
@@ -69,6 +77,10 @@ impl Position {
     
     pub fn get_piece(&self, sq: Square) -> Piece {
         self.pieces[Into::<usize>::into(sq)]
+    }
+
+    pub fn get_turn(&self) -> Turn {
+        self.turn
     }
     
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {

@@ -3,11 +3,11 @@ use crate::uci::sync::CancellationToken;
 use crate::engine::{
     r#move::{MoveList},
     depth::Depth,
-    position::Position
+    position::Position,
+    ply::Ply,
 };
 
-// use super::{Depth, Move, MoveList, Position};
-
+#[derive(Debug)]
 pub struct Limit {
     pub wtime: u64,
     pub btime: u64,
@@ -53,39 +53,46 @@ pub struct Target<'a> {
     pub search_moves: MoveList<'a>,
 }
 
+#[derive(Debug, Default)]
 pub enum Mode {
+    #[default]
     Normal,
     Ponder,
     Perft
 }
 
-impl Default for Mode {
-    fn default() -> Self {
-        Self::Normal
+
+#[derive(Debug, Default)]
+pub struct Search<'a> {
+    pub limit: Limit,
+    pub target: Target<'a>,
+    pub mode: Mode,
+}
+
+impl Search<'_> {
+    pub fn reset() {
+        todo!()
+    }
+
+    pub fn go(position: &mut Position, cancellation_token: CancellationToken) {
+        todo!()
+    }
+
+    pub fn perft(position: &mut Position, ply: Ply, cancellation_token: CancellationToken) -> u64 {
+        todo!();
+        let result = 1;
+
+        for move in position.legal_moves() {
+            position.make_move(move);
+            result += perft(position, , cancellation_token);
+            position.unmake_move();
+        }
+
+        result;
+    }
+
+    pub fn search(position: &mut Position, cancellation_token: CancellationToken) {
+        todo!()
     }
 }
 
-pub fn reset() {
-    todo!()
-}
-
-pub fn go(position: &mut Position, limit: Option<Limit>, target: Target, mode: Mode, cancellation_token: CancellationToken) {
-    todo!()
-}
-
-pub fn perft(position: &mut Position, target: Target, cancellation_token: CancellationToken) -> u64 {
-    todo!()
-    // let result = 1;
-    //
-    // for move in position.legal_moves() {
-    //     position.make_move(move);
-    //     result += perft(position, , cancellation_token);
-    //     position.unmake_move();
-    // }
-    //
-    // result;
-}
-
-pub fn search(position: &mut Position, limit: Limit, target: Target, mode: Mode, cancellation_token: CancellationToken) {
-    todo!()
-}
