@@ -124,11 +124,6 @@ impl TryFrom<char> for Rank {
     }
 }
 
-
-pub enum Files {
-    A, B, C, D, E, F, G, H
-}
-
 #[derive(PartialEq)]
 pub struct File { v: u8 }
 
@@ -141,6 +136,12 @@ impl File {
     pub const F: File = File { v: 5 }; 
     pub const G: File = File { v: 6 }; 
     pub const H: File = File { v: 7 };
+}
+
+impl Into<u8> for File {
+    fn into(self) -> u8 {
+        self.v
+    }
 }
 
 impl From<Square> for File {

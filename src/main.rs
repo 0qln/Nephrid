@@ -2,6 +2,8 @@
 #![allow(unused_variables)]
 #![allow(unused_import_braces)]
 
+#[macro_use] extern crate impl_ops;
+
 use std::io::stdin;
 use engine::Engine;
 use uci::{
