@@ -100,7 +100,14 @@ impl From<&str> for Square {
 }
 
 
+#[derive(PartialEq)]
 pub struct Rank { v: u8 }
+
+impl From<Square> for Rank {
+    fn from(sq: Square) -> Self {
+        Rank { v: sq.v / 8 }
+    }
+}
 
 impl TryFrom<u8> for Rank {
     type Error = anyhow::Error;
