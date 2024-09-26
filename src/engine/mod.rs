@@ -16,7 +16,7 @@ use self::r#move::{LongAlgebraicNotationUci, MoveNotation};
 pub mod search;
 pub mod zobrist;
 pub mod transposition_table;
-pub mod move_gen;
+pub mod move_iter;
 pub mod color;
 pub mod piece;
 pub mod depth;

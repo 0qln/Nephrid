@@ -1,7 +1,6 @@
 use std::ops;
 use crate::engine::coordinates::{
     Square,
-    Squares,
     File,
     Rank,
     CompassRose

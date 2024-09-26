@@ -58,7 +58,7 @@ impl TryFrom<u8> for Square {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0..=63 => Ok(Square { v: value }),
+            0..=64 => Ok(Square { v: value }),
             _ => Err(anyhow::Error::msg("Square value out of range")),
         }
     }
