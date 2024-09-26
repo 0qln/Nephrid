@@ -3,6 +3,7 @@ use crate::engine::{
     position::Position, 
     r#move::Move, 
     bitboard::Bitboard,
+    coordinates::{Square, File}
 };
 
 use super::coordinates::CompassRose;
@@ -71,8 +72,7 @@ impl PseudoLegalPawnMoves<'_> {
         let pieces = pos.get_occupancy();
         let enemies = pos.get_color_bb(!pos.get_turn());
         let current = 0;
-        let blockers = Bitboard { v: (pieces << CompassRose::Sout as isize) as u64 };
-        Self { .. }
+        let blockers = pieces << CompassRose::Sout;
     }
 }
 
@@ -84,58 +84,11 @@ impl Iterator for PseudoLegalPawnMoves<'_> {
     }
 }
 
-
-const WHITE_PAWN_ATTACKS: [Bitboard; 64] = [
-    Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 },
-Bitboard { v:                         0x20000 },
-Bitboard { v:                         0x50000 },
-Bitboard { v:                         0xa0000 },
-Bitboard { v:                         0x140000 },
-Bitboard { v:                         0x280000 },
-Bitboard { v:                         0x500000 },
-Bitboard { v:                         0xa00000 },
-Bitboard { v:                         0x400000 },
-Bitboard { v:                         0x2000000 },
-Bitboard { v:                         0x5000000 },
-Bitboard { v:                         0xa000000 },
-Bitboard { v:                         0x14000000 },
-Bitboard { v:                         0x28000000 },
-Bitboard { v:                         0x50000000 },
-Bitboard { v:                         0xa0000000 },
-Bitboard { v:                         0x40000000 },
-Bitboard { v:                         0x200000000 },
-Bitboard { v:                         0x500000000 },
-Bitboard { v:                         0xa00000000 },
-Bitboard { v:                         0x1400000000 },
-Bitboard { v:                         0x2800000000 },
-Bitboard { v:                         0x5000000000 },
-Bitboard { v:                         0xa000000000 },
-Bitboard { v:                         0x4000000000 },
-Bitboard { v:                         0x20000000000 },
-Bitboard { v:                         0x50000000000 },
-Bitboard { v:                         0xa0000000000 },
-Bitboard { v:                         0x140000000000 },
-Bitboard { v:                         0x280000000000 },
-Bitboard { v:                         0x500000000000 },
-Bitboard { v:                         0xa00000000000 },
-Bitboard { v:                         0x400000000000 },
-Bitboard { v:                         0x2000000000000 },
-Bitboard { v:                         0x5000000000000 },
-Bitboard { v:                         0xa000000000000 },
-Bitboard { v:                         0x14000000000000 },
-Bitboard { v:                         0x28000000000000 },
-Bitboard { v:                         0x50000000000000 },
-Bitboard { v:                         0xa0000000000000 },
-Bitboard { v:                         0x40000000000000 },
-Bitboard { v:                         0x200000000000000 },
-Bitboard { v:                         0x500000000000000 },
-Bitboard { v:                         0xa00000000000000 },
-Bitboard { v:                         0x1400000000000000 },
-Bitboard { v:                         0x2800000000000000 },
-Bitboard { v:                         0x5000000000000000 },
-Bitboard { v:                         0xa000000000000000 },
-Bitboard { v:                         0x4000000000000000 },
-                        Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }, Bitboard { v: 0 }
-];
-
+// TODO: test
+pub fn white_pawn_attacks(pawn: Bitboard) -> Bitboard {
+    let mut result = Bitboard { v: 0 }; 
+    result |= (pawn & !Bitboard::from(File::A)) << CompassRose::West;
+    result |= (pawn & !Bitboard::from(File::H)) << CompassRose::East;
+    result
+}
 

@@ -1,69 +1,28 @@
 use std::ops;
-use crate::engine::{
-    coordinates::{Square, Squares}
+use crate::engine::coordinates::{
+    Square,
+    Squares,
+    File,
+    Rank,
+    CompassRose
 };
 
 #[derive(Copy, Clone, Default)]
 pub struct Bitboard { pub v: u64 }
 
-
-impl ops::BitAnd for Bitboard {
-    type Output = Self;
-
-    fn bitand(self, rhs: Self) -> Self::Output {
-        Bitboard { v: self.v & rhs.v }
-    }
-}
-
-impl ops::BitOr for Bitboard {
-    type Output = Self;
-
-    fn bitor(self, rhs: Self) -> Self::Output {
-        Bitboard { v: self.v | rhs.v }
-    }
-}
-
-impl ops::BitXor for Bitboard {
-    type Output = Self;
-
-    fn bitxor(self, rhs: Self) -> Self::Output {
-        Bitboard { v: self.v ^ rhs.v }
-    }
-}
-
-impl ops::BitAndAssign for Bitboard {
-    fn bitand_assign(&mut self, rhs: Self) {
-        self.v &= rhs.v;
-    }
-}
-
-impl ops::BitOrAssign for Bitboard {
-    fn bitor_assign(&mut self, rhs: Self) {
-        self.v |= rhs.v;
-    }
-}
-
-impl ops::BitXorAssign for Bitboard {
-    fn bitxor_assign(&mut self, rhs: Self) {
-        self.v ^= rhs.v;
-    }
-}
-
-impl ops::Shl for Bitboard {
-    type Output = Self;
-    
-    fn shl(self, rhs: isize) -> Self::Output {
-        Bitboard { v: self.v << rhs }
-    }
-}
-
-impl ops::Sub for Bitboard {
-    type Output = Self;
-    
-    fn sub(self, rhs: Self) -> Self::Output {
-        Bitboard { v: self.v - rhs.v }
-    }
-}
+impl_op!(+ |l: Bitboard, r: Bitboard| -> Bitboard { l + r });
+impl_op!(- |l: Bitboard, r: Bitboard| -> Bitboard { l - r });
+impl_op!(<< |bb: Bitboard, v: File| -> Bitboard { bb << v } );
+impl_op!(<< |bb: Bitboard, v: Rank| -> Bitboard { bb << v } );
+impl_op!(<< |bb: Bitboard, v: isize| -> Bitboard { bb << v } );
+impl_op!(<< |bb: Bitboard, v: CompassRose| -> Bitboard { bb << v } );
+impl_op!(^ |l: Bitboard, r: Bitboard| -> Bitboard { l ^ r } );
+impl_op!(| |l: Bitboard, r: Bitboard| -> Bitboard { l | r } );
+impl_op!(& |l: Bitboard, r: Bitboard| -> Bitboard { l & r } );
+impl_op!(^= |l: &mut Bitboard, r: Bitboard| { l.v ^= r.v } );
+impl_op!(|= |l: &mut Bitboard, r: Bitboard| { l.v |= r.v } );
+impl_op!(&= |l: &mut Bitboard, r: Bitboard| { l.v &= r.v } );
+impl_op!(! |x: Bitboard| -> Bitboard { Bitboard { v: !x.v } });
 
 impl Iterator for Bitboard {
     type Item = Square;
@@ -94,5 +53,17 @@ impl Bitboard {
 impl From<Square> for Bitboard {
     fn from(sq: Square) -> Self {
         Bitboard { v: 1 << sq.v }
+    }
+}
+
+impl From<File> for Bitboard {
+    fn from(file: File) -> Self {
+        Bitboard { v: 0x0101010101010101 } << file
+    }
+}
+
+impl From<Rank> for Bitboard {
+    fn from(rank: Rank) -> Self {
+        Bitboard { v: 0xFF } << rank
     }
 }
