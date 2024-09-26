@@ -78,11 +78,10 @@ impl Iterator for Bitboard {
 
 impl Bitboard {
     pub fn lsb(&self) -> Square {
-        // Safety: trailing_zeros of an u64 returns a valid square
-        Square::try_from(match self.v {
-            0 => Squares::H8 as u8,
-            x => x.trailing_zeros() as u8
-        }).unwrap()
+        // Safety: trailing_zeros of an u64 returns a valid square (0..=64)
+        unsafe {
+            Square::try_from(self.v.trailing_zeros() as u8).unwrap_unchecked()
+        }
     }
  
     pub fn pop_lsb(&mut self) -> Square {
