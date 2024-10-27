@@ -1,4 +1,5 @@
 use crate::uci::tokens::Tokenizer;
+use std::ops;
 
 pub enum CompassRose {
     Nort = 8,
@@ -20,6 +21,8 @@ pub enum CompassRose {
     SoWeWe = CompassRose::Sout as isize + 2 * CompassRose::West as isize,
     SoEaEa = CompassRose::Sout as isize + 2 * CompassRose::East as isize
 }
+
+impl_op!(* |a: CompassRose, b: isize| -> isize { (a as isize) * b } );
 
 #[derive(Debug)]
 pub enum Squares {

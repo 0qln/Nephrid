@@ -83,6 +83,10 @@ impl Position {
         self.turn
     }
     
+    pub fn get_ep_square(&self) -> Square {
+        self.state_stack.ep_square
+    }
+    
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from(sq.clone());
         self.t_bitboards[piece.piece_type as usize] |= target;

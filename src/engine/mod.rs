@@ -1,16 +1,15 @@
 use crate::uci::{
-    sync::{ CancellationToken, self },
+    sync::{self, CancellationToken},
     tokens::Tokenizer,
 };
 use crate::engine::{
-    depth::Depth,
-    position::Position,
     config::{ConfigOptionType, Configuration},
-    r#move::Move,
+    depth::Depth,
     fen::Fen,
+    position::Position,
+    r#move::Move,
 };
 use std::thread;
-
 use self::r#move::{LongAlgebraicNotationUci, MoveNotation};
 
 pub mod search;
@@ -36,8 +35,8 @@ pub mod masks;
 pub struct Engine<'search_target> {
     pub config: Configuration,
     pub position: Position,
-    pub search_limit: search::Limit,
-    pub search_target: search::Target<'search_target>,
+    pub search_limit: types::Limit,
+    pub search_target: types::Target<'search_target>,
     pub search_mode: search::Mode,
     pub cancellation_token: CancellationToken,    
 }
@@ -54,8 +53,8 @@ impl Engine<'_> {
             }
             Some("go") => {
                 self.search_mode = search::Mode::Normal;
-                let mut limit = Some(search::Limit::default());
-                let mut target = search::Target::default();
+                let mut limit = Some(types::Limit::default());
+                let mut target = types::Target::default();
                 let mut search_moves = Vec::new();
 
                 macro_rules! collect_and_parse {
