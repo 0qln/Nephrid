@@ -38,7 +38,7 @@ pub enum Squares {
 }
 
 #[derive(Copy, Clone)]
-pub struct Square { pub v: u8 }
+pub struct Square { pub v: u8 /* todo: make private */}
 
 impl Square {
         

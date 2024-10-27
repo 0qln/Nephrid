@@ -35,6 +35,14 @@ impl Iterator for Bitboard {
 }
 
 impl Bitboard {
+    // todo: test
+    pub fn msb(&self) -> Square {
+        // Safety: trailing_zeros of an u64 returns a valid square (0..=64)
+        unsafe {
+            Square::try_from(self.v.leading_zeros() as u8).unwrap_unchecked()
+        }
+    }
+
     pub fn lsb(&self) -> Square {
         // Safety: trailing_zeros of an u64 returns a valid square (0..=64)
         unsafe {
@@ -46,6 +54,16 @@ impl Bitboard {
         let lsb = self.lsb();
         *self &= *self - Bitboard { v: 1 };
         lsb
+    }
+    
+    // todo: test
+    pub fn split_north(sq: Square) -> Self {
+        Self { v: !0 << sq.v << 1 }
+    }
+    
+    // todo: test
+    pub fn split_south(sq: Square) -> Self {
+        Self { v: !0 >> sq.v >> 1 }
     }
 }
 
