@@ -1,5 +1,9 @@
 use crate::engine::{bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}};
 
+pub fn relevant_occupancy(sq: Square) -> Bitboard {
+    let result = 
+}
+
 pub fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let file = File::from(sq);
     let rank = Rank::from(sq);

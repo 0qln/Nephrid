@@ -6,6 +6,8 @@ macro_rules! bb {
     };
 }
 
+
+
 pub const FILES: [Bitboard; 8] = [
     bb!(0x0101010101010101),
     bb!(0x0202020202020202),

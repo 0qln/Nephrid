@@ -57,12 +57,12 @@ impl Bitboard {
     }
     
     // todo: test
-    pub fn split_north(sq: Square) -> Self {
+    pub const fn split_north(sq: Square) -> Self {
         Self { v: !0 << sq.v << 1 }
     }
     
     // todo: test
-    pub fn split_south(sq: Square) -> Self {
+    pub const fn split_south(sq: Square) -> Self {
         Self { v: !0 >> sq.v >> 1 }
     }
 }
