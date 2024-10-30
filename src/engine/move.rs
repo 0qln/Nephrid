@@ -29,6 +29,7 @@ impl<'a, 'b, Type> MoveNotation<'a, 'b, Type> {
     }
 }
 
+#[derive(Debug, Copy, Clone)]
 pub enum MoveFlag {
     Quiet,
     DoublePawnPush,
@@ -58,10 +59,8 @@ impl Move {
     const MASK_FROM: u16 = 0b111111 << Move::SHIFT_FROM;
     const MASK_TO: u16 = 0b111111 << Move::SHIFT_TO;
     const MASK_FLAG: u16 = 0b1111 << Move::SHIFT_FLAG;
-}
-
-impl From<(Square, Square, MoveFlag)> for Move {
-    fn from((from, to, flag): (Square, Square, MoveFlag)) -> Self {
+    
+    pub fn new(from: Square, to: Square, flag: MoveFlag) -> Self {
         Move {
             v: (from.v as u16) << Move::SHIFT_FROM
                | (to.v as u16) << Move::SHIFT_TO

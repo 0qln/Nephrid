@@ -1,4 +1,5 @@
 use crate::uci::tokens::Tokenizer;
+use std::ops;
 
 pub enum CompassRose {
     Nort = 8,
@@ -21,6 +22,8 @@ pub enum CompassRose {
     SoEaEa = CompassRose::Sout as isize + 2 * CompassRose::East as isize
 }
 
+impl_op!(* |a: CompassRose, b: isize| -> isize { (a as isize) * b } );
+
 #[derive(Debug)]
 pub enum Squares {
     A1, A2, A3, A4, A5, A6, A7, A8,
@@ -35,7 +38,7 @@ pub enum Squares {
 }
 
 #[derive(Copy, Clone)]
-pub struct Square { pub v: u8 }
+pub struct Square { pub v: u8 /* todo: make private */}
 
 impl Square {
         
@@ -58,7 +61,7 @@ impl TryFrom<u8> for Square {
 
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0..=63 => Ok(Square { v: value }),
+            0..=64 => Ok(Square { v: value }),
             _ => Err(anyhow::Error::msg("Square value out of range")),
         }
     }
@@ -100,7 +103,14 @@ impl From<&str> for Square {
 }
 
 
+#[derive(PartialEq)]
 pub struct Rank { v: u8 }
+
+impl From<Square> for Rank {
+    fn from(sq: Square) -> Self {
+        Rank { v: sq.v / 8 }
+    }
+}
 
 impl TryFrom<u8> for Rank {
     type Error = anyhow::Error;
