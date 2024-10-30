@@ -87,8 +87,14 @@ impl Iterator for PseudoLegalPawnMoves<'_> {
 // TODO: test
 pub fn white_pawn_attacks(pawn: Bitboard) -> Bitboard {
     let mut result = Bitboard { v: 0 }; 
-    result |= (pawn & !Bitboard::from(File::A)) << CompassRose::West;
-    result |= (pawn & !Bitboard::from(File::H)) << CompassRose::East;
+    result |= (pawn & !Bitboard::from(File::A)) << CompassRose::NoWe;
+    result |= (pawn & !Bitboard::from(File::H)) << CompassRose::NoEa;
     result
 }
 
+pub fn black_pawn_attacks(pawn: Bitboard) -> Bitboard {
+    let mut result = Bitboard { v: 0 }; 
+    result |= (pawn & !Bitboard::from(File::A)) << CompassRose::SoWe;
+    result |= (pawn & !Bitboard::from(File::H)) << CompassRose::SoEa;
+    result
+}
