@@ -1,5 +1,3 @@
-use stage::*;
-
 use crate::engine::coordinates::Square;
 use crate::engine::{
     bitboard::Bitboard,
@@ -10,32 +8,12 @@ use crate::engine::{
     position::Position,
     r#move::{Move, MoveFlag},
 };
-use std::marker::PhantomData;
 
 pub mod move_type {
     pub struct Legals;
     pub struct PseudoLegals;
     pub struct Attacks;
     pub struct Resolves;
-}
-
-pub mod stage {
-    use std::marker::PhantomData;
-
-    pub struct SingleStep;
-    pub struct DoubleStep;
-    pub struct PromotionInfo;
-    pub struct Promotion<Type>(PhantomData<Type>);
-    pub struct PromotionCapture<Direction, Type>(PhantomData<Direction>, PhantomData<Type>);
-    pub struct Capture<Direction>(PhantomData<Direction>);
-    pub struct EnPassant<Direction>(PhantomData<Direction>);
-
-    pub struct West;
-    pub struct East;
-    pub struct Knight;
-    pub struct Bishop;
-    pub struct Rook;
-    pub struct Queen;
 }
 
 pub struct PseudoLegalPawnMovesInfo<'a> {
@@ -59,15 +37,14 @@ impl<'a> PseudoLegalPawnMovesInfo<'a> {
     }
 }
 
-pub struct PseudoLegalPawnMoves<Part> {
+pub struct PseudoLegalPawnMoves {
     from: Bitboard,
     to: Bitboard,
     flag: MoveFlag,
-    stage: PhantomData<Part>,
 }
 
-impl PseudoLegalPawnMoves<SingleStep> {
-    pub fn new(info: &PseudoLegalPawnMovesInfo) -> Self {
+impl PseudoLegalPawnMoves {
+    pub fn w_new_single_step<'a>(info: &'a PseudoLegalPawnMovesInfo) -> Self {
         let non_promo_pawns = info.pawns & !masks::RANKS[6];
         let single_step_blocker = info.pieces << CompassRose::Sout;
         let to = (non_promo_pawns & !single_step_blocker) << CompassRose::Nort;
@@ -75,14 +52,10 @@ impl PseudoLegalPawnMoves<SingleStep> {
         Self {
             from,
             to,
-            stage: PhantomData,
             flag: MoveFlag::Quiet,
         }
     }
-}
-
-impl PseudoLegalPawnMoves<Capture<West>> {
-    pub fn new(info: &PseudoLegalPawnMovesInfo) -> Self {
+    pub fn w_new_capture_west(info: &PseudoLegalPawnMovesInfo) -> Self {
         let non_promo_pawns = info.pawns & !masks::RANKS[6];
         let capture_west_pawns = non_promo_pawns & !masks::FILES[0];
         let to = (capture_west_pawns << CompassRose::NoWe) & info.enemies;
@@ -90,14 +63,10 @@ impl PseudoLegalPawnMoves<Capture<West>> {
         Self {
             from,
             to,
-            stage: PhantomData,
             flag: MoveFlag::Capture,
         }
     }
-}
-
-impl PseudoLegalPawnMoves<Capture<East>> {
-    pub fn new(info: &PseudoLegalPawnMovesInfo) -> Self {
+    pub fn w_new_capture_east(info: &PseudoLegalPawnMovesInfo) -> Self {
         let non_promo_pawns = info.pawns & !masks::RANKS[6];
         let capture_east_pawns = non_promo_pawns & !masks::FILES[7];
         let to = (capture_east_pawns << CompassRose::NoEa) & info.enemies;
@@ -105,74 +74,10 @@ impl PseudoLegalPawnMoves<Capture<East>> {
         Self {
             from,
             to,
-            stage: PhantomData,
             flag: MoveFlag::Capture,
         }
     }
-}
-
-impl PseudoLegalPawnMoves<Promotion<Knight>> {
-    pub fn new(info: &PseudoLegalPawnMovesInfo) -> Self {
-        let single_step_blocker = info.pieces << CompassRose::Sout;
-        let promo_pawns = info.pawns & masks::RANKS[6];
-        let to = (promo_pawns & !single_step_blocker) << CompassRose::Nort;
-        let from = to << CompassRose::Sout;
-        Self {
-            from,
-            to,
-            stage: PhantomData,
-            flag: MoveFlag::PromotionKnight,
-        }
-    }
-}
-
-impl PseudoLegalPawnMoves<Promotion<Bishop>> {
-    pub fn new(info: &PseudoLegalPawnMovesInfo) -> Self {
-        let single_step_blocker = info.pieces << CompassRose::Sout;
-        let promo_pawns = info.pawns & masks::RANKS[6];
-        let to = (promo_pawns & !single_step_blocker) << CompassRose::Nort;
-        let from = to << CompassRose::Sout;
-        Self {
-            from,
-            to,
-            stage: PhantomData,
-            flag: MoveFlag::PromotionBishop,
-        }
-    }
-}
-
-impl PseudoLegalPawnMoves<Promotion<Rook>> {
-    pub fn new(info: &PseudoLegalPawnMovesInfo) -> Self {
-        let single_step_blocker = info.pieces << CompassRose::Sout;
-        let promo_pawns = info.pawns & masks::RANKS[6];
-        let to = (promo_pawns & !single_step_blocker) << CompassRose::Nort;
-        let from = to << CompassRose::Sout;
-        Self {
-            from,
-            to,
-            stage: PhantomData,
-            flag: MoveFlag::PromotionRook,
-        }
-    }
-}
-
-impl PseudoLegalPawnMoves<Promotion<Queen>> {
-    pub fn new(info: &PseudoLegalPawnMovesInfo) -> Self {
-        let single_step_blocker = info.pieces << CompassRose::Sout;
-        let promo_pawns = info.pawns & masks::RANKS[6];
-        let to = (promo_pawns & !single_step_blocker) << CompassRose::Nort;
-        let from = to << CompassRose::Sout;
-        Self {
-            from,
-            to,
-            stage: PhantomData,
-            flag: MoveFlag::PromotionQueen,
-        }
-    }
-}
-
-impl PseudoLegalPawnMoves<DoubleStep> {
-    pub fn new(info: &PseudoLegalPawnMovesInfo) -> Self {
+    pub fn w_new_double_step(info: &PseudoLegalPawnMovesInfo) -> Self {
         let single_step_blockers = info.pieces << CompassRose::Sout;
         let double_step_blockers = single_step_blockers | info.pieces << (CompassRose::Sout * 2);
         let double_step_pawns = info.pawns & masks::RANKS[1];
@@ -181,45 +86,103 @@ impl PseudoLegalPawnMoves<DoubleStep> {
         Self {
             from,
             to,
-            stage: PhantomData,
             flag: MoveFlag::DoublePawnPush,
         }
     }
-}
-
-// todo: promotion captures
- 
-impl PseudoLegalPawnMoves<EnPassant<West>> {
+    pub fn w_new_promo(info: &PseudoLegalPawnMovesInfo, flag: MoveFlag) -> Self {
+        let single_step_blocker = info.pieces << CompassRose::Sout;
+        let promo_pawns = info.pawns & masks::RANKS[6];
+        let to = (promo_pawns & !single_step_blocker) << CompassRose::Nort;
+        let from = to << CompassRose::Sout;
+        Self {
+            from,
+            to,
+            flag,
+        }
+    }
+    pub fn w_new_promo_knight(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo(info, MoveFlag::PromotionKnight)
+    }
+    pub fn w_new_promo_bishop(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo(info, MoveFlag::PromotionBishop)
+    }
+    pub fn w_new_promo_rook(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo(info, MoveFlag::PromotionRook)
+    }
+    pub fn w_new_promo_queen(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo(info, MoveFlag::PromotionQueen)
+    }
+    pub fn w_new_promo_capture_west(info: &PseudoLegalPawnMovesInfo, flag: MoveFlag) -> Self {
+        let promo_pawns = info.pawns & masks::RANKS[6];
+        let capture_west_pawns = promo_pawns & !masks::FILES[0];
+        let to = (capture_west_pawns << CompassRose::NoWe) & info.enemies;
+        let from = to << CompassRose::SoEa;
+        Self {
+            from,
+            to,
+            flag,
+        }
+    }
+    pub fn w_new_promo_capture_west_knight(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo_capture_west(info, MoveFlag::PromotionKnight)
+    }
+    pub fn w_new_promo_capture_west_bishop(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo_capture_west(info, MoveFlag::PromotionBishop)
+    }
+    pub fn w_new_promo_capture_west_rook(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo_capture_west(info, MoveFlag::PromotionRook)
+    }
+    pub fn w_new_promo_capture_west_queen(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo_capture_west(info, MoveFlag::PromotionQueen)
+    }
+    pub fn w_new_promo_capture_east(info: &PseudoLegalPawnMovesInfo, flag: MoveFlag) -> Self {
+        let promo_pawns = info.pawns & masks::RANKS[6];
+        let capture_east_pawns = promo_pawns & !masks::FILES[7];
+        let to = (capture_east_pawns << CompassRose::NoEa) & info.enemies;
+        let from = to << CompassRose::SoWe;
+        Self {
+            from,
+            to,
+            flag,
+        }
+    }
+    pub fn w_new_promo_capture_east_knight(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo_capture_east(info, MoveFlag::PromotionKnight)
+    }
+    pub fn w_new_promo_capture_east_bishop(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo_capture_east(info, MoveFlag::PromotionBishop)
+    }
+    pub fn w_new_promo_capture_east_rook(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo_capture_east(info, MoveFlag::PromotionRook)
+    }
+    pub fn w_new_promo_capture_east_queen(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::w_new_promo_capture_east(info, MoveFlag::PromotionQueen)
+    }
     /// todo: what happens when u64 << 64? (case when ep square is NONE)
-    pub fn new(info: &PseudoLegalPawnMovesInfo) -> Self {
+    pub fn w_new_ep_west(info: &PseudoLegalPawnMovesInfo) -> Self {
         let to = Bitboard::from(info.pos.get_ep_square());
         let capture_west_pawns = info.pawns & !masks::FILES[0];
         let from = ((capture_west_pawns << CompassRose::NoWe) & to) << CompassRose::SoEa;
         Self {
             from,
             to,
-            stage: PhantomData,
             flag: MoveFlag::EnPassant,
         }
     }
-} 
-
-impl PseudoLegalPawnMoves<EnPassant<East>> {
     /// todo: what happens when u64 << 64? (case when ep square is NONE)
-    pub fn new(info: &PseudoLegalPawnMovesInfo) -> Self {
+    pub fn w_new_ep_east(info: &PseudoLegalPawnMovesInfo) -> Self {
         let to = Bitboard::from(info.pos.get_ep_square());
         let capture_east_pawns = info.pawns & !masks::FILES[7];
-        let from = ((capture_east_pawns << CompassRose::NoEa) & to) << CompassRose::SoWe; 
+        let from = ((capture_east_pawns << CompassRose::NoEa) & to) << CompassRose::SoWe;
         Self {
             from,
             to,
-            stage: PhantomData,
             flag: MoveFlag::EnPassant,
         }
     }
 }
 
-impl<T> Iterator for PseudoLegalPawnMoves<T> {
+impl Iterator for PseudoLegalPawnMoves {
     type Item = Move;
     fn next(&mut self) -> Option<Self::Item> {
         const NONE: u8 = Squares::None as u8;
@@ -238,28 +201,34 @@ pub fn white_pawn_attacks(pawn: Bitboard) -> Bitboard {
     result
 }
 
-pub fn generate_plegals_white<'a>(position: &'a Position) -> impl Iterator<Item = Move> + 'a {
+pub fn gen_plegals_white<'a, F>(position: &'a Position) -> impl Iterator<Item = Move> + 'a
+where
+    F: FnMut(Move),
+{
     let info = PseudoLegalPawnMovesInfo::new(position, Color::White);
-    let single_step = PseudoLegalPawnMoves::<SingleStep>::new(&info);
-    let double_step = PseudoLegalPawnMoves::<DoubleStep>::new(&info);
-    let knight_promo = PseudoLegalPawnMoves::<Promotion<Knight>>::new(&info);
-    let bishop_promo = PseudoLegalPawnMoves::<Promotion<Bishop>>::new(&info);
-    let rook_promo = PseudoLegalPawnMoves::<Promotion<Rook>>::new(&info);
-    let queen_promo = PseudoLegalPawnMoves::<Promotion<Queen>>::new(&info);
-    let capture_west = PseudoLegalPawnMoves::<Capture<West>>::new(&info);
-    let capture_east = PseudoLegalPawnMoves::<Capture<East>>::new(&info);
-    let ep_west = PseudoLegalPawnMoves::<EnPassant<West>>::new(&info);
-    let ep_east = PseudoLegalPawnMoves::<EnPassant<East>>::new(&info);
 
     // todo: tune the ordering
-           single_step
-    .chain(double_step)
-    .chain(queen_promo)
-    .chain(knight_promo)
-    .chain(capture_west)
-    .chain(capture_east)
-    .chain(ep_west)
-    .chain(ep_east)
-    .chain(bishop_promo)
-    .chain(rook_promo)
+    let moves: [fn(&PseudoLegalPawnMovesInfo) -> PseudoLegalPawnMoves; 18] = [
+        PseudoLegalPawnMoves::w_new_single_step,
+        PseudoLegalPawnMoves::w_new_double_step,
+        PseudoLegalPawnMoves::w_new_promo_knight,
+        PseudoLegalPawnMoves::w_new_promo_bishop,
+        PseudoLegalPawnMoves::w_new_promo_rook,
+        PseudoLegalPawnMoves::w_new_promo_queen,
+        PseudoLegalPawnMoves::w_new_capture_west,
+        PseudoLegalPawnMoves::w_new_capture_east,
+        PseudoLegalPawnMoves::w_new_ep_west,
+        PseudoLegalPawnMoves::w_new_ep_east,
+        PseudoLegalPawnMoves::w_new_promo_capture_west_knight,
+        PseudoLegalPawnMoves::w_new_promo_capture_east_knight,
+        PseudoLegalPawnMoves::w_new_promo_capture_west_bishop,
+        PseudoLegalPawnMoves::w_new_promo_capture_east_bishop,
+        PseudoLegalPawnMoves::w_new_promo_capture_west_rook,
+        PseudoLegalPawnMoves::w_new_promo_capture_east_rook,
+        PseudoLegalPawnMoves::w_new_promo_capture_west_rook,
+        PseudoLegalPawnMoves::w_new_promo_capture_east_rook,
+    ];
+    
+    // todo: not sure this works
+    moves.into_iter().map(move |f| f(&info)).flatten()
 }
