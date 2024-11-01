@@ -59,30 +59,37 @@ pub struct Position {
 }
 
 impl Position {
+    #[inline]
     pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
         self.c_bitboards[color as usize] & self.t_bitboards[piece_type as usize]
     }
 
+    #[inline]
     pub fn get_color_bb(&self, color: Color) -> Bitboard {
         self.c_bitboards[color as usize]
     }
 
+    #[inline]
     pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
         self.t_bitboards[piece_type as usize]
     }
     
+    #[inline]
     pub fn get_occupancy(&self) -> Bitboard {
         self.c_bitboards[Color::White as usize] | self.c_bitboards[Color::Black as usize]
     }
     
+    #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece {
         self.pieces[Into::<usize>::into(sq)]
     }
 
+    #[inline]
     pub fn get_turn(&self) -> Turn {
         self.turn
     }
     
+    #[inline]
     pub fn get_ep_square(&self) -> Square {
         self.state_stack.ep_square
     }
@@ -105,7 +112,8 @@ impl Position {
     }  
 
     pub fn make_move(&mut self, m: Move) {
-        todo!()
+        let us = self.get_turn();
+        let from = m
     }
 
 }
@@ -189,7 +197,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
             castling_rights: CastlingRights::try_from(&mut *fen)?,
             ep_square: Square::try_from(fen.iter_token())?,
             plys50: Ply::new(fen.collect_token().ok_or(anyhow::Error::msg("Missing Halfmove Clock in FEN"))?.parse()?, position.turn),
-            ply: Ply { v: fen.collect_token().ok_or(anyhow::Error::msg("Missing Fullmove counter in FEN"))?.parse::<u16>()? },
+            ply: Ply::from(fen.collect_token().ok_or(anyhow::Error::msg("Missing Fullmove counter in FEN"))?.parse::<u16>()?),
             has_threefold_repetition: false,
             ..Default::default()
         };

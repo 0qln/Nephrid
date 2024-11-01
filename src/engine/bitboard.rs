@@ -58,18 +58,18 @@ impl Bitboard {
     
     // todo: test
     pub const fn split_north(sq: Square) -> Self {
-        Self { v: !0 << sq.v << 1 }
+        Self { v: !0 << sq.v() << 1 }
     }
     
     // todo: test
     pub const fn split_south(sq: Square) -> Self {
-        Self { v: !0 >> sq.v >> 1 }
+        Self { v: !0 >> sq.v() >> 1 }
     }
 }
 
 impl From<Square> for Bitboard {
     fn from(sq: Square) -> Self {
-        Bitboard { v: 1 << sq.v }
+        Bitboard { v: 1 << sq.v() }
     }
 }
 

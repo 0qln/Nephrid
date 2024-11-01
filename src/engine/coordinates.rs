@@ -38,19 +38,26 @@ pub enum Squares {
 }
 
 #[derive(Copy, Clone)]
-pub struct Square { pub v: u8 /* todo: make private */}
+pub struct Square { v: u8 }
 
 impl Square {
-        
+    #[inline]
+    pub const fn v(&self) -> u8 {
+        self.v
+    }
+    
+    pub const NONE: Square = Square { v: Squares::None as u8 };
 }
 
 impl Into<usize> for Square {
+    #[inline]
     fn into(self) -> usize {
         self.v as usize
     }
 }
 
 impl Default for Square {
+    #[inline]
     fn default() -> Self {
         Square::from(Squares::None)
     }
@@ -59,6 +66,7 @@ impl Default for Square {
 impl TryFrom<u8> for Square {
     type Error = anyhow::Error;
 
+    #[inline]
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0..=64 => Ok(Square { v: value }),
@@ -67,13 +75,23 @@ impl TryFrom<u8> for Square {
     }
 }
 
+impl TryFrom<u16> for Square {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u16) -> Result<Self, Self::Error> {
+        Self::try_from(value as u8)
+    }
+}
+
 impl From<Squares> for Square {
+    #[inline]
     fn from(value: Squares) -> Self {
         Square { v: value as u8 }
     }
 }
 
 impl From<(File, Rank)> for Square {
+    #[inline]
     fn from(value: (File, Rank)) -> Self {
         Square{ v: value.0.v + value.1.v * 8u8 }
     }
@@ -82,6 +100,7 @@ impl From<(File, Rank)> for Square {
 impl TryFrom<&mut Tokenizer<'_>> for Square {
     type Error = anyhow::Error;
 
+    #[inline]
     fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let file = match tokens.next() {
             Some('-') => return Ok(Square::from(Squares::None)),
@@ -97,6 +116,7 @@ impl TryFrom<&mut Tokenizer<'_>> for Square {
 }
 
 impl From<&str> for Square {
+    #[inline]
     fn from(value: &str) -> Self {
         todo!()
     }
@@ -106,7 +126,19 @@ impl From<&str> for Square {
 #[derive(PartialEq)]
 pub struct Rank { v: u8 }
 
+impl Rank {
+    pub const _1: Rank = Rank { v: 0 }; 
+    pub const _2: Rank = Rank { v: 1 }; 
+    pub const _3: Rank = Rank { v: 2 }; 
+    pub const _4: Rank = Rank { v: 3 }; 
+    pub const _5: Rank = Rank { v: 4 }; 
+    pub const _6: Rank = Rank { v: 5 }; 
+    pub const _7: Rank = Rank { v: 6 }; 
+    pub const _8: Rank = Rank { v: 7 };
+}
+
 impl From<Square> for Rank {
+    #[inline]
     fn from(sq: Square) -> Self {
         Rank { v: sq.v / 8 }
     }
@@ -115,6 +147,7 @@ impl From<Square> for Rank {
 impl TryFrom<u8> for Rank {
     type Error = anyhow::Error;
     
+    #[inline]
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0..=7 => Ok(Rank { v: value }),
@@ -126,6 +159,7 @@ impl TryFrom<u8> for Rank {
 impl TryFrom<char> for Rank {
     type Error = anyhow::Error;
     
+    #[inline]
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             '1'..='8' => Ok(Rank { v: value as u8 - '1' as u8 }),
@@ -149,12 +183,14 @@ impl File {
 }
 
 impl Into<u8> for File {
+    #[inline]
     fn into(self) -> u8 {
         self.v
     }
 }
 
 impl From<Square> for File {
+    #[inline]
     fn from(sq: Square) -> Self {
         File { v: sq.v % 8 }
     }
@@ -163,6 +199,7 @@ impl From<Square> for File {
 impl TryFrom<u8> for File {
     type Error = anyhow::Error;
     
+    #[inline]
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0..=7 => Ok(File { v: value }),
@@ -174,6 +211,7 @@ impl TryFrom<u8> for File {
 impl TryFrom<char> for File {
     type Error = anyhow::Error;
     
+    #[inline]
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'a'..='h' => Ok(File { v: value as u8 - 'a' as u8 }),

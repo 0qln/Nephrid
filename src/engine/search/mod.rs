@@ -1,4 +1,5 @@
 use types::{Limit, Target};
+use crate::engine::move_iter::legal_moves;
 use crate::uci::sync::CancellationToken;
 
 use crate::engine::{
@@ -34,16 +35,15 @@ impl Search<'_> {
     }
 
     pub fn perft(position: &mut Position, ply: Ply, cancellation_token: CancellationToken) -> u64 {
-        todo!();
-        let result = 1;
+        let mut result = 1;
 
-        for move in position.legal_moves() {
-            position.make_move(move);
-            result += perft(position, , cancellation_token);
+        for m in legal_moves(&position) {
+            position.make_move(m);
+            result += Self::perft(position, ply - 1, cancellation_token);
             position.unmake_move();
         }
 
-        result;
+        result
     }
 
     pub fn search(position: &mut Position, cancellation_token: CancellationToken) {

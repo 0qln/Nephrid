@@ -1,10 +1,10 @@
 use crate::engine::color::Color;
 
 pub enum PromotionPieceType {
-    Knight = 2,
-    Bishop = 3,
-    Rook = 4,
-    Queen = 5,
+    Knight = PieceType::Knight as isize,
+    Bishop = PieceType::Bishop as isize,
+    Rook = PieceType::Rook as isize,
+    Queen = PieceType::Queen as isize,
 }
 
 #[derive(Copy, Clone, PartialEq, PartialOrd)]
@@ -33,7 +33,7 @@ impl Default for PieceType {
 impl TryFrom<char> for PromotionPieceType {
     type Error = anyhow::Error;
  
-    fn try_from(value: char) -> Result<Self, Self::Error> {
+    fn try_from(value: char) -> anyhow::Result<Self> {
         match value {
             'n' => Ok(PromotionPieceType::Knight),
             'b' => Ok(PromotionPieceType::Bishop),
