@@ -1,28 +1,37 @@
 use crate::uci::tokens::Tokenizer;
 use std::ops;
 
-pub enum CompassRose {
-    Nort = 8,
-    East = 1,
-    Sout = -8,
-    West = -1,
 
-    SoWe = CompassRose::Sout as isize + CompassRose::West as isize,
-    NoWe = CompassRose::Nort as isize + CompassRose::West as isize,
-    SoEa = CompassRose::Sout as isize + CompassRose::East as isize,
-    NoEa = CompassRose::Nort as isize + CompassRose::East as isize,
-
-    NoNoWe = 2 * CompassRose::Nort as isize + CompassRose::West as isize,
-    NoNoEa = 2 * CompassRose::Nort as isize + CompassRose::East as isize,
-    NoWeWe = CompassRose::Nort as isize + 2 * CompassRose::West as isize,
-    NoEaEa = CompassRose::Nort as isize + 2 * CompassRose::East as isize,
-    SoSoWe = 2 * CompassRose::Sout as isize + CompassRose::West as isize,
-    SoSoEa = 2 * CompassRose::Sout as isize + CompassRose::East as isize,
-    SoWeWe = CompassRose::Sout as isize + 2 * CompassRose::West as isize,
-    SoEaEa = CompassRose::Sout as isize + 2 * CompassRose::East as isize
+#[derive(Copy, Clone, Debug)]
+pub struct CompassRose {
+    pub v: isize,
 }
 
-impl_op!(* |a: CompassRose, b: isize| -> isize { (a as isize) * b } );
+impl CompassRose {
+    pub const NORT: CompassRose = CompassRose { v: 8 };
+    pub const EAST: CompassRose = CompassRose { v: 1 };
+    pub const SOUT: CompassRose = CompassRose { v: -8 };
+    pub const WEST: CompassRose = CompassRose { v: -1 };
+
+    pub const SOWE: CompassRose = CompassRose { v: CompassRose::SOUT.v + CompassRose::WEST.v };
+    pub const NOWE: CompassRose = CompassRose { v: CompassRose::NORT.v + CompassRose::WEST.v };
+    pub const SOEA: CompassRose = CompassRose { v: CompassRose::SOUT.v + CompassRose::EAST.v };
+    pub const NOEA: CompassRose = CompassRose { v: CompassRose::NORT.v + CompassRose::EAST.v };
+
+    pub const NONOWE: CompassRose = CompassRose { v: 2 * CompassRose::NORT.v + CompassRose::WEST.v };
+    pub const NONOEA: CompassRose = CompassRose { v: 2 * CompassRose::NORT.v + CompassRose::EAST.v };
+    pub const NOWEWE: CompassRose = CompassRose { v: CompassRose::NORT.v + 2 * CompassRose::WEST.v };
+    pub const NOEAEA: CompassRose = CompassRose { v: CompassRose::NORT.v + 2 * CompassRose::EAST.v };
+    pub const SOSOWE: CompassRose = CompassRose { v: 2 * CompassRose::SOUT.v + CompassRose::WEST.v };
+    pub const SOSOEA: CompassRose = CompassRose { v: 2 * CompassRose::SOUT.v + CompassRose::EAST.v };
+    pub const SOWEWE: CompassRose = CompassRose { v: CompassRose::SOUT.v + 2 * CompassRose::WEST.v };
+    pub const SOEAEA: CompassRose = CompassRose { v: CompassRose::SOUT.v + 2 * CompassRose::EAST.v };
+}
+
+impl_op!(* |a: CompassRose, b: isize| -> CompassRose { CompassRose { v: (a.v) * b } } );
+// impl_op!(- |a: CompassRose| -> isize { -(a as isize) } );
+impl_op!(+ |a: CompassRose, b: isize| -> CompassRose { CompassRose { v: a.v + b } } );
+impl_op!(+ |a: isize, b: CompassRose| -> CompassRose { CompassRose { v: a + b.v } } );
 
 #[derive(Debug)]
 pub enum Squares {
@@ -37,7 +46,7 @@ pub enum Squares {
     None
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Square { v: u8 }
 
 impl Square {
