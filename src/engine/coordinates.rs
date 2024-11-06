@@ -58,6 +58,8 @@ impl Square {
     pub const NONE: Square = Square { v: Squares::None as u8 };
 }
 
+impl_op!(<< |a: usize, b: Square| -> usize { a << b.v } );
+
 impl Into<usize> for Square {
     #[inline]
     fn into(self) -> usize {

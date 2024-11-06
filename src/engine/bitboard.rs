@@ -19,6 +19,7 @@ impl_op!(<< |bb: Bitboard, v: CompassRose| -> Bitboard { bb << v } );
 impl_op!(>> |bb: Bitboard, v: CompassRose| -> Bitboard { bb >> v } );
 impl_op!(^ |l: Bitboard, r: Bitboard| -> Bitboard { l ^ r } );
 impl_op!(| |l: Bitboard, r: Bitboard| -> Bitboard { l | r } );
+impl_op!(| |l: Bitboard, r: usize| -> Bitboard { l | r } );
 impl_op!(& |l: Bitboard, r: Bitboard| -> Bitboard { l & r } );
 impl_op!(^= |l: &mut Bitboard, r: Bitboard| { l.v ^= r.v } );
 impl_op!(|= |l: &mut Bitboard, r: Bitboard| { l.v |= r.v } );
@@ -37,6 +38,14 @@ impl Iterator for Bitboard {
 }
 
 impl Bitboard {
+    pub const fn empty() -> Self {
+        Self { v: 0 }
+    }
+    
+    pub const fn full() -> Self {
+        Self { v: !0 }
+    }
+
     // todo: test
     pub fn msb(&self) -> Square {
         // Safety: trailing_zeros of an u64 returns a valid square (0..=64)
@@ -68,6 +77,8 @@ impl Bitboard {
         Self { v: !0 >> sq.v() >> 1 }
     }
 }
+
+// todo: these can be const.
 
 impl From<Square> for Bitboard {
     fn from(sq: Square) -> Self {

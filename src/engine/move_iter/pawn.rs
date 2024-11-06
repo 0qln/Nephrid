@@ -57,6 +57,9 @@ pub struct PseudoLegalPawnMovesInfo<'a, const C: TColor> {
     pieces: Bitboard,
 }
 
+// todo: theres still a lot of duplicate calculations in the 
+// iterator initiations. benchmark, wether it's worth to 
+// cache the results here or not.
 impl<'a, const C: TColor> PseudoLegalPawnMovesInfo<'a, C> {
     pub fn new(pos: &'a Position) -> Self {
         let color = color(C);
