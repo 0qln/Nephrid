@@ -1,4 +1,5 @@
-use std::{cmp::max, result};
+use std::{cmp::max, mem};
+use std::sync::OnceLock;
 
 use crate::engine::{bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}};
 
@@ -19,28 +20,34 @@ const BITS: [MagicBits; 64] = [
   12, 11, 11, 11, 11, 11, 11, 12  
 ];
 
-// todo: should this be heap allocated?
-static ATTACKS: [Box<[Bitboard]>; 64];
+// todo: should this be heap or stack allocated?
+static ATTACKS: [&'static [Bitboard]; 64] = initialize_attacks();
 
-fn init_rook_attacks(sq: Square) -> Box<[Bitboard]> {
-    let mut key_max = 0;
-    let max_blockers = relevant_occupancy(sq);
-    let num_blocker_compositions = 1 << max_blockers.v.count_ones();
-    let result = Vec::<Bitboard>::new();
-    
-    for i in 0..num_blocker_compositions {
-        let occupied = map_bits(i, max_blockers);
-        let computed = compute_attacks(sq, occupied);
-        let sq_usize: usize = sq.into();
-        let key = get_key(computed, MAGICS[sq_usize], BITS[sq_usize]);
-        result[key] = computed;
-        key_max = max(key, key_max);
-    }
-    
-    Box::new(result.as_slice())
+const fn initialize_attacks() -> [&'static [Bitboard]; 64] {
+    std::array::from_fn(|sq_index| {
+        let mut key_max = 0;
+        let sq = Square::try_from(sq_index).unwrap();
+        let max_blockers = relevant_occupancy(sq);
+        let num_blocker_compositions = 1 << max_blockers.v.count_ones();
+        let mut buffer: Vec<Bitboard> = Vec::with_capacity((1 << 6) * (1 << 6));
+        for i in 0..num_blocker_compositions {
+            let occupied = map_bits(i, max_blockers);
+            let attacks = compute_attacks(sq, occupied);
+            let key = get_key(occupied, MAGICS[sq_index], BITS[sq_index]);
+            key_max = max(key_max, key);
+            buffer[key] = attacks
+        }
+
+        &Box::leak(buffer.into_boxed_slice())[..=key_max]
+    })
 }
 
-/// Maps the bits of the index into allowed bits (defined by mask).
+fn get_attacks() -> &'static [Box<&'static [Bitboard]>; 64] {
+    ATTACKS.get_or_init(initialize_attacks)
+}
+
+
+/// Maps the specified bits into allowed bits (defined by mask).
 /// If the mask does not specify atleast the number of bits in 
 /// needed for a complete mapping, the remaining bits are cut off.
 fn map_bits(mut bits: usize, mask: Bitboard) -> Bitboard {
@@ -60,7 +67,7 @@ pub fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     (&ATTACKS[sq])[key as usize]
 }
 
-fn relevant_occupancy(sq: Square) -> Bitboard {
+const fn relevant_occupancy(sq: Square) -> Bitboard {
     let mut result = relevant_squares_from_file(File::from(sq)) | relevant_squares_from_rank(Rank::from(sq));
     result &= !Bitboard::from(sq);
     result

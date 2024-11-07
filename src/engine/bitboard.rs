@@ -76,9 +76,19 @@ impl Bitboard {
     pub const fn split_south(sq: Square) -> Self {
         Self { v: !0 >> sq.v() >> 1 }
     }
-}
+    
+    const fn from_sq(sq: Square) -> Self {
+        Bitboard { v: 1 << sq.v() }
+    }
 
-// todo: these can be const.
+    const fn from_file(file: File) -> Self {
+        Bitboard { v: 0x0101010101010101u64 << file.v()}
+    }
+
+    const fn from_rank(rank: Rank) -> Self {
+        Bitboard { v: 0xFFu64 << rank.v() }
+    }
+}
 
 impl From<Square> for Bitboard {
     fn from(sq: Square) -> Self {

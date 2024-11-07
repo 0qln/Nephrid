@@ -86,6 +86,18 @@ impl TryFrom<u8> for Square {
     }
 }
 
+impl TryFrom<usize> for Square {
+    type Error = anyhow::Error;
+
+    #[inline]
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            0..=64 => Ok(Square { v: value as u8 }),
+            _ => Err(anyhow::Error::msg("Square value out of range")),
+        }
+    }
+} 
+
 impl TryFrom<u16> for Square {
     type Error = anyhow::Error;
 
@@ -146,6 +158,11 @@ impl Rank {
     pub const _6: Rank = Rank { v: 5 }; 
     pub const _7: Rank = Rank { v: 6 }; 
     pub const _8: Rank = Rank { v: 7 };
+    
+    #[inline]
+    pub const fn v(&self) -> u8 {
+        self.v
+    }
 }
 
 impl From<Square> for Rank {
@@ -191,6 +208,11 @@ impl File {
     pub const F: File = File { v: 5 }; 
     pub const G: File = File { v: 6 }; 
     pub const H: File = File { v: 7 };
+    
+    #[inline]
+    pub const fn v(&self) -> u8 {
+        self.v
+    }
 }
 
 impl Into<u8> for File {
