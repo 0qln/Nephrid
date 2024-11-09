@@ -1,10 +1,10 @@
-use crate::uci::tokens::Tokenizer;
+use crate::{misc::{ConstDefault, ConstFrom}, uci::tokens::Tokenizer};
 use std::ops;
 
 
 #[derive(Copy, Clone, Debug)]
 pub struct CompassRose {
-    pub v: isize,
+    v: isize,
 }
 
 impl CompassRose {
@@ -26,10 +26,15 @@ impl CompassRose {
     pub const SOSOEA: CompassRose = CompassRose { v: 2 * CompassRose::SOUT.v + CompassRose::EAST.v };
     pub const SOWEWE: CompassRose = CompassRose { v: CompassRose::SOUT.v + 2 * CompassRose::WEST.v };
     pub const SOEAEA: CompassRose = CompassRose { v: CompassRose::SOUT.v + 2 * CompassRose::EAST.v };
+    
+    pub const fn v(&self) -> isize { self.v }
+    
+    pub const fn new(v: isize) -> Self { CompassRose { v } }
+    
+    pub const fn double(&self) -> Self { CompassRose { v: self.v * 2 } }
 }
 
 impl_op!(* |a: CompassRose, b: isize| -> CompassRose { CompassRose { v: (a.v) * b } } );
-// impl_op!(- |a: CompassRose| -> isize { -(a as isize) } );
 impl_op!(+ |a: CompassRose, b: isize| -> CompassRose { CompassRose { v: a.v + b } } );
 impl_op!(+ |a: isize, b: CompassRose| -> CompassRose { CompassRose { v: a + b.v } } );
 
@@ -49,28 +54,36 @@ pub enum Squares {
 #[derive(Copy, Clone, PartialEq)]
 pub struct Square { v: u8 }
 
+impl_op!(<< |a: usize, b: Square| -> usize { a << b.v } );
+
 impl Square {
     #[inline]
     pub const fn v(&self) -> u8 {
         self.v
     }
     
-    pub const NONE: Square = Square { v: Squares::None as u8 };
+    pub const NONE: Square = Square::from_c(Squares::None);
+    
+    /// Create a square from a value in range [0, 64].
+    /// This is unsafe, because the value is not checked.
+    /// Only use this if you have certain knowledge of the v's range.
+    #[inline]
+    pub const unsafe fn from_v(v: u8) -> Self {
+        Square { v }
+    }
 }
 
-impl_op!(<< |a: usize, b: Square| -> usize { a << b.v } );
-
-impl Into<usize> for Square {
+impl const ConstDefault for Square {
     #[inline]
-    fn into(self) -> usize {
-        self.v as usize
+    fn default_c() -> Self {
+        Square::from_c(Squares::None)
     }
 }
 
 impl Default for Square {
     #[inline]
     fn default() -> Self {
-        Square::from(Squares::None)
+        Self::default_c()
     }
 }
 
@@ -106,16 +119,16 @@ impl TryFrom<u16> for Square {
     }
 }
 
-impl From<Squares> for Square {
+impl const ConstFrom<Squares> for Square {
     #[inline]
-    fn from(value: Squares) -> Self {
+    fn from_c(value: Squares) -> Self {
         Square { v: value as u8 }
     }
 }
 
-impl From<(File, Rank)> for Square {
+impl const ConstFrom<(File, Rank)> for Square {
     #[inline]
-    fn from(value: (File, Rank)) -> Self {
+    fn from_c(value: (File, Rank)) -> Self {
         Square{ v: value.0.v + value.1.v * 8u8 }
     }
 }
@@ -126,7 +139,7 @@ impl TryFrom<&mut Tokenizer<'_>> for Square {
     #[inline]
     fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let file = match tokens.next() {
-            Some('-') => return Ok(Square::from(Squares::None)),
+            Some('-') => return Ok(Square::from_c(Squares::None)),
             Some(c) => File::try_from(c)?,
             None => return Err(anyhow::Error::msg("Empty string")),
         };
@@ -134,16 +147,16 @@ impl TryFrom<&mut Tokenizer<'_>> for Square {
             Some(c) => Rank::try_from(c)?,
             None => return Err(anyhow::Error::msg("No rank specified")),
         };
-        Ok(Square::from((file, rank)))
+        Ok(Square::from_c((file, rank)))
     }
 }
 
-impl From<&str> for Square {
-    #[inline]
-    fn from(value: &str) -> Self {
-        todo!()
-    }
-}
+// impl From<&str> for Square {
+//     #[inline]
+//     fn from(value: &str) -> Self {
+//         todo!()
+//     }
+// }
 
 
 #[derive(PartialEq)]
@@ -165,9 +178,9 @@ impl Rank {
     }
 }
 
-impl From<Square> for Rank {
+impl const ConstFrom<Square> for Rank {
     #[inline]
-    fn from(sq: Square) -> Self {
+    fn from_c(sq: Square) -> Self {
         Rank { v: sq.v / 8 }
     }
 }
@@ -215,16 +228,9 @@ impl File {
     }
 }
 
-impl Into<u8> for File {
+impl const ConstFrom<Square> for File {
     #[inline]
-    fn into(self) -> u8 {
-        self.v
-    }
-}
-
-impl From<Square> for File {
-    #[inline]
-    fn from(sq: Square) -> Self {
+    fn from_c(sq: Square) -> Self {
         File { v: sq.v % 8 }
     }
 }

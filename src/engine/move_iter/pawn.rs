@@ -1,4 +1,4 @@
-use crate::engine::coordinates::{Rank, Square};
+use crate::engine::coordinates::{Rank, Square, Squares};
 use crate::engine::{
     bitboard::Bitboard,
     color::Color,
@@ -7,6 +7,7 @@ use crate::engine::{
     position::Position,
     r#move::{Move, MoveFlag},
 };
+use crate::misc::{ConstDefault, ConstFrom};
 
 pub mod move_type {
     pub struct Legals;
@@ -36,18 +37,18 @@ const fn single_step(c: TColor) -> CompassRose {
 }
 
 const fn double_step(c: TColor) -> CompassRose {
-    CompassRose { v: single_step(c).v * 2 }
+    single_step(c).double()
 }
 
 
 type TCompassRose = isize;
 
 const fn compass_rose(dir: TCompassRose) -> CompassRose {
-    CompassRose { v: dir }
+    CompassRose::new(dir)
 }
 
 const fn edge_file(dir: TCompassRose) -> File {
-    if dir == CompassRose::WEST.v { File::A } else { File::H }
+    if dir == CompassRose::WEST.v() { File::A } else { File::H }
 }
 
 pub struct PseudoLegalPawnMovesInfo<'a, const C: TColor> {
@@ -84,7 +85,7 @@ pub struct PseudoLegalPawnMoves {
 impl PseudoLegalPawnMoves {
 
     pub fn new_single_step<'a, const C: TColor>(info: &'a PseudoLegalPawnMovesInfo<C>) -> Self {
-        let non_promo_pawns = info.pawns & !Bitboard::from(promo_rank(C));
+        let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(C));
         let single_step_blocker = info.pieces >> single_step(C);
         let to = (non_promo_pawns & !single_step_blocker) << single_step(C);
         let from = to >> single_step(C);
@@ -96,19 +97,19 @@ impl PseudoLegalPawnMoves {
     }
 
     pub fn new_capture_west<const C: TColor>(info: &PseudoLegalPawnMovesInfo<C>) -> Self {
-        const WEST: TCompassRose = CompassRose::WEST.v;
+        const WEST: TCompassRose = CompassRose::WEST.v();
         Self::new_capture::<C, WEST>(info)
     }
 
     pub fn new_capture_east<const C: TColor>(info: &PseudoLegalPawnMovesInfo<C>) -> Self {
-        const EAST: TCompassRose = CompassRose::EAST.v;
+        const EAST: TCompassRose = CompassRose::EAST.v();
         Self::new_capture::<C, EAST>(info)
     }
 
     fn new_capture<const C: TColor, const Dir: TCompassRose>(info: &PseudoLegalPawnMovesInfo<C>) -> Self {
-        let non_promo_pawns = info.pawns & !Bitboard::from(promo_rank(C));
+        let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(C));
         let capture_dir = Dir + single_step(C);
-        let capturing_pawns = non_promo_pawns & !Bitboard::from(edge_file(Dir));
+        let capturing_pawns = non_promo_pawns & !Bitboard::from_c(edge_file(Dir));
         let to = (capturing_pawns << capture_dir) & info.enemies;
         let from = to >> capture_dir;
         Self {
@@ -121,7 +122,7 @@ impl PseudoLegalPawnMoves {
     pub fn new_double_step<const C: TColor>(info: &PseudoLegalPawnMovesInfo<C>) -> Self {
         let single_step_blockers = info.pieces << single_step(C);
         let double_step_blockers = single_step_blockers | info.pieces << double_step(C);
-        let double_step_pawns = info.pawns & Bitboard::from(start_rank(C));
+        let double_step_pawns = info.pawns & Bitboard::from_c(start_rank(C));
         let to = (double_step_pawns & !double_step_blockers) << double_step(C);
         let from = to >> double_step(C);
         Self {
@@ -132,7 +133,7 @@ impl PseudoLegalPawnMoves {
     }
     fn new_promo<const C: TColor>(info: &PseudoLegalPawnMovesInfo<C>, flag: MoveFlag) -> Self {
         let single_step_blocker = info.pieces << single_step(C);
-        let promo_pawns = info.pawns & Bitboard::from(promo_rank(C));
+        let promo_pawns = info.pawns & Bitboard::from_c(promo_rank(C));
         let to = (promo_pawns & !single_step_blocker) << single_step(C);
         let from = to >> single_step(C);
         Self {
@@ -155,8 +156,8 @@ impl PseudoLegalPawnMoves {
     }
 
     fn new_promo_capture<const C: TColor, const Dir: TCompassRose>(info: &PseudoLegalPawnMovesInfo<C>, flag: MoveFlag) -> Self {
-        let promo_pawns = info.pawns & Bitboard::from(promo_rank(C));
-        let capture_west_pawns = promo_pawns & !Bitboard::from(edge_file(Dir));
+        let promo_pawns = info.pawns & Bitboard::from_c(promo_rank(C));
+        let capture_west_pawns = promo_pawns & !Bitboard::from_c(edge_file(Dir));
         let capture_dir = Dir + single_step(C);
         let to = (capture_west_pawns << capture_dir) & info.enemies;
         let from = to >> capture_dir;
@@ -167,11 +168,11 @@ impl PseudoLegalPawnMoves {
         }
     }
     fn new_promo_capture_west<const C: TColor>(info: &PseudoLegalPawnMovesInfo<C>, flag: MoveFlag) -> Self {
-        const WEST: TCompassRose = CompassRose::WEST.v;
+        const WEST: TCompassRose = CompassRose::WEST.v();
         Self::new_promo_capture::<C, WEST>(info, flag)
     }
     fn new_promo_capture_east<const C: TColor>(info: &PseudoLegalPawnMovesInfo<C>, flag: MoveFlag) -> Self {
-        const EAST: TCompassRose = CompassRose::EAST.v;
+        const EAST: TCompassRose = CompassRose::EAST.v();
         Self::new_promo_capture::<C, EAST>(info, flag)
     }
 
@@ -201,17 +202,17 @@ impl PseudoLegalPawnMoves {
     }
 
     pub fn new_ep_west<const C: TColor>(info: &PseudoLegalPawnMovesInfo<C>) -> Self {
-        const WEST: TCompassRose = CompassRose::WEST.v;
+        const WEST: TCompassRose = CompassRose::WEST.v();
         Self::new_ep::<C, WEST>(info)
     }
     pub fn new_ep_east<const C: TColor>(info: &PseudoLegalPawnMovesInfo<C>) -> Self {
-        const EAST: TCompassRose = CompassRose::EAST.v;
+        const EAST: TCompassRose = CompassRose::EAST.v();
         Self::new_ep::<C, EAST>(info)
     }
     // todo: what happens when u64 << 64? (case when ep square is NONE)
     fn new_ep<const C: TColor, const Dir: TCompassRose>(info: &PseudoLegalPawnMovesInfo<C>) -> Self {
-        let to = Bitboard::from(info.pos.get_ep_square());
-        let capturing_pawns = info.pawns & !Bitboard::from(edge_file(Dir));
+        let to = Bitboard::from_c(info.pos.get_ep_square());
+        let capturing_pawns = info.pawns & !Bitboard::from_c(edge_file(Dir));
         let capture_dir = Dir + single_step(C);
         let from = ((capturing_pawns << capture_dir) & to) >> capture_dir;
         // todo: 

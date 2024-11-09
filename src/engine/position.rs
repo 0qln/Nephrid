@@ -9,8 +9,7 @@ use crate::{
         piece::{Piece, PieceType}, 
         turn::Turn, 
         zobrist
-    }, 
-    uci::tokens::Tokenizer
+    }, misc::ConstFrom, uci::tokens::Tokenizer
 };
 
 use super::ply::Ply;
@@ -81,7 +80,7 @@ impl Position {
     
     #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece {
-        self.pieces[Into::<usize>::into(sq)]
+        self.pieces[sq.v() as usize]
     }
 
     #[inline]
@@ -95,25 +94,25 @@ impl Position {
     }
     
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
-        let target = Bitboard::from(sq.clone());
+        let target = Bitboard::from_c(sq);
         self.t_bitboards[piece.piece_type as usize] |= target;
         self.c_bitboards[piece.color as usize] |= target;
-        self.pieces[Into::<usize>::into(sq)] = piece;
+        self.pieces[sq.v() as usize] = piece;
         self.piece_counts[piece.piece_type as usize] += 1;
     }
     
     pub fn remove_piece(&mut self, sq: Square) {
-        let target = Bitboard::from(sq.clone());
+        let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
         self.t_bitboards[piece.piece_type as usize] ^= target;
         self.c_bitboards[piece.color as usize] ^= target;
-        self.pieces[Into::<usize>::into(sq)] = Piece::default();
+        self.pieces[sq.v() as usize] = Piece::default();
         self.piece_counts[self.get_piece(sq).piece_type as usize] -= 1;
     }  
 
     pub fn make_move(&mut self, m: Move) {
         let us = self.get_turn();
-        let from = m
+        // let from = m
     }
 
 }
@@ -150,7 +149,7 @@ impl Into<String> for &Position {
             result.push_str(&(rank + 1).to_string());
             result.push(' ');
             for file in 0..=7 {
-                let sq = Square::from((
+                let sq = Square::from_c((
                     File::try_from(file).unwrap(), 
                     Rank::try_from(rank).unwrap()
                 ));

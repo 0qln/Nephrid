@@ -1,52 +1,39 @@
-use types::{Limit, Target};
-use crate::engine::move_iter::legal_moves;
+use mode::Mode;
+use target::Target;
+use limit::Limit;
 use crate::uci::sync::CancellationToken;
 
-use crate::engine::{
-    ply::Ply,
-    position::Position
-    ,
-};
-mod types;
+use crate::engine::position::Position;
+
+pub mod mode;
+pub mod target;
+pub mod limit;
 
 #[derive(Debug, Default)]
-pub enum Mode {
-    #[default]
-    Normal,
-    Ponder,
-    Perft
-}
-
-
-#[derive(Debug, Default)]
-pub struct Search<'a> {
+pub struct Search {
     pub limit: Limit,
-    pub target: Target<'a>,
+    pub target: Target,
     pub mode: Mode,
 }
 
-impl Search<'_> {
+impl Search {
     pub fn reset() {
         todo!()
     }
 
-    pub fn go(position: &mut Position, cancellation_token: CancellationToken) {
-        todo!()
-    }
-
-    pub fn perft(position: &mut Position, ply: Ply, cancellation_token: CancellationToken) -> u64 {
+    pub fn perft(position: &mut Position, cancellation_token: CancellationToken) -> u64 {
         let mut result = 1;
 
-        for m in legal_moves(&position) {
-            position.make_move(m);
-            result += Self::perft(position, ply - 1, cancellation_token);
-            position.unmake_move();
-        }
+        // for m in legal_moves(&position) {
+        //     position.make_move(m);
+        //     result += Self::perft(position, ply - 1, cancellation_token);
+        //     position.unmake_move();
+        // }
 
         result
     }
 
-    pub fn search(position: &mut Position, cancellation_token: CancellationToken) {
+    pub fn go(&self, mut position: Position, cancellation_token: CancellationToken) {
         todo!()
     }
 }

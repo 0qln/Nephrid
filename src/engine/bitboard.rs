@@ -1,10 +1,7 @@
 use std::ops;
-use crate::engine::coordinates::{
-    Square,
-    File,
-    Rank,
-    CompassRose
-};
+use crate::{engine::coordinates::{
+    CompassRose, File, Rank, Square
+}, misc::ConstFrom};
 
 #[derive(Copy, Clone, Default)]
 pub struct Bitboard { pub v: u64 }
@@ -45,65 +42,71 @@ impl Bitboard {
     pub const fn full() -> Self {
         Self { v: !0 }
     }
+    
+    // todo: remove
+    pub const fn next(&mut self) -> Option<Square> {
+        match self.v {
+            0 => None,
+            _ => Some(self.pop_lsb()),
+        }
+    } 
+   
+    // todo: test
+    /// Most significant bit
+    pub const fn msb(&self) -> Square {
+        // Safety: trailing_zeros of an u64 returns a valid square (0..=64)
+        unsafe {
+            Square::from_v(self.v.leading_zeros() as u8)
+        }
+    }
 
     // todo: test
-    pub fn msb(&self) -> Square {
+    /// Least significant bit
+    pub const fn lsb(&self) -> Square {
         // Safety: trailing_zeros of an u64 returns a valid square (0..=64)
         unsafe {
-            Square::try_from(self.v.leading_zeros() as u8).unwrap_unchecked()
+            Square::from_v(self.v.trailing_zeros() as u8)
         }
     }
-
-    pub fn lsb(&self) -> Square {
-        // Safety: trailing_zeros of an u64 returns a valid square (0..=64)
-        unsafe {
-            Square::try_from(self.v.trailing_zeros() as u8).unwrap_unchecked()
-        }
-    }
- 
-    pub fn pop_lsb(&mut self) -> Square {
+    
+    /// Pop least significant bit and return it.
+    pub const fn pop_lsb(&mut self) -> Square {
         let lsb = self.lsb();
-        *self &= *self - Bitboard { v: 1 };
+        self.v &= self.v - 1u64;
         lsb
     }
     
     // todo: test
     pub const fn split_north(sq: Square) -> Self {
-        Self { v: !0 << sq.v() << 1 }
+        // Safety: Square is a value 0..=64
+        unsafe {
+            let sq = sq.v() as u32;
+            let (res, overflow) = (!0u64).overflowing_shl(sq + 1);
+            let res = if overflow { 0 } else { res };
+            Self { v: res }
+        }
     }
     
     // todo: test
     pub const fn split_south(sq: Square) -> Self {
-        Self { v: !0 >> sq.v() >> 1 }
+        Self { v: !0u64 >> sq.v() >> 1u64 }
     }
-    
-    const fn from_sq(sq: Square) -> Self {
-        Bitboard { v: 1 << sq.v() }
-    }
+}
 
-    const fn from_file(file: File) -> Self {
+impl const ConstFrom<Square> for Bitboard {
+    fn from_c(sq: Square) -> Self {
+        Bitboard { v: 1u64 << sq.v() }
+    }
+}
+
+impl const ConstFrom<File> for Bitboard {
+    fn from_c(file: File) -> Self {
         Bitboard { v: 0x0101010101010101u64 << file.v()}
     }
+}
 
-    const fn from_rank(rank: Rank) -> Self {
+impl const ConstFrom<Rank> for Bitboard {
+    fn from_c(rank: Rank) -> Self {
         Bitboard { v: 0xFFu64 << rank.v() }
-    }
-}
-
-impl From<Square> for Bitboard {
-    fn from(sq: Square) -> Self {
-        Bitboard { v: 1 << sq.v() }
-    }
-}
-
-impl From<File> for Bitboard {
-    fn from(file: File) -> Self {
-        Bitboard { v: 0x0101010101010101 } << file
-    }
-}
-
-impl From<Rank> for Bitboard {
-    fn from(rank: Rank) -> Self {
-        Bitboard { v: 0xFF } << rank
     }
 }

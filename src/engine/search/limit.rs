@@ -1,8 +1,6 @@
-use crate::engine::depth::Depth;
-use crate::engine::r#move::MoveList;
-
 #[derive(Debug)]
 pub struct Limit {
+    pub is_active: bool,
     pub wtime: u64,
     pub btime: u64,
     pub winc: u64,
@@ -15,6 +13,7 @@ pub struct Limit {
 impl Limit {
     pub fn max() -> Self {
         Self {
+            is_active: false,
             wtime: u64::MAX,
             btime: u64::MAX,
             winc: u64::MAX,
@@ -29,6 +28,7 @@ impl Limit {
 impl Default for Limit {
     fn default() -> Self {
         Self {
+            is_active: true,
             wtime: u64::MAX,
             btime: u64::MAX,
             winc: 0,
@@ -38,11 +38,4 @@ impl Default for Limit {
             movetime: u64::MAX,
         }
     }
-}
-
-#[derive(Debug, Default)]
-pub struct Target<'a> {
-    pub mate: Depth,
-    pub depth: Depth,
-    pub search_moves: MoveList<'a>,
 }

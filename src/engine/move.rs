@@ -2,8 +2,7 @@ use crate::{
     engine::{
         coordinates::{ File, Square}, 
         piece::PieceType, position::Position 
-    }, 
-    uci::tokens::Tokenizer
+    }, misc::ConstFrom, uci::tokens::Tokenizer
 };
 use std::marker::PhantomData;
 use super::piece::PromotionPieceType;
@@ -158,7 +157,7 @@ impl TryFrom<MoveNotation<'_, '_, LongAlgebraicNotationUci>> for Move {
                 }
             }
             PieceType::King if abs_dist == 2 => {
-                match File::from(to) {
+                match File::from_c(to) {
                     File::G => flag = MoveFlag::KING_CASTLE,
                     File::C => flag = MoveFlag::QUEEN_CASTLE,
                     _ => { }
