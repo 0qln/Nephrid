@@ -8,6 +8,10 @@
 #![feature(const_for)]
 #![feature(const_heap)]
 #![feature(unchecked_shifts)]
+#![feature(debug_closure_helpers)]
+#![feature(generic_const_exprs)]
+#![allow(incomplete_features)]
+
 #[macro_use]
 extern crate impl_ops;
 
@@ -15,9 +19,9 @@ use engine::{Engine, execute_uci};
 use std::io::stdin;
 use uci::{sync::{self, CancellationToken}, tokens::Tokenizer};
 
-mod engine;
-mod misc;
-mod uci;
+pub mod engine;
+pub mod misc;
+pub mod uci;
 
 fn main() {
     let input_stream = stdin();

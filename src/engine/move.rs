@@ -2,7 +2,7 @@ use crate::{
     engine::{
         coordinates::{ File, Square}, 
         piece::PieceType, position::Position 
-    }, misc::ConstFrom, uci::tokens::Tokenizer
+    }, misc::{ConstFrom, ParseError}, uci::tokens::Tokenizer
 };
 use std::marker::PhantomData;
 use super::piece::PromotionPieceType;
@@ -50,13 +50,13 @@ impl MoveFlag {
 }
 
 impl TryFrom<u8> for MoveFlag {
-    type Error = anyhow::Error;
+    type Error = ParseError;
     
     #[inline]
-    fn try_from(value: u8) -> anyhow::Result<Self> {
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0..=13 => Ok(MoveFlag { v: value }),
-            _ => Err(anyhow::Error::msg("MoveFlag value out of range")),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }
@@ -102,10 +102,11 @@ impl Move {
     }
     
     #[inline]
-    pub fn get_from(&self) -> Square {
-        // Safety: 6 bits can only ever contain a value in range [0, 63]
+    pub const fn get_from(&self) -> Square {
+        // Safety: 6 bits can only ever contain a value in range 0..64
         unsafe {
-            Square::try_from((self.v & Move::MASK_FROM) >> Move::SHIFT_FROM).unwrap_unchecked()
+            let val = (self.v & Move::MASK_FROM) >> Move::SHIFT_FROM;
+            Square::from_v(val as u8)
         }
     }
     
@@ -127,11 +128,11 @@ impl Move {
 }
 
 impl TryFrom<MoveNotation<'_, '_, LongAlgebraicNotationUci>> for Move {
-    type Error = anyhow::Error;
+    type Error = ParseError;
 
-    fn try_from(move_notation: MoveNotation<'_, '_, LongAlgebraicNotationUci>) -> anyhow::Result<Self> {
-        let from = Square::try_from(&mut *move_notation.tokens)?;
-        let to = Square::try_from(&mut *move_notation.tokens)?;
+    fn try_from(move_notation: MoveNotation<'_, '_, LongAlgebraicNotationUci>) -> Result<Self, Self::Error> {
+        let from = Option::<Square>::try_from(&mut *move_notation.tokens)?.ok_or(ParseError::MissingInput)?;
+        let to = Option::<Square>::try_from(&mut *move_notation.tokens)?.ok_or(ParseError::MissingInput)?;
         let moving_p = move_notation.context.get_piece(from);
         let captured_p = move_notation.context.get_piece(to);
         let abs_dist = from.v().abs_diff(to.v());

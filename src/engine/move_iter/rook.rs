@@ -74,6 +74,7 @@ const fn relevant_squares_from_rank(rank: Rank) -> Bitboard {
     Bitboard { v: relevant_files & rank.v }
 }
 
+/// Computes the attacks of the rook on the square `sq` with the given `occupancy`.
 const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let file = File::from_c(sq);
     let rank = Rank::from_c(sq);
@@ -87,28 +88,50 @@ const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let ray = file_bb.v & sout_bb.v;
     let occupands = Bitboard { v: occupancy.v & ray };
     let nearest = occupands.msb();
-    let moves = (Bitboard::split_north(nearest).v << CompassRose::SOUT.v()) & ray;
+    // todo: this is an inlined 'map_or'. When nightly rust provides 
+    // it, this should be replaced again. The others are the same
+    let range = {
+        let default = Bitboard::full();
+        let f = Bitboard::split_north;
+        match nearest {
+            Some(t) => f(t),
+            None => default,
+        }
+    };
+    let moves = (range.v << CompassRose::SOUT.v()) & ray;
     result.v |= moves;
     
     // north
     let ray = file_bb.v & nort_bb.v;
     let occupands = Bitboard { v: occupancy.v & ray };
     let nearest = occupands.lsb();
-    let moves = (Bitboard::split_south(nearest).v << CompassRose::NORT.v()) & ray;
+    let range = match nearest {
+        Some(t) => Bitboard::split_south(t),
+        None => Bitboard::empty(),
+    };
+    let moves = (range.v << CompassRose::NORT.v()) & ray;
     result.v |= moves;
     
     // west
     let ray = rank_bb.v & sout_bb.v;
     let occupands = Bitboard { v: occupancy.v & ray };
     let nearest = occupands.msb();
-    let moves = (Bitboard::split_north(nearest).v << CompassRose::WEST.v()) & ray;
+    let range = match nearest {
+        Some(t) => Bitboard::split_north(t),
+        None => Bitboard::empty(),
+    };
+    let moves = (range.v << CompassRose::WEST.v()) & ray;
     result.v |= moves;
     
     // east
     let ray = rank_bb.v & nort_bb.v;
     let occupands = Bitboard { v: occupancy.v & ray };
     let nearest = occupands.lsb();
-    let moves = (Bitboard::split_south(nearest).v << CompassRose::EAST.v()) & ray;
+    let range = match nearest {
+        Some(t) => Bitboard::split_south(t),
+        None => Bitboard::full(),
+    };
+    let moves = (range.v << CompassRose::EAST.v()) & ray;
     result.v |= moves;
     
     result

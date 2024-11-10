@@ -1,10 +1,22 @@
 use std::ops;
-use anyhow;
 
-#[derive(PartialEq, Copy, Clone)]
+use crate::misc::ParseError;
+
+pub type TColor = bool;
+
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub enum Color {
-    White = 0,
-    Black = 1,
+    Black = true as isize,
+    White = false as isize,
+}
+
+impl Color {
+    pub fn new(val: TColor) -> Self {
+        match val {
+            true => Color::Black,
+            false => Color::White
+        }
+    }
 }
 
 impl Default for Color {
@@ -25,23 +37,14 @@ impl ops::Not for Color {
 }
 
 impl TryFrom<char> for Color {
-    type Error = anyhow::Error;
+    type Error = ParseError;
     
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'w' => Ok(Color::White),
             'b' => Ok(Color::Black),
-            _ => Err(anyhow::Error::msg("Invalid char")),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
-    }
-}
-
-impl TryFrom<&str> for Color {
-    type Error = anyhow::Error;
-    
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        let first = value.chars().next().ok_or(anyhow::Error::msg("Empty string"))?;
-        first.try_into()
     }
 }
 

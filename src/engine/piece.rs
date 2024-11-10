@@ -1,4 +1,4 @@
-use crate::engine::color::Color;
+use crate::{engine::color::Color, misc::ParseError};
 
 pub enum PromotionPieceType {
     Knight = PieceType::Knight as isize,
@@ -31,21 +31,21 @@ impl Default for PieceType {
 }
 
 impl TryFrom<char> for PromotionPieceType {
-    type Error = anyhow::Error;
+    type Error = ParseError;
  
-    fn try_from(value: char) -> anyhow::Result<Self> {
+    fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'n' => Ok(PromotionPieceType::Knight),
             'b' => Ok(PromotionPieceType::Bishop),
             'r' => Ok(PromotionPieceType::Rook),
             'q' => Ok(PromotionPieceType::Queen),
-            _ => Err(anyhow::Error::msg("Invalid char")),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }
 
 impl TryFrom<char> for PieceType {
-    type Error = anyhow::Error;
+    type Error = ParseError;
     
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
@@ -56,7 +56,7 @@ impl TryFrom<char> for PieceType {
             'q' => Ok(PieceType::Queen),
             'k' => Ok(PieceType::King),
             '.' => Ok(PieceType::None),
-            _ => Err(anyhow::Error::msg("Invalid char")),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }
@@ -92,7 +92,7 @@ impl Default for Piece {
 }
 
 impl TryFrom<char> for Piece {
-    type Error = anyhow::Error;
+    type Error = ParseError;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         let piece_type = PieceType::try_from(value.to_ascii_lowercase())?;

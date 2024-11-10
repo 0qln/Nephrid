@@ -7,3 +7,17 @@ edition = "2021"
 anyhow = "1.0.86"
 crunchy = "0.2.2"
 impl_ops = "0.1.1"
+thiserror = "2.0.1"
+typenum = "1.17.0"
+
+[profile.test]
+opt-level = 2
+
+[profile.dev]
+opt-level = 1
+
+[profile.bench]
+opt-level = 3
+
+[profile.release]
+opt-level = 3

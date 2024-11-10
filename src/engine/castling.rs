@@ -1,8 +1,6 @@
-use crate::engine::{
-    color::Color,
-    piece::PieceType,
-    fen::Fen
-};
+use crate::{engine::{
+    color::Color, fen::Fen, piece::PieceType
+}, misc::ParseError};
 
 
 pub enum CastlingSide {
@@ -15,7 +13,7 @@ pub enum CastlingSide {
 pub struct CastlingRights { v: u32 }
 
 impl TryFrom<&mut Fen<'_>> for CastlingRights {
-    type Error = anyhow::Error;
+    type Error = ParseError;
     
     fn try_from(value: &mut Fen<'_>) -> Result<Self, Self::Error> {
         let mut result = CastlingRights::default();
@@ -26,7 +24,7 @@ impl TryFrom<&mut Fen<'_>> for CastlingRights {
                 'k' => result.set_true(CastlingSide::KingSide, Color::Black),
                 'q' => result.set_true(CastlingSide::QueenSide, Color::Black),
                 '-' => return Ok(result),
-                _ => return Err(anyhow::Error::msg("Invalid char")),
+                x => return Err(ParseError::InputOutOfRange(Box::new(x))),
             }
         };
         Ok(result)

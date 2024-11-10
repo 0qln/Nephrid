@@ -1,24 +1,63 @@
-use crate::engine::color::Color;
-use std::ops;
+use crate::misc::ParseError;
+use super::{fen::Fen, turn::Turn};
 
-#[derive(Default, Clone)]
-pub struct Ply { v: u16 }
+#[derive(Default, Clone, Copy, Debug)]
+pub struct FullMoveCount { pub v: u16 }
 
-impl Ply {
-    pub fn new(fmc: u16, turn: Color) -> Self {
+impl TryFrom<&str> for FullMoveCount {
+    type Error = ParseError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value.parse::<u16>() {
+            Ok(v) => Ok(FullMoveCount { v }),
+            Err(e) => return Err(ParseError::ParseIntError(e)),
+        }
+    }
+}
+
+impl TryFrom<&mut Fen<'_>> for FullMoveCount {
+    type Error = ParseError;
+
+    fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
+        match fen.collect_token() {
+            None => return Err(ParseError::MissingInput),
+            Some(tok) => FullMoveCount::try_from(tok.as_str()),
+        }
+    }
+}
+
+#[derive(Default, Clone, Copy, Debug)]
+pub struct Ply { pub v: u16 }
+
+// todo: test
+impl From<(FullMoveCount, Turn)> for Ply {
+    fn from(value: (FullMoveCount, Turn)) -> Self {
+        let (fmc, turn) = value;
         match turn {
-            Color::White => Self { v: 2 * fmc },
-            Color::Black => Self { v: 2 * fmc + 1 },
-        }       
+            Turn::White => Self { v: 2 * fmc.v },
+            Turn::Black => Self { v: 2 * fmc.v + 1 },
+        }      
     }
 }
 
-impl From<u16> for Ply {
-    fn from(value: u16) -> Self {
-        Self { v: value }
+impl TryFrom<&str> for Ply {
+    type Error = ParseError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value.parse::<u16>() {
+            Ok(v) => Ok(Ply { v }),
+            Err(e) => return Err(ParseError::ParseIntError(e)),
+        }
     }
 }
 
-impl_op!(+ |l: Ply, r: Ply| -> Ply { l + r });
-impl_op!(- |l: Ply, r: Ply| -> Ply { l - r });
-impl_op!(- |l: Ply, r: u32| -> Ply { l - r });
+impl TryFrom<&mut Fen<'_>> for Ply {
+    type Error = ParseError;
+
+    fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
+        match fen.collect_token() {
+            None => return Err(ParseError::MissingInput),
+            Some(tok) => Ply::try_from(tok.as_str()),
+        }
+    }
+}

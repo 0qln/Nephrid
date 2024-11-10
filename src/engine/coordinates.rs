@@ -1,10 +1,13 @@
-use crate::{misc::{ConstDefault, ConstFrom}, uci::tokens::Tokenizer};
+use crate::{misc::{ConstFrom, ParseError}, uci::tokens::Tokenizer};
+use core::panic;
 use std::ops;
 
 
-#[derive(Copy, Clone, Debug)]
+pub type TCompassRose = isize;
+
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub struct CompassRose {
-    v: isize,
+    v: TCompassRose,
 }
 
 impl CompassRose {
@@ -29,9 +32,11 @@ impl CompassRose {
     
     pub const fn v(&self) -> isize { self.v }
     
-    pub const fn new(v: isize) -> Self { CompassRose { v } }
+    pub const fn new(v: TCompassRose) -> Self { CompassRose { v } }
     
     pub const fn double(&self) -> Self { CompassRose { v: self.v * 2 } }
+    
+    pub const fn neg(&self) -> Self { CompassRose { v: -self.v } }
 }
 
 impl_op!(* |a: CompassRose, b: isize| -> CompassRose { CompassRose { v: (a.v) * b } } );
@@ -48,21 +53,21 @@ pub enum Squares {
     F1, F2, F3, F4, F5, F6, F7, F8,
     G1, G2, G3, G4, G5, G6, G7, G8,
     H1, H2, H3, H4, H5, H6, H7, H8,
-    None
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Square { v: u8 }
 
 impl_op!(<< |a: usize, b: Square| -> usize { a << b.v } );
 
 impl Square {
+    pub const MIN: u8 = Squares::A1 as u8;
+    pub const MAX: u8 = Squares::H8 as u8;
+
     #[inline]
     pub const fn v(&self) -> u8 {
         self.v
     }
-    
-    pub const NONE: Square = Square::from_c(Squares::None);
     
     /// Create a square from a value in range [0, 64].
     /// This is unsafe, because the value is not checked.
@@ -73,49 +78,29 @@ impl Square {
     }
 }
 
-impl const ConstDefault for Square {
-    #[inline]
-    fn default_c() -> Self {
-        Square::from_c(Squares::None)
-    }
-}
-
-impl Default for Square {
-    #[inline]
-    fn default() -> Self {
-        Self::default_c()
-    }
-}
-
 impl TryFrom<u8> for Square {
-    type Error = anyhow::Error;
+    type Error = ParseError;
 
     #[inline]
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
-            0..=64 => Ok(Square { v: value }),
-            _ => Err(anyhow::Error::msg("Square value out of range")),
+            Square::MIN..=Square::MAX => Ok(Square { v: value }),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }
 
-impl TryFrom<usize> for Square {
-    type Error = anyhow::Error;
+impl TryFrom<u16> for Square {
+    type Error = ParseError;
 
     #[inline]
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
-        match value {
-            0..=64 => Ok(Square { v: value as u8 }),
-            _ => Err(anyhow::Error::msg("Square value out of range")),
-        }
-    }
-} 
-
-impl TryFrom<u16> for Square {
-    type Error = anyhow::Error;
-
     fn try_from(value: u16) -> Result<Self, Self::Error> {
-        Self::try_from(value as u8)
+        const MIN: u16 = Square::MIN as u16;
+        const MAX: u16 = Square::MAX as u16;
+        match value {
+            MIN..=MAX => Ok(Square { v: value as u8 }),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+        }
     }
 }
 
@@ -133,33 +118,26 @@ impl const ConstFrom<(File, Rank)> for Square {
     }
 }
 
-impl TryFrom<&mut Tokenizer<'_>> for Square {
-    type Error = anyhow::Error;
+impl TryFrom<&mut Tokenizer<'_>> for Option<Square> {
+    type Error = ParseError;
 
     #[inline]
     fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let file = match tokens.next() {
-            Some('-') => return Ok(Square::from_c(Squares::None)),
+            Some('-') => return Ok(None),
             Some(c) => File::try_from(c)?,
-            None => return Err(anyhow::Error::msg("Empty string")),
+            None => return Err(ParseError::MissingInput),
         };
         let rank = match tokens.next() {
             Some(c) => Rank::try_from(c)?,
-            None => return Err(anyhow::Error::msg("No rank specified")),
+            None => return Err(ParseError::MissingInput),
         };
-        Ok(Square::from_c((file, rank)))
+        Ok(Some(Square::from_c((file, rank))))
     }
 }
 
-// impl From<&str> for Square {
-//     #[inline]
-//     fn from(value: &str) -> Self {
-//         todo!()
-//     }
-// }
 
-
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct Rank { v: u8 }
 
 impl Rank {
@@ -186,30 +164,30 @@ impl const ConstFrom<Square> for Rank {
 }
 
 impl TryFrom<u8> for Rank {
-    type Error = anyhow::Error;
+    type Error = ParseError;
     
     #[inline]
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0..=7 => Ok(Rank { v: value }),
-            _ => Err(anyhow::Error::msg("Rank value out of range")),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }
 
 impl TryFrom<char> for Rank {
-    type Error = anyhow::Error;
+    type Error = ParseError;
     
     #[inline]
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             '1'..='8' => Ok(Rank { v: value as u8 - '1' as u8 }),
-            _ => Err(anyhow::Error::msg("Invalid char")),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct File { v: u8 }
 
 impl File {
@@ -226,6 +204,14 @@ impl File {
     pub const fn v(&self) -> u8 {
         self.v
     }
+
+    pub const fn edge<const dir: TCompassRose>() -> File {
+        match CompassRose::new(dir) {
+            CompassRose::WEST => File::A,
+            CompassRose::EAST => File::H,
+            _ => panic!("The only two edge files are in the west and in the east."),
+        }
+    }
 }
 
 impl const ConstFrom<Square> for File {
@@ -236,25 +222,25 @@ impl const ConstFrom<Square> for File {
 }
 
 impl TryFrom<u8> for File {
-    type Error = anyhow::Error;
+    type Error = ParseError;
     
     #[inline]
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0..=7 => Ok(File { v: value }),
-            _ => Err(anyhow::Error::msg("File value out of range")),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }
 
 impl TryFrom<char> for File {
-    type Error = anyhow::Error;
+    type Error = ParseError;
     
     #[inline]
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'a'..='h' => Ok(File { v: value as u8 - 'a' as u8 }),
-            _ => Err(anyhow::Error::msg("Invalid char")),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }
