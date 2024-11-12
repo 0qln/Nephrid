@@ -11,7 +11,7 @@ pub enum Color {
 }
 
 impl Color {
-    pub fn new(val: TColor) -> Self {
+    pub const fn new(val: TColor) -> Self {
         match val {
             true => Color::Black,
             false => Color::White

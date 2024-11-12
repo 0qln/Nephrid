@@ -9,8 +9,6 @@
 #![feature(const_heap)]
 #![feature(unchecked_shifts)]
 #![feature(debug_closure_helpers)]
-#![feature(generic_const_exprs)]
-#![allow(incomplete_features)]
 
 #[macro_use]
 extern crate impl_ops;

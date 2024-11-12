@@ -98,7 +98,7 @@ const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
             None => default,
         }
     };
-    let moves = (range.v << CompassRose::SOUT.v()) & ray;
+    let moves = range.shift_c::<{CompassRose::SOUT.v()}>().v & ray;
     result.v |= moves;
     
     // north
@@ -109,7 +109,7 @@ const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         Some(t) => Bitboard::split_south(t),
         None => Bitboard::empty(),
     };
-    let moves = (range.v << CompassRose::NORT.v()) & ray;
+    let moves = range.shift_c::<{CompassRose::NORT.v()}>().v & ray;
     result.v |= moves;
     
     // west
@@ -120,7 +120,7 @@ const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         Some(t) => Bitboard::split_north(t),
         None => Bitboard::empty(),
     };
-    let moves = (range.v << CompassRose::WEST.v()) & ray;
+    let moves = range.shift_c::<{CompassRose::WEST.v()}>().v & ray;
     result.v |= moves;
     
     // east
@@ -131,7 +131,7 @@ const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         Some(t) => Bitboard::split_south(t),
         None => Bitboard::full(),
     };
-    let moves = (range.v << CompassRose::EAST.v()) & ray;
+    let moves = range.shift_c::<{CompassRose::EAST.v()}>().v & ray;
     result.v |= moves;
     
     result

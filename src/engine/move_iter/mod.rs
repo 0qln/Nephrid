@@ -19,10 +19,8 @@ pub mod rook;
 // }
 
 const fn get_key(relevant_occupancy: Bitboard, magic: MagicData, bits: MagicBits) -> MagicKey {
-    ((relevant_occupancy.v as i64 * magic) >> (64 - bits)) as MagicKey
+    ((((relevant_occupancy.v as i64).wrapping_mul(magic)) >> (64 - bits)) & 0xFFFFFFFF) as MagicKey
 }
-
-impl_op!(*|a: Bitboard, b: MagicData| -> i64 { a.v as i64 * b });
 
 // todo: make actual wrappers
 pub type MagicBits = usize;
@@ -63,7 +61,10 @@ const fn initialize_attacks<T: const SlidingPiece, const N: usize>(
     buffer
 }
 
-// todo: https://www.chessprogramming.org/Traversing_Subsets_of_a_Set
+// todo: 
+// read and optimize:
+// https://www.chessprogramming.org/Traversing_Subsets_of_a_Set
+
 /// Maps the specified bits into allowed bits (defined by mask).
 /// If the mask does not specify atleast the number of bits in
 /// needed for a complete mapping, the remaining bits are cut off.

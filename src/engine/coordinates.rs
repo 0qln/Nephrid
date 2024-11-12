@@ -30,12 +30,16 @@ impl CompassRose {
     pub const SOWEWE: CompassRose = CompassRose { v: CompassRose::SOUT.v + 2 * CompassRose::WEST.v };
     pub const SOEAEA: CompassRose = CompassRose { v: CompassRose::SOUT.v + 2 * CompassRose::EAST.v };
     
+    #[inline]
     pub const fn v(&self) -> isize { self.v }
     
+    #[inline]
     pub const fn new(v: TCompassRose) -> Self { CompassRose { v } }
     
+    #[inline]
     pub const fn double(&self) -> Self { CompassRose { v: self.v * 2 } }
     
+    #[inline]
     pub const fn neg(&self) -> Self { CompassRose { v: -self.v } }
 }
 

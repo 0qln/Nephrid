@@ -29,6 +29,8 @@ impl<'a, 'b, Type> MoveNotation<'a, 'b, Type> {
     }
 }
 
+pub type TMoveFlag = u8;
+
 #[derive(Debug, Copy, Clone)]
 pub struct MoveFlag { v: u8 }
 
