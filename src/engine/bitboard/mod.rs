@@ -34,18 +34,18 @@ impl Debug for Bitboard {
     }
 }
 
-impl_op!(+ |l: Bitboard, r: Bitboard| -> Bitboard { l + r });
-impl_op!(- |l: Bitboard, r: Bitboard| -> Bitboard { l - r });
-// impl_op!(<< |bb: Bitboard, v: File| -> Bitboard { bb << v } );
-// impl_op!(<< |bb: Bitboard, v: Rank| -> Bitboard { bb << v } );
-// impl_op!(<< |bb: Bitboard, v: isize| -> Bitboard { bb << v } );
-// impl_op!(>> |bb: Bitboard, v: isize| -> Bitboard { bb >> v } );
-// impl_op!(<< |bb: Bitboard, v: CompassRose| -> Bitboard { bb << v } );
-// impl_op!(>> |bb: Bitboard, v: CompassRose| -> Bitboard { bb >> v } );
-impl_op!(^ |l: Bitboard, r: Bitboard| -> Bitboard { l ^ r } );
-impl_op!(| |l: Bitboard, r: Bitboard| -> Bitboard { l | r } );
-impl_op!(| |l: Bitboard, r: usize| -> Bitboard { l | r } );
-impl_op!(& |l: Bitboard, r: Bitboard| -> Bitboard { l & r } );
+impl_op!(+ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v + r.v } });
+impl_op!(- |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v - r.v } });
+// impl_op!(<< |bb: Bitboard, v: File| -> Bitboard { Bitboard { v: bb << v } } );
+// impl_op!(<< |bb: Bitboard, v: Rank| -> Bitboard { Bitboard { v: bb << v } } );
+// impl_op!(<< |bb: Bitboard, v: isize| -> Bitboard { Bitboard { v: bb << v } } );
+// impl_op!(>> |bb: Bitboard, v: isize| -> Bitboard { Bitboard { v: bb >> v } } );
+// impl_op!(<< |bb: Bitboard, v: CompassRose| -> Bitboard { Bitboard { v: bb << v } } );
+// impl_op!(>> |bb: Bitboard, v: CompassRose| -> Bitboard { Bitboard { v: bb >> v } } );
+impl_op!(^ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v ^ r.v } } );
+impl_op!(| |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v | r.v } } );
+impl_op!(| |l: Bitboard, r: usize| -> Bitboard { Bitboard { v: l.v | r as u64 } } );
+impl_op!(& |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v & r.v } } );
 impl_op!(^= |l: &mut Bitboard, r: Bitboard| { l.v ^= r.v } );
 impl_op!(|= |l: &mut Bitboard, r: Bitboard| { l.v |= r.v } );
 impl_op!(&= |l: &mut Bitboard, r: Bitboard| { l.v &= r.v } );
@@ -85,7 +85,7 @@ impl Bitboard {
             64 => None,
             // Safety: the result is now in the range of a 
             // valid square (0..64)
-            _ => unsafe { Some(Square::from_v(result)) },
+            x => unsafe { Some(Square::from_v(63 - x)) },
         }
     }
 
@@ -97,7 +97,7 @@ impl Bitboard {
             64 => None,
             // Safety: the result is now in the range of a 
             // valid square (0..64)
-            _ => unsafe { Some(Square::from_v(result)) },
+            x => unsafe { Some(Square::from_v(x)) },
         }
     }
     
@@ -109,13 +109,11 @@ impl Bitboard {
         lsb
     }
     
-    // todo: test
     #[inline]
     pub const fn split_north(sq: Square) -> Self {
         Self { v: !0u64 << (sq.v() as u32) << 1 }
     }
     
-    // todo: test
     #[inline]
     pub const fn split_south(sq: Square) -> Self {
         Self { v: !0u64 >> (63 - sq.v() as u32) >> 1 }
