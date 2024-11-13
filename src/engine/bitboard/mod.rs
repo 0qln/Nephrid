@@ -24,7 +24,7 @@ impl Debug for Bitboard {
                         let rank = Rank::try_from(rank as u8).unwrap();
                         let sq = Square::from_c((file, rank));
                         let bit = if self.get_bit(sq) { "x " } else { ". " };
-                        f.write_str(bit);
+                        f.write_str(bit)?;
                     }
                     Ok(())
                 });
@@ -135,10 +135,10 @@ impl Bitboard {
     }
     
     #[inline]
-    pub const fn shift_c<const Dir: TCompassRose>(&self) -> Self {
-        match Dir >= 0 {
-            true  => Bitboard { v: self.v << Dir },
-            false => Bitboard { v: self.v >> -Dir },
+    pub const fn shift_c<const DIR: TCompassRose>(&self) -> Self {
+        match DIR >= 0 {
+            true  => Bitboard { v: self.v << DIR },
+            false => Bitboard { v: self.v >> -DIR },
         }
     }
     

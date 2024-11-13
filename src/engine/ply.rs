@@ -1,5 +1,6 @@
 use crate::misc::ParseError;
 use super::{fen::Fen, turn::Turn};
+use std::ops;
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct FullMoveCount { pub v: u16 }
@@ -28,6 +29,9 @@ impl TryFrom<&mut Fen<'_>> for FullMoveCount {
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Ply { pub v: u16 }
+
+impl_op!(- |a: Ply, b: Ply| -> Ply { Ply { v: a.v - b.v } } );
+impl_op!(- |a: Ply, b: u16| -> Ply { Ply { v: a.v - b } } );
 
 // todo: test
 impl From<(FullMoveCount, Turn)> for Ply {

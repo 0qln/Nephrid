@@ -209,8 +209,8 @@ impl File {
         self.v
     }
 
-    pub const fn edge<const dir: TCompassRose>() -> File {
-        match CompassRose::new(dir) {
+    pub const fn edge<const DIR: TCompassRose>() -> File {
+        match CompassRose::new(DIR) {
             CompassRose::WEST => File::A,
             CompassRose::EAST => File::H,
             _ => panic!("The only two edge files are in the west and in the east."),

@@ -9,7 +9,7 @@ use crate::{
         piece::{Piece, PieceType}, 
         turn::Turn, 
         zobrist
-    }, misc::{ConstFrom, ParseError}, uci::tokens::Tokenizer
+    }, misc::{ConstFrom, ParseError}
 };
 
 use super::ply::{FullMoveCount, Ply};
@@ -113,6 +113,10 @@ impl Position {
     pub fn make_move(&mut self, m: Move) {
         let us = self.get_turn();
         // let from = m
+    }
+
+    pub fn unmake_move(&mut self, m: Move) {
+        todo!()
     }
 
 }

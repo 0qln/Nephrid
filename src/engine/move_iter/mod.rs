@@ -1,7 +1,7 @@
-use crunchy::unroll;
-
-use super::{bitboard::Bitboard, coordinates::Square};
-use std::ops;
+use super::bitboard::Bitboard;
+use super::color::Color;
+use super::r#move::Move;
+use super::position::Position;
 
 pub mod bishop;
 pub mod king;
@@ -10,55 +10,8 @@ pub mod pawn;
 pub mod queen;
 pub mod rook;
 
-// pub fn gen_plegals<'a>(pos: &'a Position) -> impl Iterator<Item = Move> + 'a {
-//     let moves: &[Move] = &[];
-// }
-//
-// pub fn legal_moves<'a>(pos: &'a Position) -> impl Iterator<Item = Move> + 'a {
-//     todo!()
-// }
-
-const fn get_key(relevant_occupancy: Bitboard, magic: MagicData, bits: MagicBits) -> MagicKey {
-    ((((relevant_occupancy.v as i64).wrapping_mul(magic)) >> (64 - bits)) & 0xFFFFFFFF) as MagicKey
-}
-
-// todo: make actual wrappers
-pub type MagicBits = usize;
-pub type MagicData = i64;
-pub type MagicKey = usize;
-
-// todo: can be removed when const fn pointers are released.
-#[const_trait]
-pub trait SlidingPiece {
-    fn relevant_occupancy(sq: Square) -> Bitboard;
-    fn compute_attacks(sq: Square, occupied: Bitboard) -> Bitboard;
-    fn get_magic(sq: Square) -> MagicData;
-    fn get_bits(sq: Square) -> MagicBits;
-}
-
-const fn initialize_attacks<T: const SlidingPiece, const N: usize>(
-    mut buffer: [[Bitboard; N]; 64]
-) -> [[Bitboard; N]; 64] {
-    // todo: clean up when const iterators are released.
-    unroll! {
-        for sq in 0..64 {
-            // Safety: the square is valid
-            const SQ: Square = unsafe { Square::from_v(sq as u8) };
-            let max_blockers = T::relevant_occupancy(SQ);
-            let num_blocker_compositions = 1 << max_blockers.v.count_ones();
-            let mut i = 0;
-            while i < num_blocker_compositions {
-                {
-                    let occupied = map_bits_c(i, max_blockers);
-                    let attacks = T::compute_attacks(SQ, occupied);
-                    let key = get_key(occupied, T::get_magic(SQ), T::get_bits(SQ));
-                    buffer[sq][key] = attacks;
-                }
-                i += 1;
-            }
-        }
-    }
-    buffer
+pub fn legal_moves<'a>(pos: &'a Position) -> impl Iterator<Item = Move> + 'a {
+    pawn::gen_pseudo_legals::<{Color::WHITE.v}>(pos)
 }
 
 // todo: 

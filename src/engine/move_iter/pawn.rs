@@ -83,8 +83,8 @@ const fn backward(bb: Bitboard, dir: CompassRose) -> Bitboard {
 }
 
 #[inline]
-const fn capture<const C: TColor, const Dir: TCompassRose>() -> CompassRose {
-    CompassRose::new(Dir + single_step::<C>().v())
+const fn capture<const C: TColor, const DIR: TCompassRose>() -> CompassRose {
+    CompassRose::new(DIR + single_step::<C>().v())
 }
 
 pub struct PseudoLegalPawnMoves {
@@ -102,11 +102,11 @@ impl PseudoLegalPawnMoves {
         Self { from, to, flag: MoveFlag::QUIET, }
     }
 
-    pub fn new_capture<const C: TColor, const Dir: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
+    pub fn new_capture<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
         let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank::<C>());
-        let capturing_pawns = non_promo_pawns & !Bitboard::from_c(File::edge::<Dir>());
-        let to = forward(capturing_pawns, capture::<C, Dir>()) & info.enemies;
-        let from = backward(to, capture::<C, Dir>());
+        let capturing_pawns = non_promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
+        let to = forward(capturing_pawns, capture::<C, DIR>()) & info.enemies;
+        let from = backward(to, capture::<C, DIR>());
         Self { from, to, flag: MoveFlag::CAPTURE, }
     }
 
@@ -143,32 +143,32 @@ impl PseudoLegalPawnMoves {
         Self::new_promo::<C>(info, MoveFlag::PROMOTION_QUEEN)
     }
 
-    fn new_promo_capture<const C: TColor, const Dir: TCompassRose>(
+    fn new_promo_capture<const C: TColor, const DIR: TCompassRose>(
         info: &PseudoLegalPawnMovesInfo,
         flag: MoveFlag,
     ) -> Self {
         let promo_pawns = info.pawns & Bitboard::from_c(promo_rank::<C>());
-        let capture_west_pawns = promo_pawns & !Bitboard::from_c(File::edge::<Dir>());
-        let to = forward(capture_west_pawns, capture::<C, Dir>()) & info.enemies;
-        let from = backward(to, capture::<C, Dir>());
+        let capture_west_pawns = promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
+        let to = forward(capture_west_pawns, capture::<C, DIR>()) & info.enemies;
+        let from = backward(to, capture::<C, DIR>());
         Self { from, to, flag }
     }
-    pub fn new_promo_capture_knight<const C: TColor, const Dir: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo_capture::<C, Dir>(info, MoveFlag::PROMOTION_KNIGHT)
+    pub fn new_promo_capture_knight<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::new_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_KNIGHT)
     }
-    pub fn new_promo_capture_bishop<const C: TColor, const Dir: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo_capture::<C, Dir>(info, MoveFlag::PROMOTION_BISHOP)
+    pub fn new_promo_capture_bishop<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::new_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_BISHOP)
     }
-    pub fn new_promo_capture_rook<const C: TColor, const Dir: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo_capture::<C, Dir>(info, MoveFlag::PROMOTION_ROOK)
+    pub fn new_promo_capture_rook<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::new_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_ROOK)
     }
-    pub fn new_promo_capture_queen<const C: TColor, const Dir: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo_capture::<C, Dir>(info, MoveFlag::PROMOTION_QUEEN)
+    pub fn new_promo_capture_queen<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Self::new_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_QUEEN)
     }
 
-    fn new_ep<const C: TColor, const Dir: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
+    fn new_ep<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
         let mut to = Bitboard::from_c(info.pos.get_ep_square());
-        let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<Dir>());
+        let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
         let from = match to.is_empty() {
             true => {
                 to = Bitboard::empty();
@@ -176,8 +176,8 @@ impl PseudoLegalPawnMoves {
             },
             false => {
                 backward(
-                    forward(capturing_pawns, capture::<C, Dir>()) & to, 
-                    capture::<C, Dir>()
+                    forward(capturing_pawns, capture::<C, DIR>()) & to, 
+                    capture::<C, DIR>()
                 )
             }
         };

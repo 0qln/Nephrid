@@ -1,5 +1,4 @@
 use super::zobrist;
-use super::ConfigOptionType;
 
 pub struct Hash {
     key: zobrist::Hash,

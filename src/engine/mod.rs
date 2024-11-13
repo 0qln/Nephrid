@@ -11,7 +11,7 @@ use crate::engine::{
     position::Position,
     r#move::Move,
 };
-use std::{borrow::BorrowMut, process, sync::Arc, thread};
+use std::{process, thread};
 use self::r#move::{LongAlgebraicNotationUci, MoveNotation};
 
 pub mod search;

@@ -5,6 +5,8 @@ use crate::uci::sync::CancellationToken;
 
 use crate::engine::position::Position;
 
+use super::ply::Ply;
+
 pub mod mode;
 pub mod target;
 pub mod limit;
@@ -21,14 +23,14 @@ impl Search {
         todo!()
     }
 
-    pub fn perft(position: &mut Position, cancellation_token: CancellationToken) -> u64 {
+    pub fn perft(position: &mut Position, ply: Ply, cancellation_token: CancellationToken) -> u64 {
         let mut result = 1;
 
-        // for m in legal_moves(&position) {
-        //     position.make_move(m);
-        //     result += Self::perft(position, ply - 1, cancellation_token);
-        //     position.unmake_move();
-        // }
+        for m in legal_moves(&position) {
+            position.make_move(m);
+            result += Self::perft(position, ply - 1, cancellation_token);
+            position.unmake_move(m);
+        }
 
         result
     }
