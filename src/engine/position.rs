@@ -1,16 +1,18 @@
-use crate::engine::{
-    bitboard::Bitboard,
-    color::Color,
-    turn::Turn,
-    piece::{Piece, PieceType},
-    fen::Fen,
-    castling::CastlingRights,
-    coordinates::{Squares, Square, Rank, File},
-    zobrist,
-    r#move::Move
+use crate::{
+    engine::{
+        bitboard::Bitboard, 
+        castling::CastlingRights, 
+        color::Color, 
+        coordinates::{File, Rank, Square, Squares}, 
+        fen::Fen, 
+        r#move::Move, 
+        piece::{Piece, PieceType}, 
+        turn::Turn, 
+        zobrist
+    }, misc::{ConstFrom, ParseError}
 };
 
-use super::ply::Ply;
+use super::ply::{FullMoveCount, Ply};
 
 
 #[derive(Default, Clone)]
@@ -22,7 +24,7 @@ pub struct PositionInfo {
     pub nstm_attacks: Bitboard,
     pub plys50: Ply,
     pub ply: Ply,
-    pub ep_square: Square,
+    pub ep_square: Option<Square>,
     pub castling_rights: CastlingRights,
     pub captured_piece: Piece,
     pub key: zobrist::Hash,
@@ -35,7 +37,7 @@ impl PositionInfo {
         let king = position.get_bitboard(PieceType::King, us);
         let king_sq = king.lsb();
         let occupancy = position.get_occupancy();
-        for enemy_sq in position.c_bitboards[!us as usize].clone() {
+        for enemy_sq in position.get_c_bitboard(!us) {
             let enemy = position.get_piece(enemy_sq);     
 
         }
@@ -44,82 +46,99 @@ impl PositionInfo {
     }
 }
 
-
 #[derive(Clone)]
+struct Pieces([Piece; 64]);
+
+impl Default for Pieces {
+    fn default() -> Self {
+        Self([Piece::default(); 64])
+    }
+}
+
+#[derive(Clone, Default)]
 pub struct Position {
     c_bitboards: [Bitboard; 2],
     t_bitboards: [Bitboard; 7],
-    pieces: [Piece; 64],
+    pieces: Pieces,
     piece_counts: [u8; 14],
     turn: Turn,
     state_stack: PositionInfo
 }
 
 impl Position {
+    #[inline]
     pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
-        self.c_bitboards[color as usize] & self.t_bitboards[piece_type as usize]
+        self.c_bitboards[color.v as usize] & self.t_bitboards[piece_type as usize]
     }
     
+    #[inline]
+    pub fn get_c_bitboard(&self, color: Color) -> Bitboard {
+        self.c_bitboards[color.v as usize]
+    }
+
+    #[inline]
+    pub fn get_color_bb(&self, color: Color) -> Bitboard {
+        self.c_bitboards[color.v as usize]
+    }
+
+    #[inline]
+    pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
+        self.t_bitboards[piece_type as usize]
+    }
+    
+    #[inline]
     pub fn get_occupancy(&self) -> Bitboard {
-        self.c_bitboards[Color::White as usize] | self.c_bitboards[Color::Black as usize]
+        self.get_c_bitboard(Color::WHITE) | self.get_c_bitboard(Color::BLACK)
     }
     
+    #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece {
-        self.pieces[Into::<usize>::into(sq)]
+        self.pieces.0[sq.v() as usize]
+    }
+
+    #[inline]
+    pub fn get_turn(&self) -> Turn {
+        self.turn
+    }
+    
+    #[inline]
+    pub fn get_ep_square(&self) -> Option<Square> {
+        self.state_stack.ep_square
     }
     
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
-        let target = Bitboard::from(sq.clone());
+        let target = Bitboard::from_c(sq);
         self.t_bitboards[piece.piece_type as usize] |= target;
-        self.c_bitboards[piece.color as usize] |= target;
-        self.pieces[Into::<usize>::into(sq)] = piece;
+        self.c_bitboards[piece.color.v as usize] |= target;
+        self.pieces.0[sq.v() as usize] = piece;
         self.piece_counts[piece.piece_type as usize] += 1;
     }
     
     pub fn remove_piece(&mut self, sq: Square) {
-        let target = Bitboard::from(sq.clone());
+        let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
         self.t_bitboards[piece.piece_type as usize] ^= target;
-        self.c_bitboards[piece.color as usize] ^= target;
-        self.pieces[Into::<usize>::into(sq)] = Piece::default();
+        self.c_bitboards[piece.color.v as usize] ^= target;
+        self.pieces.0[sq.v() as usize] = Piece::default();
         self.piece_counts[self.get_piece(sq).piece_type as usize] -= 1;
     }  
 
     pub fn make_move(&mut self, m: Move) {
+        let us = self.get_turn();
+        // let from = m
+    }
+
+    pub fn unmake_move(&mut self, m: Move) {
         todo!()
     }
 
-}
-
-impl Default for Position {
-    fn default() -> Self {
-        Position::try_from(
-            Fen { v: [
-                &"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR", 
-                &"w", 
-                &"KQkq", 
-                &"-", 
-                &"0", 
-                &"1"
-            ]}
-        ).unwrap()
-    }
-}
-
-impl Position {
-    pub fn new() -> Self {
-        Self {
-            c_bitboards: [Bitboard { v: 0 }; 2],
-            t_bitboards: [Bitboard { v: 0 }; 7],
-            pieces: [Piece{color: Color::White, piece_type: PieceType::None}; 64],
-            piece_counts: [0; 14],
-            turn: Color::White,
-            state_stack: PositionInfo::default()
+    pub fn start_position() -> Self {
+        // Safety: FEN string is valid
+        unsafe {
+            Position::try_from(
+                &mut Fen::new(&"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            ).unwrap_unchecked()
         }
-    }
-
-    pub fn reset(&self) {
-        todo!()
     }
 }
 
@@ -130,7 +149,7 @@ impl Into<String> for &Position {
             result.push_str(&(rank + 1).to_string());
             result.push(' ');
             for file in 0..=7 {
-                let sq = Square::from((
+                let sq = Square::from_c((
                     File::try_from(file).unwrap(), 
                     Rank::try_from(rank).unwrap()
                 ));
@@ -146,19 +165,20 @@ impl Into<String> for &Position {
     }
 }
 
-impl<'fen> TryFrom<Fen<'fen>> for Position {
-    type Error = anyhow::Error;
+impl TryFrom<&mut Fen<'_>> for Position {
+    type Error = ParseError;
     
-    fn try_from(fen: Fen) -> Result<Self, Self::Error> {
-        let mut position = Position::new();
+    fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
+        let mut position = Position::default();
         let mut sq = Squares::H8 as i8;
 
-        for char in fen.v[0].chars() {
+        // Position
+        for char in fen.iter_token() {
             match char {
                 '/' => continue,
                 '1'..='8' => sq -= char.to_digit(10).unwrap() as i8,        
                 _ => {
-                    let piece = Piece::try_from(char)?;                    
+                    let piece = Piece::try_from(char)?; 
                     let pos_sq = Square::try_from((sq ^ 7) as u8)?;
                     position.put_piece(pos_sq, piece);
                     sq -= 1;
@@ -169,14 +189,18 @@ impl<'fen> TryFrom<Fen<'fen>> for Position {
             }
         }
         
-        position.turn = fen.v[1].try_into()?;        
+        // Turn
+        let char = match fen.iter_token().next() {
+            None => return Err(ParseError::MissingInput),
+            Some(c) => c,
+        };
+        position.turn = Turn::try_from(char)?;        
         
         let mut state = PositionInfo {
-            castling_rights: CastlingRights::try_from(fen.v[2])?,
-            ep_square: Square::try_from(fen.v[3])?,
-            plys50: Ply::new(fen.v[4].parse()?, position.turn),
-            ply: Ply { v: fen.v[5].parse::<u16>()? },
-            has_threefold_repetition: false,
+            castling_rights: CastlingRights::try_from(&mut *fen)?,
+            ep_square: Option::<Square>::try_from(fen.iter_token())?,
+            plys50: Ply::try_from(fen.iter_token())?,
+            ply: Ply::from((FullMoveCount::try_from(fen.iter_token())?, position.turn)),
             ..Default::default()
         };
 

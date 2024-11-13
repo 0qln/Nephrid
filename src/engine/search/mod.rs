@@ -1,64 +1,48 @@
+use mode::Mode;
+use target::Target;
+use limit::Limit;
 use crate::uci::sync::CancellationToken;
 
-use super::{Depth, Move, Position};
+use crate::engine::position::Position;
 
-pub struct Limit {
-    pub wtime: u64,
-    pub btime: u64,
-    pub winc: u64,
-    pub binc: u64,
-    pub movestogo: u16,
-    pub nodes: u64,
-    pub movetime: u64,
-    pub active: bool,
+use super::depth::Depth;
+use super::move_iter::legal_moves;
+
+pub mod mode;
+pub mod target;
+pub mod limit;
+
+#[derive(Debug, Default, Clone)]
+pub struct Search {
+    pub limit: Limit,
+    pub target: Target,
+    pub mode: Mode,
 }
 
-impl Limit {
-    pub const fn max(set_active: bool) -> Self {
-        Self {
-            wtime: u64::MAX,
-            btime: u64::MAX,
-            winc: u64::MAX,
-            binc: u64::MAX,
-            movestogo: 0,
-            nodes: u64::MAX,
-            movetime: u64::MAX,
-            active: set_active,
+impl Search {
+    pub fn reset() {
+        todo!()
+    }
+
+    fn perft(&self, position: &mut Position, depth: Depth, cancellation_token: CancellationToken) -> u64 {
+        let mut result = 1;
+        
+        if depth.v() == 0 { return result; }
+        
+        for m in legal_moves(position) {
+            position.make_move(m);
+            result += self.perft(position, depth - 1, cancellation_token.clone());
+            position.unmake_move(m);
         }
+
+        result
+    }
+
+    pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {
+        match self.mode {
+            Mode::Perft => self.perft(position, self.target.depth, cancellation_token),
+            _ => unimplemented!()
+        };
     }
 }
 
-impl Default for Limit {
-    fn default() -> Self {
-        Self::max(false)
-    }
-}
-
-pub struct Target {
-    pub mate: Depth,
-    pub depth: Depth,
-    pub searchmoves: Vec<Move>,
-}
-
-impl Default for Target {
-    fn default() -> Self {
-        Self {
-            mate: Depth::NONE,
-            depth: Depth::NONE,
-            searchmoves: Vec::new(),
-        }
-    }
-}
-
-pub enum Mode {
-    Normal,
-    Ponder,
-}
-
-pub fn reset() {
-    todo!()
-}
-
-pub fn go(position: &Position, limit: Limit, target: Target, mode: Mode, cancellation_token: CancellationToken) {
-    todo!()
-}
