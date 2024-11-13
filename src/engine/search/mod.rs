@@ -5,13 +5,14 @@ use crate::uci::sync::CancellationToken;
 
 use crate::engine::position::Position;
 
-use super::ply::Ply;
+use super::depth::Depth;
+use super::move_iter::legal_moves;
 
 pub mod mode;
 pub mod target;
 pub mod limit;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Search {
     pub limit: Limit,
     pub target: Target,
@@ -23,20 +24,25 @@ impl Search {
         todo!()
     }
 
-    pub fn perft(position: &mut Position, ply: Ply, cancellation_token: CancellationToken) -> u64 {
+    fn perft(&self, position: &mut Position, depth: Depth, cancellation_token: CancellationToken) -> u64 {
         let mut result = 1;
-
-        for m in legal_moves(&position) {
+        
+        if depth.v() == 0 { return result; }
+        
+        for m in legal_moves(position) {
             position.make_move(m);
-            result += Self::perft(position, ply - 1, cancellation_token);
+            result += self.perft(position, depth - 1, cancellation_token.clone());
             position.unmake_move(m);
         }
 
         result
     }
 
-    pub fn go(&self, mut position: Position, cancellation_token: CancellationToken) {
-        todo!()
+    pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {
+        match self.mode {
+            Mode::Perft => self.perft(position, self.target.depth, cancellation_token),
+            _ => unimplemented!()
+        };
     }
 }
 

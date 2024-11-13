@@ -37,7 +37,7 @@ impl PositionInfo {
         let king = position.get_bitboard(PieceType::King, us);
         let king_sq = king.lsb();
         let occupancy = position.get_occupancy();
-        for enemy_sq in position.c_bitboards[!us as usize].clone() {
+        for enemy_sq in position.get_c_bitboard(!us) {
             let enemy = position.get_piece(enemy_sq);     
 
         }
@@ -46,12 +46,20 @@ impl PositionInfo {
     }
 }
 
-
 #[derive(Clone)]
+struct Pieces([Piece; 64]);
+
+impl Default for Pieces {
+    fn default() -> Self {
+        Self([Piece::default(); 64])
+    }
+}
+
+#[derive(Clone, Default)]
 pub struct Position {
     c_bitboards: [Bitboard; 2],
     t_bitboards: [Bitboard; 7],
-    pieces: [Piece; 64],
+    pieces: Pieces,
     piece_counts: [u8; 14],
     turn: Turn,
     state_stack: PositionInfo
@@ -60,12 +68,17 @@ pub struct Position {
 impl Position {
     #[inline]
     pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
-        self.c_bitboards[color as usize] & self.t_bitboards[piece_type as usize]
+        self.c_bitboards[color.v as usize] & self.t_bitboards[piece_type as usize]
+    }
+    
+    #[inline]
+    pub fn get_c_bitboard(&self, color: Color) -> Bitboard {
+        self.c_bitboards[color.v as usize]
     }
 
     #[inline]
     pub fn get_color_bb(&self, color: Color) -> Bitboard {
-        self.c_bitboards[color as usize]
+        self.c_bitboards[color.v as usize]
     }
 
     #[inline]
@@ -75,12 +88,12 @@ impl Position {
     
     #[inline]
     pub fn get_occupancy(&self) -> Bitboard {
-        self.c_bitboards[Color::White as usize] | self.c_bitboards[Color::Black as usize]
+        self.get_c_bitboard(Color::WHITE) | self.get_c_bitboard(Color::BLACK)
     }
     
     #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece {
-        self.pieces[sq.v() as usize]
+        self.pieces.0[sq.v() as usize]
     }
 
     #[inline]
@@ -96,8 +109,8 @@ impl Position {
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
         self.t_bitboards[piece.piece_type as usize] |= target;
-        self.c_bitboards[piece.color as usize] |= target;
-        self.pieces[sq.v() as usize] = piece;
+        self.c_bitboards[piece.color.v as usize] |= target;
+        self.pieces.0[sq.v() as usize] = piece;
         self.piece_counts[piece.piece_type as usize] += 1;
     }
     
@@ -105,8 +118,8 @@ impl Position {
         let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
         self.t_bitboards[piece.piece_type as usize] ^= target;
-        self.c_bitboards[piece.color as usize] ^= target;
-        self.pieces[sq.v() as usize] = Piece::default();
+        self.c_bitboards[piece.color.v as usize] ^= target;
+        self.pieces.0[sq.v() as usize] = Piece::default();
         self.piece_counts[self.get_piece(sq).piece_type as usize] -= 1;
     }  
 
@@ -119,30 +132,13 @@ impl Position {
         todo!()
     }
 
-}
-
-impl Default for Position {
-    fn default() -> Self {
-        Position::try_from(
-            &mut Fen::new(&"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
-        ).unwrap()
-    }
-}
-
-impl Position {
-    pub fn new() -> Self {
-        Self {
-            c_bitboards: [Bitboard { v: 0 }; 2],
-            t_bitboards: [Bitboard { v: 0 }; 7],
-            pieces: [Piece{color: Color::White, piece_type: PieceType::None}; 64],
-            piece_counts: [0; 14],
-            turn: Color::White,
-            state_stack: PositionInfo::default()
+    pub fn start_position() -> Self {
+        // Safety: FEN string is valid
+        unsafe {
+            Position::try_from(
+                &mut Fen::new(&"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+            ).unwrap_unchecked()
         }
-    }
-
-    pub fn reset(&self) {
-        todo!()
     }
 }
 
@@ -173,7 +169,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
     type Error = ParseError;
     
     fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
-        let mut position = Position::new();
+        let mut position = Position::default();
         let mut sq = Squares::H8 as i8;
 
         // Position

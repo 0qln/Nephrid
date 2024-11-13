@@ -36,8 +36,9 @@ pub mod masks;
 
 #[derive(Default)]
 pub struct Engine {
-    pub config: Configuration,
-    pub position: Position,
+    config: Configuration,
+    position: Position,
+    search: Search
 }
 
 // mod uci
@@ -55,7 +56,7 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
             // output should get sent from the calculation thread
         }
         Some("go") => {
-            let mut search = Search::default();
+            let mut search = engine.search.clone();
 
             macro_rules! collect_and_parse {
                 ($tokenizer:expr, $field:expr, $default:expr) => {{
@@ -94,15 +95,10 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
                 };
             }
 
-            // TODO: use config to set up search params
-            // e.g. MutliPV
-            //
-
             let token = cancellation_token.clone();
-            let position = engine.position.clone();
-            // let search = engine.search.clone();
+            let mut position = engine.position.clone();
 
-            thread::spawn(move || { search.go(position, token); }); 
+            thread::spawn(move || { search.go(&mut position, token); }); 
         }
         Some("position") => {
             match tokenizer.collect_token().as_deref() {
@@ -202,7 +198,7 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
             }
         }
         Some("ucinewgame") => {
-            engine.position.reset()
+            engine.position = Position::start_position();
         }
         Some(unknown) => { 
             sync::out(&format!("Unknown UCI command: '{unknown}'")) 

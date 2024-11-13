@@ -1,7 +1,10 @@
 use std::{num::ParseIntError, str::FromStr};
+use std::ops;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Depth { v: u8 }
+
+impl_op!(- |a: Depth, b: u8| -> Depth { Depth { v: a.v - b } } );
 
 impl TryFrom<&str> for Depth {
     type Error = ParseIntError;
@@ -26,6 +29,8 @@ impl Depth {
     pub const MIN: Depth = Depth { v: 0 };
     pub const MAX: Depth = Depth { v: 250 }; 
     pub const NONE: Depth = Depth { v: 255 };
+    
+    pub const fn v(&self) -> u8 { self.v }
 }
 
 impl Default for Depth {

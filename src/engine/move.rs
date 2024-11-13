@@ -82,7 +82,7 @@ impl TryFrom<u16> for MoveFlag {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Copy, Clone)]
 pub struct Move { v: u16 }
 
 impl Move {

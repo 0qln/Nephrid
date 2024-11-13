@@ -75,20 +75,14 @@ impl Into<char> for PieceType {
     }
 }
 
+
+
+// todo: use compressed memory representation
       
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Default)]
 pub struct Piece {
     pub color: Color,
     pub piece_type: PieceType
-}
-
-impl Default for Piece {
-    fn default() -> Self {
-        Self { 
-            color: Default::default(), 
-            piece_type: Default::default() 
-        }
-    }
 }
 
 impl TryFrom<char> for Piece {
@@ -97,8 +91,8 @@ impl TryFrom<char> for Piece {
     fn try_from(value: char) -> Result<Self, Self::Error> {
         let piece_type = PieceType::try_from(value.to_ascii_lowercase())?;
         let color = match value.is_uppercase() {
-            true => Color::White,
-            false => Color::Black,
+            true => Color::WHITE,
+            false => Color::BLACK,
         };
         Ok(Self { color, piece_type })
     }
@@ -107,7 +101,7 @@ impl TryFrom<char> for Piece {
 impl Into<char> for Piece {
     fn into(self) -> char {
         let mut result: char = self.piece_type.into();
-        if self.color == Color::White {
+        if self.color == Color::WHITE {
             result = result.to_ascii_uppercase();
         }
         result

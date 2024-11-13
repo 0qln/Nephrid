@@ -1,5 +1,5 @@
 use crate::engine::color::{Color, TColor};
-use crate::engine::coordinates::{Rank, TCompassRose};
+use crate::engine::coordinates::{Rank, Square, TCompassRose};
 use crate::engine::{
     bitboard::Bitboard,
     coordinates::{CompassRose, File},
@@ -9,34 +9,29 @@ use crate::engine::{
 };
 use crate::misc::ConstFrom;
 
-pub mod move_type {
-    pub struct Legals;
-    pub struct PseudoLegals;
-    pub struct Attacks;
-    pub struct Resolves;
-}
 
-pub struct PseudoLegalPawnMovesInfo<'a> {
-    pos: &'a Position,
+pub struct PseudoLegalPawnMovesInfo {
     pawns: Bitboard,
     enemies: Bitboard,
     pieces: Bitboard,
+    ep_sq: Option<Square>
 }
 
 // todo: theres still a lot of duplicate calculations in the
 // iterator initiations. benchmark, wether it's worth to
 // cache the results here or not.
-impl<'a> PseudoLegalPawnMovesInfo<'a> {
-    pub fn new<const C: TColor>(pos: &'a Position) -> Self {
+impl PseudoLegalPawnMovesInfo {
+    pub fn new<const C: TColor>(pos: &Position) -> Self {
         let color = Color::new(C);
         let pawns = pos.get_bitboard(PieceType::Pawn, color);
         let pieces = pos.get_occupancy();
         let enemies = pos.get_color_bb(!color);
+        let ep_sq = pos.get_ep_square();
         Self {
-            pos,
             pawns,
             pieces,
             enemies,
+            ep_sq,
         }
     }
 }
@@ -44,24 +39,24 @@ impl<'a> PseudoLegalPawnMovesInfo<'a> {
 #[inline]
 const fn promo_rank<const C: TColor>() -> Rank {
     match Color::new(C) {
-        Color::White => Rank::_7,
-        Color::Black => Rank::_2
+        Color::WHITE => Rank::_7,
+        Color::BLACK => Rank::_2
     }
 }
 
 #[inline]
 const fn start_rank<const C: TColor>() -> Rank {
     match Color::new(C) {
-        Color::White => Rank::_2,
-        Color::Black => Rank::_7
+        Color::WHITE => Rank::_2,
+        Color::BLACK => Rank::_7
     }
 }
 
 #[inline]
 const fn single_step<const C: TColor>() -> CompassRose {
     match Color::new(C) {
-        Color::White => CompassRose::NORT,
-        Color::Black => CompassRose::SOUT
+        Color::WHITE => CompassRose::NORT,
+        Color::BLACK => CompassRose::SOUT
     }
 }
 
@@ -167,7 +162,7 @@ impl PseudoLegalPawnMoves {
     }
 
     fn new_ep<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        let mut to = Bitboard::from_c(info.pos.get_ep_square());
+        let mut to = Bitboard::from_c(info.ep_sq);
         let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
         let from = match to.is_empty() {
             true => {
@@ -204,9 +199,7 @@ impl Iterator for PseudoLegalPawnMoves {
     }
 }
 
-pub fn gen_pseudo_legals<'a, const C: TColor>(
-    position: &'a Position,
-) -> impl Iterator<Item = Move> + 'a {
+pub fn gen_pseudo_legals<const C: TColor>(position: &Position) -> impl Iterator<Item = Move> {
     let info = PseudoLegalPawnMovesInfo::new::<C>(position);
 
     // todo: tune the ordering

@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Limit {
     pub is_active: bool,
     pub wtime: u64,

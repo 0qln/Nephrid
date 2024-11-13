@@ -38,8 +38,8 @@ impl From<(FullMoveCount, Turn)> for Ply {
     fn from(value: (FullMoveCount, Turn)) -> Self {
         let (fmc, turn) = value;
         match turn {
-            Turn::White => Self { v: 2 * fmc.v },
-            Turn::Black => Self { v: 2 * fmc.v + 1 },
+            Turn::WHITE => Self { v: 2 * fmc.v },
+            Turn::BLACK => Self { v: 2 * fmc.v + 1 },
         }      
     }
 }

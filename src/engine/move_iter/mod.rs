@@ -10,7 +10,7 @@ pub mod pawn;
 pub mod queen;
 pub mod rook;
 
-pub fn legal_moves<'a>(pos: &'a Position) -> impl Iterator<Item = Move> + 'a {
+pub fn legal_moves(pos: &Position) -> impl Iterator<Item = Move> {
     pawn::gen_pseudo_legals::<{Color::WHITE.v}>(pos)
 }
 
