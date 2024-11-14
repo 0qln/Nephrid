@@ -248,3 +248,37 @@ impl TryFrom<char> for File {
         }
     }
 }
+
+
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub struct DiagA1H8 { v: u8 }
+
+impl DiagA1H8 {
+    pub const fn v(&self) -> u8 {
+        self.v
+    }
+}
+
+impl const ConstFrom<Square> for DiagA1H8 {
+    #[inline]
+    fn from_c(sq: Square) -> Self {
+        DiagA1H8 { v: 7 - Rank::from_c(sq).v + File::from_c(sq).v }
+    }
+}
+
+
+#[derive(PartialEq, Debug)]
+pub struct DiagA8H1 { v: u8 }
+
+impl DiagA8H1 {
+    pub const fn v(&self) -> u8 {
+        self.v
+    }
+}
+
+impl const ConstFrom<Square> for DiagA8H1 {
+    #[inline]
+    fn from_c(sq: Square) -> Self {
+        DiagA8H1 { v: Rank::from_c(sq).v + File::from_c(sq).v }
+    }
+}

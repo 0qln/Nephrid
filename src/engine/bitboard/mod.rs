@@ -3,7 +3,7 @@ use crate::{engine::coordinates::{
     CompassRose, File, Rank, Square
 }, misc::ConstFrom};
 
-use super::coordinates::{Squares, TCompassRose};
+use super::coordinates::{DiagA1H8, DiagA8H1, Squares, TCompassRose};
 
 #[cfg(test)]
 pub mod tests;
@@ -183,3 +183,52 @@ impl const ConstFrom<Rank> for Bitboard {
         Bitboard { v: 0xFFu64 << rank.v() }
     }
 }
+
+impl const ConstFrom<DiagA1H8> for Bitboard {
+    #[inline]
+    fn from_c(diag: DiagA1H8) -> Self {
+        const A1H8: [u64; 15] = [
+            0x0100000000000000u64,
+            0x0201000000000000u64,
+            0x0402010000000000u64,
+            0x0804020100000000u64,
+            0x1008040201000000u64,
+            0x2010080402010000u64,
+            0x4020100804020100u64,
+            0x8040201008040201u64,
+            0x0080402010080402u64,
+            0x0000804020100804u64,
+            0x0000008040201008u64,
+            0x0000000080402010u64,
+            0x0000000000804020u64,
+            0x0000000000008040u64,
+            0x0000000000000080u64,
+        ];
+        Bitboard { v: A1H8[diag.v() as usize] }
+    }
+}
+
+impl const ConstFrom<DiagA8H1> for Bitboard {
+    #[inline]
+    fn from_c(diag: DiagA8H1) -> Self {
+        const A8H1: [u64; 15] = [
+            0x0000000000000001u64,
+            0x0000000000000102u64,
+            0x0000000000010204u64,
+            0x0000000001020408u64,
+            0x0000000102040810u64,
+            0x0000010204081020u64,
+            0x0001020408102040u64,
+            0x0102040810204080u64,
+            0x0204081020408000u64,
+            0x0408102040800000u64,
+            0x0810204080000000u64,
+            0x1020408000000000u64,
+            0x2040800000000000u64,
+            0x4080000000000000u64,
+            0x8000000000000000u64,
+        ];
+        Bitboard { v: A8H1[diag.v() as usize] }
+    }
+}
+        
