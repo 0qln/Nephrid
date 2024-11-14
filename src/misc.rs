@@ -28,6 +28,25 @@ pub enum ParseError {
 pub enum TokenizationError {
     #[error("Tokenizer exhaused")]
     TokenizerExhaused,
-    
+}
 
+
+#[macro_export]
+macro_rules! impl_variants {
+    // Case where values are specified
+    ($type:ident { $($name:ident = $value:expr),* $(,)? }) => {
+        impl $type {
+            $(
+                pub const $name: $type = $type { v: $value };
+            )*
+        }
+    };
+    // Case where values are not specified
+    ($type:ident { $($name:ident),* $(,)? }) => {
+        impl $type {
+            $(
+                pub const $name: $type = $type { v: ${index()} };
+            )*
+        }
+    };
 }

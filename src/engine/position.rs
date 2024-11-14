@@ -34,7 +34,7 @@ pub struct PositionInfo {
 impl PositionInfo {
     pub fn init(&mut self, position: &Position) {
         let us = position.turn;
-        let king = position.get_bitboard(PieceType::King, us);
+        let king = position.get_bitboard(PieceType::KING, us);
         let king_sq = king.lsb();
         let occupancy = position.get_occupancy();
         for enemy_sq in position.get_c_bitboard(!us) {

@@ -5,8 +5,8 @@ use crate::{
     }, misc::{ConstFrom, ParseError}, uci::tokens::Tokenizer
 };
 use std::marker::PhantomData;
-use super::piece::PromotionPieceType;
 
+// todo: refactoring, clean up
 
 pub struct LongAlgebraicNotation;
 pub struct LongAlgebraicNotationUci;
@@ -138,11 +138,11 @@ impl TryFrom<MoveNotation<'_, '_, LongAlgebraicNotationUci>> for Move {
         let moving_p = move_notation.context.get_piece(from);
         let captured_p = move_notation.context.get_piece(to);
         let abs_dist = from.v().abs_diff(to.v());
-        let captures = captured_p.piece_type == PieceType::None;
+        let captures = captured_p.piece_type == PieceType::NONE;
         let mut flag = if captures { MoveFlag::CAPTURE } else { MoveFlag::QUIET };
 
         match moving_p.piece_type {
-            PieceType::Pawn => {
+            PieceType::PAWN => {
                 match abs_dist {
                     16 => flag = MoveFlag::DOUBLE_PAWN_PUSH,
                     7 | 9 if !captures => flag = MoveFlag::EN_PASSANT,
@@ -159,7 +159,7 @@ impl TryFrom<MoveNotation<'_, '_, LongAlgebraicNotationUci>> for Move {
                     }
                 }
             }
-            PieceType::King if abs_dist == 2 => {
+            PieceType::KING if abs_dist == 2 => {
                 match File::from_c(to) {
                     File::G => flag = MoveFlag::KING_CASTLE,
                     File::C => flag = MoveFlag::QUEEN_CASTLE,

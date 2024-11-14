@@ -22,8 +22,8 @@ pub struct PseudoLegalPawnMovesInfo {
 // cache the results here or not.
 impl PseudoLegalPawnMovesInfo {
     pub fn new<const C: TColor>(pos: &Position) -> Self {
-        let color = Color::new(C);
-        let pawns = pos.get_bitboard(PieceType::Pawn, color);
+        let color = Color::from_v(C);
+        let pawns = pos.get_bitboard(PieceType::PAWN, color);
         let pieces = pos.get_occupancy();
         let enemies = pos.get_color_bb(!color);
         let ep_sq = pos.get_ep_square();
@@ -37,10 +37,13 @@ impl PseudoLegalPawnMovesInfo {
 }
 
 #[inline]
-const fn promo_rank<const C: TColor>() -> Rank {
-    match Color::new(C) {
-        Color::WHITE => Rank::_7,
-        Color::BLACK => Rank::_2
+const fn promo_rank(c: Color) -> Rank {
+    unsafe {
+        match c {
+            Color::WHITE => Rank::_7,
+            Color::BLACK => Rank::_2,
+            _ => unreachable!()
+        }
     }
 }
 
