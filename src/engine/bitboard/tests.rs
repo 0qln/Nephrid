@@ -24,18 +24,18 @@ fn lsb() {
 
 #[test]
 fn split_north() {
-    assert_eq!(Bitboard::split_north(Square::from_c(Squares::A1)), Bitboard { v: 0xfffffffffffffffeu64 });   
-    assert_eq!(Bitboard::split_north(Square::from_c(Squares::B1)), Bitboard { v: 0xfffffffffffffffcu64 });   
-    assert_eq!(Bitboard::split_north(Square::from_c(Squares::A5)), Bitboard { v: 0xfffffffe00000000u64 });
-    assert_eq!(Bitboard::split_north(Square::from_c(Squares::G8)), Bitboard { v: 0x8000000000000000u64 });
-    assert_eq!(Bitboard::split_north(Square::from_c(Squares::H8)), Bitboard { v: 0 });   
+    assert_eq!(Bitboard::split_north(Square::A1), Bitboard { v: 0xfffffffffffffffeu64 });   
+    assert_eq!(Bitboard::split_north(Square::B1), Bitboard { v: 0xfffffffffffffffcu64 });   
+    assert_eq!(Bitboard::split_north(Square::A5), Bitboard { v: 0xfffffffe00000000u64 });
+    assert_eq!(Bitboard::split_north(Square::G8), Bitboard { v: 0x8000000000000000u64 });
+    assert_eq!(Bitboard::split_north(Square::H8), Bitboard { v: 0 });   
 }
 
 #[test]
 fn split_south() {
-    assert_eq!(Bitboard::split_south(Square::from_c(Squares::A1)), Bitboard { v: 0 });   
-    assert_eq!(Bitboard::split_south(Square::from_c(Squares::B1)), Bitboard { v: 1 });   
-    assert_eq!(Bitboard::split_south(Square::from_c(Squares::A5)), Bitboard { v: 0xffffffffu64 });
-    assert_eq!(Bitboard::split_south(Square::from_c(Squares::G8)), Bitboard { v: 0x3fffffffffffffffu64 });
-    assert_eq!(Bitboard::split_south(Square::from_c(Squares::H8)), Bitboard { v: 0x7fffffffffffffffu64 });   
+    assert_eq!(Bitboard::split_south(Square::A1), Bitboard { v: 0 });   
+    assert_eq!(Bitboard::split_south(Square::B1), Bitboard { v: 1 });   
+    assert_eq!(Bitboard::split_south(Square::A5), Bitboard { v: 0xffffffffu64 });
+    assert_eq!(Bitboard::split_south(Square::G8), Bitboard { v: 0x3fffffffffffffffu64 });
+    assert_eq!(Bitboard::split_south(Square::H8), Bitboard { v: 0x7fffffffffffffffu64 });   
 }

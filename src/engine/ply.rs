@@ -40,6 +40,7 @@ impl From<(FullMoveCount, Turn)> for Ply {
         match turn {
             Turn::WHITE => Self { v: 2 * fmc.v },
             Turn::BLACK => Self { v: 2 * fmc.v + 1 },
+            _ => unreachable!("Invalid program state."),
         }      
     }
 }

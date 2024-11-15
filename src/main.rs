@@ -9,6 +9,7 @@
 #![feature(const_heap)]
 #![feature(unchecked_shifts)]
 #![feature(debug_closure_helpers)]
+#![feature(macro_metavar_expr)]
 
 #[macro_use]
 extern crate impl_ops;

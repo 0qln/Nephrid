@@ -1,46 +1,29 @@
-use crate::{engine::color::Color, misc::ParseError};
+use crate::{engine::color::Color, impl_variants, misc::{ConstFrom, ParseError}};
 
-pub enum PromotionPieceType {
-    Knight = PieceType::Knight as isize,
-    Bishop = PieceType::Bishop as isize,
-    Rook = PieceType::Rook as isize,
-    Queen = PieceType::Queen as isize,
+pub type TPieceType = u8;
+
+#[derive(Copy, Clone, Default, PartialEq)]
+pub struct PieceType {
+    v: TPieceType
 }
 
-#[derive(Copy, Clone, PartialEq, PartialOrd)]
-pub enum PieceType {
-    None = 0,
-    Pawn = 1,
-    Knight = 2,
-    Bishop = 3,
-    Rook = 4,
-    Queen = 5,
-    King = 6,    
-}
-
-// impl PieceType {
-//     pub fn is_promotion(&self) -> bool {
-//         *self >= PieceType::Knight && *self <= PieceType::Knight
-//     }
-// }
-
-impl Default for PieceType {
-    fn default() -> Self {
-        Self::None
+impl_variants! {
+    TPieceType as PieceType {
+        NONE,
+        PAWN,
+        KNIGHT,
+        BISHOP,
+        ROOK,
+        QUEEN,
+        KING,    
     }
 }
 
-impl TryFrom<char> for PromotionPieceType {
-    type Error = ParseError;
- 
-    fn try_from(value: char) -> Result<Self, Self::Error> {
-        match value {
-            'n' => Ok(PromotionPieceType::Knight),
-            'b' => Ok(PromotionPieceType::Bishop),
-            'r' => Ok(PromotionPieceType::Rook),
-            'q' => Ok(PromotionPieceType::Queen),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
-        }
+impl PieceType {
+    #[inline]
+    pub const fn is_promo(&self) -> bool {
+        self.v >= Self::KNIGHT.v && 
+        self.v <= Self::QUEEN.v
     }
 }
 
@@ -49,13 +32,13 @@ impl TryFrom<char> for PieceType {
     
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
-            'p' => Ok(PieceType::Pawn),
-            'n' => Ok(PieceType::Knight),
-            'b' => Ok(PieceType::Bishop),
-            'r' => Ok(PieceType::Rook),
-            'q' => Ok(PieceType::Queen),
-            'k' => Ok(PieceType::King),
-            '.' => Ok(PieceType::None),
+            'p' => Ok(PieceType::PAWN),
+            'n' => Ok(PieceType::KNIGHT),
+            'b' => Ok(PieceType::BISHOP),
+            'r' => Ok(PieceType::ROOK),
+            'q' => Ok(PieceType::QUEEN),
+            'k' => Ok(PieceType::KING),
+            '.' => Ok(PieceType::NONE),
             x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
@@ -64,25 +47,76 @@ impl TryFrom<char> for PieceType {
 impl Into<char> for PieceType {
     fn into(self) -> char {
         match self {
-            PieceType::Pawn => 'p',
-            PieceType::Knight => 'n',
-            PieceType::Bishop => 'b',
-            PieceType::Rook => 'r',
-            PieceType::Queen => 'q',
-            PieceType::King => 'k',
-            PieceType::None => '.',
+            PieceType::PAWN => 'p',
+            PieceType::KNIGHT => 'n',
+            PieceType::BISHOP => 'b',
+            PieceType::ROOK => 'r',
+            PieceType::QUEEN => 'q',
+            PieceType::KING => 'k',
+            PieceType::NONE => '.',
+            _ => unreachable!("Invalid program state.")
         }
     }
 }
 
 
+#[derive(Copy, Clone, Default, PartialEq)]
+pub struct PromoPieceType {
+    v: TPieceType
+}
 
-// todo: use compressed memory representation
+impl_variants! {
+    TPieceType as PromoPieceType {
+        KNIGHT = PieceType::KNIGHT.v(),
+        BISHOP = PieceType::BISHOP.v(),
+        ROOK = PieceType::ROOK.v(),
+        QUEEN = PieceType::QUEEN.v(),
+    }
+}
+
+impl TryFrom<char> for PromoPieceType {
+    type Error = ParseError;
+    
+    fn try_from(value: char) -> Result<Self, Self::Error> {
+        match value {
+            'n' => Ok(PromoPieceType::KNIGHT),
+            'b' => Ok(PromoPieceType::BISHOP),
+            'r' => Ok(PromoPieceType::ROOK),
+            'q' => Ok(PromoPieceType::QUEEN),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+        }
+    }
+}
+
+
+pub type TPiece = u8;
       
 #[derive(Copy, Clone, Default)]
-pub struct Piece {
-    pub color: Color,
-    pub piece_type: PieceType
+pub struct Piece { v: TPiece }
+
+impl Piece {
+    #[inline]
+    pub const fn piece_type(&self) -> PieceType {
+        // Safety: Piece cannot be constructed from unchecked value.
+        unsafe {
+            PieceType::from_v(self.v >> 1)
+        }
+    }
+    
+    #[inline]
+    pub const fn color(&self) -> Color {
+        // Safety: One bit can only ever contain Color::WHITE or Color::BLACK
+        unsafe {
+            Color::from_v(self.v & 1)
+        }
+    }
+}
+
+impl const ConstFrom<(Color, PieceType)> for Piece {
+    #[inline]
+    fn from_c((color, piece_type): (Color, PieceType)) -> Self {
+        Piece { v: color.v() | (piece_type.v() >> 1) }
+    }
 }
 
 impl TryFrom<char> for Piece {
@@ -90,18 +124,15 @@ impl TryFrom<char> for Piece {
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         let piece_type = PieceType::try_from(value.to_ascii_lowercase())?;
-        let color = match value.is_uppercase() {
-            true => Color::WHITE,
-            false => Color::BLACK,
-        };
-        Ok(Self { color, piece_type })
+        let color = if value.is_uppercase() { Color::WHITE } else { Color::BLACK };
+        Ok(Self::from_c((color, piece_type)))
     }
 }
 
 impl Into<char> for Piece {
     fn into(self) -> char {
-        let mut result: char = self.piece_type.into();
-        if self.color == Color::WHITE {
+        let mut result: char = self.piece_type().into();
+        if self.color() == Color::WHITE {
             result = result.to_ascii_uppercase();
         }
         result

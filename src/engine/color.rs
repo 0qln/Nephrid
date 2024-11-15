@@ -1,25 +1,20 @@
 use std::ops;
 
-use crate::misc::ParseError;
-
-pub type TColor = bool;
+use crate::{impl_variants, misc::ParseError};
 
 #[derive(PartialEq, Copy, Clone, Debug, Default)]
-pub struct Color {
-    pub v: TColor
+pub struct Color { v: TColor }
+
+pub type TColor = u8;
+
+impl_variants! { 
+    TColor as Color {
+        WHITE,
+        BLACK,
+    } 
 }
 
-impl Color {
-    pub const WHITE: Color = Color { v: false };
-    pub const BLACK: Color = Color { v: true };
-
-    pub const fn new(val: TColor) -> Self {
-        Color { v: val }
-    }
-        
-}
-
-impl_op!(! | c: Color | -> Color { Color { v: !c.v } });
+impl_op!(! | c: Color | -> Color { Color { v: !c.v & 1 } });
 
 impl TryFrom<char> for Color {
     type Error = ParseError;
@@ -38,6 +33,7 @@ impl Into<char> for Color {
         match self {
             Color::WHITE => 'w',
             Color::BLACK => 'b',
+            _ => unreachable!("Invalid program state.")
         }
     }
 }
