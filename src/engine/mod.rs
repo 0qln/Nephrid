@@ -59,12 +59,9 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
             let mut search = engine.search.clone();
 
             macro_rules! collect_and_parse {
-                ($tokenizer:expr, $field:expr, $default:expr) => {{
-                    // TODO: clean this up
-                    let token = $tokenizer.collect_token();
-                    if token.is_none() { $field = $default; return ;}
-                    let token = token.unwrap();
-                    $field = token.parse().unwrap_or($default);
+                ($field:expr, $default:expr) => {{
+                    let token = tokenizer.collect_token();
+                    $field = token.map_or($default, |s| s.parse().unwrap_or($default));
                 }};
             }
 
@@ -72,21 +69,18 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
                 match token {
                     "perft" => search.mode = search::mode::Mode::Perft,
                     "ponder" => search.mode = search::mode::Mode::Ponder,
-                    "wtime" => collect_and_parse!(tokenizer, search.limit.wtime, 0),
-                    "btime" => collect_and_parse!(tokenizer, search.limit.btime, 0),
-                    "winc" => collect_and_parse!(tokenizer, search.limit.winc, 0),
-                    "binc" => collect_and_parse!(tokenizer, search.limit.binc, 0),
-                    "movestogo" => collect_and_parse!(tokenizer, search.limit.movestogo, 0),
-                    "depth" => collect_and_parse!(tokenizer, search.target.depth, Depth::MIN),
-                    "nodes" => collect_and_parse!(tokenizer, search.limit.nodes, 0),
-                    "mate" => collect_and_parse!(tokenizer, search.target.mate, Depth::MIN),
-                    "movetime" => collect_and_parse!(tokenizer, search.limit.movetime, 0),
+                    "wtime" => collect_and_parse!(search.limit.wtime, 0),
+                    "btime" => collect_and_parse!(search.limit.btime, 0),
+                    "winc" => collect_and_parse!(search.limit.winc, 0),
+                    "binc" => collect_and_parse!(search.limit.binc, 0),
+                    "movestogo" => collect_and_parse!(search.limit.movestogo, 0),
+                    "depth" => collect_and_parse!(search.target.depth, Depth::MIN),
+                    "nodes" => collect_and_parse!(search.limit.nodes, 0),
+                    "mate" => collect_and_parse!(search.target.mate, Depth::MIN),
+                    "movetime" => collect_and_parse!(search.limit.movetime, 0),
                     "infinite" => search.limit.is_active = false,
                     "searchmoves" | _ => {
-                        let move_notation = LongAlgebraicUciNotation::new(
-                            tokenizer,
-                            &engine.position
-                        );
+                        let move_notation = LongAlgebraicUciNotation::new(tokenizer, &engine.position);
                         match Move::try_from(move_notation) {
                             Ok(m) => search.target.search_moves.push(m),
                             Err(e) => sync::out(&format!("Error: {e}"))
