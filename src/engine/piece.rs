@@ -2,8 +2,13 @@ use crate::{engine::color::Color, impl_variants, misc::{ConstFrom, ParseError}};
 
 pub type TPieceType = u8;
 
+#[derive(Copy, Clone, Default, PartialEq)]
+pub struct PieceType {
+    v: TPieceType
+}
+
 impl_variants! {
-    PieceType {
+    TPieceType as PieceType {
         NONE,
         PAWN,
         KNIGHT,
@@ -14,22 +19,7 @@ impl_variants! {
     }
 }
 
-#[derive(Copy, Clone, Default, PartialEq)]
-pub struct PieceType {
-    v: TPieceType
-}
-
 impl PieceType {
-    #[inline]
-    pub const unsafe fn from_v(v: TPieceType) -> Self {
-        Self { v }
-    }
-    
-    #[inline]
-    pub const fn v(&self) -> TPieceType {
-        self.v
-    }
-
     #[inline]
     pub const fn is_promo(&self) -> bool {
         self.v >= Self::KNIGHT.v && 
@@ -65,6 +55,35 @@ impl Into<char> for PieceType {
             PieceType::KING => 'k',
             PieceType::NONE => '.',
             _ => unreachable!("Invalid program state.")
+        }
+    }
+}
+
+
+#[derive(Copy, Clone, Default, PartialEq)]
+pub struct PromoPieceType {
+    v: TPieceType
+}
+
+impl_variants! {
+    TPieceType as PromoPieceType {
+        KNIGHT = PieceType::KNIGHT.v(),
+        BISHOP = PieceType::BISHOP.v(),
+        ROOK = PieceType::ROOK.v(),
+        QUEEN = PieceType::QUEEN.v(),
+    }
+}
+
+impl TryFrom<char> for PromoPieceType {
+    type Error = ParseError;
+    
+    fn try_from(value: char) -> Result<Self, Self::Error> {
+        match value {
+            'n' => Ok(PromoPieceType::KNIGHT),
+            'b' => Ok(PromoPieceType::BISHOP),
+            'r' => Ok(PromoPieceType::ROOK),
+            'q' => Ok(PromoPieceType::QUEEN),
+            x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }

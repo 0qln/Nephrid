@@ -3,7 +3,7 @@ use crate::{
         bitboard::Bitboard, 
         castling::CastlingRights, 
         color::Color, 
-        coordinates::{File, Rank, Square, Squares}, 
+        coordinates::{File, Rank, Square}, 
         fen::Fen, 
         r#move::Move, 
         piece::{Piece, PieceType}, 
@@ -68,22 +68,22 @@ pub struct Position {
 impl Position {
     #[inline]
     pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
-        self.c_bitboards[color.v as usize] & self.t_bitboards[piece_type as usize]
+        self.c_bitboards[color.v() as usize] & self.t_bitboards[piece_type.v() as usize]
     }
     
     #[inline]
     pub fn get_c_bitboard(&self, color: Color) -> Bitboard {
-        self.c_bitboards[color.v as usize]
+        self.c_bitboards[color.v() as usize]
     }
 
     #[inline]
     pub fn get_color_bb(&self, color: Color) -> Bitboard {
-        self.c_bitboards[color.v as usize]
+        self.c_bitboards[color.v() as usize]
     }
 
     #[inline]
     pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
-        self.t_bitboards[piece_type as usize]
+        self.t_bitboards[piece_type.v() as usize]
     }
     
     #[inline]
@@ -108,19 +108,19 @@ impl Position {
     
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
-        self.t_bitboards[piece.piece_type as usize] |= target;
-        self.c_bitboards[piece.color.v as usize] |= target;
+        self.t_bitboards[piece.piece_type().v() as usize] |= target;
+        self.c_bitboards[piece.color().v() as usize] |= target;
         self.pieces.0[sq.v() as usize] = piece;
-        self.piece_counts[piece.piece_type as usize] += 1;
+        self.piece_counts[piece.piece_type().v() as usize] += 1;
     }
     
     pub fn remove_piece(&mut self, sq: Square) {
         let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
-        self.t_bitboards[piece.piece_type as usize] ^= target;
-        self.c_bitboards[piece.color.v as usize] ^= target;
+        self.t_bitboards[piece.piece_type().v() as usize] ^= target;
+        self.c_bitboards[piece.color().v() as usize] ^= target;
         self.pieces.0[sq.v() as usize] = Piece::default();
-        self.piece_counts[self.get_piece(sq).piece_type as usize] -= 1;
+        self.piece_counts[self.get_piece(sq).piece_type().v() as usize] -= 1;
     }  
 
     pub fn make_move(&mut self, m: Move) {
@@ -133,7 +133,7 @@ impl Position {
     }
 
     pub fn start_position() -> Self {
-        // Safety: FEN string is valid
+        // Safety: This FEN string is valid
         unsafe {
             Position::try_from(
                 &mut Fen::new(&"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
@@ -170,21 +170,21 @@ impl TryFrom<&mut Fen<'_>> for Position {
     
     fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
         let mut position = Position::default();
-        let mut sq = Squares::H8 as i8;
+        let mut sq = Square::H8.v() as i8;
 
         // Position
         for char in fen.iter_token() {
             match char {
                 '/' => continue,
-                '1'..='8' => sq -= char.to_digit(10).unwrap() as i8,        
+                '1'..='8' => sq -= char.to_digit(10).ok_or(ParseError::InputOutOfRange(Box::new(char)))? as i8,        
                 _ => {
                     let piece = Piece::try_from(char)?; 
-                    let pos_sq = Square::try_from((sq ^ 7) as u8)?;
+                    let pos_sq = Square::try_from(sq as u8)?.mirror();
                     position.put_piece(pos_sq, piece);
                     sq -= 1;
                 }
             }
-            if sq < Squares::A1 as i8 {
+            if sq < Square::A1.v() as i8 {
                 break;
             }
         }

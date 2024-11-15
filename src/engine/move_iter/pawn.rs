@@ -22,7 +22,8 @@ pub struct PseudoLegalPawnMovesInfo {
 // cache the results here or not.
 impl PseudoLegalPawnMovesInfo {
     pub fn new<const C: TColor>(pos: &Position) -> Self {
-        let color = Color::from_v(C);
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
         let pawns = pos.get_bitboard(PieceType::PAWN, color);
         let pieces = pos.get_occupancy();
         let enemies = pos.get_color_bb(!color);
@@ -38,37 +39,35 @@ impl PseudoLegalPawnMovesInfo {
 
 #[inline]
 const fn promo_rank(c: Color) -> Rank {
-    unsafe {
-        match c {
-            Color::WHITE => Rank::_7,
-            Color::BLACK => Rank::_2,
-            _ => unreachable!()
-        }
+    match c {
+        Color::WHITE => Rank::_7,
+        Color::BLACK => Rank::_2,
+        _ => unreachable!()
     }
 }
 
 #[inline]
-const fn start_rank<const C: TColor>() -> Rank {
-    match Color::new(C) {
+const fn start_rank(c: Color) -> Rank {
+    match c {
         Color::WHITE => Rank::_2,
-        Color::BLACK => Rank::_7
+        Color::BLACK => Rank::_7,
+        _ => unreachable!()
     }
 }
 
 #[inline]
-const fn single_step<const C: TColor>() -> CompassRose {
-    match Color::new(C) {
+const fn single_step(c: Color) -> CompassRose {
+    match c {
         Color::WHITE => CompassRose::NORT,
-        Color::BLACK => CompassRose::SOUT
+        Color::BLACK => CompassRose::SOUT,
+        _ => unreachable!()
     }
 }
 
 #[inline]
-const fn double_step<const C: TColor>() -> CompassRose {
-    single_step::<C>().double()
+const fn double_step(c: Color) -> CompassRose {
+    single_step(c).double()
 }
-
-// todo: can use generic const when the feature ist stabalized. 
 
 #[inline]
 const fn forward(bb: Bitboard, dir: CompassRose) -> Bitboard {
@@ -81,8 +80,8 @@ const fn backward(bb: Bitboard, dir: CompassRose) -> Bitboard {
 }
 
 #[inline]
-const fn capture<const C: TColor, const DIR: TCompassRose>() -> CompassRose {
-    CompassRose::new(DIR + single_step::<C>().v())
+const fn capture(c: Color, dir: CompassRose) -> CompassRose {
+    CompassRose::new(dir.v() + single_step(c).v())
 }
 
 pub struct PseudoLegalPawnMoves {
@@ -93,35 +92,45 @@ pub struct PseudoLegalPawnMoves {
 
 impl PseudoLegalPawnMoves {
     pub fn new_single_step<'a, const C: TColor>(info: &'a PseudoLegalPawnMovesInfo) -> Self {
-        let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank::<C>());
-        let single_step_blocker = backward(info.pieces, single_step::<C>());
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(color));
+        let single_step_blocker = backward(info.pieces, single_step(color));
         let from = non_promo_pawns & !single_step_blocker;
-        let to = forward(from, single_step::<C>());
+        let to = forward(from, single_step(color));
         Self { from, to, flag: MoveFlag::QUIET, }
     }
 
     pub fn new_capture<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank::<C>());
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let dir = CompassRose::new(DIR);
+        let capture_dir = capture(color, dir);
+        let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(color));
         let capturing_pawns = non_promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
-        let to = forward(capturing_pawns, capture::<C, DIR>()) & info.enemies;
-        let from = backward(to, capture::<C, DIR>());
+        let to = forward(capturing_pawns, capture_dir) & info.enemies;
+        let from = backward(to, capture_dir);
         Self { from, to, flag: MoveFlag::CAPTURE, }
     }
 
     pub fn new_double_step<const C: TColor>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        let single_step_blockers = forward(info.pieces, single_step::<C>());
-        let double_step_blockers = single_step_blockers | forward(info.pieces, double_step::<C>());
-        let double_step_pawns = info.pawns & Bitboard::from_c(start_rank::<C>());
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let single_step_blockers = forward(info.pieces, single_step(color));
+        let double_step_blockers = single_step_blockers | forward(info.pieces, double_step(color));
+        let double_step_pawns = info.pawns & Bitboard::from_c(start_rank(color));
         let from = double_step_pawns & !double_step_blockers;
-        let to = forward(from, double_step::<C>());
+        let to = forward(from, double_step(color));
         Self { from, to, flag: MoveFlag::DOUBLE_PAWN_PUSH, }
     }
 
     fn new_promo<const C: TColor>(info: &PseudoLegalPawnMovesInfo, flag: MoveFlag) -> Self {
-        let single_step_blocker = forward(info.pieces, single_step::<C>());
-        let promo_pawns = info.pawns & Bitboard::from_c(promo_rank::<C>());
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let single_step_blocker = forward(info.pieces, single_step(color));
+        let promo_pawns = info.pawns & Bitboard::from_c(promo_rank(color));
         let from = promo_pawns & !single_step_blocker;
-        let to = forward(from, single_step::<C>());
+        let to = forward(from, single_step(color));
         Self { from, to, flag }
     }
     
@@ -145,10 +154,14 @@ impl PseudoLegalPawnMoves {
         info: &PseudoLegalPawnMovesInfo,
         flag: MoveFlag,
     ) -> Self {
-        let promo_pawns = info.pawns & Bitboard::from_c(promo_rank::<C>());
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let dir = CompassRose::new(DIR);
+        let capture_dir = capture(color, dir);
+        let promo_pawns = info.pawns & Bitboard::from_c(promo_rank(color));
         let capture_west_pawns = promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
-        let to = forward(capture_west_pawns, capture::<C, DIR>()) & info.enemies;
-        let from = backward(to, capture::<C, DIR>());
+        let to = forward(capture_west_pawns, capture_dir) & info.enemies;
+        let from = backward(to, capture_dir);
         Self { from, to, flag }
     }
     pub fn new_promo_capture_knight<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
@@ -165,6 +178,10 @@ impl PseudoLegalPawnMoves {
     }
 
     fn new_ep<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let dir = CompassRose::new(DIR);
+        let capture_dir = capture(color, dir);
         let mut to = Bitboard::from_c(info.ep_sq);
         let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
         let from = match to.is_empty() {
@@ -174,8 +191,8 @@ impl PseudoLegalPawnMoves {
             },
             false => {
                 backward(
-                    forward(capturing_pawns, capture::<C, DIR>()) & to, 
-                    capture::<C, DIR>()
+                    forward(capturing_pawns, capture_dir) & to, 
+                    capture_dir
                 )
             }
         };

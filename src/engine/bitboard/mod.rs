@@ -3,7 +3,7 @@ use crate::{engine::coordinates::{
     CompassRose, File, Rank, Square
 }, misc::ConstFrom};
 
-use super::coordinates::{DiagA1H8, DiagA8H1, Squares, TCompassRose};
+use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose};
 
 #[cfg(test)]
 pub mod tests;
@@ -160,13 +160,6 @@ impl const ConstFrom<Option<Square>> for Bitboard {
             Some(sq) => Bitboard::from_c(sq),
             None => Bitboard::empty(),
         }
-    }
-}
-
-impl const ConstFrom<Squares> for Bitboard {
-    #[inline]
-    fn from_c(sq: Squares) -> Self {
-        Bitboard::from_c(Square::from_c(sq))
     }
 }
 

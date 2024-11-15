@@ -1,21 +1,36 @@
 use crate::{
-    engine::{color::Color, fen::Fen, piece::PieceType}, impl_variants, misc::ParseError
+    engine::{color::Color, fen::Fen}, impl_variants, misc::ParseError
 };
+
+use super::{coordinates::File, piece::PieceType};
 
 pub type TCastlingSide = u8;
 
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct CastlingSide {
     v: TCastlingSide
 }
 
 impl_variants! {
-    CastlingSide {
+    TCastlingSide as CastlingSide {
         KING_SIDE = PieceType::KING.v(),
         QUEEN_SIDE = PieceType::QUEEN.v(),
     }
 } 
+    
+impl TryFrom<File> for CastlingSide {
+    type Error = ParseError;
 
-#[derive(Copy, Clone)]
+    fn try_from(value: File) -> Result<Self, Self::Error> {
+        match value {
+            File::G => Ok(CastlingSide::KING_SIDE),
+            File::C => Ok(CastlingSide::QUEEN_SIDE),
+            x => Err(ParseError::InputOutOfRange(Box::new(x)))
+        }
+    }
+}
+
+#[derive(Copy, Clone, Default)]
 pub struct CastlingRights {
     v: u8,
 }

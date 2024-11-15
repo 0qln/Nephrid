@@ -2,60 +2,66 @@ use crate::{
     engine::{
         coordinates::{ File, Square}, 
         piece::PieceType, position::Position 
-    }, misc::{ConstFrom, ParseError}, uci::tokens::Tokenizer
+    }, impl_variants, misc::{ConstFrom, ParseError}, uci::tokens::Tokenizer
 };
-use std::marker::PhantomData;
 
-// todo: refactoring, clean up
+use super::{castling::CastlingSide, piece::PromoPieceType};
 
 pub struct LongAlgebraicNotation;
-pub struct LongAlgebraicNotationUci;
-pub struct StandardAlgebraicNotation;
 
-pub struct MoveNotation<'this, 'tok, Type> {
-    pub tokens: &'this mut Tokenizer<'tok>,
-    pub context: &'this Position,
-    r#type: PhantomData<Type>
+pub struct LongAlgebraicUciNotation<'a, 'b, 'c> {
+    pub tokens: &'a mut Tokenizer<'c>,
+    pub context: &'b Position,
 }
 
-impl<'a, 'b, Type> MoveNotation<'a, 'b, Type> {
-    #[inline]
-    pub fn new(tokens: &'a mut Tokenizer<'b>, context: &'a Position) -> Self {
-        MoveNotation {
-            tokens,
-            context,
-            r#type: PhantomData
+impl<'a, 'b, 'c> LongAlgebraicUciNotation<'a, 'b, 'c> {
+    pub const fn new(tokenizer: &'a mut Tokenizer<'c>, position: &'b Position) -> Self {
+        Self {
+            tokens: tokenizer,
+            context: position
         }
     }
 }
 
-pub type TMoveFlag = u8;
+pub struct StandardAlgebraicNotation;
 
 #[derive(Debug, Copy, Clone)]
-pub struct MoveFlag { v: u8 }
+pub struct MoveFlag { v: TMoveFlag }
 
+pub type TMoveFlag = u8;
+
+impl_variants! {
+    TMoveFlag as MoveFlag {
+        QUIET,
+        DOUBLE_PAWN_PUSH,
+        PROMOTION_KNIGHT,
+        PROMOTION_BISHOP,
+        PROMOTION_ROOK,
+        PROMOTION_QUEEN,
+        CAPTURE_PROMOTION_KNIGHT,
+        CAPTURE_PROMOTION_BISHOP,
+        CAPTURE_PROMOTION_ROOK,
+        CAPTURE_PROMOTION_QUEEN,
+        KING_CASTLE,
+        QUEEN_CASTLE,
+        CAPTURE,
+        EN_PASSANT,
+    }
+}
+    
 impl MoveFlag {
-    pub const QUIET: MoveFlag = MoveFlag { v: 0 };
-    pub const DOUBLE_PAWN_PUSH: MoveFlag = MoveFlag { v: 1 };
-    pub const PROMOTION_KNIGHT: MoveFlag = MoveFlag { v: 2 };
-    pub const PROMOTION_BISHOP: MoveFlag = MoveFlag { v: 3 };
-    pub const PROMOTION_ROOK: MoveFlag = MoveFlag { v: 4 };
-    pub const PROMOTION_QUEEN: MoveFlag = MoveFlag { v: 5 };
-    pub const CAPTURE_PROMOTION_KNIGHT: MoveFlag = MoveFlag { v: 6 };
-    pub const CAPTURE_PROMOTION_BISHOP: MoveFlag = MoveFlag { v: 7 };
-    pub const CAPTURE_PROMOTION_ROOK: MoveFlag = MoveFlag { v: 8 };
-    pub const CAPTURE_PROMOTION_QUEEN: MoveFlag = MoveFlag { v: 9 };
-    pub const KING_CASTLE: MoveFlag = MoveFlag { v: 10 };
-    pub const QUEEN_CASTLE: MoveFlag = MoveFlag { v: 11 };
-    pub const CAPTURE: MoveFlag = MoveFlag { v: 12 };
-    pub const EN_PASSANT: MoveFlag = MoveFlag { v: 13 };
+    pub const fn promo(piece_type: PromoPieceType, captures: bool) -> Self {
+        let mut v = piece_type.v();
+        if captures { v += 4; }
+        Self { v }
+    }
 }
 
-impl TryFrom<u8> for MoveFlag {
+impl TryFrom<TMoveFlag> for MoveFlag {
     type Error = ParseError;
     
     #[inline]
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    fn try_from(value: TMoveFlag) -> Result<Self, Self::Error> {
         match value {
             0..=13 => Ok(MoveFlag { v: value }),
             x => Err(ParseError::InputOutOfRange(Box::new(x))),
@@ -63,21 +69,12 @@ impl TryFrom<u8> for MoveFlag {
     }
 }
 
-impl From<PromotionPieceType> for MoveFlag {
-    #[inline]
-    fn from(value: PromotionPieceType) -> Self {
-        return Self { v: value as u8 };
-    }
-}
-
-impl TryFrom<u16> for MoveFlag {
-    type Error = anyhow::Error;
-    
-    #[inline]
-    fn try_from(value: u16) -> anyhow::Result<Self> {
+impl const ConstFrom<CastlingSide> for MoveFlag {
+    fn from_c(value: CastlingSide) -> Self {
         match value {
-            0..=13 => Ok(MoveFlag { v: value as u8 }),
-            _ => Err(anyhow::Error::msg("MoveFlag value out of range")),
+            CastlingSide::KING_SIDE => MoveFlag::KING_CASTLE,
+            CastlingSide::QUEEN_SIDE => MoveFlag::QUEEN_CASTLE,
+            _ => unreachable!()
         }
     }
 }
@@ -95,7 +92,7 @@ impl Move {
     const MASK_FLAG: u16 = 0b1111 << Move::SHIFT_FLAG;
     
     #[inline]
-    pub fn new(from: Square, to: Square, flag: MoveFlag) -> Self {
+    pub const fn new(from: Square, to: Square, flag: MoveFlag) -> Self {
         Move {
             v: (from.v() as u16) << Move::SHIFT_FROM
                | (to.v() as u16) << Move::SHIFT_TO
@@ -113,10 +110,11 @@ impl Move {
     }
     
     #[inline]
-    pub fn get_to(&self) -> Square {
-        // Safety: 6 bits can only ever contain a value in range [0, 63]
+    pub const fn get_to(&self) -> Square {
+        // Safety: 6 bits can only ever contain a value in range 0..64
         unsafe {
-            Square::try_from((self.v & Move::MASK_TO) >> Move::SHIFT_TO).unwrap_unchecked()
+            let val = (self.v & Move::MASK_TO) >> Move::SHIFT_TO;
+            Square::from_v(val as u8)
         }
     }
     
@@ -124,47 +122,38 @@ impl Move {
     pub fn get_flag(&self) -> MoveFlag {
         // Safety: The inner move flag bits are only ever set from a MoveFlag struct.
         unsafe {
-            MoveFlag::try_from((self.v & Move::MASK_FLAG) >> Move::SHIFT_FLAG).unwrap_unchecked()
+            let val = (self.v & Move::MASK_FLAG) >> Move::SHIFT_FLAG;
+            MoveFlag::try_from(val as u8).unwrap_unchecked()
         }
     }
 }
 
-impl TryFrom<MoveNotation<'_, '_, LongAlgebraicNotationUci>> for Move {
+impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
     type Error = ParseError;
 
-    fn try_from(move_notation: MoveNotation<'_, '_, LongAlgebraicNotationUci>) -> Result<Self, Self::Error> {
+    fn try_from(move_notation: LongAlgebraicUciNotation<'_, '_, '_>) -> Result<Self, Self::Error> {
         let from = Option::<Square>::try_from(&mut *move_notation.tokens)?.ok_or(ParseError::MissingInput)?;
         let to = Option::<Square>::try_from(&mut *move_notation.tokens)?.ok_or(ParseError::MissingInput)?;
         let moving_p = move_notation.context.get_piece(from);
         let captured_p = move_notation.context.get_piece(to);
         let abs_dist = from.v().abs_diff(to.v());
-        let captures = captured_p.piece_type == PieceType::NONE;
+        let captures = captured_p.piece_type() == PieceType::NONE;
         let mut flag = if captures { MoveFlag::CAPTURE } else { MoveFlag::QUIET };
 
-        match moving_p.piece_type {
+        match moving_p.piece_type() {
             PieceType::PAWN => {
-                match abs_dist {
-                    16 => flag = MoveFlag::DOUBLE_PAWN_PUSH,
-                    7 | 9 if !captures => flag = MoveFlag::EN_PASSANT,
-                    _ => if let Some(c) = move_notation.tokens.next() {
-                        flag = MoveFlag::from(PromotionPieceType::try_from(c)?);
-                        if captures { 
-                            // Safety: 
-                            //  The flag is currently set to a promotion piece [2; 5].
-                            //  Adding 4 will result in a valid flag value.
-                            unsafe {
-                                flag = MoveFlag::try_from(flag.v + 4).unwrap_unchecked(); 
-                            }
-                        }
-                    }
+                flag = match abs_dist {
+                    16 => MoveFlag::DOUBLE_PAWN_PUSH,
+                    7 | 9 if !captures => MoveFlag::EN_PASSANT,
+                    _ => move_notation.tokens.next().map_or(Ok(flag),
+                        |c| Ok(MoveFlag::promo(PromoPieceType::try_from(c)?, captures))
+                    )?
                 }
             }
             PieceType::KING if abs_dist == 2 => {
-                match File::from_c(to) {
-                    File::G => flag = MoveFlag::KING_CASTLE,
-                    File::C => flag = MoveFlag::QUEEN_CASTLE,
-                    _ => { }
-                }
+                let file = File::from_c(to);
+                let side = CastlingSide::try_from(file)?;
+                flag = MoveFlag::from_c(side);
             }
             _ => { }
         };

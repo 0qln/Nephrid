@@ -12,7 +12,7 @@ use crate::engine::{
     r#move::Move,
 };
 use std::{process, thread};
-use self::r#move::{LongAlgebraicNotationUci, MoveNotation};
+use self::r#move::{LongAlgebraicUciNotation};
 
 pub mod search;
 pub mod zobrist;
@@ -83,7 +83,7 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
                     "movetime" => collect_and_parse!(tokenizer, search.limit.movetime, 0),
                     "infinite" => search.limit.is_active = false,
                     "searchmoves" | _ => {
-                        let move_notation = MoveNotation::<LongAlgebraicNotationUci>::new(
+                        let move_notation = LongAlgebraicUciNotation::new(
                             tokenizer,
                             &engine.position
                         );
@@ -114,7 +114,7 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
             };
             if tokenizer.collect_token().as_deref() == Some("moves") {
                 while tokenizer.goto_next_token() {
-                    let move_notation = MoveNotation::<LongAlgebraicNotationUci>::new(&mut *tokenizer, &engine.position);
+                    let move_notation = LongAlgebraicUciNotation::new(&mut *tokenizer, &engine.position);
                     match Move::try_from(move_notation) {
                         Ok(m) => engine.position.make_move(m),
                         Err(e) => sync::out(&format!("Error: {e}"))
