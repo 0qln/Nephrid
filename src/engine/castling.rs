@@ -75,6 +75,7 @@ impl CastlingRights {
         color.v() | (side.v & 0b10)
     }
     
+    #[inline]
     pub const fn empty() -> Self {    
         CastlingRights { v: 0 }
     }

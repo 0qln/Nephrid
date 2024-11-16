@@ -131,6 +131,7 @@ impl Position {
         self.state_stack.castling_rights
     }
     
+    #[inline]
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
         self.t_bitboards[piece.piece_type().v() as usize] |= target;
@@ -139,6 +140,7 @@ impl Position {
         self.piece_counts[piece.piece_type().v() as usize] += 1;
     }
     
+    #[inline]
     pub fn remove_piece(&mut self, sq: Square) {
         let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
@@ -148,6 +150,7 @@ impl Position {
         self.piece_counts[self.get_piece(sq).piece_type().v() as usize] -= 1;
     }  
     
+    #[inline]
     pub fn move_piece(&mut self, from: Square, to: Square) {
         let piece = self.get_piece(from);
         let from_to = Bitboard::from_c(from) ^ Bitboard::from_c(to);
@@ -156,15 +159,22 @@ impl Position {
         self.pieces.0[from.v() as usize] = Piece::default();
         self.pieces.0[to.v() as usize] = piece;
     }
+    
+    #[inline]
+    fn next_state_mut(&mut self) -> &mut PositionInfo {
+        self.state_stack.next.get_mut_or_init(|| Default::default())
+    }
 
+    // todo: maybe this can be sped up by passing in the color of the moving side as a const generic param.
+    /// Makes a move on the board.
     pub fn make_move(&mut self, m: Move) {
         let us = self.get_turn();
         let (from, to, flag) = m.into();
         let moving_piece = self.get_piece(from);
         let target_piece = self.get_piece(to);
-        let new_state = self.state_stack.next.get_mut_or_init(|| Default::default()); 
 
-        new_state.castling_rights = self.state_stack.castling_rights;
+        self.turn = !us;
+        self.next_state_mut().castling_rights = self.state_stack.castling_rights;
         
         if flag.is_capture() {
             let captured_piece = match flag {
@@ -186,17 +196,11 @@ impl Position {
                 _ => to,
             };
             
-            new_state.captured_piece = captured_piece;
+            self.next_state_mut().captured_piece = captured_piece;
 
-            new_state.plys50 = Ply { v: 0 };
+            self.next_state_mut().plys50 = Ply { v: 0 };
 
-            match captured_sq {
-                Square::A1 if !us == Color::WHITE => new_state.castling_rights.set_false(CastlingSide::QUEEN_SIDE, Color::WHITE),
-                Square::H1 if !us == Color::WHITE => new_state.castling_rights.set_false(CastlingSide::KING_SIDE, Color::WHITE),
-                Square::A8 if !us == Color::BLACK => new_state.castling_rights.set_false(CastlingSide::QUEEN_SIDE, Color::BLACK),
-                Square::H8 if !us == Color::BLACK => new_state.castling_rights.set_false(CastlingSide::KING_SIDE, Color::BLACK),
-                _ => (),
-            };
+            update_castling(captured_sq, !us, &mut self.next_state_mut().castling_rights);
             
             self.remove_piece(captured_sq);
         }
@@ -205,8 +209,8 @@ impl Position {
         
         match moving_piece.piece_type() {
             PieceType::KING => {
-                new_state.castling_rights.set_false(CastlingSide::QUEEN_SIDE, us);
-                new_state.castling_rights.set_false(CastlingSide::KING_SIDE, us);
+                self.next_state_mut().castling_rights.set_false(CastlingSide::QUEEN_SIDE, us);
+                self.next_state_mut().castling_rights.set_false(CastlingSide::KING_SIDE, us);
                 let rank = Rank::from_c(to);
                 match flag {
                     MoveFlag::KING_CASTLE => {
@@ -215,26 +219,20 @@ impl Position {
                         self.move_piece(rook_from, rook_to);
                     },
                     MoveFlag::QUEEN_CASTLE => {
-                        let rook_from = Square::from_c((File::H, rank));
-                        let rook_to   = Square::from_c((File::F, rank));
+                        let rook_from = Square::from_c((File::A, rank));
+                        let rook_to   = Square::from_c((File::D, rank));
                         self.move_piece(rook_from, rook_to);
                     },
                     _ => (),
                 }
             }
             PieceType::ROOK => {
-                match from {
-                    Square::A1 if us == Color::WHITE => new_state.castling_rights.set_false(CastlingSide::QUEEN_SIDE, Color::WHITE),
-                    Square::H1 if us == Color::WHITE => new_state.castling_rights.set_false(CastlingSide::KING_SIDE, Color::WHITE),
-                    Square::A8 if us == Color::BLACK => new_state.castling_rights.set_false(CastlingSide::QUEEN_SIDE, Color::BLACK),
-                    Square::H8 if us == Color::BLACK => new_state.castling_rights.set_false(CastlingSide::KING_SIDE, Color::BLACK),
-                    _ => (),
-                };
+                update_castling(from, us, &mut self.next_state_mut().castling_rights);
             }
             PieceType::PAWN => {
                 match flag.v() {
                     MoveFlag::DOUBLE_PAWN_PUSH_C => {
-                       new_state.ep_square = Some(
+                       self.next_state_mut().ep_square = Some(
                             // Safety:
                             // To `to` sq can only ever be on the 4th or 5th rank.
                             // For any square in on those ranks, the formula yields a valid square.
@@ -253,14 +251,31 @@ impl Position {
                     _ => (),
                 }
                 
-                new_state.plys50 = Ply { v: 0 };                
+                self.next_state_mut().plys50 = Ply { v: 0 };                
             }
             _ => ()
+        }
+        
+
+        #[inline(always)]
+        const fn update_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
+            match c {
+                Color::WHITE => match sq {
+                    Square::A1 => cr.set_false(CastlingSide::QUEEN_SIDE, Color::WHITE),
+                    Square::H1 => cr.set_false(CastlingSide::KING_SIDE, Color::WHITE),
+                    _ => ()
+                },
+                Color::BLACK => match sq {
+                    Square::A8 => cr.set_false(CastlingSide::QUEEN_SIDE, Color::BLACK),
+                    Square::H8 => cr.set_false(CastlingSide::KING_SIDE, Color::BLACK),
+                    _ => ()
+                }
+                _ => ()
+            }
         }
     }
 
     pub fn unmake_move(&mut self, m: Move) {
-        todo!()
     }
 
     pub fn start_position() -> Self {
