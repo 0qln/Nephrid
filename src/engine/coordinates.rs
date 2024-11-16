@@ -61,6 +61,8 @@ impl_variants! {
 }
 
 impl_op!(<< |a: usize, b: Square| -> usize { a << b.v } );
+impl_op!(% |a: Square, b: u8| -> Square { Square { v: a.v % b } } );
+impl_op!(- |a: Square, b: Square| -> Square { Square { v: a.v - b.v } } );
 
 impl Square {
     pub const MIN: TSquare = Square::A1.v;
@@ -123,8 +125,10 @@ impl TryFrom<&mut Tokenizer<'_>> for Option<Square> {
 }
 
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Copy, Clone)]
 pub struct Rank { v: u8 }
+
+impl_op!(* |a: u8, b: Rank| -> Rank { Rank { v: a * b.v } } );
 
 impl Rank {
     pub const _1: Rank = Rank { v: 0 }; 

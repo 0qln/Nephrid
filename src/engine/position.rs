@@ -1,3 +1,5 @@
+use std::cell::OnceCell;
+
 use crate::{
     engine::{
         bitboard::Bitboard, 
@@ -12,12 +14,11 @@ use crate::{
     }, misc::{ConstFrom, ParseError}
 };
 
-use super::ply::{FullMoveCount, Ply};
-
+use super::{castling::CastlingSide, r#move::MoveFlag, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
 
 #[derive(Default, Clone)]
 pub struct PositionInfo {
-    pub next: Option<Box<PositionInfo>>,
+    pub next: OnceCell<Box<PositionInfo>>,
     pub prev: Option<Box<PositionInfo>>,
     pub checkers: Bitboard,
     pub blockers: Bitboard,
@@ -30,6 +31,25 @@ pub struct PositionInfo {
     pub key: zobrist::Hash,
     pub has_threefold_repetition: bool
 }
+
+// impl Clone for PositionInfo {
+//     fn clone(&self) -> Self {
+//         Self {
+//             next: ::default(),
+//             prev: self.prev.clone(),
+//             checkers: self.checkers,
+//             blockers: self.blockers,
+//             nstm_attacks: self.nstm_attacks,
+//             plys50: self.plys50,
+//             ply: self.ply,
+//             ep_square: self.ep_square,
+//             castling_rights: self.castling_rights,
+//             captured_piece: self.captured_piece,
+//             key: self.key,
+//             has_threefold_repetition: self.has_threefold_repetition
+//         }
+//     }
+// }
 
 impl PositionInfo {
     pub fn init(&mut self, position: &Position) {
@@ -60,7 +80,7 @@ pub struct Position {
     c_bitboards: [Bitboard; 2],
     t_bitboards: [Bitboard; 7],
     pieces: Pieces,
-    piece_counts: [u8; 14],
+    piece_counts: [i8; 14],
     turn: Turn,
     state_stack: PositionInfo
 }
@@ -106,6 +126,11 @@ impl Position {
         self.state_stack.ep_square
     }
     
+    #[inline]
+    pub fn get_castling(&self) -> CastlingRights {
+        self.state_stack.castling_rights
+    }
+    
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
         self.t_bitboards[piece.piece_type().v() as usize] |= target;
@@ -122,10 +147,116 @@ impl Position {
         self.pieces.0[sq.v() as usize] = Piece::default();
         self.piece_counts[self.get_piece(sq).piece_type().v() as usize] -= 1;
     }  
+    
+    pub fn move_piece(&mut self, from: Square, to: Square) {
+        let piece = self.get_piece(from);
+        let from_to = Bitboard::from_c(from) ^ Bitboard::from_c(to);
+        self.c_bitboards[piece.color().v() as usize] ^= from_to;
+        self.t_bitboards[piece.piece_type().v() as usize] ^= from_to;
+        self.pieces.0[from.v() as usize] = Piece::default();
+        self.pieces.0[to.v() as usize] = piece;
+    }
 
     pub fn make_move(&mut self, m: Move) {
         let us = self.get_turn();
-        // let from = m
+        let (from, to, flag) = m.into();
+        let moving_piece = self.get_piece(from);
+        let target_piece = self.get_piece(to);
+        let new_state = self.state_stack.next.get_mut_or_init(|| Default::default()); 
+
+        new_state.castling_rights = self.state_stack.castling_rights;
+        
+        if flag.is_capture() {
+            let captured_piece = match flag {
+                MoveFlag::EN_PASSANT => Piece::from_c((!us, PieceType::PAWN)),
+                _ => target_piece,
+            };
+            
+            let captured_sq = match flag {
+                MoveFlag::EN_PASSANT => {
+                    // Safety:
+                    // If the move is an en passant, the `to` square is 
+                    // on the 3rd or 6th rank. For any of the sq values
+                    // on those ranks, the formula yields a valid square.
+                    unsafe {
+                        // todo: test and move this logic somewhere else
+                        Square::from_v(to.v() + (us.v() *  2 - 1) * 8) 
+                    }
+                }
+                _ => to,
+            };
+            
+            new_state.captured_piece = captured_piece;
+
+            new_state.plys50 = Ply { v: 0 };
+
+            match captured_sq {
+                Square::A1 if !us == Color::WHITE => new_state.castling_rights.set_false(CastlingSide::QUEEN_SIDE, Color::WHITE),
+                Square::H1 if !us == Color::WHITE => new_state.castling_rights.set_false(CastlingSide::KING_SIDE, Color::WHITE),
+                Square::A8 if !us == Color::BLACK => new_state.castling_rights.set_false(CastlingSide::QUEEN_SIDE, Color::BLACK),
+                Square::H8 if !us == Color::BLACK => new_state.castling_rights.set_false(CastlingSide::KING_SIDE, Color::BLACK),
+                _ => (),
+            };
+            
+            self.remove_piece(captured_sq);
+        }
+        
+        self.move_piece(from, to);
+        
+        match moving_piece.piece_type() {
+            PieceType::KING => {
+                new_state.castling_rights.set_false(CastlingSide::QUEEN_SIDE, us);
+                new_state.castling_rights.set_false(CastlingSide::KING_SIDE, us);
+                let rank = Rank::from_c(to);
+                match flag {
+                    MoveFlag::KING_CASTLE => {
+                        let rook_from = Square::from_c((File::H, rank));
+                        let rook_to   = Square::from_c((File::F, rank));
+                        self.move_piece(rook_from, rook_to);
+                    },
+                    MoveFlag::QUEEN_CASTLE => {
+                        let rook_from = Square::from_c((File::H, rank));
+                        let rook_to   = Square::from_c((File::F, rank));
+                        self.move_piece(rook_from, rook_to);
+                    },
+                    _ => (),
+                }
+            }
+            PieceType::ROOK => {
+                match from {
+                    Square::A1 if us == Color::WHITE => new_state.castling_rights.set_false(CastlingSide::QUEEN_SIDE, Color::WHITE),
+                    Square::H1 if us == Color::WHITE => new_state.castling_rights.set_false(CastlingSide::KING_SIDE, Color::WHITE),
+                    Square::A8 if us == Color::BLACK => new_state.castling_rights.set_false(CastlingSide::QUEEN_SIDE, Color::BLACK),
+                    Square::H8 if us == Color::BLACK => new_state.castling_rights.set_false(CastlingSide::KING_SIDE, Color::BLACK),
+                    _ => (),
+                };
+            }
+            PieceType::PAWN => {
+                match flag.v() {
+                    MoveFlag::DOUBLE_PAWN_PUSH_C => {
+                       new_state.ep_square = Some(
+                            // Safety:
+                            // To `to` sq can only ever be on the 4th or 5th rank.
+                            // For any square in on those ranks, the formula yields a valid square.
+                            unsafe {
+                                // todo: test and move this logic somewhere else
+                                Square::from_v(to.v() + (us.v() *  2 - 1) * 8) 
+                            }
+                        );
+                    }
+                    MoveFlag::PROMOTION_KNIGHT_C..MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
+                        // Safety: We just checked, that the flag is in a valid range.
+                        let promo = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
+                        self.remove_piece(to);
+                        self.put_piece(to, Piece::from_c((us, promo)));
+                    }
+                    _ => (),
+                }
+                
+                new_state.plys50 = Ply { v: 0 };                
+            }
+            _ => ()
+        }
     }
 
     pub fn unmake_move(&mut self, m: Move) {

@@ -1,5 +1,7 @@
 use crate::{engine::color::Color, impl_variants, misc::{ConstFrom, ParseError}};
 
+use super::r#move::MoveFlag;
+
 pub type TPieceType = u8;
 
 #[derive(Copy, Clone, Default, PartialEq)]
@@ -88,6 +90,19 @@ impl TryFrom<char> for PromoPieceType {
     }
 }
 
+impl TryFrom<MoveFlag> for PromoPieceType {
+    type Error = ParseError;
+
+    fn try_from(flag: MoveFlag) -> Result<Self, Self::Error> {
+        if !flag.is_promo() {
+            Err(ParseError::InputOutOfRange(Box::new(flag)))?
+        }
+        else {
+            Ok(PromoPieceType { v: (flag.v() - 2) % 4 + 2 })
+        }
+    }
+}
+
 
 pub type TPiece = u8;
       
@@ -115,6 +130,13 @@ impl Piece {
 impl const ConstFrom<(Color, PieceType)> for Piece {
     #[inline]
     fn from_c((color, piece_type): (Color, PieceType)) -> Self {
+        Piece { v: color.v() | (piece_type.v() >> 1) }
+    }
+}
+
+impl const ConstFrom<(Color, PromoPieceType)> for Piece {
+    #[inline]
+    fn from_c((color, piece_type): (Color, PromoPieceType)) -> Self {
         Piece { v: color.v() | (piece_type.v() >> 1) }
     }
 }

@@ -1,3 +1,3 @@
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Copy)]
 pub struct Hash { v: u64 }
 
