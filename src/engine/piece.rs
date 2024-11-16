@@ -125,6 +125,10 @@ impl Piece {
             Color::from_v(self.v & 1)
         }
     }
+    
+    pub const fn v(&self) -> TPiece {
+        self.v
+    }
 }
 
 impl const ConstFrom<(Color, PieceType)> for Piece {

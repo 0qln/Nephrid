@@ -30,7 +30,7 @@ impl TryFrom<File> for CastlingSide {
     }
 }
 
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, PartialEq)]
 pub struct CastlingRights {
     v: u8,
 }
@@ -78,5 +78,10 @@ impl CastlingRights {
     #[inline]
     pub const fn empty() -> Self {    
         CastlingRights { v: 0 }
+    }
+    
+    #[inline]
+    pub const fn v(&self) -> u8 {
+        self.v
     }
 }

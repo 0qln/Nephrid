@@ -26,30 +26,11 @@ pub struct PositionInfo {
     pub plys50: Ply,
     pub ply: Ply,
     pub ep_square: Option<Square>,
-    pub castling_rights: CastlingRights,
+    pub castling: CastlingRights,
     pub captured_piece: Piece,
     pub key: zobrist::Hash,
     pub has_threefold_repetition: bool
 }
-
-// impl Clone for PositionInfo {
-//     fn clone(&self) -> Self {
-//         Self {
-//             next: ::default(),
-//             prev: self.prev.clone(),
-//             checkers: self.checkers,
-//             blockers: self.blockers,
-//             nstm_attacks: self.nstm_attacks,
-//             plys50: self.plys50,
-//             ply: self.ply,
-//             ep_square: self.ep_square,
-//             castling_rights: self.castling_rights,
-//             captured_piece: self.captured_piece,
-//             key: self.key,
-//             has_threefold_repetition: self.has_threefold_repetition
-//         }
-//     }
-// }
 
 impl PositionInfo {
     pub fn init(&mut self, position: &Position) {
@@ -128,11 +109,16 @@ impl Position {
     
     #[inline]
     pub fn get_castling(&self) -> CastlingRights {
-        self.state_stack.castling_rights
+        self.state_stack.castling
     }
     
     #[inline]
-    pub fn put_piece(&mut self, sq: Square, piece: Piece) {
+    pub fn get_key(&self) -> zobrist::Hash {
+        self.state_stack.key
+    }
+    
+    #[inline]
+    fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
         self.t_bitboards[piece.piece_type().v() as usize] |= target;
         self.c_bitboards[piece.color().v() as usize] |= target;
@@ -141,7 +127,7 @@ impl Position {
     }
     
     #[inline]
-    pub fn remove_piece(&mut self, sq: Square) {
+    fn remove_piece(&mut self, sq: Square) {
         let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
         self.t_bitboards[piece.piece_type().v() as usize] ^= target;
@@ -151,7 +137,7 @@ impl Position {
     }  
     
     #[inline]
-    pub fn move_piece(&mut self, from: Square, to: Square) {
+    fn move_piece(&mut self, from: Square, to: Square) {
         let piece = self.get_piece(from);
         let from_to = Bitboard::from_c(from) ^ Bitboard::from_c(to);
         self.c_bitboards[piece.color().v() as usize] ^= from_to;
@@ -172,9 +158,19 @@ impl Position {
         let (from, to, flag) = m.into();
         let moving_piece = self.get_piece(from);
         let target_piece = self.get_piece(to);
+        let old_ep_sq = self.state_stack.ep_square;
+        let old_castling = self.state_stack.castling;
+
+        self.next_state_mut().castling = self.state_stack.castling;
+        self.next_state_mut().ply = self.state_stack.ply + 1;
+        self.next_state_mut().plys50 = self.state_stack.plys50 + 1;
+        self.next_state_mut().ep_square = None;
+        self.next_state_mut().key = self.state_stack.key;
+        self.next_state_mut().key.toggle_ep_square(old_ep_sq);
+        self.next_state_mut().key.toggle_turn();
+        self.next_state_mut().captured_piece = Piece::default();
 
         self.turn = !us;
-        self.next_state_mut().castling_rights = self.state_stack.castling_rights;
         
         if flag.is_capture() {
             let captured_piece = match flag {
@@ -196,38 +192,42 @@ impl Position {
                 _ => to,
             };
             
-            self.next_state_mut().captured_piece = captured_piece;
-
-            self.next_state_mut().plys50 = Ply { v: 0 };
-
-            update_castling(captured_sq, !us, &mut self.next_state_mut().castling_rights);
-            
             self.remove_piece(captured_sq);
+            
+            self.next_state_mut().captured_piece = captured_piece;
+            self.next_state_mut().key.toggle_piece_sq(captured_sq, captured_piece);
+            self.next_state_mut().plys50 = Ply { v: 0 };
+            update_castling(captured_sq, !us, &mut self.next_state_mut().castling);
         }
         
         self.move_piece(from, to);
+        self.next_state_mut().key.move_piece_sq(from, to, moving_piece);
         
         match moving_piece.piece_type() {
             PieceType::KING => {
-                self.next_state_mut().castling_rights.set_false(CastlingSide::QUEEN_SIDE, us);
-                self.next_state_mut().castling_rights.set_false(CastlingSide::KING_SIDE, us);
+                self.next_state_mut().castling.set_false(CastlingSide::QUEEN_SIDE, us);
+                self.next_state_mut().castling.set_false(CastlingSide::KING_SIDE, us);
                 let rank = Rank::from_c(to);
                 match flag {
                     MoveFlag::KING_CASTLE => {
                         let rook_from = Square::from_c((File::H, rank));
                         let rook_to   = Square::from_c((File::F, rank));
+                        let rook = self.get_piece(rook_from);
                         self.move_piece(rook_from, rook_to);
+                        self.next_state_mut().key.move_piece_sq(rook_from, rook_to, rook);
                     },
                     MoveFlag::QUEEN_CASTLE => {
                         let rook_from = Square::from_c((File::A, rank));
                         let rook_to   = Square::from_c((File::D, rank));
+                        let rook = self.get_piece(rook_from);
                         self.move_piece(rook_from, rook_to);
+                        self.next_state_mut().key.move_piece_sq(rook_from, rook_to, rook);
                     },
                     _ => (),
                 }
             }
             PieceType::ROOK => {
-                update_castling(from, us, &mut self.next_state_mut().castling_rights);
+                update_castling(from, us, &mut self.next_state_mut().castling);
             }
             PieceType::PAWN => {
                 match flag.v() {
@@ -241,12 +241,16 @@ impl Position {
                                 Square::from_v(to.v() + (us.v() *  2 - 1) * 8) 
                             }
                         );
+                        self.next_state_mut().key.toggle_ep_square(Some(to));
                     }
                     MoveFlag::PROMOTION_KNIGHT_C..MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
                         // Safety: We just checked, that the flag is in a valid range.
-                        let promo = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
+                        let promo_t = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
+                        let promo = Piece::from_c((us, promo_t));
                         self.remove_piece(to);
-                        self.put_piece(to, Piece::from_c((us, promo)));
+                        self.next_state_mut().key.toggle_piece_sq(to, moving_piece);
+                        self.put_piece(to, promo);
+                        self.next_state_mut().key.toggle_piece_sq(to, promo);
                     }
                     _ => (),
                 }
@@ -256,6 +260,12 @@ impl Position {
             _ => ()
         }
         
+        // update castling rights in the hash, if they have changed.
+        if self.next_state_mut().castling != old_castling {
+            self.next_state_mut().key
+                .toggle_castling(old_castling)
+                .toggle_castling(self.next_state_mut().castling);
+        }
 
         #[inline(always)]
         const fn update_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
@@ -343,7 +353,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
         position.turn = Turn::try_from(char)?;        
         
         let mut state = PositionInfo {
-            castling_rights: CastlingRights::try_from(&mut *fen)?,
+            castling: CastlingRights::try_from(&mut *fen)?,
             ep_square: Option::<Square>::try_from(fen.iter_token())?,
             plys50: Ply::try_from(fen.iter_token())?,
             ply: Ply::from((FullMoveCount::try_from(fen.iter_token())?, position.turn)),
