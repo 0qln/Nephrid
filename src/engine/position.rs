@@ -1,4 +1,4 @@
-use std::cell::OnceCell;
+use std::{cell::{LazyCell, OnceCell}, collections::{linked_list::{Cursor, CursorMut}, LinkedList}, iter::Once, ptr::NonNull};
 
 use crate::{
     engine::{
@@ -17,9 +17,7 @@ use crate::{
 use super::{castling::CastlingSide, r#move::MoveFlag, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
 
 #[derive(Default, Clone)]
-pub struct PositionInfo {
-    pub next: OnceCell<Box<PositionInfo>>,
-    pub prev: Option<Box<PositionInfo>>,
+struct StateInfo {
     pub checkers: Bitboard,
     pub blockers: Bitboard,
     pub nstm_attacks: Bitboard,
@@ -32,7 +30,7 @@ pub struct PositionInfo {
     pub has_threefold_repetition: bool
 }
 
-impl PositionInfo {
+impl StateInfo {
     pub fn init(&mut self, position: &Position) {
         let us = position.turn;
         let king = position.get_bitboard(PieceType::KING, us);
@@ -48,22 +46,81 @@ impl PositionInfo {
 }
 
 #[derive(Clone)]
-struct Pieces([Piece; 64]);
+struct StateStack {
+    states: Vec::<StateInfo>,
+    current: usize,
+}
 
-impl Default for Pieces {
+impl Default for StateStack {
     fn default() -> Self {
-        Self([Piece::default(); 64])
+        let mut vec = Vec::with_capacity(32);
+        vec.push(StateInfo::default());
+        Self {
+            states: vec,
+            current: 0,
+        }
     }
 }
 
-#[derive(Clone, Default)]
+impl StateStack {
+    #[inline]
+    pub fn get(&self) -> &StateInfo {
+        // Safety: The current index is always in range
+        unsafe {
+            self.states.get_unchecked(self.current)
+        }
+    }     
+    
+    #[inline]
+    pub fn get_mut(&mut self) -> &mut StateInfo {
+        // Safety: The current index is always in range
+        unsafe {
+            self.states.get_unchecked_mut(self.current)
+        }
+    }
+    
+    /// Returns the pushed state.
+    #[inline]
+    pub fn push(&mut self) -> NonNull<StateInfo> {
+        self.current += 1;
+        while self.states.len() <= self.current {
+            self.states.push(StateInfo::default());
+        }
+        // Safety: The current index is always in range
+        NonNull::from_ref(unsafe { self.states.get_unchecked(self.current) })
+    }
+    
+    /// Returns the popped state.
+    #[inline]
+    pub fn pop(&mut self) -> NonNull<StateInfo> {
+        // Safety: The current index is always in range
+        let ret = NonNull::from_ref(unsafe { self.states.get_unchecked(self.current) });
+        self.current = self.current.checked_sub(1).unwrap_or(0);
+        ret
+    }
+}
+
+#[derive(Clone)]
 pub struct Position {
     c_bitboards: [Bitboard; 2],
     t_bitboards: [Bitboard; 7],
-    pieces: Pieces,
+    pieces: [Piece; 64],
     piece_counts: [i8; 14],
     turn: Turn,
-    state_stack: PositionInfo
+    state: StateStack,
+}
+
+impl Default for Position {
+    fn default() -> Self {
+        Self {
+            c_bitboards: [Bitboard::empty(); 2],
+            t_bitboards: [Bitboard::empty(); 7],
+            pieces: [Piece::default(); 64],
+            piece_counts: [0; 14],
+            turn: Turn::WHITE,
+            state: StateStack::default()
+        }
+    }
 }
 
 impl Position {
@@ -94,7 +151,7 @@ impl Position {
     
     #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece {
-        self.pieces.0[sq.v() as usize]
+        self.pieces[sq.v() as usize]
     }
 
     #[inline]
@@ -104,25 +161,25 @@ impl Position {
     
     #[inline]
     pub fn get_ep_square(&self) -> Option<Square> {
-        self.state_stack.ep_square
+        self.state.get().ep_square
     }
     
     #[inline]
     pub fn get_castling(&self) -> CastlingRights {
-        self.state_stack.castling
+        self.state.get().castling
     }
     
     #[inline]
     pub fn get_key(&self) -> zobrist::Hash {
-        self.state_stack.key
+        self.state.get().key
     }
-    
+
     #[inline]
     fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
         self.t_bitboards[piece.piece_type().v() as usize] |= target;
         self.c_bitboards[piece.color().v() as usize] |= target;
-        self.pieces.0[sq.v() as usize] = piece;
+        self.pieces[sq.v() as usize] = piece;
         self.piece_counts[piece.piece_type().v() as usize] += 1;
     }
     
@@ -132,7 +189,7 @@ impl Position {
         let piece = self.get_piece(sq);
         self.t_bitboards[piece.piece_type().v() as usize] ^= target;
         self.c_bitboards[piece.color().v() as usize] ^= target;
-        self.pieces.0[sq.v() as usize] = Piece::default();
+        self.pieces[sq.v() as usize] = Piece::default();
         self.piece_counts[self.get_piece(sq).piece_type().v() as usize] -= 1;
     }  
     
@@ -142,36 +199,33 @@ impl Position {
         let from_to = Bitboard::from_c(from) ^ Bitboard::from_c(to);
         self.c_bitboards[piece.color().v() as usize] ^= from_to;
         self.t_bitboards[piece.piece_type().v() as usize] ^= from_to;
-        self.pieces.0[from.v() as usize] = Piece::default();
-        self.pieces.0[to.v() as usize] = piece;
+        self.pieces[from.v() as usize] = Piece::default();
+        self.pieces[to.v() as usize] = piece;
     }
     
-    #[inline]
-    fn next_state_mut(&mut self) -> &mut PositionInfo {
-        self.state_stack.next.get_mut_or_init(|| Default::default())
-    }
-
     // todo: maybe this can be sped up by passing in the color of the moving side as a const generic param.
     /// Makes a move on the board.
     pub fn make_move(&mut self, m: Move) {
         let us = self.get_turn();
+        self.turn = !us;
         let (from, to, flag) = m.into();
         let moving_piece = self.get_piece(from);
         let target_piece = self.get_piece(to);
-        let old_ep_sq = self.state_stack.ep_square;
-        let old_castling = self.state_stack.castling;
-
-        self.next_state_mut().castling = self.state_stack.castling;
-        self.next_state_mut().ply = self.state_stack.ply + 1;
-        self.next_state_mut().plys50 = self.state_stack.plys50 + 1;
-        self.next_state_mut().ep_square = None;
-        self.next_state_mut().key = self.state_stack.key;
-        self.next_state_mut().key.toggle_ep_square(old_ep_sq);
-        self.next_state_mut().key.toggle_turn();
-        self.next_state_mut().captured_piece = Piece::default();
-
-        self.turn = !us;
         
+        // Safety: During the lifetime of this pointer, no other pointer
+        // reads or writes to the memory location of the next state. 
+        let next_state = unsafe { self.state.push().as_mut() };
+
+        next_state.castling = self.state.get().castling;
+        next_state.castling = self.state.get().castling;
+        next_state.plys50 = self.state.get().plys50 + 1;
+        next_state.ep_square = None;
+        next_state.key = self.state.get().key;
+        next_state.key.toggle_ep_square(self.state.get().ep_square);
+        next_state.key.toggle_turn();
+        next_state.captured_piece = Piece::default();
+        
+        // captures
         if flag.is_capture() {
             let captured_piece = match flag {
                 MoveFlag::EN_PASSANT => Piece::from_c((!us, PieceType::PAWN)),
@@ -194,45 +248,49 @@ impl Position {
             
             self.remove_piece(captured_sq);
             
-            self.next_state_mut().captured_piece = captured_piece;
-            self.next_state_mut().key.toggle_piece_sq(captured_sq, captured_piece);
-            self.next_state_mut().plys50 = Ply { v: 0 };
-            update_castling(captured_sq, !us, &mut self.next_state_mut().castling);
+            next_state.captured_piece = captured_piece;
+            next_state.key.toggle_piece_sq(captured_sq, captured_piece);
+            next_state.plys50 = Ply { v: 0 };
+            update_castling(captured_sq, !us, &mut next_state.castling);
         }
         
+        // move the piece
         self.move_piece(from, to);
-        self.next_state_mut().key.move_piece_sq(from, to, moving_piece);
+        next_state.key.move_piece_sq(from, to, moving_piece);
         
         match moving_piece.piece_type() {
+            // castling
             PieceType::KING => {
-                self.next_state_mut().castling.set_false(CastlingSide::QUEEN_SIDE, us);
-                self.next_state_mut().castling.set_false(CastlingSide::KING_SIDE, us);
-                let rank = Rank::from_c(to);
+                next_state.castling.set_false(CastlingSide::QUEEN_SIDE, us);
+                next_state.castling.set_false(CastlingSide::KING_SIDE, us);
                 match flag {
                     MoveFlag::KING_CASTLE => {
+                        let rank = Rank::from_c(to);
                         let rook_from = Square::from_c((File::H, rank));
                         let rook_to   = Square::from_c((File::F, rank));
                         let rook = self.get_piece(rook_from);
                         self.move_piece(rook_from, rook_to);
-                        self.next_state_mut().key.move_piece_sq(rook_from, rook_to, rook);
+                        next_state.key.move_piece_sq(rook_from, rook_to, rook);
                     },
                     MoveFlag::QUEEN_CASTLE => {
+                        let rank = Rank::from_c(to);
                         let rook_from = Square::from_c((File::A, rank));
                         let rook_to   = Square::from_c((File::D, rank));
                         let rook = self.get_piece(rook_from);
                         self.move_piece(rook_from, rook_to);
-                        self.next_state_mut().key.move_piece_sq(rook_from, rook_to, rook);
+                        next_state.key.move_piece_sq(rook_from, rook_to, rook);
                     },
                     _ => (),
                 }
             }
             PieceType::ROOK => {
-                update_castling(from, us, &mut self.next_state_mut().castling);
+                update_castling(from, us, &mut next_state.castling);
             }
+            // pawns
             PieceType::PAWN => {
                 match flag.v() {
                     MoveFlag::DOUBLE_PAWN_PUSH_C => {
-                       self.next_state_mut().ep_square = Some(
+                       next_state.ep_square = Some(
                             // Safety:
                             // To `to` sq can only ever be on the 4th or 5th rank.
                             // For any square in on those ranks, the formula yields a valid square.
@@ -241,30 +299,30 @@ impl Position {
                                 Square::from_v(to.v() + (us.v() *  2 - 1) * 8) 
                             }
                         );
-                        self.next_state_mut().key.toggle_ep_square(Some(to));
+                        next_state.key.toggle_ep_square(Some(to));
                     }
                     MoveFlag::PROMOTION_KNIGHT_C..MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
                         // Safety: We just checked, that the flag is in a valid range.
                         let promo_t = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
                         let promo = Piece::from_c((us, promo_t));
                         self.remove_piece(to);
-                        self.next_state_mut().key.toggle_piece_sq(to, moving_piece);
+                        next_state.key.toggle_piece_sq(to, moving_piece);
                         self.put_piece(to, promo);
-                        self.next_state_mut().key.toggle_piece_sq(to, promo);
+                        next_state.key.toggle_piece_sq(to, promo);
                     }
                     _ => (),
                 }
                 
-                self.next_state_mut().plys50 = Ply { v: 0 };                
+                next_state.plys50 = Ply { v: 0 };                
             }
             _ => ()
         }
         
         // update castling rights in the hash, if they have changed.
-        if self.next_state_mut().castling != old_castling {
-            self.next_state_mut().key
-                .toggle_castling(old_castling)
-                .toggle_castling(self.next_state_mut().castling);
+        if next_state.castling != self.state.get().castling {
+            next_state.key
+                .toggle_castling(self.state.get().castling)
+                .toggle_castling(next_state.castling);
         }
 
         #[inline(always)]
@@ -286,6 +344,61 @@ impl Position {
     }
 
     pub fn unmake_move(&mut self, m: Move) {
+        let us = !self.get_turn();
+        let (from, to, flag) = m.into();
+        
+        // Safety: During the lifetime of this pointer, no other pointer
+        // writes to the memory location of the popped state. 
+        let popped_state = unsafe { self.state.pop().as_ref() };
+
+        let captured_piece = popped_state.captured_piece;
+
+        self.turn = us;
+
+        // promotions
+        if flag.is_promo() {
+            let pawn = Piece::from_c((us, PieceType::PAWN));
+            self.remove_piece(to);
+            self.put_piece(to, pawn);
+        }
+
+        // castling
+        match flag {
+            MoveFlag::KING_CASTLE => {
+                let rank = Rank::from_c(to);
+                let rook_from = Square::from_c((File::H, rank));
+                let rook_to   = Square::from_c((File::F, rank));
+                self.move_piece(rook_to, rook_from);
+            },
+            MoveFlag::QUEEN_CASTLE => {
+                let rank = Rank::from_c(to);
+                let rook_from = Square::from_c((File::A, rank));
+                let rook_to   = Square::from_c((File::D, rank));
+                self.move_piece(rook_to, rook_from);
+            },
+            _ => ()
+        }
+        
+        // move the piece
+        self.move_piece(to, from);
+        
+        // captures
+        if captured_piece != Piece::default() {
+            let captured_sq = match flag {
+                MoveFlag::EN_PASSANT => {
+                    // Safety:
+                    // If the move was an en passant, the `to` square is 
+                    // on the 3rd or 6th rank. For any of the sq values
+                    // on those ranks, the formula yields a valid square.
+                    unsafe {
+                        Square::from_v(to.v() + (us.v() * 2 - 1) * 8)
+                    }
+                },
+                _ => to
+            };
+            
+            self.put_piece(captured_sq, captured_piece);
+        }
     }
 
     pub fn start_position() -> Self {
@@ -352,7 +465,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
         };
         position.turn = Turn::try_from(char)?;        
         
-        let mut state = PositionInfo {
+        let mut state = StateInfo {
             castling: CastlingRights::try_from(&mut *fen)?,
             ep_square: Option::<Square>::try_from(fen.iter_token())?,
             plys50: Ply::try_from(fen.iter_token())?,
