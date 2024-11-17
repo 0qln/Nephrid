@@ -32,6 +32,8 @@ pub struct Ply { pub v: u16 }
 
 impl_op!(- |a: Ply, b: Ply| -> Ply { Ply { v: a.v - b.v } } );
 impl_op!(- |a: Ply, b: u16| -> Ply { Ply { v: a.v - b } } );
+impl_op!(+ |a: Ply, b: Ply| -> Ply { Ply { v: a.v + b.v } } );
+impl_op!(+ |a: Ply, b: u16| -> Ply { Ply { v: a.v + b } } );
 
 // todo: test
 impl From<(FullMoveCount, Turn)> for Ply {

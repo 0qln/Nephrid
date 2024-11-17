@@ -106,7 +106,7 @@ impl TryFrom<MoveFlag> for PromoPieceType {
 
 pub type TPiece = u8;
       
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, PartialEq)]
 pub struct Piece { v: TPiece }
 
 impl Piece {
@@ -124,6 +124,10 @@ impl Piece {
         unsafe {
             Color::from_v(self.v & 1)
         }
+    }
+    
+    pub const fn v(&self) -> TPiece {
+        self.v
     }
 }
 
