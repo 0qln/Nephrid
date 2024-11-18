@@ -13,6 +13,7 @@
 #![feature(once_cell_get_mut)]
 #![feature(linked_list_cursors)]
 #![feature(non_null_from_ref)]
+#![feature(step_trait)]
 
 #[macro_use]
 extern crate impl_ops;

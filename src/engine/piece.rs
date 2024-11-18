@@ -1,10 +1,12 @@
+use std::iter::Step;
+
 use crate::{engine::color::Color, impl_variants, misc::{ConstFrom, ParseError}};
 
 use super::r#move::MoveFlag;
 
 pub type TPieceType = u8;
 
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Copy, Clone, Default, PartialEq, PartialOrd)]
 pub struct PieceType {
     v: TPieceType
 }
@@ -26,6 +28,26 @@ impl PieceType {
     pub const fn is_promo(&self) -> bool {
         self.v >= Self::KNIGHT.v && 
         self.v <= Self::QUEEN.v
+    }
+}
+
+impl Step for PieceType {
+    fn steps_between(start: &Self, end: &Self) -> Option<usize> {
+        Some(end.v() as usize - start.v() as usize)
+    }
+
+    fn forward_checked(start: Self, count: usize) -> Option<Self> {
+        match start.v() + count as u8 {
+            ..=Self::KING_C => Some(PieceType { v: start.v() + count as u8 }),    
+            _ => None
+        }
+    }
+
+    fn backward_checked(start: Self, count: usize) -> Option<Self> {
+        match start.v() < count as u8 {
+            false => None,
+            true => Some(PieceType { v: start.v() - count as u8 })
+        }
     }
 }
 
