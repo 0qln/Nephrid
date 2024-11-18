@@ -10,6 +10,10 @@
 #![feature(unchecked_shifts)]
 #![feature(debug_closure_helpers)]
 #![feature(macro_metavar_expr)]
+#![feature(once_cell_get_mut)]
+#![feature(linked_list_cursors)]
+#![feature(non_null_from_ref)]
+#![feature(step_trait)]
 
 #[macro_use]
 extern crate impl_ops;

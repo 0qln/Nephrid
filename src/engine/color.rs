@@ -14,7 +14,7 @@ impl_variants! {
     } 
 }
 
-impl_op!(! | c: Color | -> Color { Color { v: !c.v & 1 } });
+impl_op!(! | c: Color | -> Color { Color { v: c.v ^ 1 } });
 
 impl TryFrom<char> for Color {
     type Error = ParseError;

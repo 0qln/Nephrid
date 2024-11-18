@@ -1,8 +1,12 @@
+use std::iter::Step;
+
 use crate::{engine::color::Color, impl_variants, misc::{ConstFrom, ParseError}};
+
+use super::r#move::MoveFlag;
 
 pub type TPieceType = u8;
 
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Copy, Clone, Default, PartialEq, PartialOrd)]
 pub struct PieceType {
     v: TPieceType
 }
@@ -24,6 +28,26 @@ impl PieceType {
     pub const fn is_promo(&self) -> bool {
         self.v >= Self::KNIGHT.v && 
         self.v <= Self::QUEEN.v
+    }
+}
+
+impl Step for PieceType {
+    fn steps_between(start: &Self, end: &Self) -> Option<usize> {
+        Some(end.v() as usize - start.v() as usize)
+    }
+
+    fn forward_checked(start: Self, count: usize) -> Option<Self> {
+        match start.v() + count as u8 {
+            ..=Self::KING_C => Some(PieceType { v: start.v() + count as u8 }),    
+            _ => None
+        }
+    }
+
+    fn backward_checked(start: Self, count: usize) -> Option<Self> {
+        match start.v() < count as u8 {
+            false => None,
+            true => Some(PieceType { v: start.v() - count as u8 })
+        }
     }
 }
 
@@ -88,10 +112,23 @@ impl TryFrom<char> for PromoPieceType {
     }
 }
 
+impl TryFrom<MoveFlag> for PromoPieceType {
+    type Error = ParseError;
+
+    fn try_from(flag: MoveFlag) -> Result<Self, Self::Error> {
+        if !flag.is_promo() {
+            Err(ParseError::InputOutOfRange(Box::new(flag)))?
+        }
+        else {
+            Ok(PromoPieceType { v: (flag.v() - 2) % 4 + 2 })
+        }
+    }
+}
+
 
 pub type TPiece = u8;
       
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, PartialEq)]
 pub struct Piece { v: TPiece }
 
 impl Piece {
@@ -110,11 +147,22 @@ impl Piece {
             Color::from_v(self.v & 1)
         }
     }
+    
+    pub const fn v(&self) -> TPiece {
+        self.v
+    }
 }
 
 impl const ConstFrom<(Color, PieceType)> for Piece {
     #[inline]
     fn from_c((color, piece_type): (Color, PieceType)) -> Self {
+        Piece { v: color.v() | (piece_type.v() >> 1) }
+    }
+}
+
+impl const ConstFrom<(Color, PromoPieceType)> for Piece {
+    #[inline]
+    fn from_c((color, piece_type): (Color, PromoPieceType)) -> Self {
         Piece { v: color.v() | (piece_type.v() >> 1) }
     }
 }

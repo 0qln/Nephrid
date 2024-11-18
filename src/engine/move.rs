@@ -5,7 +5,7 @@ use crate::{
     }, impl_variants, misc::{ConstFrom, ParseError}, uci::tokens::Tokenizer
 };
 
-use super::{castling::CastlingSide, piece::PromoPieceType};
+use super::{castling::CastlingSide, piece::{self, PromoPieceType}};
 
 pub struct LongAlgebraicNotation;
 
@@ -25,7 +25,7 @@ impl<'a, 'b, 'c> LongAlgebraicUciNotation<'a, 'b, 'c> {
 
 pub struct StandardAlgebraicNotation;
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct MoveFlag { v: TMoveFlag }
 
 pub type TMoveFlag = u8;
@@ -50,7 +50,21 @@ impl_variants! {
 }
     
 impl MoveFlag {
-    pub const fn promo(piece_type: PromoPieceType, captures: bool) -> Self {
+    #[inline]
+    pub const fn is_capture(&self) -> bool {
+        self.v == Self::CAPTURE.v ||
+        self.v == Self::EN_PASSANT.v ||
+        self.v >= Self::CAPTURE_PROMOTION_KNIGHT.v && self.v <= Self::CAPTURE_PROMOTION_QUEEN.v
+    }
+    
+    #[inline]
+    pub const fn is_promo(&self) -> bool {
+        self.v >= Self::PROMOTION_KNIGHT.v && self.v <= Self::CAPTURE_PROMOTION_QUEEN.v
+    }
+}
+
+impl From<(PromoPieceType, bool)> for MoveFlag {
+    fn from((piece_type, captures): (PromoPieceType, bool)) -> Self {
         let mut v = piece_type.v();
         if captures { v += 4; }
         Self { v }
@@ -128,6 +142,13 @@ impl Move {
     }
 }
 
+impl From<Move> for (Square, Square, MoveFlag) {
+    #[inline]
+    fn from(value: Move) -> Self {
+        (value.get_from(), value.get_to(), value.get_flag())
+    }
+}
+
 impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
     type Error = ParseError;
 
@@ -146,7 +167,7 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                     16 => MoveFlag::DOUBLE_PAWN_PUSH,
                     7 | 9 if !captures => MoveFlag::EN_PASSANT,
                     _ => move_notation.tokens.next().map_or(Ok(flag),
-                        |c| Ok(MoveFlag::promo(PromoPieceType::try_from(c)?, captures))
+                        |c| Ok(MoveFlag::from((PromoPieceType::try_from(c)?, captures)))
                     )?
                 }
             }
