@@ -1,18 +1,96 @@
-use crate::{engine::{bitboard::Bitboard, coordinates::{CompassRose, Square, TCompassRose}}, misc::ConstFrom};
+use crate::{engine::{bitboard::Bitboard, color::{Color, TColor}, coordinates::{CompassRose, Square, TCompassRose}, r#move::{Move, MoveFlag}, piece::PieceType, position::Position}, misc::ConstFrom};
+
+// todo: 
+// optimize towards being more performant when executed 
+// in the alphabeta search.
+
+struct PseudoLegalKnightMovesInfo {
+    enemies: Bitboard,
+    allies: Bitboard,
+}
+
+impl PseudoLegalKnightMovesInfo {
+    pub fn new(pos: &Position, knight: Square, color: Color) -> Self {
+        Self {
+            enemies: pos.get_color_bb(!color),
+            allies: pos.get_color_bb(color),
+        }
+    }
+}
+
+// todo: flag as const generic?
+
+struct PseudoLegalKnightMoves {
+    from: Square,
+    to: Bitboard,
+    flag: MoveFlag,
+}
+
+pub type PseudoLegalKnightMovesConstructor = 
+    fn(&PseudoLegalKnightMovesInfo, Square, Bitboard) -> PseudoLegalKnightMoves;
+
+impl PseudoLegalKnightMoves {
+    fn new_quiets(info: &PseudoLegalKnightMovesInfo, knight: Square, attacks: Bitboard) -> Self {
+        Self { 
+            from: knight,
+            to: attacks & !info.allies & !info.enemies, 
+            flag: MoveFlag::QUIET
+        }
+    }
+    
+    fn new_captures(info: &PseudoLegalKnightMovesInfo, knight: Square, attacks: Bitboard) -> Self {
+        Self { 
+            from: knight,
+            to: attacks & info.enemies, 
+            flag: MoveFlag::CAPTURE
+        }
+    }
+}
+
+impl Iterator for PseudoLegalKnightMoves {
+    type Item = Move;
+    
+    fn next(&mut self) -> Option<Self::Item> {
+        let to = self.to.pop_lsb();
+        to.map(|sq| Move::new(self.from, sq, self.flag))
+    }
+}
+
+pub fn gen_pseudo_legals_for_one(info: &PseudoLegalKnightMovesInfo, knight: Square) -> impl Iterator<Item = Move> {
+    let attacks = compute_attacks(knight);
+    let moves: [PseudoLegalKnightMovesConstructor; 2] = [
+        PseudoLegalKnightMoves::new_quiets,
+        PseudoLegalKnightMoves::new_captures,
+    ];
+    moves.into_iter().map(move |f| f(info, knight, attacks)).flatten()    
+}
+
+pub fn gen_pseudo_legals<const C: TColor>(position: &Position) -> impl Iterator<Item = Move> {
+    Color::assert_variant(C); // Safety
+    let color = unsafe { Color::from_v(C) };
+    let info = PseudoLegalKnightMovesInfo::new(position, Square::A1, color);
+    position.get_bitboard(PieceType::KNIGHT, color)
+            .map(move |knight| gen_pseudo_legals_for_one(&info, knight))
+            .flatten()
+}
+
+// todo: the attacks can be precomputed.
 
 const fn compute_attacks(sq: Square) -> Bitboard {
-    let mut result = Bitboard::empty();
     let knight = Bitboard::from_c(sq);
-    
-    compute_atttack::<{CompassRose::NONOWE_C}>(knight, &mut result);
-    compute_atttack::<{CompassRose::NONOEA_C}>(knight, &mut result);
-    compute_atttack::<{CompassRose::NOWEWE_C}>(knight, &mut result);
-    compute_atttack::<{CompassRose::NOEAEA_C}>(knight, &mut result);
-    compute_atttack::<{CompassRose::SOSOWE_C}>(knight, &mut result);
-    compute_atttack::<{CompassRose::SOSOEA_C}>(knight, &mut result);
-    compute_atttack::<{CompassRose::SOWEWE_C}>(knight, &mut result);
-    compute_atttack::<{CompassRose::SOEAEA_C}>(knight, &mut result);
-    
+    compute_attacks_multiple(knight)
+}
+
+const fn compute_attacks_multiple(knights: Bitboard) -> Bitboard {
+    let mut result = Bitboard::empty();
+    compute_atttack::<{CompassRose::NONOWE_C}>(knights, &mut result);
+    compute_atttack::<{CompassRose::NONOEA_C}>(knights, &mut result);
+    compute_atttack::<{CompassRose::NOWEWE_C}>(knights, &mut result);
+    compute_atttack::<{CompassRose::NOEAEA_C}>(knights, &mut result);
+    compute_atttack::<{CompassRose::SOSOWE_C}>(knights, &mut result);
+    compute_atttack::<{CompassRose::SOSOEA_C}>(knights, &mut result);
+    compute_atttack::<{CompassRose::SOWEWE_C}>(knights, &mut result);
+    compute_atttack::<{CompassRose::SOEAEA_C}>(knights, &mut result);
     return result;
 }
 
