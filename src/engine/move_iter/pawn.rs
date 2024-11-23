@@ -21,9 +21,7 @@ pub struct PseudoLegalPawnMovesInfo {
 // iterator initiations. benchmark, wether it's worth to
 // cache the results here or not.
 impl PseudoLegalPawnMovesInfo {
-    pub fn new<const C: TColor>(pos: &Position) -> Self {
-        Color::assert_variant(C); // Safety
-        let color = unsafe { Color::from_v(C) };
+    pub fn new(pos: &Position, color: Color) -> Self {
         let pawns = pos.get_bitboard(PieceType::PAWN, color);
         let pieces = pos.get_occupancy();
         let enemies = pos.get_color_bb(!color);
@@ -219,11 +217,9 @@ impl Iterator for PseudoLegalPawnMoves {
     }
 }
 
-pub fn gen_pseudo_legals<const C: TColor>(position: &Position) -> impl Iterator<Item = Move> {
-    let info = PseudoLegalPawnMovesInfo::new::<C>(position);
-
+fn get_pseudo_legals<const C: TColor>() -> [fn(&PseudoLegalPawnMovesInfo) -> PseudoLegalPawnMoves; 18] {
     // todo: tune the ordering
-    let moves: [fn(&PseudoLegalPawnMovesInfo) -> PseudoLegalPawnMoves; 18] = [
+    [
         PseudoLegalPawnMoves::new_single_step::<C>,
         PseudoLegalPawnMoves::new_double_step::<C>,
         PseudoLegalPawnMoves::new_promo_knight::<C>,
@@ -242,7 +238,16 @@ pub fn gen_pseudo_legals<const C: TColor>(position: &Position) -> impl Iterator<
         PseudoLegalPawnMoves::new_promo_capture_rook::<C, {CompassRose::EAST.v()}>,
         PseudoLegalPawnMoves::new_promo_capture_queen::<C, {CompassRose::WEST.v()}>,
         PseudoLegalPawnMoves::new_promo_capture_queen::<C, {CompassRose::EAST.v()}>,
-    ];
+    ]
+}
+
+pub fn gen_pseudo_legals(pos: &Position, color: Color) -> impl Iterator<Item = Move> {
+    let info = PseudoLegalPawnMovesInfo::new(pos, color);
+    let moves = match color {
+        Color::WHITE => get_pseudo_legals::<{Color::WHITE_C}>(),
+        Color::BLACK => get_pseudo_legals::<{Color::BLACK_C}>(),
+        _ => unreachable!(),
+    };
 
     // todo: somehow make sure the chaining is optimized away... if not do it manually.
     // todo: not sure this works

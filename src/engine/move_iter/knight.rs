@@ -1,7 +1,7 @@
 use crate::{
     engine::{
         bitboard::Bitboard,
-        color::{Color, TColor},
+        color::Color,
         coordinates::{CompassRose, Square, TCompassRose},
         piece::PieceType,
         position::Position,
@@ -64,9 +64,7 @@ impl Iterator for PseudoLegalKnightMoves {
     }
 }
 
-pub fn gen_pseudo_legals<const C: TColor>(position: &Position) -> impl Iterator<Item = Move> {
-    Color::assert_variant(C); // Safety
-    let color = unsafe { Color::from_v(C) };
+pub fn gen_pseudo_legals(position: &Position, color: Color) -> impl Iterator<Item = Move> {
     let info = PseudoLegalKnightMovesInfo::new(position, color);
     position
         .get_bitboard(PieceType::KNIGHT, color)

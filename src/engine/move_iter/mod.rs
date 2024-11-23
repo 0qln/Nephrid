@@ -9,14 +9,15 @@ pub mod knight;
 pub mod pawn;
 pub mod queen;
 pub mod rook;
+pub mod sliding_piece;
 
-pub fn legal_moves(pos: &Position) -> impl Iterator<Item = Move>
+pub fn legal_moves(pos: &Position, color: Color) -> impl Iterator<Item = Move>
 {
     // todo: filter legal moves
     //
     Iterator::chain(
-        pawn::gen_pseudo_legals::<{ Color::WHITE.v() }>(pos),
-        knight::gen_pseudo_legals::<{ Color::WHITE.v() }>(pos),
+        pawn::gen_pseudo_legals(pos, color),
+        knight::gen_pseudo_legals(pos, color),
     )
 }
 
