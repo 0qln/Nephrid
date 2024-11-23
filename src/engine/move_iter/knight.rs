@@ -86,7 +86,6 @@ pub fn gen_pseudo_legals<const C: TColor>(position: &Position) -> impl Iterator<
 
 // todo: the attacks can be precomputed.
 
-    #[inline]
 #[inline]
 const fn compute_attacks(sq: Square) -> Bitboard {
     let knight = Bitboard::from_c(sq);

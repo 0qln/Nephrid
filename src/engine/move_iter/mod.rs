@@ -10,8 +10,10 @@ pub mod pawn;
 pub mod queen;
 pub mod rook;
 
-pub fn legal_moves<>(pos: &Position) -> impl Iterator<Item = Move>
+pub fn legal_moves(pos: &Position) -> impl Iterator<Item = Move>
 {
+    // todo: filter legal moves
+    //
     Iterator::chain(
         pawn::gen_pseudo_legals::<{ Color::WHITE.v() }>(pos),
         knight::gen_pseudo_legals::<{ Color::WHITE.v() }>(pos),
@@ -34,6 +36,7 @@ fn map_bits(mut bits: usize, mask: Bitboard) -> Bitboard {
 }
 
 // todo: remove when iterator is const
+/// Const version of map_bits
 const fn map_bits_c(mut bits: usize, mut mask: Bitboard) -> Bitboard {
     let mut acc = Bitboard::empty();
     while let Some(pos) = mask.next() {
