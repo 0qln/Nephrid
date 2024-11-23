@@ -1,4 +1,9 @@
-use crate::{engine::{bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}}, misc::ConstFrom};
+use crate::{
+    engine::{
+        bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}
+    },
+    misc::ConstFrom,
+};
 
 #[cfg(test)]
 mod tests;
@@ -27,7 +32,7 @@ const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
             None => default,
         }
     };
-    let moves = range.shift_c::<{CompassRose::SOUT.v()}>().v & ray;
+    let moves = range.shift_c::<{ CompassRose::SOUT.v() }>().v & ray;
     result.v |= moves;
 
     // north
@@ -38,7 +43,7 @@ const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         Some(t) => Bitboard::split_south(t),
         None => Bitboard::full(),
     };
-    let moves = range.shift_c::<{CompassRose::NORT.v()}>().v & ray;
+    let moves = range.shift_c::<{ CompassRose::NORT.v() }>().v & ray;
     result.v |= moves;
 
     // west
@@ -49,18 +54,18 @@ const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         Some(t) => Bitboard::split_north(t),
         None => Bitboard::full(),
     };
-    let moves = range.shift_c::<{CompassRose::WEST.v()}>().v & ray;
+    let moves = range.shift_c::<{ CompassRose::WEST.v() }>().v & ray;
     result.v |= moves;
 
     // east
     let ray = rank_bb.v & nort_bb.v;
-    let occupands = Bitboard { v: occupancy.v & ray };
+    let occupands = Bitboard { v: occupancy.v & ray }; 
     let nearest = occupands.lsb();
     let range = match nearest {
         Some(t) => Bitboard::split_south(t),
         None => Bitboard::full(),
     };
-    let moves = range.shift_c::<{CompassRose::EAST.v()}>().v & ray;
+    let moves = range.shift_c::<{ CompassRose::EAST.v() }>().v & ray;
     result.v |= moves;
 
     result

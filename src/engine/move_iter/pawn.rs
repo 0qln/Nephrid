@@ -88,7 +88,23 @@ pub struct PseudoLegalPawnMoves {
     flag: MoveFlag,
 }
 
+// todo: refactor into functions
+// for example:
+//
+// fn gen_single_step<'a, const C: TColor>(info: &'a PseudoLegalPawnMovesInfo) -> impl Iterator<Item = Move> {
+//     Color::assert_variant(C); // Safety
+//     let color = unsafe { Color::from_v(C) };
+//     let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(color));
+//     let single_step_blocker = backward(info.pieces, single_step(color));
+//     let mut from = non_promo_pawns & !single_step_blocker;
+//     let to = forward(from, single_step(color));
+//     to.map(move |sq| unsafe {
+//         Move::new(from.pop_lsb().unwrap_unchecked(), sq, MoveFlag::QUIET)        
+//     })
+// }
+
 impl PseudoLegalPawnMoves {
+
     pub fn new_single_step<'a, const C: TColor>(info: &'a PseudoLegalPawnMovesInfo) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };

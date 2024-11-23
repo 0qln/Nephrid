@@ -1,9 +1,11 @@
 use super::bitboard::Bitboard;
 use super::color::Color;
+use super::coordinates::Square;
 use super::position::Position;
-use super::r#move::Move;
+use super::r#move::{Move, MoveFlag};
 
 pub mod bishop;
+pub mod jumping_piece;
 pub mod king;
 pub mod knight;
 pub mod pawn;
@@ -11,14 +13,30 @@ pub mod queen;
 pub mod rook;
 pub mod sliding_piece;
 
-pub fn legal_moves(pos: &Position, color: Color) -> impl Iterator<Item = Move>
-{
-    // todo: filter legal moves
-    //
-    Iterator::chain(
-        pawn::gen_pseudo_legals(pos, color),
-        knight::gen_pseudo_legals(pos, color),
-    )
+pub fn legal_moves(pos: &Position, color: Color) -> impl Iterator<Item = Move> {
+    todo!();
+    pawn::gen_pseudo_legals(pos, color)
+}
+
+#[inline]
+pub fn gen_captures(
+    attacks: Bitboard,
+    enemies: Bitboard,
+    piece: Square,
+) -> impl Iterator<Item = Move> {
+    let targets = attacks & enemies;
+    targets.map(move |target| Move::new(piece, target, MoveFlag::CAPTURE))
+}
+
+#[inline]
+pub fn gen_quiets(
+    attacks: Bitboard,
+    enemies: Bitboard,
+    allies: Bitboard,
+    piece: Square,
+) -> impl Iterator<Item = Move> {
+    let targets = attacks & !allies & !enemies;
+    targets.map(move |target| Move::new(piece, target, MoveFlag::QUIET))
 }
 
 // todo:

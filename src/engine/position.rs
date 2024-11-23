@@ -36,7 +36,7 @@ impl StateInfo {
         let king = position.get_bitboard(PieceType::KING, us);
         let king_sq = king.lsb();
         let occupancy = position.get_occupancy();
-        for enemy_sq in position.get_c_bitboard(!us) {
+        for enemy_sq in position.get_color_bb(!us) {
             let enemy = position.get_piece(enemy_sq);     
 
         }
@@ -128,11 +128,6 @@ impl Position {
     pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
         self.c_bitboards[color.v() as usize] & self.t_bitboards[piece_type.v() as usize]
     }
-    
-    #[inline]
-    pub fn get_c_bitboard(&self, color: Color) -> Bitboard {
-        self.c_bitboards[color.v() as usize]
-    }
 
     #[inline]
     pub fn get_color_bb(&self, color: Color) -> Bitboard {
@@ -146,7 +141,7 @@ impl Position {
     
     #[inline]
     pub fn get_occupancy(&self) -> Bitboard {
-        self.get_c_bitboard(Color::WHITE) | self.get_c_bitboard(Color::BLACK)
+        self.get_color_bb(Color::WHITE) | self.get_color_bb(Color::BLACK)
     }
     
     #[inline]

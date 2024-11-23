@@ -84,7 +84,7 @@ impl Into<char> for PieceType {
 }
 
 
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Copy, Clone, Default, Debug, PartialEq)]
 pub struct PromoPieceType {
     v: TPieceType
 }
@@ -122,6 +122,47 @@ impl TryFrom<MoveFlag> for PromoPieceType {
         else {
             Ok(PromoPieceType { v: (flag.v() - 2) % 4 + 2 })
         }
+    }
+}
+
+
+#[derive(Copy, Clone, Default, Debug, PartialEq)]
+pub struct SlidingPieceType {
+    v: TPieceType
+}
+
+impl_variants! {
+    TPieceType as SlidingPieceType {
+        BISHOP = PieceType::BISHOP_C,
+        ROOK = PieceType::ROOK_C,
+        QUEEN = PieceType::QUEEN_C,
+    }
+}
+    
+impl Into<PieceType> for SlidingPieceType {
+    #[inline]
+    fn into(self) -> PieceType {
+        PieceType { v: self.v }
+    }
+}
+
+
+#[derive(Copy, Clone, Default, Debug, PartialEq)]
+pub struct JumpingPieceType {
+    v: TPieceType
+}
+
+impl_variants! {
+    TPieceType as JumpingPieceType {
+        KNIGHT = PieceType::KNIGHT_C,
+        KING = PieceType::KING_C,
+    }
+}
+    
+impl Into<PieceType> for JumpingPieceType {
+    #[inline]
+    fn into(self) -> PieceType {
+        PieceType { v: self.v }
     }
 }
 
