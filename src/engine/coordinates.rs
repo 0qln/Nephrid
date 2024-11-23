@@ -125,24 +125,16 @@ impl TryFrom<&mut Tokenizer<'_>> for Option<Square> {
 }
 
 
-#[derive(PartialEq, Debug, Copy, Clone)]
-pub struct Rank { v: u8 }
+#[derive(PartialEq, PartialOrd, Debug, Copy, Clone)]
+pub struct Rank { v: TRank }
+
+pub type TRank = u8;
 
 impl_op!(* |a: u8, b: Rank| -> Rank { Rank { v: a * b.v } } );
 
-impl Rank {
-    pub const _1: Rank = Rank { v: 0 }; 
-    pub const _2: Rank = Rank { v: 1 }; 
-    pub const _3: Rank = Rank { v: 2 }; 
-    pub const _4: Rank = Rank { v: 3 }; 
-    pub const _5: Rank = Rank { v: 4 }; 
-    pub const _6: Rank = Rank { v: 5 }; 
-    pub const _7: Rank = Rank { v: 6 }; 
-    pub const _8: Rank = Rank { v: 7 };
-    
-    #[inline]
-    pub const fn v(&self) -> u8 {
-        self.v
+impl_variants!{
+    TRank as Rank {
+        _1, _2, _3, _4, _5, _6, _7, _8
     }
 }
 
@@ -177,7 +169,7 @@ impl TryFrom<char> for Rank {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
 pub struct File { v: u8 }
 
 impl File {

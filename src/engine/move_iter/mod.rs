@@ -1,7 +1,7 @@
 use super::bitboard::Bitboard;
 use super::color::Color;
-use super::r#move::Move;
 use super::position::Position;
+use super::r#move::Move;
 
 pub mod bishop;
 pub mod king;
@@ -10,11 +10,15 @@ pub mod pawn;
 pub mod queen;
 pub mod rook;
 
-pub fn legal_moves(pos: &Position) -> impl Iterator<Item = Move> {
-    pawn::gen_pseudo_legals::<{Color::WHITE.v()}>(pos)
+pub fn legal_moves<>(pos: &Position) -> impl Iterator<Item = Move>
+{
+    Iterator::chain(
+        pawn::gen_pseudo_legals::<{ Color::WHITE.v() }>(pos),
+        knight::gen_pseudo_legals::<{ Color::WHITE.v() }>(pos),
+    )
 }
 
-// todo: 
+// todo:
 // read and optimize:
 // https://www.chessprogramming.org/Traversing_Subsets_of_a_Set
 

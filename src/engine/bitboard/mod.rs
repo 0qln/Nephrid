@@ -144,6 +144,11 @@ impl Bitboard {
     pub const fn is_empty(&self) -> bool {
         self.v == 0
     }
+    
+    #[inline]
+    pub const fn and_c(&self, other: Bitboard) -> Self {
+        Bitboard { v: self.v & other.v }
+    }
 }
 
 impl const ConstFrom<Square> for Bitboard {
