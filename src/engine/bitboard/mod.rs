@@ -15,9 +15,9 @@ impl Debug for Bitboard {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut result = f.debug_struct("Bitboard");
         for rank in (0..8).rev() {
-            let rank_name = char::from_digit(rank + 1, 10).unwrap();
             result.field_with(
-                rank_name.to_string().as_str(), 
+                ['\n', '\t', char::from_digit(rank + 1, 10).unwrap()]
+                    .into_iter().collect::<String>().as_str(),
                 |f| {
                     for file in 0..8 {
                         let file = File::try_from(file as u8).unwrap();
@@ -29,19 +29,13 @@ impl Debug for Bitboard {
                     Ok(())
                 });
         }
-        result.field_with(" ", |f| { f.write_str("a b c d e f g h ") });
+        result.field_with("\n\t ", |f| { f.write_str("a b c d e f g h \n") });
         result.finish()
     }
 }
 
 impl_op!(+ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v + r.v } });
 impl_op!(- |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v - r.v } });
-// impl_op!(<< |bb: Bitboard, v: File| -> Bitboard { Bitboard { v: bb << v } } );
-// impl_op!(<< |bb: Bitboard, v: Rank| -> Bitboard { Bitboard { v: bb << v } } );
-// impl_op!(<< |bb: Bitboard, v: isize| -> Bitboard { Bitboard { v: bb << v } } );
-// impl_op!(>> |bb: Bitboard, v: isize| -> Bitboard { Bitboard { v: bb >> v } } );
-// impl_op!(<< |bb: Bitboard, v: CompassRose| -> Bitboard { Bitboard { v: bb << v } } );
-// impl_op!(>> |bb: Bitboard, v: CompassRose| -> Bitboard { Bitboard { v: bb >> v } } );
 impl_op!(^ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v ^ r.v } } );
 impl_op!(| |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v | r.v } } );
 impl_op!(| |l: Bitboard, r: usize| -> Bitboard { Bitboard { v: l.v | r as u64 } } );
@@ -178,7 +172,7 @@ impl const ConstFrom<File> for Bitboard {
 impl const ConstFrom<Rank> for Bitboard {
     #[inline]
     fn from_c(rank: Rank) -> Self {
-        Bitboard { v: 0xFFu64 << rank.v() }
+        Bitboard { v: 0xFFu64 << (rank.v() * 8) }
     }
 }
 
