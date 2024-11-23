@@ -266,7 +266,6 @@ pub fn gen_pseudo_legals(pos: &Position, color: Color) -> impl Iterator<Item = M
     };
 
     // todo: somehow make sure the chaining is optimized away... if not do it manually.
-    // todo: not sure this works
     moves.into_iter().map(move |f| f(&info)).flatten()
 }
 
