@@ -269,3 +269,27 @@ pub fn gen_pseudo_legals(pos: &Position, color: Color) -> impl Iterator<Item = M
     // todo: not sure this works
     moves.into_iter().map(move |f| f(&info)).flatten()
 }
+
+// todo: can be computed at compile time
+//
+pub fn generic_compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
+    Color::assert_variant(C); // Safety
+    let color = unsafe { Color::from_v(C) };
+    let capture_west = capture(color, CompassRose::WEST);
+    let capture_east = capture(color, CompassRose::EAST);
+
+    (pawns & !Bitboard::from_c(File::A)).shift(capture_west) | 
+    (pawns & !Bitboard::from_c(File::H)).shift(capture_east)
+}
+
+pub fn compute_attacks(pos: &Position, color: Color) -> Bitboard {
+    match color {
+        Color::WHITE => generic_compute_attacks::<{Color::WHITE_C}>(
+            pos.get_bitboard(PieceType::PAWN, color)
+        ),
+        Color::BLACK => generic_compute_attacks::<{Color::BLACK_C}>(
+            pos.get_bitboard(PieceType::PAWN, color)
+        ),
+        _ => unreachable!(),
+    }
+}
