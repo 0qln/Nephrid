@@ -1,5 +1,3 @@
-use typenum::Bit;
-
 use super::*;
 
 #[test]
