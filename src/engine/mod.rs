@@ -12,13 +12,12 @@ use crate::engine::{
     r#move::Move,
 };
 use std::{process, thread};
-use self::r#move::{LongAlgebraicUciNotation};
+use self::r#move::LongAlgebraicUciNotation;
 
 pub mod search;
 pub mod zobrist;
 pub mod transposition_table;
 pub mod move_iter;
-pub mod move_gen;
 pub mod color;
 pub mod piece;
 pub mod depth;
