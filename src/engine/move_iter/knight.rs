@@ -1,16 +1,24 @@
-use crate::{engine::{bitboard::Bitboard, color::{Color, TColor}, coordinates::{CompassRose, Square, TCompassRose}, r#move::{Move, MoveFlag}, piece::PieceType, position::Position}, misc::ConstFrom};
+use crate::{
+    engine::{
+        bitboard::Bitboard,
+        color::{Color, TColor},
+        coordinates::{CompassRose, Square, TCompassRose},
+        piece::PieceType,
+        position::Position,
+        r#move::{Move, MoveFlag},
+    },
+    misc::ConstFrom,
+};
 
-// todo: 
-// optimize towards being more performant when executed 
-// in the alphabeta search.
-
+#[derive(Clone, Copy)]
 struct PseudoLegalKnightMovesInfo {
     enemies: Bitboard,
     allies: Bitboard,
 }
 
 impl PseudoLegalKnightMovesInfo {
-    pub fn new(pos: &Position, knight: Square, color: Color) -> Self {
+    #[inline]
+    pub fn new(pos: &Position, color: Color) -> Self {
         Self {
             enemies: pos.get_color_bb(!color),
             allies: pos.get_color_bb(color),
@@ -26,56 +34,60 @@ struct PseudoLegalKnightMoves {
     flag: MoveFlag,
 }
 
-pub type PseudoLegalKnightMovesConstructor = 
-    fn(&PseudoLegalKnightMovesInfo, Square, Bitboard) -> PseudoLegalKnightMoves;
-
 impl PseudoLegalKnightMoves {
-    fn new_quiets(info: &PseudoLegalKnightMovesInfo, knight: Square, attacks: Bitboard) -> Self {
-        Self { 
+    #[inline]
+    fn new_quiets(info: PseudoLegalKnightMovesInfo, knight: Square, attacks: Bitboard) -> Self {
+        Self {
             from: knight,
-            to: attacks & !info.allies & !info.enemies, 
-            flag: MoveFlag::QUIET
+            to: attacks & !info.allies & !info.enemies,
+            flag: MoveFlag::QUIET,
         }
     }
-    
-    fn new_captures(info: &PseudoLegalKnightMovesInfo, knight: Square, attacks: Bitboard) -> Self {
-        Self { 
+
+    #[inline]
+    fn new_captures(info: PseudoLegalKnightMovesInfo, knight: Square, attacks: Bitboard) -> Self {
+        Self {
             from: knight,
-            to: attacks & info.enemies, 
-            flag: MoveFlag::CAPTURE
+            to: attacks & info.enemies,
+            flag: MoveFlag::CAPTURE,
         }
     }
 }
 
 impl Iterator for PseudoLegalKnightMoves {
     type Item = Move;
-    
+
+    #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let to = self.to.pop_lsb();
         to.map(|sq| Move::new(self.from, sq, self.flag))
     }
 }
 
-pub fn gen_pseudo_legals_for_one(info: &PseudoLegalKnightMovesInfo, knight: Square) -> impl Iterator<Item = Move> {
-    let attacks = compute_attacks(knight);
-    let moves: [PseudoLegalKnightMovesConstructor; 2] = [
-        PseudoLegalKnightMoves::new_quiets,
-        PseudoLegalKnightMoves::new_captures,
-    ];
-    moves.into_iter().map(move |f| f(info, knight, attacks)).flatten()    
-}
-
 pub fn gen_pseudo_legals<const C: TColor>(position: &Position) -> impl Iterator<Item = Move> {
     Color::assert_variant(C); // Safety
     let color = unsafe { Color::from_v(C) };
-    let info = PseudoLegalKnightMovesInfo::new(position, Square::A1, color);
-    position.get_bitboard(PieceType::KNIGHT, color)
-            .map(move |knight| gen_pseudo_legals_for_one(&info, knight))
-            .flatten()
+    let info = PseudoLegalKnightMovesInfo::new(position, color);
+    position
+        .get_bitboard(PieceType::KNIGHT, color)
+        .map(move |knight| {
+            let attacks = compute_attacks(knight);
+            let moves: [fn(PseudoLegalKnightMovesInfo, Square, Bitboard) -> PseudoLegalKnightMoves; 2] = [
+                PseudoLegalKnightMoves::new_quiets,
+                PseudoLegalKnightMoves::new_captures,
+            ];
+            moves
+                .into_iter()
+                .map(move |f| f(info, knight, attacks))
+                .flatten()
+        })
+        .flatten()
 }
 
 // todo: the attacks can be precomputed.
 
+    #[inline]
+#[inline]
 const fn compute_attacks(sq: Square) -> Bitboard {
     let knight = Bitboard::from_c(sq);
     compute_attacks_multiple(knight)
@@ -83,14 +95,14 @@ const fn compute_attacks(sq: Square) -> Bitboard {
 
 const fn compute_attacks_multiple(knights: Bitboard) -> Bitboard {
     let mut result = Bitboard::empty();
-    compute_atttack::<{CompassRose::NONOWE_C}>(knights, &mut result);
-    compute_atttack::<{CompassRose::NONOEA_C}>(knights, &mut result);
-    compute_atttack::<{CompassRose::NOWEWE_C}>(knights, &mut result);
-    compute_atttack::<{CompassRose::NOEAEA_C}>(knights, &mut result);
-    compute_atttack::<{CompassRose::SOSOWE_C}>(knights, &mut result);
-    compute_atttack::<{CompassRose::SOSOEA_C}>(knights, &mut result);
-    compute_atttack::<{CompassRose::SOWEWE_C}>(knights, &mut result);
-    compute_atttack::<{CompassRose::SOEAEA_C}>(knights, &mut result);
+    compute_atttack::<{ CompassRose::NONOWE_C }>(knights, &mut result);
+    compute_atttack::<{ CompassRose::NONOEA_C }>(knights, &mut result);
+    compute_atttack::<{ CompassRose::NOWEWE_C }>(knights, &mut result);
+    compute_atttack::<{ CompassRose::NOEAEA_C }>(knights, &mut result);
+    compute_atttack::<{ CompassRose::SOSOWE_C }>(knights, &mut result);
+    compute_atttack::<{ CompassRose::SOSOEA_C }>(knights, &mut result);
+    compute_atttack::<{ CompassRose::SOWEWE_C }>(knights, &mut result);
+    compute_atttack::<{ CompassRose::SOEAEA_C }>(knights, &mut result);
     return result;
 }
 
