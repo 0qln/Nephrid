@@ -9,7 +9,7 @@ use crate::{
 mod tests;
 
 /// Computes the attacks of the rook on the square `sq` with the given `occupancy`.
-const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
+pub const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let file = File::from_c(sq);
     let rank = Rank::from_c(sq);
     let file_bb = Bitboard::from_c(file);
