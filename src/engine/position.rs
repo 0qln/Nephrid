@@ -8,13 +8,17 @@ use crate::{
 
 use super::{castling::CastlingSide, r#move::MoveFlag, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
 
-#[derive(Default, Clone)]
+#[derive(Clone, Default)]
 struct StateInfo {
+    // Memoized state
     pub checkers: Bitboard,
     pub blockers: Bitboard,
     pub nstm_attacks: Bitboard,
+
+    // Game history
     pub plys50: Ply,
     pub ply: Ply,
+    pub turn: Turn,
     pub ep_square: Option<Square>,
     pub castling: CastlingRights,
     pub captured_piece: Piece,
@@ -25,10 +29,9 @@ struct StateInfo {
 impl StateInfo {
     /// Initiate checkers, blockers, nstm_attacks
     pub fn init(&mut self, pos: &Position) {
-        let stm = pos.turn;
+        let stm = self.turn;
         let nstm = !stm;
         let king = pos.get_bitboard(PieceType::KING, stm);
-        let king_sq = king.lsb().unwrap_or(Square::A1);
         let occupancy = pos.get_occupancy();
         let enemies = pos.get_color_bb(nstm);
         (self.nstm_attacks, self.checkers) = enemies.fold((Bitboard::empty(), Bitboard::empty()), |acc, enemy_sq| {
@@ -51,15 +54,17 @@ impl StateInfo {
             )
         });
         
-        let x_ray_checkers = pos.get_x_ray_checkers(king_sq, enemies);
-        self.blockers = x_ray_checkers.fold(Bitboard::empty(), |acc, x_ray_checker| {
-            let between_squares = Bitboard::between(x_ray_checker, king_sq);
-            let between_occupancy = occupancy & between_squares;
-            match between_occupancy.pop_cnt() {
-                1 => acc | between_squares,
-                _ => acc
-            }
-        });
+        if let Some(king_sq) = king.lsb() {
+            let x_ray_checkers = pos.get_x_ray_checkers(king_sq, enemies);
+            self.blockers = x_ray_checkers.fold(Bitboard::empty(), |acc, x_ray_checker| {
+                let between_squares = Bitboard::between(x_ray_checker, king_sq);
+                let between_occupancy = occupancy & between_squares;
+                match between_occupancy.pop_cnt() {
+                    1 => acc | between_squares,
+                    _ => acc
+                }
+            });
+        }
     }
 }
 
@@ -71,46 +76,68 @@ struct StateStack {
 
 impl Default for StateStack {
     fn default() -> Self {
-        let mut vec = Vec::with_capacity(32);
-        vec.push(StateInfo::default());
-        Self {
-            states: vec,
-            current: 0,
-        }
+        Self::new(StateInfo::default())
     }
 }
 
 impl StateStack {
+    pub fn new(initial_state: StateInfo) -> Self {
+        let mut vec = Vec::with_capacity(16);
+        vec.push(initial_state);
+        Self {
+            states: vec,
+            current: 0
+        }
+    }
+
+    /// Returns a reference to the current state.
     #[inline]
-    pub fn get(&self) -> &StateInfo {
+    pub fn get_current(&self) -> &StateInfo {
         // Safety: The current index is always in range
         unsafe {
             self.states.get_unchecked(self.current)
         }
     }     
     
+    /// Returns a mutable reference to the current state.
     #[inline]
-    pub fn get_mut(&mut self) -> &mut StateInfo {
+    pub fn get_current_mut(&mut self) -> &mut StateInfo {
         // Safety: The current index is always in range
         unsafe {
             self.states.get_unchecked_mut(self.current)
         }
     }
     
-    /// Returns the pushed state.
+    /// Returns a pointer to the current state.
     #[inline]
-    pub fn push(&mut self) -> NonNull<StateInfo> {
+    pub fn get_current_ptr(&mut self) -> NonNull<StateInfo> {
+        NonNull::from_ref(self.get_current_mut())
+    }
+    
+    /// Returns the pushed state.
+    ///
+    #[inline]
+    pub fn push_new(&mut self, new: fn(&StateInfo) -> StateInfo) -> NonNull<StateInfo> {
         self.current += 1;
-        while self.states.len() <= self.current {
-            self.states.push(StateInfo::default());
+        
+        // self.current can only ever be one greater than the length of the vector.
+        assert!(self.states.len() >= self.current);
+        
+        if self.states.len() == self.current {
+            // Safety: self.states.len() >= 1 => self.states.len() > self.current - 1 >= 0
+            let previous = unsafe {
+                self.states.get_unchecked(self.current - 1)
+            };
+            self.states.push(new(previous));
         }
-        // Safety: The current index is always in range
+
+        // Safety: The current index is always in range.
         NonNull::from_ref(unsafe { self.states.get_unchecked(self.current) })
     }
     
     /// Returns the popped state.
     #[inline]
-    pub fn pop(&mut self) -> NonNull<StateInfo> {
+    pub fn pop_current(&mut self) -> NonNull<StateInfo> {
         // Safety: The current index is always in range
         let ret = NonNull::from_ref(unsafe { self.states.get_unchecked(self.current) });
         self.current = self.current.checked_sub(1).unwrap_or(0);
@@ -124,19 +151,18 @@ pub struct Position {
     t_bitboards: [Bitboard; 7],
     pieces: [Piece; 64],
     piece_counts: [i8; 14],
-    turn: Turn,
     state: StateStack,
 }
 
 impl Default for Position {
+    /// Returns an empty position.
     fn default() -> Self {
         Self {
-            c_bitboards: [Bitboard::empty(); 2],
-            t_bitboards: [Bitboard::empty(); 7],
+            c_bitboards: Default::default(),
+            t_bitboards: Default::default(),
             pieces: [Piece::default(); 64],
-            piece_counts: [0; 14],
-            turn: Turn::WHITE,
-            state: StateStack::default()
+            piece_counts: Default::default(),
+            state: Default::default(),
         }
     }
 }
@@ -169,22 +195,22 @@ impl Position {
 
     #[inline]
     pub fn get_turn(&self) -> Turn {
-        self.turn
+        self.state.get_current().turn
     }
     
     #[inline]
     pub fn get_ep_square(&self) -> Option<Square> {
-        self.state.get().ep_square
+        self.state.get_current().ep_square
     }
     
     #[inline]
     pub fn get_castling(&self) -> CastlingRights {
-        self.state.get().castling
+        self.state.get_current().castling
     }
     
     #[inline]
     pub fn get_key(&self) -> zobrist::Hash {
-        self.state.get().key
+        self.state.get_current().key
     }
     
     /// Returns the X-Ray checkers for the given king.
@@ -233,21 +259,32 @@ impl Position {
     /// Makes a move on the board.
     pub fn make_move(&mut self, m: Move) {
         let us = self.get_turn();
-        self.turn = !us;
         let (from, to, flag) = m.into();
         let moving_piece = self.get_piece(from);
         let target_piece = self.get_piece(to);
         
         // Safety: During the lifetime of this pointer, no other pointer
         // reads or writes to the memory location of the next state. 
-        let next_state = unsafe { self.state.push().as_mut() };
+        let next_state = unsafe { 
+            self.state.push_new(|prev| {
+                StateInfo {
+                    // These don't change across leafes on the same depth...
+                    ply: prev.ply + 1,
+                    turn: !prev.turn,
+                    // todo: the remaining fields can even be left uninitialized, 
+                    // because all of the are initialized one by one below.
+                    ..prev.clone()
+                }
+            }).as_mut() 
+        };
 
-        next_state.castling = self.state.get().castling;
-        next_state.castling = self.state.get().castling;
-        next_state.plys50 = self.state.get().plys50 + 1;
+        // These might change across leafes on the same depth, so the 
+        // need to be reinitialized for each leaf.
+        next_state.castling = self.state.get_current().castling;
+        next_state.plys50 = self.state.get_current().plys50 + 1;
         next_state.ep_square = None;
-        next_state.key = self.state.get().key;
-        next_state.key.toggle_ep_square(self.state.get().ep_square);
+        next_state.key = self.state.get_current().key;
+        next_state.key.toggle_ep_square(self.state.get_current().ep_square);
         next_state.key.toggle_turn();
         next_state.captured_piece = Piece::default();
         
@@ -345,9 +382,9 @@ impl Position {
         }
         
         // update castling rights in the hash, if they have changed.
-        if next_state.castling != self.state.get().castling {
+        if next_state.castling != self.state.get_current().castling {
             next_state.key
-                .toggle_castling(self.state.get().castling)
+                .toggle_castling(self.state.get_current().castling)
                 .toggle_castling(next_state.castling);
         }
         
@@ -377,11 +414,9 @@ impl Position {
         
         // Safety: During the lifetime of this pointer, no other pointer
         // writes to the memory location of the popped state. 
-        let popped_state = unsafe { self.state.pop().as_ref() };
+        let popped_state = unsafe { self.state.pop_current().as_ref() };
 
         let captured_piece = popped_state.captured_piece;
-
-        self.turn = us;
 
         // promotions
         if flag.is_promo() {
@@ -469,7 +504,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
         let mut position = Position::default();
         let mut sq = Square::H8.v() as i8;
 
-        // Position
+        // 1. Piece placement
         for char in fen.iter_token() {
             match char {
                 '/' => continue,
@@ -486,24 +521,25 @@ impl TryFrom<&mut Fen<'_>> for Position {
             }
         }
         
-        // Turn
-        let char = match fen.iter_token().next() {
-            None => return Err(ParseError::MissingInput),
-            Some(c) => c,
-        };
-        position.turn = Turn::try_from(char)?;        
-        
+        let turn = Turn::try_from(fen.iter_token().next().ok_or(ParseError::MissingInput)?)?;
         let mut state = StateInfo {
+            // 2. Side to move
+            turn,
+            // 3. Castling ability
             castling: CastlingRights::try_from(&mut *fen)?,
+            // 4. En passant target square
             ep_square: Option::<Square>::try_from(fen.iter_token())?,
+            // 5. Halfmove clock
             plys50: Ply::try_from(fen.iter_token())?,
-            ply: Ply::from((FullMoveCount::try_from(fen.iter_token())?, position.turn)),
+            // 6. Fullmove counter
+            ply: Ply::from((FullMoveCount::try_from(fen.iter_token())?, turn)),
+
+            // TODO: init zobrist hash
+
             ..Default::default()
         };
-
-        // TODO: init zobrist hash
-        
-        // state.init(&position);
+        state.init(&position);
+        position.state = StateStack::new(state);
         
         Ok(position)
     }
