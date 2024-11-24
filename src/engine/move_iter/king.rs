@@ -1,13 +1,8 @@
 use crate::{
     engine::{
-        bitboard::Bitboard,
-        castling::{CastlingRights, CastlingSide},
-        color::Color,
-        coordinates::{File, Rank, Square},
-        position::Position,
-        r#move::{Move, MoveFlag},
+        bitboard::Bitboard, castling::{CastlingRights, CastlingSide}, color::Color, coordinates::{File, Rank, Square}, r#move::{Move, MoveFlag}, position::Position
     },
-    misc::ConstFrom,
+    misc::{ConstFrom, PostIncrement},
 };
 
 pub fn gen_pseudo_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = Move> {
@@ -19,7 +14,7 @@ pub fn gen_pseudo_legal_castling(pos: &Position, color: Color) -> impl Iterator<
     let from = Square::from_c((File::E, rank));
     let castling = pos.get_castling().clone();
     return Gen {
-        state: State::KingSide,
+        state: 0,
         castling,
         from,
         rank,
@@ -27,13 +22,8 @@ pub fn gen_pseudo_legal_castling(pos: &Position, color: Color) -> impl Iterator<
     };
 
     // probably has a simpler solution, but this is just temporary.
-    enum State {
-        KingSide,
-        QueenSide,
-        Exhausted,
-    }
     struct Gen {
-        state: State,
+        state: u8,
         castling: CastlingRights,
         from: Square,
         rank: Rank,
@@ -42,26 +32,25 @@ pub fn gen_pseudo_legal_castling(pos: &Position, color: Color) -> impl Iterator<
     impl Iterator for Gen {
         type Item = Move;
 
+        #[inline]
         fn next(&mut self) -> Option<Self::Item> {
-            match self.state {
-                State::KingSide => {
-                    self.state = State::QueenSide;
+            match self.state.post_incr(1) {
+                0 => {
                     match self.castling.is_true(CastlingSide::KING_SIDE, self.color) {
                         true => {
                             let to = Square::from_c((File::G, self.rank));
                             Some(Move::new(self.from, to, MoveFlag::KING_CASTLE))
                         }
-                        false => None,
+                        false => self.next(),
                     }
                 }
-                State::QueenSide => {
-                    self.state = State::Exhausted;
+                1 => {
                     match self.castling.is_true(CastlingSide::QUEEN_SIDE, self.color) {
                         true => {
                             let to = Square::from_c((File::C, self.rank));
                             Some(Move::new(self.from, to, MoveFlag::QUEEN_CASTLE))
                         }
-                        false => None,
+                        false => self.next(),
                     }
                 }
                 _ => None,
