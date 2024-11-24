@@ -1,6 +1,11 @@
 use crate::{
     engine::{
-        bitboard::Bitboard, castling::{CastlingRights, CastlingSide}, color::Color, coordinates::{File, Rank, Square}, r#move::{Move, MoveFlag}, position::Position
+        bitboard::Bitboard,
+        castling::{CastlingRights, CastlingSide},
+        color::Color,
+        coordinates::{File, Rank, Square},
+        position::Position,
+        r#move::{Move, MoveFlag},
     },
     misc::{ConstFrom, PostIncrement},
 };
@@ -35,24 +40,20 @@ pub fn gen_pseudo_legal_castling(pos: &Position, color: Color) -> impl Iterator<
         #[inline]
         fn next(&mut self) -> Option<Self::Item> {
             match self.state.post_incr(1) {
-                0 => {
-                    match self.castling.is_true(CastlingSide::KING_SIDE, self.color) {
-                        true => {
-                            let to = Square::from_c((File::G, self.rank));
-                            Some(Move::new(self.from, to, MoveFlag::KING_CASTLE))
-                        }
-                        false => self.next(),
+                0 => match self.castling.is_true(CastlingSide::KING_SIDE, self.color) {
+                    true => {
+                        let to = Square::from_c((File::G, self.rank));
+                        Some(Move::new(self.from, to, MoveFlag::KING_CASTLE))
                     }
-                }
-                1 => {
-                    match self.castling.is_true(CastlingSide::QUEEN_SIDE, self.color) {
-                        true => {
-                            let to = Square::from_c((File::C, self.rank));
-                            Some(Move::new(self.from, to, MoveFlag::QUEEN_CASTLE))
-                        }
-                        false => self.next(),
+                    false => self.next(),
+                },
+                1 => match self.castling.is_true(CastlingSide::QUEEN_SIDE, self.color) {
+                    true => {
+                        let to = Square::from_c((File::C, self.rank));
+                        Some(Move::new(self.from, to, MoveFlag::QUEEN_CASTLE))
                     }
-                }
+                    false => self.next(),
+                },
                 _ => None,
             }
         }
