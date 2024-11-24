@@ -170,23 +170,17 @@ impl TryFrom<char> for Rank {
 }
 
 #[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
-pub struct File { v: u8 }
+pub struct File { v: TFile }
+
+pub type TFile = u8;
+
+impl_variants! {
+    TFile as File {
+        A, B, C, D, E, F, G, H
+    }
+}
 
 impl File {
-    pub const A: File = File { v: 0 }; 
-    pub const B: File = File { v: 1 }; 
-    pub const C: File = File { v: 2 }; 
-    pub const D: File = File { v: 3 }; 
-    pub const E: File = File { v: 4 }; 
-    pub const F: File = File { v: 5 }; 
-    pub const G: File = File { v: 6 }; 
-    pub const H: File = File { v: 7 };
-    
-    #[inline]
-    pub const fn v(&self) -> u8 {
-        self.v
-    }
-
     pub const fn edge<const DIR: TCompassRose>() -> File {
         match CompassRose::new(DIR) {
             CompassRose::WEST => File::A,

@@ -64,6 +64,11 @@ impl CastlingRights {
     pub const fn set_true(&mut self, side: CastlingSide, color: Color) {
         self.v |= 1 << CastlingRights::to_index(side, color);
     }
+    
+    #[inline]
+    pub const fn is_true(&self, side: CastlingSide, color: Color) -> bool {
+        self.v & (1 << CastlingRights::to_index(side, color)) != 0
+    }
 
     #[inline]
     const fn to_index(side: CastlingSide, color: Color) -> u8 {

@@ -1,6 +1,21 @@
-use std::{any::Any, num::ParseIntError};
+use std::{any::Any, num::ParseIntError, ops::AddAssign};
 
 use thiserror::Error;
+
+pub trait PostIncrement<T> {
+    fn post_incr(&mut self, incr: T) -> T;
+}
+
+impl<T> PostIncrement<T> for T 
+where T: AddAssign + Copy
+{
+    #[inline]
+    fn post_incr(&mut self, incr: T) -> T {
+        let tmp = *self;
+        *self += incr;
+        *self
+    }
+}
 
 #[const_trait]
 pub trait ConstFrom<T> {

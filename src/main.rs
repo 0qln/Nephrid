@@ -14,6 +14,8 @@
 #![feature(linked_list_cursors)]
 #![feature(non_null_from_ref)]
 #![feature(step_trait)]
+// todo: why does this feature not work?
+#![feature(gen_blocks)]
 
 #[macro_use]
 extern crate impl_ops;

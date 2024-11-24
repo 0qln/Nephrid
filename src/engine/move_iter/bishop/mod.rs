@@ -1,6 +1,9 @@
 use crate::{engine::{bitboard::Bitboard, coordinates::{CompassRose, DiagA1H8, DiagA8H1, Square}}, misc::ConstFrom};
 
-const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
+#[cfg(test)]
+mod tests;
+
+pub const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let a1h8 = Bitboard::from_c(DiagA1H8::from_c(sq));
     let a8h1 = Bitboard::from_c(DiagA8H1::from_c(sq));
     let nort = Bitboard::split_north(sq);
