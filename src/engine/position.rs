@@ -1,16 +1,8 @@
-use std::{cell::{LazyCell, OnceCell}, collections::{linked_list::{Cursor, CursorMut}, LinkedList}, iter::Once, ptr::NonNull};
+use std::ptr::NonNull;
 
 use crate::{
     engine::{
-        bitboard::Bitboard, 
-        castling::CastlingRights, 
-        color::Color, 
-        coordinates::{File, Rank, Square}, 
-        fen::Fen, 
-        r#move::Move, 
-        piece::{Piece, PieceType}, 
-        turn::Turn, 
-        zobrist
+        bitboard::Bitboard, castling::CastlingRights, color::Color, coordinates::{File, Rank, Square}, fen::Fen, r#move::Move, move_iter::{bishop, king, knight, pawn, queen, rook}, piece::{Piece, PieceType}, turn::Turn, zobrist
     }, misc::{ConstFrom, ParseError}
 };
 
@@ -31,17 +23,43 @@ struct StateInfo {
 }
 
 impl StateInfo {
-    pub fn init(&mut self, position: &Position) {
-        let us = position.turn;
-        let king = position.get_bitboard(PieceType::KING, us);
-        let king_sq = king.lsb();
-        let occupancy = position.get_occupancy();
-        for enemy_sq in position.get_color_bb(!us) {
-            let enemy = position.get_piece(enemy_sq);     
-
-        }
+    /// Initiate checkers, blockers, nstm_attacks
+    pub fn init(&mut self, pos: &Position) {
+        let stm = pos.turn;
+        let nstm = !stm;
+        let king = pos.get_bitboard(PieceType::KING, stm);
+        let king_sq = king.lsb().unwrap_or(Square::A1);
+        let occupancy = pos.get_occupancy();
+        let enemies = pos.get_color_bb(nstm);
+        (self.nstm_attacks, self.checkers) = enemies.fold((Bitboard::empty(), Bitboard::empty()), |acc, enemy_sq| {
+            let enemy = pos.get_piece(enemy_sq);     
+            let enemy_attacks = match enemy.piece_type() {
+                PieceType::PAWN => pawn::compute_attacks(pos, nstm),
+                PieceType::KNIGHT => knight::compute_attacks(enemy_sq),
+                PieceType::BISHOP => bishop::compute_attacks(enemy_sq, occupancy),
+                PieceType::ROOK => rook::compute_attacks(enemy_sq, occupancy),
+                PieceType::QUEEN => queen::compute_attacks(enemy_sq, occupancy),
+                PieceType::KING => king::compute_attacks(enemy_sq),
+                _ => unreachable!("We are iterating the squares which contain enemies. PieceType::NONE should not be here."),
+            };
+            (
+                acc.0 | enemy_attacks,
+                match enemy_attacks & king {
+                    Bitboard { v: 0 } => acc.1,
+                    _ => acc.1 | Bitboard::from_c(enemy_sq)
+                }
+            )
+        });
         
-        todo!()
+        let x_ray_checkers = pos.get_x_ray_checkers(king_sq, enemies);
+        self.blockers = x_ray_checkers.fold(Bitboard::empty(), |acc, x_ray_checker| {
+            let between_squares = Bitboard::between(x_ray_checker, king_sq);
+            let between_occupancy = occupancy & between_squares;
+            match between_occupancy.pop_cnt() {
+                1 => acc | between_squares,
+                _ => acc
+            }
+        });
     }
 }
 
@@ -167,6 +185,19 @@ impl Position {
     #[inline]
     pub fn get_key(&self) -> zobrist::Hash {
         self.state.get().key
+    }
+    
+    /// Returns the X-Ray checkers for the given king.
+    /// X-Ray checkers are pieces which attack a king 
+    /// through zero or more pieces.
+    #[inline]
+    pub fn get_x_ray_checkers(&self, king: Square, enemies: Bitboard) -> Bitboard {
+        let rooks = self.get_piece_bb(PieceType::ROOK);
+        let bishops = self.get_piece_bb(PieceType::BISHOP);
+        let queens = self.get_piece_bb(PieceType::QUEEN);
+        let rook_checkers = rook::compute_attacks_0_occ(king) & (rooks | queens);
+        let bishop_checkers = bishop::compute_attacks_0_occ(king) & (bishops | queens);
+        (rook_checkers | bishop_checkers) & enemies
     }
 
     #[inline]

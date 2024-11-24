@@ -8,6 +8,13 @@ use crate::{
 #[cfg(test)]
 mod tests;
 
+/// Computes the attacks of the rook on the square `sq`.
+pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
+    let file_bb = Bitboard::from_c(File::from_c(sq));
+    let rank_bb = Bitboard::from_c(Rank::from_c(sq));
+    Bitboard { v: (file_bb.v | rank_bb.v) ^ Bitboard::from_c(sq).v }
+}
+
 /// Computes the attacks of the rook on the square `sq` with the given `occupancy`.
 pub const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let file = File::from_c(sq);

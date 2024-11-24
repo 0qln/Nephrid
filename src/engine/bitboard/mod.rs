@@ -1,7 +1,9 @@
 use std::{fmt::Debug, ops};
-use crate::{engine::coordinates::{
+use crate::{engine::{coordinates::{
     CompassRose, File, Rank, Square
-}, misc::ConstFrom};
+}, move_iter::{bishop, rook}}, misc::ConstFrom};
+
+use const_for::const_for;
 
 use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose};
 
@@ -142,6 +144,56 @@ impl Bitboard {
     #[inline]
     pub const fn and_c(&self, other: Bitboard) -> Self {
         Bitboard { v: self.v & other.v }
+    }
+    
+    #[inline]
+    pub const fn between(sq1: Square, sq2: Square) -> Self {
+        const RAYS: [[Bitboard; 64]; 64] = {
+            let mut rays = [[Bitboard::empty(); 64]; 64];
+            const_for!(sq1 in Square::A1_C..(Square::H8_C+1) => {
+                const_for!(sq2 in Square::A1_C..(Square::H8_C+1) => {
+                    // Safety: we are only iterating over valid squares.
+                    let sq1 = unsafe { Square::from_v(sq1) };
+                    let sq2 = unsafe { Square::from_v(sq2) };
+
+                    if let Some((sq1_bb, sq2_bb)) = {
+                        if  Rank::from_c(sq1).v() == Rank::from_c(sq2).v() || 
+                            File::from_c(sq1).v() == File::from_c(sq2).v() {
+                            Some((
+                                rook::compute_attacks_0_occ(sq1), 
+                                rook::compute_attacks_0_occ(sq2)
+                            ))
+                        }                       
+                        else if 
+                            DiagA1H8::from_c(sq1).v() == DiagA1H8::from_c(sq2).v() || 
+                            DiagA8H1::from_c(sq1).v() == DiagA8H1::from_c(sq2).v() {
+                            Some((
+                                bishop::compute_attacks_0_occ(sq1), 
+                                bishop::compute_attacks_0_occ(sq2)
+                            ))
+                        }
+                        else {
+                            None
+                        }
+                    } {
+                        rays[sq1.v() as usize][sq2.v() as usize] = Bitboard { 
+                            v: (Bitboard::from_c(sq1).v | Bitboard::from_c(sq2).v) | (sq1_bb.v & sq2_bb.v)
+                        };
+                    }
+                });
+            });
+            rays
+        };
+
+        let (hi, lo) = if sq1.v() > sq2.v() { (sq1, sq2) } else { (sq2, sq1) };
+        let ray = RAYS[hi.v() as usize][lo.v() as usize];
+        return Bitboard {
+            v: Bitboard::split_north(lo).v & Bitboard::split_south(hi).v & ray.v
+        }
+    }
+    
+    pub fn pop_cnt(&self) -> u32 {
+        self.v.count_ones()
     }
 }
 

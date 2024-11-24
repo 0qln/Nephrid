@@ -3,6 +3,14 @@ use crate::{engine::{bitboard::Bitboard, coordinates::{CompassRose, DiagA1H8, Di
 #[cfg(test)]
 mod tests;
 
+/// Computes the attacks of the bishop on the square `sq`.
+pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
+    let a1h8 = Bitboard::from_c(DiagA1H8::from_c(sq));
+    let a8h1 = Bitboard::from_c(DiagA8H1::from_c(sq));
+    Bitboard { v: (a1h8.v | a8h1.v) ^ Bitboard::from_c(sq).v }
+}
+
+/// Computes the attacks of the bishop on the square `sq` with the given `occupancy`.
 pub const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let a1h8 = Bitboard::from_c(DiagA1H8::from_c(sq));
     let a8h1 = Bitboard::from_c(DiagA8H1::from_c(sq));
