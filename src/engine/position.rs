@@ -319,6 +319,8 @@ impl Position {
                 .toggle_castling(self.state.get().castling)
                 .toggle_castling(next_state.castling);
         }
+        
+        next_state.init(self);
 
         #[inline(always)]
         const fn update_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
