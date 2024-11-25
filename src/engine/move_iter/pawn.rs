@@ -8,6 +8,7 @@ use crate::engine::{
     r#move::{Move, MoveFlag},
 };
 use crate::misc::ConstFrom;
+use const_for::const_for;
 
 
 pub struct PseudoLegalPawnMovesInfo {
@@ -269,26 +270,59 @@ pub fn gen_pseudo_legals(pos: &Position, color: Color) -> impl Iterator<Item = M
     moves.into_iter().map(move |f| f(&info)).flatten()
 }
 
-// todo: can be computed at compile time
-//
-pub fn generic_compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
+pub const fn generic_compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
     Color::assert_variant(C); // Safety
     let color = unsafe { Color::from_v(C) };
     let capture_west = capture(color, CompassRose::WEST);
     let capture_east = capture(color, CompassRose::EAST);
 
-    (pawns & !Bitboard::from_c(File::A)).shift(capture_west) | 
-    (pawns & !Bitboard::from_c(File::H)).shift(capture_east)
+    Bitboard {
+        v: {
+            let attacks_west = Bitboard { v: pawns.v & !Bitboard::from_c(File::A).v }.shift(capture_west);
+            let attacks_east = Bitboard { v: pawns.v & !Bitboard::from_c(File::H).v }.shift(capture_east);
+            attacks_west.v | attacks_east.v
+        }
+    }
 }
 
-pub fn compute_attacks(pos: &Position, color: Color) -> Bitboard {
+pub const fn compute_attacks(pawns: Bitboard, color: Color) -> Bitboard {
     match color {
-        Color::WHITE => generic_compute_attacks::<{Color::WHITE_C}>(
-            pos.get_bitboard(PieceType::PAWN, color)
-        ),
-        Color::BLACK => generic_compute_attacks::<{Color::BLACK_C}>(
-            pos.get_bitboard(PieceType::PAWN, color)
-        ),
+        Color::WHITE => generic_compute_attacks::<{Color::WHITE_C}>(pawns),
+        Color::BLACK => generic_compute_attacks::<{Color::BLACK_C}>(pawns),
         _ => unreachable!(),
     }
+}
+
+pub const fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
+    match color {
+        Color::WHITE => lookup_attacks_white(sq),
+        Color::BLACK => lookup_attacks_black(sq),
+        _ => unreachable!(),
+    }    
+}
+
+pub const fn lookup_attacks_white(sq: Square) -> Bitboard {
+    const ATTACKS: [Bitboard; 64] = {
+        let mut result = [Bitboard::empty(); 64];
+        const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
+            let sq = unsafe { Square::from_v(sq) }; 
+            let pawn = Bitboard::from_c(sq);
+            result[sq.v() as usize] = generic_compute_attacks::<{ Color::WHITE_C }>(pawn);
+        });
+        result
+    };   
+    ATTACKS[sq.v() as usize]
+}
+
+pub const fn lookup_attacks_black(sq: Square) -> Bitboard {
+    const ATTACKS: [Bitboard; 64] = {
+        let mut result = [Bitboard::empty(); 64];
+        const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
+            let sq = unsafe { Square::from_v(sq) }; 
+            let pawn = Bitboard::from_c(sq);
+            result[sq.v() as usize] = generic_compute_attacks::<{ Color::BLACK_C }>(pawn);
+        });
+        result
+    };   
+    ATTACKS[sq.v() as usize]
 }
