@@ -29,7 +29,7 @@ impl Search {
         
         if depth.v() == 0 { return result; }
         
-        for m in legal_moves(position, position.get_turn()) {
+        for m in legal_moves::<false>(position, position.get_turn()) {
             position.make_move(m);
             result += self.perft(position, depth - 1, cancellation_token.clone());
             position.unmake_move(m);

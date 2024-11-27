@@ -67,9 +67,13 @@ impl_op!(- |a: Square, b: Square| -> Square { Square { v: a.v - b.v } } );
 impl Square {
     pub const MIN: TSquare = Square::A1.v;
     pub const MAX: TSquare = Square::H8.v;
-    
-    pub const fn mirror(self) -> Self {
+       
+    pub const fn flip_h(self) -> Self {
         Self { v: self.v ^ 7 }
+    }
+    
+    pub const fn flip_v(self) -> Self {
+        Self { v: self.v ^ 56 }
     }
 }
 

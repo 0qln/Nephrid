@@ -8,12 +8,21 @@ use crate::{
 
 use super::{castling::CastlingSide, r#move::MoveFlag, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
 
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
+pub enum CheckState {
+    #[default]
+    None,
+    Single,
+    Double
+}
+
 #[derive(Clone, Default)]
 struct StateInfo {
     // Memoized state
     pub checkers: Bitboard,
     pub blockers: Bitboard,
     pub nstm_attacks: Bitboard,
+    pub check_state: CheckState,
 
     // Game history
     pub plys50: Ply,
@@ -27,7 +36,7 @@ struct StateInfo {
 }
 
 impl StateInfo {
-    /// Initiate checkers, blockers, nstm_attacks
+    /// Initiate checkers, blockers, nstm_attacks, check_state
     pub fn init(&mut self, pos: &Position) {
         let stm = self.turn;
         let nstm = !stm;
@@ -37,7 +46,7 @@ impl StateInfo {
         (self.nstm_attacks, self.checkers) = enemies.fold((Bitboard::empty(), Bitboard::empty()), |acc, enemy_sq| {
             let enemy = pos.get_piece(enemy_sq);     
             let enemy_attacks = match enemy.piece_type() {
-                PieceType::PAWN => pawn::compute_attacks(pos, nstm),
+                PieceType::PAWN => pawn::lookup_attacks(enemy_sq, nstm),
                 PieceType::KNIGHT => knight::compute_attacks(enemy_sq),
                 PieceType::BISHOP => bishop::compute_attacks(enemy_sq, occupancy),
                 PieceType::ROOK => rook::compute_attacks(enemy_sq, occupancy),
@@ -65,6 +74,12 @@ impl StateInfo {
                 }
             });
         }
+        
+        self.check_state = match self.checkers.pop_cnt() {
+            1 => CheckState::Single,
+            2 => CheckState::Double,
+            _ => CheckState::None
+        };
     }
 }
 
@@ -211,6 +226,21 @@ impl Position {
     #[inline]
     pub fn get_key(&self) -> zobrist::Hash {
         self.state.get_current().key
+    }
+    
+    #[inline]
+    pub fn get_check_state(&self) -> CheckState {
+        self.state.get_current().check_state
+    }
+    
+    #[inline]
+    pub fn get_checkers(&self) -> Bitboard {
+        self.state.get_current().checkers
+    }
+
+    #[inline]
+    pub fn get_nstm_attacks(&self) -> Bitboard {
+        self.state.get_current().nstm_attacks
     }
     
     /// Returns the X-Ray checkers for the given king.
@@ -511,7 +541,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
                 '1'..='8' => sq -= char.to_digit(10).ok_or(ParseError::InputOutOfRange(Box::new(char)))? as i8,        
                 _ => {
                     let piece = Piece::try_from(char)?; 
-                    let pos_sq = Square::try_from(sq as u8)?.mirror();
+                    let pos_sq = Square::try_from(sq as u8)?.flip_h();
                     position.put_piece(pos_sq, piece);
                     sq -= 1;
                 }
