@@ -243,6 +243,11 @@ impl Position {
         self.state.get_current().nstm_attacks
     }
     
+    #[inline]
+    pub fn get_blockers(&self) -> Bitboard {
+        self.state.get_current().blockers
+    }
+    
     /// Returns the X-Ray checkers for the given king.
     /// X-Ray checkers are pieces which attack a king 
     /// through zero or more pieces.
