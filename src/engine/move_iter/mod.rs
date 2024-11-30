@@ -1,6 +1,7 @@
 use super::bitboard::Bitboard;
 use super::color::Color;
 use super::coordinates::Square;
+use super::piece::SlidingPieceType;
 use super::position::{CheckState, Position};
 use super::r#move::{Move, MoveFlag};
 
@@ -13,32 +14,26 @@ pub mod queen;
 pub mod rook;
 pub mod sliding_piece;
 
-// todo: split up each case and only match in the when needed (see king legal moves)
-// todo: find a better way of returning the iterator
-pub fn legal_moves<const CAPTURES_ONLY: bool>(pos: &Position, color: Color) -> Box<dyn Iterator<Item = Move>> 
-{
-    let candidates: Box<dyn Iterator<Item = Move>> = match pos.get_check_state() {
-        CheckState::Single => Box::new(check_resolves::<{ CAPTURES_ONLY }>(pos, color)),
-        CheckState::Double => Box::new(check_resolves_by_king::<{ CAPTURES_ONLY }>(pos, color)),
-        CheckState::None => Box::new(pseudo_legal_moves::<{ CAPTURES_ONLY }>(pos, color))
-    };
-    Box::new(candidates.filter(|m| is_legal_move(pos, m)))
+pub fn legal_moves_check_none<const CAPTURES_ONLY: bool>(pos: &Position) -> impl Iterator<Item = Move> {
+    // generate pseudo legal moves
+    [
+        sliding_piece::gen_legal_check_none(pos, SlidingPieceType::ROOK, rook::compute_attacks),
+        sliding_piece::gen_legal_check_none(pos, SlidingPieceType::BISHOP, bishop::compute_attacks),
+        sliding_piece::gen_legal_check_none(pos, SlidingPieceType::QUEEN, queen::compute_attacks),
+    ].into_iter().flatten()
 }
 
-fn is_legal_move(pos: &Position, m: &Move) -> bool {
-    todo!()
+pub fn legal_moves_check_single<const CAPTURES_ONLY: bool>(pos: &Position) -> impl Iterator<Item = Move> {
+    // only generate legal check resolves
+    [
+        pawn::gen_legal_check_single(pos),
+        king::gen_legal_check_some(pos),
+    ].into_iter().flatten()
 }
 
-fn pseudo_legal_moves<const CAPTURES_ONLY: bool>(pos: &Position, color: Color) -> impl Iterator<Item = Move> {
-    todo!()
-}
-
-fn check_resolves_by_king<const CAPTURES_ONLY: bool>(pos: &Position, color: Color) -> impl Iterator<Item = Move> {
-    todo!()
-}
-
-fn check_resolves<const CAPTURES_ONLY: bool>(pos: &Position, color: Color) -> impl Iterator<Item = Move> {
-    todo!()
+pub fn legal_moves_check_double<const CAPTURES_ONLY: bool>(pos: &Position) -> impl Iterator<Item = Move> {
+    // only generate legal check resolves by king
+    king::gen_legal_check_some(pos)
 }
 
 #[inline]
