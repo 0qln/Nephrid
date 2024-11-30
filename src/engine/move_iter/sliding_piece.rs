@@ -6,14 +6,14 @@ use crate::engine::{
 use super::{gen_captures, gen_quiets};
 
 pub fn gen_psuedo_legal_captures(
-    position: &Position,
-    color: Color,
+    pos: &Position,
     piece_type: SlidingPieceType,
     compute_attacks: fn(Square, Bitboard) -> Bitboard,
 ) -> impl Iterator<Item = Move> {
-    let allies = position.get_color_bb(color);
-    let enemies = position.get_color_bb(!color);
-    position
+    let color = pos.get_turn();
+let allies = pos.get_color_bb(color);
+    let enemies = pos.get_color_bb(!color);
+    pos
         .get_bitboard(piece_type.into(), color)
         .map(move |piece| {
             let attacks = compute_attacks(piece, allies | enemies);
@@ -23,14 +23,14 @@ pub fn gen_psuedo_legal_captures(
 }
 
 pub fn gen_psuedo_legal_quiets(
-    position: &Position,
-    color: Color,
+    pos: &Position,
     piece_type: SlidingPieceType,
     compute_attacks: fn(Square, Bitboard) -> Bitboard,
 ) -> impl Iterator<Item = Move> {
-    let allies = position.get_color_bb(color);
-    let enemies = position.get_color_bb(!color);
-    position
+    let color = pos.get_turn();
+    let allies = pos.get_color_bb(color);
+    let enemies = pos.get_color_bb(!color);
+    pos
         .get_bitboard(piece_type.into(), color)
         .map(move |piece| {
             let attacks = compute_attacks(piece, allies | enemies);
