@@ -7,7 +7,7 @@ use crate::{
 
 use super::{bishop, queen, rook};
 
-pub fn gen_legal_check_some(pos: &Position) -> impl Iterator<Item = Move> {
+pub fn gen_legals_check_some(pos: &Position) -> impl Iterator<Item = Move> {
     let color = pos.get_turn();
     let moves = gen_legals_check_none(pos);
     let nstm_attacks = pos.get_nstm_attacks();

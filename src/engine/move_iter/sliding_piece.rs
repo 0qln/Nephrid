@@ -1,3 +1,5 @@
+use std::iter::FlatMap;
+
 use crate::{engine::{
     bitboard::Bitboard, coordinates::Square, r#move::Move, piece::{PieceType, SlidingPieceType}, position::{CheckState, Position}
 }, misc::ConstFrom};
@@ -65,6 +67,7 @@ pub fn gen_legal_captures_check_single(
             gen_captures(legal_resolves, enemies, piece)
         })
 }
+
 pub fn gen_legals_check_none(
     pos: &Position,
     piece_type: SlidingPieceType,

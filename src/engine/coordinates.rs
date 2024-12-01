@@ -129,6 +129,66 @@ impl TryFrom<&mut Tokenizer<'_>> for Option<Square> {
 }
 
 
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct EpTargetSquare {
+    v: Option<Square>
+}
+
+impl EpTargetSquare {
+    pub const fn v(&self) -> Option<Square> { self.v }
+}
+
+impl TryFrom<Square> for EpTargetSquare {
+    type Error = ParseError;
+    
+    #[inline]
+    fn try_from(sq: Square) -> Result<Self, Self::Error> {
+        let rank = Rank::from_c(sq);
+        match rank {
+            Rank::_3 | Rank::_6 => Ok(Self { v: Some(sq) }),
+            _ => Err(ParseError::InputOutOfRange(Box::new(sq))),
+        }
+    }
+}
+
+impl TryFrom<&mut Tokenizer<'_>> for EpTargetSquare {
+    type Error = ParseError;
+
+    #[inline]
+    fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
+        let file = match tokens.next() {
+            Some('-') => return Ok(Self { v: None }),
+            Some(c) => File::try_from(c)?,
+            None => return Err(ParseError::MissingInput),
+        };
+        let rank = match tokens.next() {
+            Some(c) => Rank::try_from(c)?,
+            None => return Err(ParseError::MissingInput),
+        };
+        let sq = Square::from_c((file, rank));
+        Self::try_from(sq)
+    }
+}
+
+
+pub struct EpCaptureSquare {
+    v: Option<Square>
+}
+
+impl TryFrom<Square> for EpCaptureSquare {
+    type Error = ParseError;
+    
+    #[inline]
+    fn try_from(sq: Square) -> Result<Self, Self::Error> {
+        let rank = Rank::from_c(sq);
+        match rank {
+            Rank::_4 | Rank::_5 => Ok(Self { v: Some(sq) }),
+            _ => Err(ParseError::InputOutOfRange(Box::new(sq))),
+        }
+    }
+}
+
+
 #[derive(PartialEq, PartialOrd, Debug, Copy, Clone)]
 pub struct Rank { v: TRank }
 

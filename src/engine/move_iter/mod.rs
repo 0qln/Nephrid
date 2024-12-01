@@ -1,5 +1,6 @@
+use std::ops::Try;
+
 use super::bitboard::Bitboard;
-use super::color::Color;
 use super::coordinates::Square;
 use super::piece::SlidingPieceType;
 use super::position::{CheckState, Position};
@@ -17,23 +18,48 @@ pub mod sliding_piece;
 pub fn legal_moves_check_none<const CAPTURES_ONLY: bool>(pos: &Position) -> impl Iterator<Item = Move> {
     // generate pseudo legal moves
     [
-        sliding_piece::gen_legal_check_none(pos, SlidingPieceType::ROOK, rook::compute_attacks),
-        sliding_piece::gen_legal_check_none(pos, SlidingPieceType::BISHOP, bishop::compute_attacks),
-        sliding_piece::gen_legal_check_none(pos, SlidingPieceType::QUEEN, queen::compute_attacks),
+        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::ROOK, rook::compute_attacks),
+        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, bishop::compute_attacks),
+        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, queen::compute_attacks),
     ].into_iter().flatten()
 }
 
 pub fn legal_moves_check_single<const CAPTURES_ONLY: bool>(pos: &Position) -> impl Iterator<Item = Move> {
     // only generate legal check resolves
-    [
-        pawn::gen_legal_check_single(pos),
-        king::gen_legal_check_some(pos),
-    ].into_iter().flatten()
+    king::gen_legals_check_some(pos)
+    .chain(sliding_piece::gen_legals_check_single(pos, SlidingPieceType::ROOK, rook::compute_attacks))
+    .chain(sliding_piece::gen_legals_check_single(pos, SlidingPieceType::BISHOP, bishop::compute_attacks))
+    .chain(sliding_piece::gen_legals_check_single(pos, SlidingPieceType::QUEEN, queen::compute_attacks))
+    .chain(pawn::gen_legals_check_single(pos))
 }
 
 pub fn legal_moves_check_double<const CAPTURES_ONLY: bool>(pos: &Position) -> impl Iterator<Item = Move> {
     // only generate legal check resolves by king
-    king::gen_legal_check_some(pos)
+    king::gen_legals_check_some(pos)
+}
+
+pub fn foreach_legal_move<const CAPTURES_ONLY: bool, F, R>(pos: &Position, f: F) -> R
+where
+    F: FnMut(Move) -> R,
+    R: Try<Output = ()>,
+{
+    match pos.get_check_state() {
+        CheckState::None => legal_moves_check_none::<CAPTURES_ONLY>(pos).try_for_each(f),
+        CheckState::Single => legal_moves_check_single::<CAPTURES_ONLY>(pos).try_for_each(f),
+        CheckState::Double => legal_moves_check_double::<CAPTURES_ONLY>(pos).try_for_each(f),
+    }
+}
+
+pub fn fold_legal_move<const CAPTURES_ONLY: bool, B, F, R>(pos: &Position, init: B, f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    match pos.get_check_state() {
+        CheckState::None => legal_moves_check_none::<CAPTURES_ONLY>(pos).try_fold(init, f),
+        CheckState::Single => legal_moves_check_single::<CAPTURES_ONLY>(pos).try_fold(init, f),
+        CheckState::Double => legal_moves_check_double::<CAPTURES_ONLY>(pos).try_fold(init, f),
+    }
 }
 
 #[inline]
