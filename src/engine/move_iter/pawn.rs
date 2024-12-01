@@ -1,5 +1,8 @@
+use std::marker::PhantomData;
+
 use crate::engine::color::{Color, TColor};
 use crate::engine::coordinates::{Rank, Square, TCompassRose};
+use crate::engine::position::CheckState;
 use crate::engine::{
     bitboard::Bitboard,
     coordinates::{CompassRose, File},
@@ -10,18 +13,17 @@ use crate::engine::{
 use crate::misc::ConstFrom;
 use const_for::const_for;
 
-
-pub struct PseudoLegalPawnMovesInfo {
+pub struct PawnMovesInfo {
     pawns: Bitboard,
     enemies: Bitboard,
     pieces: Bitboard,
-    ep_sq: Option<Square>
+    ep_sq: Option<Square>,
 }
 
 // todo: theres still a lot of duplicate calculations in the
-// iterator initiations. benchmark, wether it's worth to
+// iterator initiations. benchmark, whether it's worth to
 // cache the results here or not.
-impl PseudoLegalPawnMovesInfo {
+impl PawnMovesInfo {
     pub fn new(pos: &Position, color: Color) -> Self {
         let pawns = pos.get_bitboard(PieceType::PAWN, color);
         let pieces = pos.get_occupancy();
@@ -41,7 +43,7 @@ const fn promo_rank(c: Color) -> Rank {
     match c {
         Color::WHITE => Rank::_7,
         Color::BLACK => Rank::_2,
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
@@ -50,7 +52,7 @@ const fn start_rank(c: Color) -> Rank {
     match c {
         Color::WHITE => Rank::_2,
         Color::BLACK => Rank::_7,
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
@@ -59,7 +61,7 @@ const fn single_step(c: Color) -> CompassRose {
     match c {
         Color::WHITE => CompassRose::NORT,
         Color::BLACK => CompassRose::SOUT,
-        _ => unreachable!()
+        _ => unreachable!(),
     }
 }
 
@@ -83,191 +85,355 @@ const fn capture(c: Color, dir: CompassRose) -> CompassRose {
     CompassRose::new(dir.v() + single_step(c).v())
 }
 
-pub struct PseudoLegalPawnMoves {
+trait NotResolve { }
+
+struct PseudoLegal;
+    
+impl NotResolve for PseudoLegal {}
+    
+trait BlockerInfo { fn get_blockers(&self) -> Bitboard; }
+
+#[derive(Debug, Default, Clone, Copy)]
+struct Legal { blockers: Bitboard, }
+
+impl BlockerInfo for Legal { fn get_blockers(&self) -> Bitboard { self.blockers } }
+
+impl NotResolve for Legal {}
+
+#[derive(Debug, Default, Clone, Copy)]
+struct Resolve { blockers: Bitboard, blocks: Bitboard, checkers: Bitboard }
+
+impl BlockerInfo for Resolve { fn get_blockers(&self) -> Bitboard { self.blockers } }
+
+pub struct PawnMoves<T> {
     from: Bitboard,
     to: Bitboard,
     flag: MoveFlag,
+    t: T,
 }
 
-// todo: refactor into functions
-// for example:
-//
-// fn gen_single_step<'a, const C: TColor>(info: &'a PseudoLegalPawnMovesInfo) -> impl Iterator<Item = Move> {
-//     Color::assert_variant(C); // Safety
-//     let color = unsafe { Color::from_v(C) };
-//     let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(color));
-//     let single_step_blocker = backward(info.pieces, single_step(color));
-//     let mut from = non_promo_pawns & !single_step_blocker;
-//     let to = forward(from, single_step(color));
-//     to.map(move |sq| unsafe {
-//         Move::new(from.pop_lsb().unwrap_unchecked(), sq, MoveFlag::QUIET)        
-//     })
-// }
+trait IPawnMoves<T> 
+where 
+    Self: Sized,
+{
+    fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: T) -> Self;
 
-impl PseudoLegalPawnMoves {
-
-    pub fn new_single_step<'a, const C: TColor>(info: &'a PseudoLegalPawnMovesInfo) -> Self {
+    fn single_step<const C: TColor>(info: &PawnMovesInfo, t: T) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(color));
-        let single_step_blocker = backward(info.pieces, single_step(color));
-        let from = non_promo_pawns & !single_step_blocker;
+        let single_step_tabus = backward(info.pieces, single_step(color));
+        let from = non_promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
-        Self { from, to, flag: MoveFlag::QUIET, }
-    }
+        Self::new(from, to, MoveFlag::QUIET, t)
+    }    
 
-    pub fn new_capture<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
+    fn double_step<const C: TColor>(info: &PawnMovesInfo, t: T) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let dir = CompassRose::new(DIR);
-        let capture_dir = capture(color, dir);
+        let single_step_tabus = backward(info.pieces, single_step(color));
+        let double_step_tabus = backward(info.pieces, double_step(color)) | single_step_tabus;
+        let double_step_pawns = info.pawns & Bitboard::from_c(start_rank(color));
+        let from = double_step_pawns & !double_step_tabus;
+        let to = forward(from, double_step(color));
+        Self::new(from, to, MoveFlag::DOUBLE_PAWN_PUSH, t)
+    }
+
+    fn capture<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: T) -> Self {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let capture_dir = capture(color, CompassRose::new(DIR));
         let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(color));
         let capturing_pawns = non_promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
         let to = forward(capturing_pawns, capture_dir) & info.enemies;
         let from = backward(to, capture_dir);
-        Self { from, to, flag: MoveFlag::CAPTURE, }
+        Self::new(from, to, MoveFlag::CAPTURE, t)
     }
 
-    pub fn new_double_step<const C: TColor>(info: &PseudoLegalPawnMovesInfo) -> Self {
+    fn promo<const C: TColor>(info: &PawnMovesInfo, flag: MoveFlag, t: T) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let single_step_blockers = forward(info.pieces, single_step(color));
-        let double_step_blockers = single_step_blockers | forward(info.pieces, double_step(color));
-        let double_step_pawns = info.pawns & Bitboard::from_c(start_rank(color));
-        let from = double_step_pawns & !double_step_blockers;
-        let to = forward(from, double_step(color));
-        Self { from, to, flag: MoveFlag::DOUBLE_PAWN_PUSH, }
-    }
-
-    fn new_promo<const C: TColor>(info: &PseudoLegalPawnMovesInfo, flag: MoveFlag) -> Self {
-        Color::assert_variant(C); // Safety
-        let color = unsafe { Color::from_v(C) };
-        let single_step_blocker = forward(info.pieces, single_step(color));
+        let single_step_tabus = backward(info.pieces, single_step(color));
         let promo_pawns = info.pawns & Bitboard::from_c(promo_rank(color));
-        let from = promo_pawns & !single_step_blocker;
+        let from = promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
-        Self { from, to, flag }
-    }
-    
-    // todo: when const generics are stabalized with constraints,
-    // replace the MoveFlag parameters with a const generic.
-
-    pub fn new_promo_knight<const C: TColor>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo::<C>(info, MoveFlag::PROMOTION_KNIGHT)
-    }
-    pub fn new_promo_bishop<const C: TColor>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo::<C>(info, MoveFlag::PROMOTION_BISHOP)
-    }
-    pub fn new_promo_rook<const C: TColor>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo::<C>(info, MoveFlag::PROMOTION_ROOK)
-    }
-    pub fn new_promo_queen<const C: TColor>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo::<C>(info, MoveFlag::PROMOTION_QUEEN)
+        Self::new(from, to, flag, t)
     }
 
-    fn new_promo_capture<const C: TColor, const DIR: TCompassRose>(
-        info: &PseudoLegalPawnMovesInfo,
+    fn promo_knight<const C: TColor>(info: &PawnMovesInfo, t: T) -> Self {
+        Self::promo::<C>(info, MoveFlag::PROMOTION_KNIGHT, t)
+    }
+
+    fn promo_bishop<const C: TColor>(info: &PawnMovesInfo, t: T) -> Self {
+        Self::promo::<C>(info, MoveFlag::PROMOTION_BISHOP, t)
+    }
+
+    fn promo_rook<const C: TColor>(info: &PawnMovesInfo, t: T) -> Self {
+        Self::promo::<C>(info, MoveFlag::PROMOTION_ROOK, t)
+    }
+
+    fn promo_queen<const C: TColor>(info: &PawnMovesInfo, t: T) -> Self {
+        Self::promo::<C>(info, MoveFlag::PROMOTION_QUEEN, t)
+    }
+
+    fn pl_promo_capture<const C: TColor, const DIR: TCompassRose>(
+        info: &PawnMovesInfo,
         flag: MoveFlag,
+        t: T
     ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let dir = CompassRose::new(DIR);
-        let capture_dir = capture(color, dir);
+        let capture_dir = capture(color, CompassRose::new(DIR));
         let promo_pawns = info.pawns & Bitboard::from_c(promo_rank(color));
         let capture_west_pawns = promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
         let to = forward(capture_west_pawns, capture_dir) & info.enemies;
         let from = backward(to, capture_dir);
-        Self { from, to, flag }
-    }
-    pub fn new_promo_capture_knight<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_KNIGHT)
-    }
-    pub fn new_promo_capture_bishop<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_BISHOP)
-    }
-    pub fn new_promo_capture_rook<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_ROOK)
-    }
-    pub fn new_promo_capture_queen<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
-        Self::new_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_QUEEN)
+        Self::new(from, to, flag, t)
     }
 
-    fn new_ep<const C: TColor, const DIR: TCompassRose>(info: &PseudoLegalPawnMovesInfo) -> Self {
+    fn promo_capture_knight<const C: TColor, const DIR: TCompassRose>(
+        info: &PawnMovesInfo,
+        t: T
+    ) -> Self {
+        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_KNIGHT, t)
+    }
+
+    fn promo_capture_bishop<const C: TColor, const DIR: TCompassRose>(
+        info: &PawnMovesInfo,
+        t: T
+    ) -> Self {
+        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_BISHOP, t)
+    }
+
+    fn promo_capture_rook<const C: TColor, const DIR: TCompassRose>(
+        info: &PawnMovesInfo,
+        t: T
+    ) -> Self {
+        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_ROOK, t)
+    }
+
+    fn promo_capture_queen<const C: TColor, const DIR: TCompassRose>(
+        info: &PawnMovesInfo,
+        t: T
+    ) -> Self {
+        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_QUEEN, t)
+    }
+
+    fn ep<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: T) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let dir = CompassRose::new(DIR);
-        let capture_dir = capture(color, dir);
-        let mut to = Bitboard::from_c(info.ep_sq);
+        let capture_dir = capture(color, CompassRose::new(DIR));
+        let to = Bitboard::from_c(info.ep_sq);
         let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
-        let from = match to.is_empty() {
-            true => {
-                to = Bitboard::empty();
-                Bitboard::empty()               
-            },
-            false => {
-                backward(
-                    forward(capturing_pawns, capture_dir) & to, 
-                    capture_dir
-                )
-            }
+        let from = if to.is_empty() {
+            Bitboard::empty()
+        } else {
+            backward(forward(capturing_pawns, capture_dir) & to, capture_dir)
         };
-        Self {
-            from,
-            to,
-            flag: MoveFlag::EN_PASSANT,
-        }
+        Self::new(from, to, MoveFlag::EN_PASSANT, t)
     }
 }
 
-impl Iterator for PseudoLegalPawnMoves {
+impl IPawnMoves<Resolve> for PawnMoves<Resolve> {
+    fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: Resolve) -> Self {
+        Self { from, to, flag, t, }
+    }   
+
+    fn single_step<const C: TColor>(info: &PawnMovesInfo, t: Resolve) -> Self {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(color));
+        let tabu_squares = info.pieces | !t.blocks;
+        let single_step_tabus = backward(tabu_squares, single_step(color));
+        let from = non_promo_pawns & !single_step_tabus;
+        let to = forward(from, single_step(color));
+        Self::new(from, to, MoveFlag::QUIET, t)
+    }    
+
+    fn double_step<const C: TColor>(info: &PawnMovesInfo, t: Resolve) -> Self {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let tabu_squares = info.pieces | !t.blocks;
+        let single_step_tabus = backward(info.pieces, single_step(color));
+        let double_step_tabus = backward(tabu_squares, double_step(color)) | single_step_tabus;
+        let double_step_pawns = info.pawns & Bitboard::from_c(start_rank(color));
+        let from = double_step_pawns & !double_step_tabus;
+        let to = forward(from, double_step(color));
+        Self::new(from, to, MoveFlag::DOUBLE_PAWN_PUSH, t)
+    }
+
+    fn capture<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: Resolve) -> Self {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let capture_dir = capture(color, CompassRose::new(DIR));
+        let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(color));
+        let capturing_pawns = non_promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
+        let to = forward(capturing_pawns, capture_dir) & t.checkers;
+        let from = backward(to, capture_dir);
+        Self::new(from, to, MoveFlag::CAPTURE, t)
+    }
+
+    fn promo<const C: TColor>(info: &PawnMovesInfo, flag: MoveFlag, t: Resolve) -> Self {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let tabu_squares = info.pieces | !t.blocks;
+        let single_step_tabus = backward(tabu_squares, single_step(color));
+        let promo_pawns = info.pawns & Bitboard::from_c(promo_rank(color));
+        let from = promo_pawns & !single_step_tabus;
+        let to = forward(from, single_step(color));
+        Self::new(from, to, flag, t)
+    }
+
+    fn pl_promo_capture<const C: TColor, const DIR: TCompassRose>(
+        info: &PawnMovesInfo,
+        flag: MoveFlag,
+        t: Resolve
+    ) -> Self {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let capture_dir = capture(color, CompassRose::new(DIR));
+        let promo_pawns = info.pawns & Bitboard::from_c(promo_rank(color));
+        let capture_west_pawns = promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
+        let to = forward(capture_west_pawns, capture_dir) & t.checkers;
+        let from = backward(to, capture_dir);
+        Self::new(from, to, flag, t)
+    }
+
+    fn ep<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: Resolve) -> Self {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let to = Bitboard::from_c(info.ep_sq); // todo: is this the to square or the capture square?
+        let from = if to.is_empty() {
+            Bitboard::empty()
+        } else {
+            let capture_dir = capture(color, CompassRose::new(DIR));
+            let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
+            backward(forward(capturing_pawns, capture_dir) & to, capture_dir)
+        };
+        Self::new(from, to, MoveFlag::EN_PASSANT, t)
+    }
+}
+
+impl<T: NotResolve> IPawnMoves<T> for PawnMoves<T> {
+    fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: T) -> Self {
+        Self { from, to, flag, t, }
+    }   
+}
+
+impl Iterator for PawnMoves<PseudoLegal> {
     type Item = Move;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        self.to.pop_lsb().map(|sq| unsafe {
+        self.to.pop_lsb().map(|to| unsafe {
             // todo: write unit tests for this.
             // Safety: the 'from' bb is generated by every constructor in such a way,
             // that there is always atleast one square in the 'from' bb per square
             // in the 'to' bb
-            Move::new(self.from.pop_lsb().unwrap_unchecked(), sq, self.flag)
+            Move::new(self.from.pop_lsb().unwrap_unchecked(), to, self.flag)
         })
     }
 }
 
-fn get_pseudo_legals<const C: TColor>() -> [fn(&PseudoLegalPawnMovesInfo) -> PseudoLegalPawnMoves; 18] {
+impl<T: BlockerInfo> Iterator for PawnMoves<T> {
+    type Item = Move;
+    
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if let Some(to) = self.to.pop_lsb() {
+            let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
+            let from_bb = Bitboard::from_c(from);
+             
+            let blockers = self.t.get_blockers();
+            let is_blocker = !(blockers & from_bb).is_empty();
+            if is_blocker {
+                let pin_mask = Bitboard::ray(from, to);
+                let to_bb = Bitboard::from_c(to);
+                let is_legal = !(pin_mask & to_bb).is_empty();
+                if !is_legal {
+                    return self.next();
+                }
+            }
+            Some(Move::new(from, to, self.flag))
+        }
+        else {
+            None
+        }
+    }
+}
+
+fn get_moves<const C: TColor, P, T>() -> [fn(&PawnMovesInfo, T) -> P; 18] 
+where P: IPawnMoves<T>
+{
     // todo: tune the ordering
     [
-        PseudoLegalPawnMoves::new_single_step::<C>,
-        PseudoLegalPawnMoves::new_double_step::<C>,
-        PseudoLegalPawnMoves::new_promo_knight::<C>,
-        PseudoLegalPawnMoves::new_promo_bishop::<C>,
-        PseudoLegalPawnMoves::new_promo_rook::<C>,
-        PseudoLegalPawnMoves::new_promo_queen::<C>,
-        PseudoLegalPawnMoves::new_capture::<C, {CompassRose::WEST.v()}>,
-        PseudoLegalPawnMoves::new_capture::<C, {CompassRose::EAST.v()}>,
-        PseudoLegalPawnMoves::new_ep::<C, {CompassRose::WEST.v()}>,
-        PseudoLegalPawnMoves::new_ep::<C, {CompassRose::EAST.v()}>,
-        PseudoLegalPawnMoves::new_promo_capture_knight::<C, {CompassRose::WEST.v()}>,
-        PseudoLegalPawnMoves::new_promo_capture_knight::<C, {CompassRose::EAST.v()}>,
-        PseudoLegalPawnMoves::new_promo_capture_bishop::<C, {CompassRose::WEST.v()}>,
-        PseudoLegalPawnMoves::new_promo_capture_bishop::<C, {CompassRose::EAST.v()}>,
-        PseudoLegalPawnMoves::new_promo_capture_rook::<C, {CompassRose::WEST.v()}>,
-        PseudoLegalPawnMoves::new_promo_capture_rook::<C, {CompassRose::EAST.v()}>,
-        PseudoLegalPawnMoves::new_promo_capture_queen::<C, {CompassRose::WEST.v()}>,
-        PseudoLegalPawnMoves::new_promo_capture_queen::<C, {CompassRose::EAST.v()}>,
+        P::single_step::<C>,
+        P::double_step::<C>,
+        P::promo_knight::<C>,
+        P::promo_bishop::<C>,
+        P::promo_rook::<C>,
+        P::promo_queen::<C>,
+        P::capture::<C, { CompassRose::WEST_C }>,
+        P::capture::<C, { CompassRose::EAST_C }>,
+        P::ep::<C, { CompassRose::WEST_C }>,
+        P::ep::<C, { CompassRose::EAST_C }>,
+        P::promo_capture_knight::<C, { CompassRose::WEST_C }>,
+        P::promo_capture_knight::<C, { CompassRose::EAST_C }>,
+        P::promo_capture_bishop::<C, { CompassRose::WEST_C }>,
+        P::promo_capture_bishop::<C, { CompassRose::EAST_C }>,
+        P::promo_capture_rook::<C, { CompassRose::WEST_C }>,
+        P::promo_capture_rook::<C, { CompassRose::EAST_C }>,
+        P::promo_capture_queen::<C, { CompassRose::WEST_C }>,
+        P::promo_capture_queen::<C, { CompassRose::EAST_C }>,
     ]
 }
 
-pub fn gen_pseudo_legals(pos: &Position, color: Color) -> impl Iterator<Item = Move> {
-    let info = PseudoLegalPawnMovesInfo::new(pos, color);
+pub fn gen_pseudo_legals(pos: &Position) -> impl Iterator<Item = Move> {
+    let color = pos.get_turn();
+    let info = PawnMovesInfo::new(pos, color);
     let moves = match color {
-        Color::WHITE => get_pseudo_legals::<{Color::WHITE_C}>(),
-        Color::BLACK => get_pseudo_legals::<{Color::BLACK_C}>(),
+        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<PseudoLegal>, _>(),
+        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<PseudoLegal>, _>(),
         _ => unreachable!(),
     };
 
-    // todo: somehow make sure the chaining is optimized away... if not do it manually.
-    moves.into_iter().map(move |f| f(&info)).flatten()
+    moves.into_iter().map(move |f| f(&info, PseudoLegal{})).flatten()
+}
+
+pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> {
+    let legal = Legal { blockers: pos.get_blockers() };
+    let color = pos.get_turn();
+    let info = PawnMovesInfo::new(pos, color);
+    let moves = match color {
+        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<Legal>, _>(),
+        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<Legal>, _>(),
+        _ => unreachable!(),
+    };
+
+    moves.into_iter().map(move |f| f(&info, legal)).flatten()
+}
+
+pub fn gen_legals_check_single(pos: &Position) -> impl Iterator<Item = Move> {
+    assert_eq!(pos.get_check_state(), CheckState::Single);
+    let color = pos.get_turn();
+    let king_bb = pos.get_bitboard(PieceType::KING, color);
+    // Safety: king the board has no king, but gen_legal is used,
+    // the context is broken anyway. 
+    let king = unsafe { king_bb.lsb().unwrap_unchecked() };
+    // Safety: there is a single checker.
+    let checker = unsafe { pos.get_checkers().lsb().unwrap_unchecked() };
+    let resolve = Resolve { 
+        blockers: pos.get_blockers(),
+        blocks: Bitboard::between(king, checker)
+    };
+    let info = PawnMovesInfo::new(pos, color);
+    let moves = match color {
+        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<Resolve>, _>(),
+        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<Resolve>, _>(),
+        _ => unreachable!(),
+    };
+
+    moves.into_iter().map(move |f| f(&info, resolve)).flatten()
 }
 
 pub const fn generic_compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
@@ -278,17 +444,23 @@ pub const fn generic_compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboa
 
     Bitboard {
         v: {
-            let attacks_west = Bitboard { v: pawns.v & !Bitboard::from_c(File::A).v }.shift(capture_west);
-            let attacks_east = Bitboard { v: pawns.v & !Bitboard::from_c(File::H).v }.shift(capture_east);
+            let attacks_west = Bitboard {
+                v: pawns.v & !Bitboard::from_c(File::A).v,
+            }
+            .shift(capture_west);
+            let attacks_east = Bitboard {
+                v: pawns.v & !Bitboard::from_c(File::H).v,
+            }
+            .shift(capture_east);
             attacks_west.v | attacks_east.v
-        }
+        },
     }
 }
 
 pub const fn compute_attacks(pawns: Bitboard, color: Color) -> Bitboard {
     match color {
-        Color::WHITE => generic_compute_attacks::<{Color::WHITE_C}>(pawns),
-        Color::BLACK => generic_compute_attacks::<{Color::BLACK_C}>(pawns),
+        Color::WHITE => generic_compute_attacks::<{ Color::WHITE_C }>(pawns),
+        Color::BLACK => generic_compute_attacks::<{ Color::BLACK_C }>(pawns),
         _ => unreachable!(),
     }
 }
@@ -298,19 +470,19 @@ pub const fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
         Color::WHITE => lookup_attacks_white(sq),
         Color::BLACK => lookup_attacks_black(sq),
         _ => unreachable!(),
-    }    
+    }
 }
 
 pub const fn lookup_attacks_white(sq: Square) -> Bitboard {
     const ATTACKS: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
-            let sq = unsafe { Square::from_v(sq) }; 
+            let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
             result[sq.v() as usize] = generic_compute_attacks::<{ Color::WHITE_C }>(pawn);
         });
         result
-    };   
+    };
     ATTACKS[sq.v() as usize]
 }
 
@@ -318,11 +490,11 @@ pub const fn lookup_attacks_black(sq: Square) -> Bitboard {
     const ATTACKS: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
-            let sq = unsafe { Square::from_v(sq) }; 
+            let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
             result[sq.v() as usize] = generic_compute_attacks::<{ Color::BLACK_C }>(pawn);
         });
         result
-    };   
+    };
     ATTACKS[sq.v() as usize]
 }

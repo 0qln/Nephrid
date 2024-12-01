@@ -67,9 +67,13 @@ impl_op!(- |a: Square, b: Square| -> Square { Square { v: a.v - b.v } } );
 impl Square {
     pub const MIN: TSquare = Square::A1.v;
     pub const MAX: TSquare = Square::H8.v;
-    
-    pub const fn mirror(self) -> Self {
+       
+    pub const fn flip_h(self) -> Self {
         Self { v: self.v ^ 7 }
+    }
+    
+    pub const fn flip_v(self) -> Self {
+        Self { v: self.v ^ 56 }
     }
 }
 
@@ -121,6 +125,66 @@ impl TryFrom<&mut Tokenizer<'_>> for Option<Square> {
             None => return Err(ParseError::MissingInput),
         };
         Ok(Some(Square::from_c((file, rank))))
+    }
+}
+
+
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct EpTargetSquare {
+    v: Option<Square>
+}
+
+impl EpTargetSquare {
+    pub const fn v(&self) -> Option<Square> { self.v }
+}
+
+impl TryFrom<Square> for EpTargetSquare {
+    type Error = ParseError;
+    
+    #[inline]
+    fn try_from(sq: Square) -> Result<Self, Self::Error> {
+        let rank = Rank::from_c(sq);
+        match rank {
+            Rank::_3 | Rank::_6 => Ok(Self { v: Some(sq) }),
+            _ => Err(ParseError::InputOutOfRange(Box::new(sq))),
+        }
+    }
+}
+
+impl TryFrom<&mut Tokenizer<'_>> for EpTargetSquare {
+    type Error = ParseError;
+
+    #[inline]
+    fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
+        let file = match tokens.next() {
+            Some('-') => return Ok(Self { v: None }),
+            Some(c) => File::try_from(c)?,
+            None => return Err(ParseError::MissingInput),
+        };
+        let rank = match tokens.next() {
+            Some(c) => Rank::try_from(c)?,
+            None => return Err(ParseError::MissingInput),
+        };
+        let sq = Square::from_c((file, rank));
+        Self::try_from(sq)
+    }
+}
+
+
+pub struct EpCaptureSquare {
+    v: Option<Square>
+}
+
+impl TryFrom<Square> for EpCaptureSquare {
+    type Error = ParseError;
+    
+    #[inline]
+    fn try_from(sq: Square) -> Result<Self, Self::Error> {
+        let rank = Rank::from_c(sq);
+        match rank {
+            Rank::_4 | Rank::_5 => Ok(Self { v: Some(sq) }),
+            _ => Err(ParseError::InputOutOfRange(Box::new(sq))),
+        }
     }
 }
 

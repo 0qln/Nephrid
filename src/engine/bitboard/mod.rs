@@ -147,7 +147,7 @@ impl Bitboard {
     }
     
     #[inline]
-    pub const fn between(sq1: Square, sq2: Square) -> Self {
+    pub const fn ray(sq1: Square, sq2: Square) -> Self {
         const RAYS: [[Bitboard; 64]; 64] = {
             let mut rays = [[Bitboard::empty(); 64]; 64];
             const_for!(sq1 in Square::A1_C..(Square::H8_C+1) => {
@@ -184,10 +184,15 @@ impl Bitboard {
             });
             rays
         };
-
+        
+        RAYS[sq1.v() as usize][sq2.v() as usize]
+    }
+    
+    #[inline]
+    pub const fn between(sq1: Square, sq2: Square) -> Self {
+        let ray = Self::ray(sq1, sq1);
         let (hi, lo) = if sq1.v() > sq2.v() { (sq1, sq2) } else { (sq2, sq1) };
-        let ray = RAYS[hi.v() as usize][lo.v() as usize];
-        return Bitboard {
+        Bitboard {
             v: Bitboard::split_north(lo).v & Bitboard::split_south(hi).v & ray.v
         }
     }
