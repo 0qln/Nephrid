@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::{
     engine::{
         coordinates::{ File, Square}, 
@@ -5,7 +7,7 @@ use crate::{
     }, impl_variants, misc::{ConstFrom, ParseError}, uci::tokens::Tokenizer
 };
 
-use super::{castling::CastlingSide, piece::{self, PromoPieceType}};
+use super::{castling::CastlingSide, piece::PromoPieceType};
 
 pub struct LongAlgebraicNotation;
 
@@ -65,7 +67,7 @@ impl MoveFlag {
 
 impl From<(PromoPieceType, bool)> for MoveFlag {
     fn from((piece_type, captures): (PromoPieceType, bool)) -> Self {
-        let mut v = piece_type.v();
+        let mut v = piece_type.v().v();
         if captures { v += 4; }
         Self { v }
     }
@@ -93,7 +95,7 @@ impl const ConstFrom<CastlingSide> for MoveFlag {
     }
 }
 
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Default, Copy, Clone)]
 pub struct Move { v: u16 }
 
 impl Move {
@@ -146,6 +148,23 @@ impl From<Move> for (Square, Square, MoveFlag) {
     #[inline]
     fn from(value: Move) -> Self {
         (value.get_from(), value.get_to(), value.get_flag())
+    }
+}
+
+impl fmt::Display for Move {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
+            write!(f, "{}{}{}", self.get_from(), self.get_to(), promo)
+        }
+        else {
+            write!(f, "{}{}", self.get_from(), self.get_to())
+        }
+    }
+}
+
+impl fmt::Debug for Move {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Move").field("v", &self.v).finish()
     }
 }
 

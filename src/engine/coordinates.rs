@@ -3,7 +3,7 @@ use crate::{
     misc::{ConstFrom, ParseError},
     uci::tokens::Tokenizer,
 };
-use core::panic;
+use core::{fmt, panic};
 use std::ops;
 
 use super::color::Color;
@@ -89,6 +89,12 @@ impl Square {
 
     pub const fn flip_v(self) -> Self {
         Self { v: self.v ^ 56 }
+    }
+}
+
+impl fmt::Display for Square {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", File::from_c(*self), Rank::from_c(*self))
     }
 }
 
@@ -255,6 +261,12 @@ impl_variants! {
         _1, _2, _3, _4, _5, _6, _7, _8
     }
 }
+    
+impl fmt::Display for Rank {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.v)
+    }
+}
 
 impl const ConstFrom<Square> for Rank {
     #[inline]
@@ -312,6 +324,12 @@ impl File {
     }
 }
 
+impl fmt::Display for File {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", Into::<char>::into(*self))
+    }
+}
+
 impl const ConstFrom<Square> for File {
     #[inline]
     fn from_c(sq: Square) -> Self {
@@ -342,6 +360,12 @@ impl TryFrom<char> for File {
             }),
             x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
+    }
+}
+
+impl Into<char> for File {
+    fn into(self) -> char {
+        (self.v + 'a' as u8) as char
     }
 }
 

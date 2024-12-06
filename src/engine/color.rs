@@ -1,14 +1,14 @@
 use core::fmt;
 use std::ops;
 
-use crate::{impl_variants, misc::ParseError};
+use crate::{impl_variants_with_assertion, misc::ParseError};
 
 #[derive(PartialEq, Copy, Clone, Default)]
 pub struct Color { v: TColor }
 
 pub type TColor = u8;
 
-impl_variants! { 
+impl_variants_with_assertion! { 
     TColor as Color {
         WHITE,
         BLACK,

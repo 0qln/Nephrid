@@ -22,6 +22,8 @@ pub fn legal_moves_check_none<const CAPTURES_ONLY: bool>(pos: &Position) -> impl
         sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, bishop::compute_attacks),
         sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, queen::compute_attacks),
     ].into_iter().flatten()
+        .chain(pawn::gen_legals_check_none(pos))
+        // .chain(jumping_piece::gen_legals_check_none(pos))
 }
 
 pub fn legal_moves_check_single<const CAPTURES_ONLY: bool>(pos: &Position) -> impl Iterator<Item = Move> {

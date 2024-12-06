@@ -1,7 +1,7 @@
 use std::{num::ParseIntError, str::FromStr};
 use std::ops;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Depth { v: u8 }
 
 impl_op!(- |a: Depth, b: u8| -> Depth { Depth { v: a.v - b } } );

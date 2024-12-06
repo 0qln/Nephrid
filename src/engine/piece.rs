@@ -31,6 +31,12 @@ impl fmt::Debug for PieceType {
     }
 }
 
+impl fmt::Display for PieceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", Into::<char>::into(*self))
+    }
+}
+
 impl PieceType {
     #[inline]
     pub const fn is_promo(&self) -> bool {
@@ -74,15 +80,21 @@ impl Into<char> for PieceType {
 
 #[derive(Copy, Clone, Default, Debug, PartialEq)]
 pub struct PromoPieceType {
-    v: TPieceType
+    v: PieceType
 }
 
 impl_variants! {
-    TPieceType as PromoPieceType {
-        KNIGHT = PieceType::KNIGHT.v(),
-        BISHOP = PieceType::BISHOP.v(),
-        ROOK = PieceType::ROOK.v(),
-        QUEEN = PieceType::QUEEN.v(),
+    PieceType as PromoPieceType {
+        KNIGHT = PieceType::KNIGHT,
+        BISHOP = PieceType::BISHOP,
+        ROOK = PieceType::ROOK,
+        QUEEN = PieceType::QUEEN,
+    }
+}
+    
+impl fmt::Display for PromoPieceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.v.fmt(f)
     }
 }
 
@@ -108,7 +120,8 @@ impl TryFrom<MoveFlag> for PromoPieceType {
             Err(ParseError::InputOutOfRange(Box::new(flag)))?
         }
         else {
-            Ok(PromoPieceType { v: (flag.v() - 2) % 4 + 2 })
+            let pt = PieceType { v: (flag.v() - 2) % 4 + 2 };
+            Ok(PromoPieceType { v: pt })
         }
     }
 }
@@ -192,7 +205,7 @@ impl const ConstFrom<(Color, PieceType)> for Piece {
 impl const ConstFrom<(Color, PromoPieceType)> for Piece {
     #[inline]
     fn from_c((color, piece_type): (Color, PromoPieceType)) -> Self {
-        Piece { v: color.v() | (piece_type.v() << 1) }
+        Piece { v: color.v() | (piece_type.v().v() << 1) }
     }
 }
 
