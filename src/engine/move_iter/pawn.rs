@@ -1,7 +1,5 @@
-use std::marker::PhantomData;
-
 use crate::engine::color::{Color, TColor};
-use crate::engine::coordinates::{Rank, Square, TCompassRose};
+use crate::engine::coordinates::{EpCaptureSquare, Rank, Square, TCompassRose};
 use crate::engine::position::CheckState;
 use crate::engine::{
     bitboard::Bitboard,
@@ -17,7 +15,7 @@ pub struct PawnMovesInfo {
     pawns: Bitboard,
     enemies: Bitboard,
     pieces: Bitboard,
-    ep_sq: Option<Square>,
+    ep_capture_sq: EpCaptureSquare,
 }
 
 // todo: theres still a lot of duplicate calculations in the
@@ -28,12 +26,12 @@ impl PawnMovesInfo {
         let pawns = pos.get_bitboard(PieceType::PAWN, color);
         let pieces = pos.get_occupancy();
         let enemies = pos.get_color_bb(!color);
-        let ep_sq = pos.get_ep_square();
+        let ep_sq = pos.get_ep_capture_square();
         Self {
             pawns,
             pieces,
             enemies,
-            ep_sq,
+            ep_capture_sq: ep_sq,
         }
     }
 }
@@ -222,12 +220,12 @@ where
     fn ep<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: T) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let capture_dir = capture(color, CompassRose::new(DIR));
-        let to = Bitboard::from_c(info.ep_sq);
-        let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
+        let to = Bitboard::from_c(info.ep_capture_sq.v());
         let from = if to.is_empty() {
             Bitboard::empty()
         } else {
+            let capture_dir = capture(color, CompassRose::new(DIR));
+            let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
             backward(forward(capturing_pawns, capture_dir) & to, capture_dir)
         };
         Self::new(from, to, MoveFlag::EN_PASSANT, t)
@@ -302,7 +300,7 @@ impl IPawnMoves<Resolve> for PawnMoves<Resolve> {
     fn ep<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: Resolve) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let to = Bitboard::from_c(info.ep_sq); // todo: is this the to square or the capture square?
+        let to = Bitboard::from_c(info.ep_capture_sq.v());
         let from = if to.is_empty() {
             Bitboard::empty()
         } else {
@@ -423,6 +421,7 @@ pub fn gen_legals_check_single(pos: &Position) -> impl Iterator<Item = Move> {
     // Safety: there is a single checker.
     let checker = unsafe { pos.get_checkers().lsb().unwrap_unchecked() };
     let resolve = Resolve { 
+        checkers: pos.get_checkers(),
         blockers: pos.get_blockers(),
         blocks: Bitboard::between(king, checker)
     };

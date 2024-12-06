@@ -9,7 +9,8 @@ use crate::uci::sync::CancellationToken;
 use crate::engine::position::Position;
 
 use super::depth::Depth;
-use super::move_iter::{fold_legal_move, foreach_legal_move, legal_moves_check_single};
+use super::move_iter::{fold_legal_move, foreach_legal_move, legal_moves_check_double, legal_moves_check_none, legal_moves_check_single};
+use super::position::CheckState;
 
 pub mod mode;
 pub mod target;
@@ -28,15 +29,40 @@ impl Search {
         todo!()
     }
 
-    fn perft(&self, position: &mut Position, depth: Depth, cancellation_token: CancellationToken) -> u64 {
+    fn perft(&self, pos: &mut Position, depth: Depth, cancellation_token: CancellationToken) -> u64 {
         let mut result = 1;
         
         if depth.v() == 0 { return result; }
         
-        for m in legal_moves::<false>(position, position.get_turn()) {
-            position.make_move(m);
-            result += self.perft(position, depth - 1, cancellation_token.clone());
-            position.unmake_move(m);
+        // foreach_legal_move::<false, _, _>(pos, &mut |m| {
+        //     pos.make_move(m);
+        //     result += self.perft(pos, depth - 1, cancellation_token.clone());
+        //     pos.unmake_move(m);
+        //     ControlFlow::Continue::<()>(())
+        // });
+         
+        match pos.get_check_state() {
+            CheckState::None => {
+                for m in legal_moves_check_none::<false>(pos) {
+                    pos.make_move(m);
+                    result += self.perft(pos, depth - 1, cancellation_token.clone());
+                    pos.unmake_move(m);
+                }
+            },
+            CheckState::Single => {
+                for m in legal_moves_check_single::<false>(pos) {
+                    pos.make_move(m);
+                    result += self.perft(pos, depth - 1, cancellation_token.clone());
+                    pos.unmake_move(m);
+                }
+            },            
+            CheckState::Double => {
+                for m in legal_moves_check_double::<false>(pos) {
+                    pos.make_move(m);
+                    result += self.perft(pos, depth - 1, cancellation_token.clone());
+                    pos.unmake_move(m);
+                }
+            },
         }
 
         result
@@ -52,10 +78,12 @@ impl Search {
     fn alpha_beta(&self, position: &mut Position, depth: Depth, alpha: Score, beta: Score) -> Score {
 
 
-        fold_legal_move::<false>(position, 0, |m| {
-            ControlFlow::Continue(0)
-                ControlFlow::Break(())
-        })
+        // fold_legal_move::<false>(position, 0, |m| {
+        //     ControlFlow::Continue(0)
+        //         ControlFlow::Break(())
+        // })
+        
+        Default::default()
 
     }
 

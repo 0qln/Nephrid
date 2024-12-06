@@ -102,6 +102,7 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
                         Err(e) => sync::out(&format!("Error: {e}"))
                     }
                 },
+                Some("startpos") => engine.position = Position::start_position(),
                 None => sync::out("Error: Missing arguments"),
                 Some(x) => sync::out(&format!("Error: Invalid argument: {}", x))
             };

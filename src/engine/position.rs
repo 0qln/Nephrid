@@ -6,7 +6,7 @@ use crate::{
     }, misc::{ConstFrom, ParseError}
 };
 
-use super::{castling::CastlingSide, coordinates::EpTargetSquare, r#move::MoveFlag, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
+use super::{castling::CastlingSide, coordinates::{EpCaptureSquare, EpTargetSquare}, r#move::MoveFlag, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub enum CheckState {
@@ -28,7 +28,7 @@ struct StateInfo {
     pub plys50: Ply,
     pub ply: Ply,
     pub turn: Turn,
-    pub ep_square: EpTargetSquare,
+    pub ep_capture_square: EpCaptureSquare,
     pub castling: CastlingRights,
     pub captured_piece: Piece,
     pub key: zobrist::Hash,
@@ -214,8 +214,8 @@ impl Position {
     }
     
     #[inline]
-    pub fn get_ep_square(&self) -> EpTargetSquare {
-        self.state.get_current().ep_square
+    pub fn get_ep_capture_square(&self) -> EpCaptureSquare {
+        self.state.get_current().ep_capture_square
     }
     
     #[inline]
@@ -317,9 +317,9 @@ impl Position {
         // need to be reinitialized for each leaf.
         next_state.castling = self.state.get_current().castling;
         next_state.plys50 = self.state.get_current().plys50 + 1;
-        next_state.ep_square = EpTargetSquare::default();
+        next_state.ep_capture_square = EpCaptureSquare::default();
         next_state.key = self.state.get_current().key;
-        next_state.key.toggle_ep_square(self.state.get_current().ep_square);
+        next_state.key.toggle_ep_square(self.state.get_current().ep_capture_square);
         next_state.key.toggle_turn();
         next_state.captured_piece = Piece::default();
         
@@ -388,16 +388,10 @@ impl Position {
             PieceType::PAWN => {
                 match flag.v() {
                     MoveFlag::DOUBLE_PAWN_PUSH_C => {
-                       next_state.ep_square = EpTargetSquare::try_from(
-                                // Safety:
-                                // To `to` sq can only ever be on the 4th or 5th rank.
-                                // For any square in on those ranks, the formula yields a valid square.
-                                unsafe {
-                                    // todo: test and move this logic somewhere else
-                                    Square::from_v(to.v() + (us.v() *  2 - 1) * 8) 
-                                }
-                            );
-                        next_state.key.toggle_ep_square(next_state.ep_square);
+                        // Safety: A double pawn push destination square is the definition of 
+                        // an en passant square.
+                        next_state.ep_capture_square = unsafe { EpCaptureSquare::try_from(to).unwrap_unchecked() };
+                        next_state.key.toggle_ep_square(next_state.ep_capture_square);
                     }
                     MoveFlag::PROMOTION_KNIGHT_C..MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
                         // Safety: We just checked, that the flag is in a valid range.
@@ -563,7 +557,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
             // 3. Castling ability
             castling: CastlingRights::try_from(&mut *fen)?,
             // 4. En passant target square
-            ep_square: EpTargetSquare::try_from(fen.iter_token())?,
+            ep_capture_square: EpCaptureSquare::from_c((EpTargetSquare::try_from(fen.iter_token())?, !turn)),
             // 5. Halfmove clock
             plys50: Ply::try_from(fen.iter_token())?,
             // 6. Fullmove counter

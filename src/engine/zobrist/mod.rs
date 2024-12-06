@@ -6,7 +6,7 @@ use rand::{rngs::SmallRng, RngCore, SeedableRng};
 use super::{
     bitboard::Bitboard,
     castling::CastlingRights,
-    coordinates::{EpTargetSquare, Square},
+    coordinates::{EpCaptureSquare, EpTargetSquare, Square},
     piece::Piece,
     position::Position,
     turn::Turn,
@@ -38,7 +38,7 @@ impl Hash {
     }
 
     #[inline]
-    pub fn toggle_ep_square(&mut self, ep_sq: EpTargetSquare) -> Self {
+    pub fn toggle_ep_square(&mut self, ep_sq: EpCaptureSquare) -> Self {
         self.v ^= ep_sq.v().map_or(0, |sq| HASHER.en_passant[sq.v() as usize]);
         *self
     }
@@ -63,7 +63,7 @@ impl From<&Position> for Hash {
             .fold(Hash { v: 0 }, |mut acc, sq| {
                 acc.toggle_piece_sq(sq, pos.get_piece(sq))
             })
-            .toggle_ep_square(pos.get_ep_square())
+            .toggle_ep_square(pos.get_ep_capture_square())
             .toggle_castling(pos.get_castling())
             .set_turn(pos.get_turn())
     }

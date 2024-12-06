@@ -38,18 +38,21 @@ pub fn legal_moves_check_double<const CAPTURES_ONLY: bool>(pos: &Position) -> im
     king::gen_legals_check_some(pos)
 }
 
+#[inline]
 pub fn foreach_legal_move<const CAPTURES_ONLY: bool, F, R>(pos: &Position, f: F) -> R
 where
     F: FnMut(Move) -> R,
     R: Try<Output = ()>,
 {
-    match pos.get_check_state() {
-        CheckState::None => legal_moves_check_none::<CAPTURES_ONLY>(pos).try_for_each(f),
-        CheckState::Single => legal_moves_check_single::<CAPTURES_ONLY>(pos).try_for_each(f),
-        CheckState::Double => legal_moves_check_double::<CAPTURES_ONLY>(pos).try_for_each(f),
+    #[inline]
+    fn call<T, R>(mut f: impl FnMut(T) -> R) -> impl FnMut((), T) -> R {
+        move |(), x| f(x)
     }
+
+    fold_legal_move::<CAPTURES_ONLY,_,_,_>(pos, (), call(f))
 }
 
+#[inline]
 pub fn fold_legal_move<const CAPTURES_ONLY: bool, B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
