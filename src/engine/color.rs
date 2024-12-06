@@ -1,8 +1,9 @@
+use core::fmt;
 use std::ops;
 
 use crate::{impl_variants, misc::ParseError};
 
-#[derive(PartialEq, Copy, Clone, Debug, Default)]
+#[derive(PartialEq, Copy, Clone, Default)]
 pub struct Color { v: TColor }
 
 pub type TColor = u8;
@@ -35,5 +36,13 @@ impl Into<char> for Color {
             Color::BLACK => 'b',
             _ => unreachable!("Invalid program state.")
         }
+    }
+}
+    
+impl fmt::Debug for Color {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Color")
+            .field("v", &Into::<char>::into(*self))
+            .finish()
     }
 }

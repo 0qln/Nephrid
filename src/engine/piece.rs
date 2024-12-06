@@ -1,4 +1,4 @@
-use std::iter::Step;
+use core::fmt;
 
 use crate::{engine::color::Color, impl_variants, misc::{ConstFrom, ParseError}};
 
@@ -20,6 +20,14 @@ impl_variants! {
         ROOK,
         QUEEN,
         KING,    
+    }
+}
+    
+impl fmt::Debug for PieceType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PieceType")
+            .field("v", &Into::<char>::into(*self))
+            .finish()
     }
 }
 
@@ -177,14 +185,14 @@ impl Piece {
 impl const ConstFrom<(Color, PieceType)> for Piece {
     #[inline]
     fn from_c((color, piece_type): (Color, PieceType)) -> Self {
-        Piece { v: color.v() | (piece_type.v() >> 1) }
+        Piece { v: color.v() | (piece_type.v() << 1) }
     }
 }
 
 impl const ConstFrom<(Color, PromoPieceType)> for Piece {
     #[inline]
     fn from_c((color, piece_type): (Color, PromoPieceType)) -> Self {
-        Piece { v: color.v() | (piece_type.v() >> 1) }
+        Piece { v: color.v() | (piece_type.v() << 1) }
     }
 }
 
@@ -192,7 +200,7 @@ impl TryFrom<char> for Piece {
     type Error = ParseError;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
-        let piece_type = PieceType::try_from(value.to_ascii_lowercase())?;
+        let piece_type = PieceType::try_from(value.to_lowercase().next().unwrap())?;
         let color = if value.is_uppercase() { Color::WHITE } else { Color::BLACK };
         Ok(Self::from_c((color, piece_type)))
     }
@@ -202,8 +210,18 @@ impl Into<char> for Piece {
     fn into(self) -> char {
         let mut result: char = self.piece_type().into();
         if self.color() == Color::WHITE {
-            result = result.to_ascii_uppercase();
+            result = result.to_uppercase().next().unwrap();
         }
         result
+    }
+}
+    
+impl fmt::Debug for Piece {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Piece")
+            .field("v", &Into::<char>::into(*self))
+            .field("piece_type", &Into::<char>::into(self.piece_type()))
+            .field("color", &Into::<char>::into(self.color()))
+            .finish()
     }
 }

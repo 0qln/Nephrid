@@ -1,3 +1,4 @@
+use core::fmt;
 use std::ptr::NonNull;
 
 use crate::{
@@ -43,25 +44,27 @@ impl StateInfo {
         let king = pos.get_bitboard(PieceType::KING, stm);
         let occupancy = pos.get_occupancy();
         let enemies = pos.get_color_bb(nstm);
-        (self.nstm_attacks, self.checkers) = enemies.fold((Bitboard::empty(), Bitboard::empty()), |acc, enemy_sq| {
-            let enemy = pos.get_piece(enemy_sq);     
-            let enemy_attacks = match enemy.piece_type() {
-                PieceType::PAWN => pawn::lookup_attacks(enemy_sq, nstm),
-                PieceType::KNIGHT => knight::compute_attacks(enemy_sq),
-                PieceType::BISHOP => bishop::compute_attacks(enemy_sq, occupancy),
-                PieceType::ROOK => rook::compute_attacks(enemy_sq, occupancy),
-                PieceType::QUEEN => queen::compute_attacks(enemy_sq, occupancy),
-                PieceType::KING => king::compute_attacks(enemy_sq),
-                _ => unreachable!("We are iterating the squares which contain enemies. PieceType::NONE should not be here."),
-            };
-            (
-                acc.0 | enemy_attacks,
-                match enemy_attacks & king {
-                    Bitboard { v: 0 } => acc.1,
-                    _ => acc.1 | Bitboard::from_c(enemy_sq)
-                }
-            )
-        });
+        (self.nstm_attacks, self.checkers) = {
+            enemies.fold((Bitboard::empty(), Bitboard::empty()), |acc, enemy_sq| {
+                let enemy = pos.get_piece(enemy_sq);     
+                let enemy_attacks = match enemy.piece_type() {
+                    PieceType::PAWN => pawn::lookup_attacks(enemy_sq, nstm),
+                    PieceType::KNIGHT => knight::compute_attacks(enemy_sq),
+                    PieceType::BISHOP => bishop::compute_attacks(enemy_sq, occupancy),
+                    PieceType::ROOK => rook::compute_attacks(enemy_sq, occupancy),
+                    PieceType::QUEEN => queen::compute_attacks(enemy_sq, occupancy),
+                    PieceType::KING => king::compute_attacks(enemy_sq),
+                    _ => unreachable!("We are iterating the squares which contain enemies. PieceType::NONE should not be here."),
+                };
+                (
+                    acc.0 | enemy_attacks,
+                    match enemy_attacks & king {
+                        Bitboard { v: 0 } => acc.1,
+                        _ => acc.1 | Bitboard::from_c(enemy_sq)
+                    }
+                )
+            })
+        };
         
         if let Some(king_sq) = king.lsb() {
             let x_ray_checkers = pos.get_x_ray_checkers(king_sq, enemies);
@@ -500,6 +503,13 @@ impl Position {
                 &mut Fen::new(&"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
             ).unwrap_unchecked()
         }
+    }
+}
+
+impl fmt::Debug for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let str: String = self.into();
+        f.write_str(&str)
     }
 }
 
