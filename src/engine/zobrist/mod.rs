@@ -3,10 +3,12 @@ use std::sync::LazyLock;
 
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
+use crate::misc::ConstFrom;
+
 use super::{
     bitboard::Bitboard,
     castling::CastlingRights,
-    coordinates::{EpCaptureSquare, EpTargetSquare, Square},
+    coordinates::{EpCaptureSquare, EpTargetSquare, File, Square},
     piece::Piece,
     position::Position,
     turn::Turn,
@@ -39,7 +41,10 @@ impl Hash {
 
     #[inline]
     pub fn toggle_ep_square(&mut self, ep_sq: EpCaptureSquare) -> Self {
-        self.v ^= ep_sq.v().map_or(0, |sq| HASHER.en_passant[sq.v() as usize]);
+        self.v ^= ep_sq.v().map_or(0, |sq| {
+            let file = File::from_c(sq);
+            HASHER.en_passant[file.v() as usize]
+        });
         *self
     }
 
