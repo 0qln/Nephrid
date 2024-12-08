@@ -336,12 +336,10 @@ impl Position {
             let captured_sq = match flag {
                 MoveFlag::EN_PASSANT => {
                     // Safety:
-                    // If the move is an en passant, the `to` square is 
-                    // on the 3rd or 6th rank. For any of the sq values
-                    // on those ranks, the formula yields a valid square.
+                    // If the move is an en passant, the `to` square is on the 3rd or 6th rank.
                     unsafe {
-                        // todo: test and move this logic somewhere else
-                        Square::from_v(to.v() + (us.v() *  2 - 1) * 8) 
+                        let target_sq = EpTargetSquare::try_from(to).unwrap_unchecked();
+                        EpCaptureSquare::from((target_sq, !us)).v().unwrap_unchecked()
                     }
                 }
                 _ => to,
@@ -482,14 +480,13 @@ impl Position {
             let captured_sq = match flag {
                 MoveFlag::EN_PASSANT => {
                     // Safety:
-                    // If the move was an en passant, the `to` square is 
-                    // on the 3rd or 6th rank. For any of the sq values
-                    // on those ranks, the formula yields a valid square.
+                    // If the move is an en passant, the `to` square is on the 3rd or 6th rank.
                     unsafe {
-                        Square::from_v(to.v() + (us.v() * 2 - 1) * 8)
+                        let target_sq = EpTargetSquare::try_from(to).unwrap_unchecked();
+                        EpCaptureSquare::from((target_sq, !us)).v().unwrap_unchecked()
                     }
-                },
-                _ => to
+                }
+                _ => to,
             };
             
             self.put_piece(captured_sq, captured_piece);
@@ -567,7 +564,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
             // 3. Castling ability
             castling: CastlingRights::try_from(&mut *fen)?,
             // 4. En passant target square
-            ep_capture_square: EpCaptureSquare::from_c((EpTargetSquare::try_from(fen.iter_token())?, !turn)),
+            ep_capture_square: EpCaptureSquare::from((EpTargetSquare::try_from(fen.iter_token())?, !turn)),
             // 5. Halfmove clock
             plys50: Ply::try_from(fen.iter_token())?,
             // 6. Fullmove counter
