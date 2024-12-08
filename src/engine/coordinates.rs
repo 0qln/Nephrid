@@ -55,7 +55,7 @@ impl CompassRose {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct Square {
     v: TSquare,
 }
@@ -98,6 +98,12 @@ impl fmt::Display for Square {
     }
 }
 
+impl fmt::Debug for Square {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}{:?}", File::from_c(*self), Rank::from_c(*self))
+    }
+}
+
 impl TryFrom<TSquare> for Square {
     type Error = ParseError;
 
@@ -133,13 +139,12 @@ impl const ConstFrom<(File, Rank)> for Square {
     }
 }
 
-impl TryFrom<&mut Tokenizer<'_>> for Option<Square> {
+impl TryFrom<&mut Tokenizer<'_>> for Square {
     type Error = ParseError;
 
     #[inline]
     fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let file = match tokens.next() {
-            Some('-') => return Ok(None),
             Some(c) => File::try_from(c)?,
             None => return Err(ParseError::MissingInput),
         };
@@ -147,7 +152,7 @@ impl TryFrom<&mut Tokenizer<'_>> for Option<Square> {
             Some(c) => Rank::try_from(c)?,
             None => return Err(ParseError::MissingInput),
         };
-        Ok(Some(Square::from_c((file, rank))))
+        Ok(Square::from_c((file, rank)))
     }
 }
 
@@ -194,20 +199,17 @@ impl TryFrom<&mut Tokenizer<'_>> for EpTargetSquare {
     }
 }
 
-impl const ConstFrom<(EpCaptureSquare, Color)> for EpTargetSquare {
+// the color is the color of the pawn being captured
+impl From<(EpCaptureSquare, Color)> for EpTargetSquare {
     #[inline]
-    fn from_c((sq, color): (EpCaptureSquare, Color)) -> Self {
+    fn from((sq, color): (EpCaptureSquare, Color)) -> Self {
         Self {
-            v: match sq.v {
-                Some(sq) => Some(Square {
-                    v: sq.v - (color.v() * 2 - 1) * 8,
-                }),
-                None => None,
-            },
+            v: sq.v.map(|sq| Square {
+                v: sq.v + (color.v() * 2 - 1) * 8,
+            }),
         }
     }
 }
-
 
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct EpCaptureSquare {
@@ -218,7 +220,7 @@ impl EpCaptureSquare {
     pub const fn v(&self) -> Option<Square> {
         self.v
     }
-} 
+}
 
 impl TryFrom<Square> for EpCaptureSquare {
     type Error = ParseError;
@@ -233,21 +235,19 @@ impl TryFrom<Square> for EpCaptureSquare {
     }
 }
 
-impl const ConstFrom<(EpTargetSquare, Color)> for EpCaptureSquare {
+// the color is the color of the pawn being captured
+impl From<(EpTargetSquare, Color)> for EpCaptureSquare {
     #[inline]
-    fn from_c((sq, color): (EpTargetSquare, Color)) -> Self {
+    fn from((sq, color): (EpTargetSquare, Color)) -> Self {
         Self {
-            v: match sq.v {
-                Some(sq) => Some(Square {
-                    v: sq.v + (color.v() * 2 - 1) * 8,
-                }),
-                None => None,
-            },
+            v: sq.v.map(|sq| Square {
+                v: sq.v - (color.v() * 2 - 1) * 8,
+            }),
         }
     }
 }
 
-#[derive(PartialEq, PartialOrd, Debug, Copy, Clone)]
+#[derive(PartialEq, PartialOrd, Copy, Clone)]
 pub struct Rank {
     v: TRank,
 }
@@ -261,10 +261,16 @@ impl_variants! {
         _1, _2, _3, _4, _5, _6, _7, _8
     }
 }
-    
+
 impl fmt::Display for Rank {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.v)
+        write!(f, "{}", self.v + 1)
+    }
+}
+
+impl fmt::Debug for Rank {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.v + 1)
     }
 }
 
@@ -301,7 +307,7 @@ impl TryFrom<char> for Rank {
     }
 }
 
-#[derive(PartialEq, PartialOrd, Debug, Clone, Copy)]
+#[derive(PartialEq, PartialOrd, Clone, Copy)]
 pub struct File {
     v: TFile,
 }
@@ -325,6 +331,12 @@ impl File {
 }
 
 impl fmt::Display for File {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", Into::<char>::into(*self))
+    }
+}
+
+impl fmt::Debug for File {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", Into::<char>::into(*self))
     }
