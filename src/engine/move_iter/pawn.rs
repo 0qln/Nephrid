@@ -1,5 +1,5 @@
 use crate::engine::color::{Color, TColor};
-use crate::engine::coordinates::{EpCaptureSquare, Rank, Square, TCompassRose};
+use crate::engine::coordinates::{EpCaptureSquare, EpTargetSquare, Rank, Square, TCompassRose};
 use crate::engine::position::CheckState;
 use crate::engine::{
     bitboard::Bitboard,
@@ -82,26 +82,33 @@ const fn backward(bb: Bitboard, dir: CompassRose) -> Bitboard {
 const fn capture(c: Color, dir: CompassRose) -> CompassRose {
     CompassRose::new(dir.v() + single_step(c).v())
 }
-
-trait NotResolve { }
-
+ 
+trait Legallity {}
+trait Legal: Legallity { fn get_blockers(&self) -> Bitboard; }
 struct PseudoLegal;
-    
-impl NotResolve for PseudoLegal {}
-    
-trait BlockerInfo { fn get_blockers(&self) -> Bitboard; }
+impl Legallity for PseudoLegal {}
+
+trait CheckStateInfo {}
+trait CheckStateInfoEmpty: CheckStateInfo {}
+trait CheckStateInfoSome: CheckStateInfo {}
+
+type IgnoreCheck = PseudoLegal;
+impl CheckStateInfoEmpty for IgnoreCheck {}
+impl CheckStateInfo for IgnoreCheck {}
 
 #[derive(Debug, Default, Clone, Copy)]
-struct Legal { blockers: Bitboard, }
-
-impl BlockerInfo for Legal { fn get_blockers(&self) -> Bitboard { self.blockers } }
-
-impl NotResolve for Legal {}
+struct NoCheck { blockers: Bitboard }
+impl Legal for NoCheck { fn get_blockers(&self) -> Bitboard { self.blockers } }
+impl Legallity for NoCheck {}
+impl CheckStateInfoEmpty for NoCheck {}
+impl CheckStateInfo for NoCheck {}
 
 #[derive(Debug, Default, Clone, Copy)]
-struct Resolve { blockers: Bitboard, blocks: Bitboard, checkers: Bitboard }
-
-impl BlockerInfo for Resolve { fn get_blockers(&self) -> Bitboard { self.blockers } }
+struct SingleCheck { blockers: Bitboard, blocks: Bitboard, checkers: Bitboard }
+impl Legal for SingleCheck { fn get_blockers(&self) -> Bitboard { self.blockers } }
+impl Legallity for SingleCheck {}
+impl CheckStateInfoSome for SingleCheck {}
+impl CheckStateInfo for SingleCheck {}
 
 pub struct PawnMoves<T> {
     from: Bitboard,
@@ -220,7 +227,8 @@ where
     fn ep<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: T) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let to = Bitboard::from_c(info.ep_capture_sq.v());
+        let target = EpTargetSquare::from((info.ep_capture_sq, !color));
+        let to = Bitboard::from_c(target.v());
         let from = if to.is_empty() {
             Bitboard::empty()
         } else {
@@ -232,12 +240,15 @@ where
     }
 }
 
-impl IPawnMoves<Resolve> for PawnMoves<Resolve> {
-    fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: Resolve) -> Self {
+impl IPawnMoves<SingleCheck> for PawnMoves<SingleCheck> {
+    fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: SingleCheck) -> Self {
+        assert!(from.pop_cnt() >= to.pop_cnt(), 
+            "From needs to have atleast as many squares as to."
+        );
         Self { from, to, flag, t, }
     }   
 
-    fn single_step<const C: TColor>(info: &PawnMovesInfo, t: Resolve) -> Self {
+    fn single_step<const C: TColor>(info: &PawnMovesInfo, t: SingleCheck) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let non_promo_pawns = info.pawns & !Bitboard::from_c(promo_rank(color));
@@ -248,7 +259,7 @@ impl IPawnMoves<Resolve> for PawnMoves<Resolve> {
         Self::new(from, to, MoveFlag::QUIET, t)
     }    
 
-    fn double_step<const C: TColor>(info: &PawnMovesInfo, t: Resolve) -> Self {
+    fn double_step<const C: TColor>(info: &PawnMovesInfo, t: SingleCheck) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let tabu_squares = info.pieces | !t.blocks;
@@ -260,7 +271,7 @@ impl IPawnMoves<Resolve> for PawnMoves<Resolve> {
         Self::new(from, to, MoveFlag::DOUBLE_PAWN_PUSH, t)
     }
 
-    fn capture<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: Resolve) -> Self {
+    fn capture<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: SingleCheck) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let capture_dir = capture(color, CompassRose::new(DIR));
@@ -271,7 +282,7 @@ impl IPawnMoves<Resolve> for PawnMoves<Resolve> {
         Self::new(from, to, MoveFlag::CAPTURE, t)
     }
 
-    fn promo<const C: TColor>(info: &PawnMovesInfo, flag: MoveFlag, t: Resolve) -> Self {
+    fn promo<const C: TColor>(info: &PawnMovesInfo, flag: MoveFlag, t: SingleCheck) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let tabu_squares = info.pieces | !t.blocks;
@@ -285,7 +296,7 @@ impl IPawnMoves<Resolve> for PawnMoves<Resolve> {
     fn pl_promo_capture<const C: TColor, const DIR: TCompassRose>(
         info: &PawnMovesInfo,
         flag: MoveFlag,
-        t: Resolve
+        t: SingleCheck
     ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
@@ -297,23 +308,29 @@ impl IPawnMoves<Resolve> for PawnMoves<Resolve> {
         Self::new(from, to, flag, t)
     }
 
-    fn ep<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: Resolve) -> Self {
+    fn ep<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: SingleCheck) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let to = Bitboard::from_c(info.ep_capture_sq.v());
+        let target = EpTargetSquare::from((info.ep_capture_sq, !color));
+        let to = Bitboard::from_c(target.v());
         let from = if to.is_empty() {
             Bitboard::empty()
         } else {
             let capture_dir = capture(color, CompassRose::new(DIR));
             let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
-            backward(forward(capturing_pawns, capture_dir) & to, capture_dir)
+            let from = backward(forward(capturing_pawns, capture_dir) & to, capture_dir);
+            if !from.is_empty()
+            from
         };
         Self::new(from, to, MoveFlag::EN_PASSANT, t)
     }
 }
 
-impl<T: NotResolve> IPawnMoves<T> for PawnMoves<T> {
+impl<T: CheckStateInfoEmpty> IPawnMoves<T> for PawnMoves<T> {
     fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: T) -> Self {
+        assert!(from.pop_cnt() >= to.pop_cnt(), 
+            "From needs to have atleast as many squares as to."
+        );
         Self { from, to, flag, t, }
     }   
 }
@@ -327,18 +344,22 @@ impl Iterator for PawnMoves<PseudoLegal> {
             // todo: write unit tests for this.
             // Safety: the 'from' bb is generated by every constructor in such a way,
             // that there is always atleast one square in the 'from' bb per square
-            // in the 'to' bb
+            // in the 'to' bb. 
             Move::new(self.from.pop_lsb().unwrap_unchecked(), to, self.flag)
         })
     }
 }
 
-impl<T: BlockerInfo> Iterator for PawnMoves<T> {
+impl<T: Legal> Iterator for PawnMoves<T> {
     type Item = Move;
     
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(to) = self.to.pop_lsb() {
+            // todo: write unit tests for this.
+            // Safety: the 'from' bb is generated by every constructor in such a way,
+            // that there is always atleast one square in the 'from' bb per square
+            // in the 'to' bb. 
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
             let from_bb = Bitboard::from_c(from);
              
@@ -390,21 +411,21 @@ pub fn gen_pseudo_legals(pos: &Position) -> impl Iterator<Item = Move> {
     let color = pos.get_turn();
     let info = PawnMovesInfo::new(pos, color);
     let moves = match color {
-        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<PseudoLegal>, _>(),
-        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<PseudoLegal>, _>(),
+        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<IgnoreCheck>, _>(),
+        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<IgnoreCheck>, _>(),
         _ => unreachable!(),
     };
 
-    moves.into_iter().map(move |f| f(&info, PseudoLegal{})).flatten()
+    moves.into_iter().map(move |f| f(&info, IgnoreCheck{})).flatten()
 }
 
 pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> {
-    let legal = Legal { blockers: pos.get_blockers() };
+    let legal = NoCheck { blockers: pos.get_blockers() };
     let color = pos.get_turn();
     let info = PawnMovesInfo::new(pos, color);
     let moves = match color {
-        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<Legal>, _>(),
-        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<Legal>, _>(),
+        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<NoCheck>, _>(),
+        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<NoCheck>, _>(),
         _ => unreachable!(),
     };
 
@@ -420,15 +441,15 @@ pub fn gen_legals_check_single(pos: &Position) -> impl Iterator<Item = Move> {
     let king = unsafe { king_bb.lsb().unwrap_unchecked() };
     // Safety: there is a single checker.
     let checker = unsafe { pos.get_checkers().lsb().unwrap_unchecked() };
-    let resolve = Resolve { 
+    let resolve = SingleCheck { 
         checkers: pos.get_checkers(),
         blockers: pos.get_blockers(),
         blocks: Bitboard::between(king, checker)
     };
     let info = PawnMovesInfo::new(pos, color);
     let moves = match color {
-        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<Resolve>, _>(),
-        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<Resolve>, _>(),
+        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<SingleCheck>, _>(),
+        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<SingleCheck>, _>(),
         _ => unreachable!(),
     };
 
