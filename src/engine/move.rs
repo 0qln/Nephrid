@@ -27,7 +27,7 @@ impl<'a, 'b, 'c> LongAlgebraicUciNotation<'a, 'b, 'c> {
 
 pub struct StandardAlgebraicNotation;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub struct MoveFlag { v: TMoveFlag }
 
 pub type TMoveFlag = u8;
@@ -48,6 +48,29 @@ impl_variants! {
         QUEEN_CASTLE,
         CAPTURE,
         EN_PASSANT,
+    }
+}
+    
+impl fmt::Debug for MoveFlag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let variant = match *self {
+            MoveFlag::QUIET => "QUIET",
+            MoveFlag::DOUBLE_PAWN_PUSH => "DOUBLE_PAWN_PUSH",
+            MoveFlag::PROMOTION_KNIGHT => "PROMOTION_KNIGHT",
+            MoveFlag::PROMOTION_BISHOP => "PROMOTION_BISHOP",
+            MoveFlag::PROMOTION_ROOK => "PROMOTION_ROOK",
+            MoveFlag::PROMOTION_QUEEN => "PROMOTION_QUEEN",
+            MoveFlag::CAPTURE_PROMOTION_KNIGHT => "CAPTURE_PROMOTION_KNIGHT",
+            MoveFlag::CAPTURE_PROMOTION_BISHOP => "CAPTURE_PROMOTION_BISHOP",
+            MoveFlag::CAPTURE_PROMOTION_ROOK => "CAPTURE_PROMOTION_ROOK",
+            MoveFlag::CAPTURE_PROMOTION_QUEEN => "CAPTURE_PROMOTION_QUEEN",
+            MoveFlag::KING_CASTLE => "KING_CASTLE",
+            MoveFlag::QUEEN_CASTLE => "QUEEN_CASTLE",
+            MoveFlag::CAPTURE => "CAPTURE",
+            MoveFlag::EN_PASSANT => "EN_PASSANT",
+            _ => unreachable!()
+        };
+        f.debug_struct("MoveFlag").field("v", &variant).finish()
     }
 }
     
@@ -172,12 +195,12 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
     type Error = ParseError;
 
     fn try_from(move_notation: LongAlgebraicUciNotation<'_, '_, '_>) -> Result<Self, Self::Error> {
-        let from = Option::<Square>::try_from(&mut *move_notation.tokens)?.ok_or(ParseError::MissingInput)?;
-        let to = Option::<Square>::try_from(&mut *move_notation.tokens)?.ok_or(ParseError::MissingInput)?;
+        let from = Square::try_from(&mut *move_notation.tokens)?;
+        let to = Square::try_from(&mut *move_notation.tokens)?;
         let moving_p = move_notation.context.get_piece(from);
         let captured_p = move_notation.context.get_piece(to);
         let abs_dist = from.v().abs_diff(to.v());
-        let captures = captured_p.piece_type() == PieceType::NONE;
+        let captures = captured_p.piece_type() != PieceType::NONE;
         let mut flag = if captures { MoveFlag::CAPTURE } else { MoveFlag::QUIET };
 
         match moving_p.piece_type() {
