@@ -60,7 +60,7 @@ impl CompassRose {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Square {
     v: TSquare,
 }
@@ -216,7 +216,7 @@ impl From<(EpCaptureSquare, Color)> for EpTargetSquare {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct EpCaptureSquare {
     v: Option<Square>,
 }
@@ -246,7 +246,7 @@ impl From<(EpTargetSquare, Color)> for EpCaptureSquare {
     fn from((sq, color): (EpTargetSquare, Color)) -> Self {
         Self {
             v: sq.v.map(|sq| Square {
-                v: sq.v - (color.v() * 2 - 1) * 8,
+                v: (sq.v as i8 - (color.v() as i8 * 2 - 1) * 8) as u8,
             }),
         }
     }
