@@ -255,28 +255,28 @@ where
         info: &PawnMovesInfo,
         t: T,
     ) -> Self {
-        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_KNIGHT, t)
+        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::CAPTURE_PROMOTION_KNIGHT, t)
     }
 
     fn promo_capture_bishop<const C: TColor, const DIR: TCompassRose>(
         info: &PawnMovesInfo,
         t: T,
     ) -> Self {
-        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_BISHOP, t)
+        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::CAPTURE_PROMOTION_BISHOP, t)
     }
 
     fn promo_capture_rook<const C: TColor, const DIR: TCompassRose>(
         info: &PawnMovesInfo,
         t: T,
     ) -> Self {
-        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_ROOK, t)
+        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::CAPTURE_PROMOTION_ROOK, t)
     }
 
     fn promo_capture_queen<const C: TColor, const DIR: TCompassRose>(
         info: &PawnMovesInfo,
         t: T,
     ) -> Self {
-        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::PROMOTION_QUEEN, t)
+        Self::pl_promo_capture::<C, DIR>(info, MoveFlag::CAPTURE_PROMOTION_QUEEN, t)
     }
 
     fn ep<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: T) -> Self {
