@@ -1,4 +1,4 @@
-use std::cell::{RefCell, UnsafeCell};
+use std::cell::UnsafeCell;
 use std::ops::ControlFlow;
 
 use crate::uci::sync::{self, CancellationToken};
@@ -10,11 +10,7 @@ use target::Target;
 use crate::engine::position::Position;
 
 use super::depth::Depth;
-use super::move_iter::{
-    fold_legal_move, foreach_legal_move, legal_moves_check_double, legal_moves_check_none,
-    legal_moves_check_single,
-};
-use super::position::CheckState;
+use super::move_iter::fold_legal_move;
 use super::r#move::Move;
 
 pub mod limit;
@@ -46,8 +42,7 @@ impl Search {
         }
         
         // Safety: 
-        // This is safe iff and unmake_move are 
-        // perfectly undoes the muations made by make_move.
+        // This is safe iff unmake_move perfectly reverses the muations made by make_move.
         unsafe {
             fold_legal_move::<false, _, _, _>(&*pos.get(), 0, |acc, m| {
                 pos.get_mut().make_move(m);

@@ -15,15 +15,17 @@ pub mod queen;
 pub mod rook;
 pub mod sliding_piece;
 
-pub fn legal_moves_check_none<const CAPTURES_ONLY: bool>(
+#[cfg(test)]
+mod test;
+
+fn legal_moves_check_none<const CAPTURES_ONLY: bool>(
     pos: &Position,
 ) -> impl Iterator<Item = Move> + '_ {
     [
         sliding_piece::gen_legals_check_none(pos, SlidingPieceType::ROOK, rook::compute_attacks),
         sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, bishop::compute_attacks),
         sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, queen::compute_attacks),
-    ]
-    .into_iter()
+    ].into_iter()
     .flatten()
     .chain(pawn::gen_legals_check_none(pos))
     .chain(jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::compute_attacks))
@@ -31,34 +33,23 @@ pub fn legal_moves_check_none<const CAPTURES_ONLY: bool>(
     .chain(king::gen_legal_castling(pos, pos.get_turn()))
 }
 
-pub fn legal_moves_check_single<const CAPTURES_ONLY: bool>(
+fn legal_moves_check_single<const CAPTURES_ONLY: bool>(
     pos: &Position,
 ) -> impl Iterator<Item = Move> + '_ {
-    // only generate legal check resolves
-    king::gen_legals_check_some(pos)
-        .chain(sliding_piece::gen_legals_check_single(
-            pos,
-            SlidingPieceType::ROOK,
-            rook::compute_attacks,
-        ))
-        .chain(sliding_piece::gen_legals_check_single(
-            pos,
-            SlidingPieceType::BISHOP,
-            bishop::compute_attacks,
-        ))
-        .chain(sliding_piece::gen_legals_check_single(
-            pos,
-            SlidingPieceType::QUEEN,
-            queen::compute_attacks,
-        ))
-        .chain(pawn::gen_legals_check_single(pos))
-        .chain(jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::compute_attacks))
+    [
+        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::ROOK, rook::compute_attacks),
+        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::BISHOP, bishop::compute_attacks),
+        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::QUEEN, queen::compute_attacks),
+    ].into_iter()
+    .flatten()
+    .chain(king::gen_legals_check_some(pos))
+    .chain(pawn::gen_legals_check_single(pos))
+    .chain(jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::compute_attacks))
 }
 
-pub fn legal_moves_check_double<const CAPTURES_ONLY: bool>(
+fn legal_moves_check_double<const CAPTURES_ONLY: bool>(
     pos: &Position,
 ) -> impl Iterator<Item = Move> {
-    // only generate legal check resolves by king
     king::gen_legals_check_some(pos)
 }
 
