@@ -1,6 +1,6 @@
 use crate::{
     engine::{
-        bitboard::Bitboard, castling::{CastlingRights, CastlingSide}, color::Color, coordinates::{File, Rank, Square}, r#move::{Move, MoveFlag}, piece::{JumpingPieceType, PieceType}, position::{CheckState, Position}
+        bitboard::Bitboard, castling::{self, CastlingRights, CastlingSide}, color::Color, coordinates::{File, Rank, Square}, r#move::{Move, MoveFlag}, piece::{JumpingPieceType, PieceType}, position::{CheckState, Position}
     },
     misc::{ConstFrom, PostIncrement},
 };
@@ -68,62 +68,63 @@ pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> {
     captures.chain(quiets).into_iter()
 }
 
-pub fn gen_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = Move> {
+pub fn gen_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = Move> + '_ {
     let rank = match color {
         Color::WHITE => Rank::_1,
         Color::BLACK => Rank::_8,
         _ => unreachable!(),
     };
     let from = Square::from_c((File::E, rank));
-    let castling = pos.get_castling().clone();
     return Gen {
         state: 0,
-        castling,
+        pos,
         from,
         rank,
         color,
-        nstm_attacks: pos.get_nstm_attacks(),
     };
 
     // probably has a simpler solution, but this is just temporary.
-    struct Gen {
+    struct Gen<'a> {
         state: u8,
-        castling: CastlingRights,
+        pos: &'a Position,
         from: Square,
         rank: Rank,
         color: Color,
-        nstm_attacks: Bitboard,
     }
-    impl Iterator for Gen {
+    impl Iterator for Gen<'_> {
         type Item = Move;
 
-        #[inline]
         fn next(&mut self) -> Option<Self::Item> {
+            let castling = self.pos.get_castling();
             match self.state.post_incr(1) {
-                0 => match self.castling.is_true(CastlingSide::KING_SIDE, self.color) {
+                0 => match castling.is_true(CastlingSide::KING_SIDE, self.color) {
                     false => self.next(),
                     true => {
-                        const CHECK_MASK: [Bitboard; 2] = [ 
+                        const TABU_MASK: [Bitboard; 2] = [ 
                             Bitboard { v: 0x60_u64 }, 
                             Bitboard { v: 0x6000000000000000_u64 } 
                         ];
-                        if (self.nstm_attacks & CHECK_MASK[self.color.v() as usize]).is_empty() {
-                             return None; 
+                        let nstm_attacks = self.pos.get_nstm_attacks();
+                        let tabus = nstm_attacks | self.pos.get_occupancy();
+                        if !(tabus & TABU_MASK[self.color.v() as usize]).is_empty() {
+                            return self.next(); 
                         }
                         let to = Square::from_c((File::G, self.rank));
                         Some(Move::new(self.from, to, MoveFlag::KING_CASTLE))
                     }
                 },
-                1 => match self.castling.is_true(CastlingSide::QUEEN_SIDE, self.color) {
+                1 => match castling.is_true(CastlingSide::QUEEN_SIDE, self.color) {
                     false => self.next(),
                     true => {
-                        const CHECK_MASK: [Bitboard; 2] = [ 
+                        const TABU_MASK: [Bitboard; 2] = [ 
                             Bitboard { v: 0xE_u64 }, 
                             Bitboard { v: 0xE00000000000000_u64 } 
                         ];
                         let to = Square::from_c((File::C, self.rank));
-                        if (self.nstm_attacks & CHECK_MASK[self.color.v() as usize]).is_empty() {
-                             return None; 
+                        let nstm_attacks = self.pos.get_nstm_attacks();
+                        let tabus = nstm_attacks | self.pos.get_occupancy();
+                        if !(tabus & TABU_MASK[self.color.v() as usize]).is_empty() {
+                            return self.next(); 
                         }
                         Some(Move::new(self.from, to, MoveFlag::QUEEN_CASTLE))
                     }
