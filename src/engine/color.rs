@@ -3,7 +3,7 @@ use std::ops;
 
 use crate::{impl_variants_with_assertion, misc::ParseError};
 
-#[derive(PartialEq, Copy, Clone, Default)]
+#[derive(PartialEq, Eq, Copy, Clone, Default)]
 pub struct Color { v: TColor }
 
 pub type TColor = u8;
