@@ -28,7 +28,7 @@ pub fn legal_moves_check_none<const CAPTURES_ONLY: bool>(
     .chain(pawn::gen_legals_check_none(pos))
     .chain(jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::compute_attacks))
     .chain(king::gen_legals_check_none(pos))
-    // .chain(king::gen_legal_castling(pos, pos.get_turn()))
+    .chain(king::gen_legal_castling(pos, pos.get_turn()))
 }
 
 pub fn legal_moves_check_single<const CAPTURES_ONLY: bool>(
@@ -52,6 +52,7 @@ pub fn legal_moves_check_single<const CAPTURES_ONLY: bool>(
             queen::compute_attacks,
         ))
         .chain(pawn::gen_legals_check_single(pos))
+        .chain(jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::compute_attacks))
 }
 
 pub fn legal_moves_check_double<const CAPTURES_ONLY: bool>(
