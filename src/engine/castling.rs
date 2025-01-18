@@ -30,7 +30,7 @@ impl TryFrom<File> for CastlingSide {
     }
 }
 
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Copy, Clone, Default, PartialEq, Debug)]
 pub struct CastlingRights {
     v: u8,
 }

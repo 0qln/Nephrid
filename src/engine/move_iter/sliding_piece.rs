@@ -28,7 +28,9 @@ pub fn gen_legals_check_single(
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
             let is_blocker = !(blockers & piece_bb).is_empty(); 
-            let pin_mask = if is_blocker { Bitboard::ray(piece, king) } else { Bitboard::full() };
+            let pin_mask = is_blocker
+                .then(|| Bitboard::ray(piece, king))
+                .unwrap_or(Bitboard::full());
             let attacks = compute_attacks(piece, occupancy);
             let legal_attacks = attacks & pin_mask;
             let legal_resolves = resolves & legal_attacks;
@@ -60,7 +62,9 @@ pub fn gen_legal_captures_check_single(
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
             let is_blocker = !(blockers & piece_bb).is_empty(); 
-            let pin_mask = if is_blocker { Bitboard::ray(piece, king) } else { Bitboard::full() };
+            let pin_mask = is_blocker
+                .then(|| Bitboard::ray(piece, king))
+                .unwrap_or(Bitboard::full());
             let attacks = compute_attacks(piece, occupancy);
             let legal_attacks = attacks & pin_mask;
             let legal_resolves = resolves & legal_attacks;
@@ -87,7 +91,9 @@ pub fn gen_legals_check_none(
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
             let is_blocker = !(blockers & piece_bb).is_empty(); 
-            let pin_mask = is_blocker.then(|| Bitboard::ray(piece, king)).unwrap_or_default();
+            let pin_mask = is_blocker
+                .then(|| Bitboard::ray(piece, king))
+                .unwrap_or(Bitboard::full());
             let attacks = compute_attacks(piece, occupancy);
             let legal_attacks = attacks & pin_mask;
             let captures = gen_captures(legal_attacks, enemies, piece);
@@ -115,7 +121,9 @@ pub fn gen_legal_captures_check_none(
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
             let is_blocker = !(blockers & piece_bb).is_empty(); 
-            let pin_mask = if is_blocker { Bitboard::ray(piece, king) } else { Bitboard::full() };
+            let pin_mask = is_blocker
+                .then(|| Bitboard::ray(piece, king))
+                .unwrap_or(Bitboard::full());
             let attacks = compute_attacks(piece, occupancy);
             let legal_attacks = attacks & pin_mask;
             gen_captures(legal_attacks, enemies, piece)

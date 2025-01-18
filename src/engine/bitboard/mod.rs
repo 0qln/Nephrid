@@ -202,7 +202,11 @@ impl Bitboard {
                         }
                     } {
                         rays[sq1.v() as usize][sq2.v() as usize] = Bitboard {
-                            v: (Bitboard::from_c(sq1).v | Bitboard::from_c(sq2).v) | (sq1_bb.v & sq2_bb.v)
+                            v: (
+                                Bitboard::from_c(sq1).v | 
+                                Bitboard::from_c(sq2).v | 
+                                (sq1_bb.v & sq2_bb.v)
+                            )
                         };
                     }
                 });
@@ -215,7 +219,7 @@ impl Bitboard {
 
     #[inline]
     pub const fn between(sq1: Square, sq2: Square) -> Self {
-        let ray = Self::ray(sq1, sq1);
+        let ray = Self::ray(sq1, sq2);
         let (hi, lo) = if sq1.v() > sq2.v() {
             (sq1, sq2)
         } else {

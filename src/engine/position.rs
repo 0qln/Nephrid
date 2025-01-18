@@ -17,7 +17,7 @@ pub enum CheckState {
     Double
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 struct StateInfo {
     // Memoized state
     pub checkers: Bitboard,

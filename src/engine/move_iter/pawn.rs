@@ -88,6 +88,7 @@ const fn capture(c: Color, dir: CompassRose) -> CompassRose {
 trait Legallity {}
 trait Legal: Legallity {
     fn get_blockers(&self) -> Bitboard;
+    fn get_king(&self) -> Square;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -102,35 +103,48 @@ type IgnoreCheck = PseudoLegal;
 impl CheckStateInfoEmpty for IgnoreCheck {}
 impl CheckStateInfo for IgnoreCheck {}
 
-#[derive(Debug, Default, Clone, Copy)]
-struct NoCheck {
-    blockers: Bitboard,
+#[derive(Debug, Clone, Copy)]
+struct NoCheck<'a> {
+    pos: &'a Position,
 }
-impl Legal for NoCheck {
+impl Legal for NoCheck<'_> {
     fn get_blockers(&self) -> Bitboard {
-        self.blockers
+        self.pos.get_blockers()
+    }
+    
+    fn get_king(&self) -> Square {
+        let color = self.pos.get_turn();
+        let king_bb = self.pos.get_bitboard(PieceType::KING, color);
+        // Safety: the board has no king, board is in single check, and gen_legal is used??
+        // the context is broken anyway.
+        unsafe { king_bb.lsb().unwrap_unchecked() }
     }
 }
-impl Legallity for NoCheck {}
-impl CheckStateInfoEmpty for NoCheck {}
-impl CheckStateInfo for NoCheck {}
+impl Legallity for NoCheck<'_> {}
+impl CheckStateInfoEmpty for NoCheck<'_> {}
+impl CheckStateInfo for NoCheck<'_> {}
 
-impl NoCheck {
-    pub fn new(pos: &Position) -> Self {
-        Self {
-            blockers: pos.get_blockers(),
-        }
+impl<'a> NoCheck<'a> {
+    pub fn new(pos: &'a Position) -> Self {
+        Self { pos }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 struct SingleCheck<'a> {
     pos: &'a Position,
-    blocks: Bitboard,
 }
 impl<'a> Legal for SingleCheck<'a> {
     fn get_blockers(&self) -> Bitboard {
         self.pos.get_blockers()
+    }
+    
+    fn get_king(&self) -> Square {
+        let color = self.pos.get_turn();
+        let king_bb = self.pos.get_bitboard(PieceType::KING, color);
+        // Safety: the board has no king, board is in single check, and gen_legal is used??
+        // the context is broken anyway.
+        unsafe { king_bb.lsb().unwrap_unchecked() }
     }
 }
 impl<'a> Legallity for SingleCheck<'a> {}
@@ -140,16 +154,7 @@ impl<'a> CheckStateInfo for SingleCheck<'a> {}
 impl<'a> SingleCheck<'a> {
     pub fn new(pos: &'a Position, color: Color) -> Self {
         assert_eq!(pos.get_check_state(), CheckState::Single);
-        let king_bb = pos.get_bitboard(PieceType::KING, color);
-        // Safety: king the board has no king, but gen_legal is used,
-        // the context is broken anyway.
-        let king = unsafe { king_bb.lsb().unwrap_unchecked() };
-        // Safety: there is a single checker.
-        let checker = unsafe { pos.get_checkers().lsb().unwrap_unchecked() };
-        Self {
-            pos,
-            blocks: Bitboard::between(king, checker),
-        }
+        Self { pos, }
     }
 }
 
@@ -300,7 +305,7 @@ impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let non_promo_pawns = info.get_pawns(color) & !Bitboard::from_c(promo_rank(color));
-        let tabu_squares = info.pieces | !t.blocks;
+        let tabu_squares = info.pieces | !t.get_blockers();
         let single_step_tabus = backward(tabu_squares, single_step(color));
         let from = non_promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
@@ -310,7 +315,7 @@ impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
     fn double_step<const C: TColor>(info: &PawnMovesInfo, t: SingleCheck<'a>) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let tabu_squares = info.pieces | !t.blocks;
+        let tabu_squares = info.pieces | !t.get_blockers();
         let single_step_tabus = backward(info.pieces, single_step(color));
         let double_step_tabus = backward(tabu_squares, double_step(color)) | single_step_tabus;
         let double_step_pawns = info.get_pawns(color) & Bitboard::from_c(start_rank(color));
@@ -336,7 +341,7 @@ impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
     fn promo<const C: TColor>(info: &PawnMovesInfo, flag: MoveFlag, t: SingleCheck<'a>) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let tabu_squares = info.pieces | !t.blocks;
+        let tabu_squares = info.pieces | !t.get_blockers();
         let single_step_tabus = backward(tabu_squares, single_step(color));
         let promo_pawns = info.get_pawns(color) & Bitboard::from_c(promo_rank(color));
         let from = promo_pawns & !single_step_tabus;
@@ -419,11 +424,11 @@ impl<T: Legal> Iterator for PawnMoves<T> {
             // in the 'to' bb.
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
             let from_bb = Bitboard::from_c(from);
-
+            
             let blockers = self.t.get_blockers();
             let is_blocker = !(blockers & from_bb).is_empty();
             if is_blocker {
-                let pin_mask = Bitboard::ray(from, to);
+                let pin_mask = Bitboard::ray(from, self.t.get_king());
                 let to_bb = Bitboard::from_c(to);
                 let is_legal = !(pin_mask & to_bb).is_empty();
                 if !is_legal {
