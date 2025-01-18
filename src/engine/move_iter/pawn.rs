@@ -319,7 +319,6 @@ impl IPawnMoves<SingleCheck> for PawnMoves<SingleCheck> {
             let capture_dir = capture(color, CompassRose::new(DIR));
             let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
             let from = backward(forward(capturing_pawns, capture_dir) & to, capture_dir);
-            if !from.is_empty()
             from
         };
         Self::new(from, to, MoveFlag::EN_PASSANT, t)

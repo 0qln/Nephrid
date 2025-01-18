@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{RefCell, UnsafeCell};
 use std::ops::ControlFlow;
 
 use crate::uci::sync::{self, CancellationToken};
@@ -36,104 +36,35 @@ impl Search {
 
     fn perft(
         &self,
-        pos: &RefCell<Position>,
+        pos: &mut UnsafeCell<Position>,
         depth: Depth,
         cancellation_token: CancellationToken,
         f: fn(Move, u64) -> (),
     ) -> u64 {
-        let mut result = 1;
-
-        println!("gfasl;ku");
         if depth <= Depth::MIN {
-            return result;
+            return 1;
         }
         
-        println!("aklsdjf");
-
         // Safety: 
         // This is safe iff and unmake_move are 
         // perfectly undoes the muations made by make_move.
-        foreach_legal_move::<false, _, _>(&pos.borrow(), |m| {
-            pos.borrow_mut().make_move(m);
-            result += self.perft(pos, depth - 1, cancellation_token.clone(), f);
-            pos.borrow_mut().unmake_move(m);
-            ControlFlow::Continue::<()>(())
-        });
-
-        /*
-        fn do_perft(
-            pos: &mut Position,
-            depth: Depth,
-            cancellation_token: CancellationToken,
-        ) -> u64 {
-            let mut result = 1;
-            if depth <= Depth::MIN { return result; }
-            match pos.get_check_state() {
-                CheckState::None => {
-                    for m in legal_moves_check_none::<false>(pos) {
-                        pos.make_move(m);
-                        result += do_perft(pos, depth - 1, cancellation_token.clone());
-                        pos.unmake_move(m);
-                    }
-                }
-                CheckState::Single => {
-                    for m in legal_moves_check_single::<false>(pos) {
-                        pos.make_move(m);
-                        result += do_perft(pos, depth - 1, cancellation_token.clone());
-                        pos.unmake_move(m);
-                    }
-                }
-                CheckState::Double => {
-                    for m in legal_moves_check_double::<false>(pos) {
-                        pos.make_move(m);
-                        result += do_perft(pos, depth - 1, cancellation_token.clone());
-                        pos.unmake_move(m);
-                    }
-                }
-            }
-            result
+        unsafe {
+            fold_legal_move::<false, _, _, _>(&*pos.get(), 0, |acc, m| {
+                pos.get_mut().make_move(m);
+                let c = self.perft(pos, depth - 1, cancellation_token.clone(), f);
+                f(m, c);
+                pos.get_mut().unmake_move(m);
+                ControlFlow::Continue::<(), _>(acc + c)
+            }).continue_value().unwrap()
         }
-
-        match pos.get_check_state() {
-            CheckState::None => {
-                for m in legal_moves_check_none::<false>(pos) {
-                    pos.make_move(m);
-                    let nodes = do_perft(pos, depth - 1, cancellation_token.clone());
-                    result += nodes;
-                    f(m, nodes);
-                    pos.unmake_move(m);
-                }
-            }
-            CheckState::Single => {
-                for m in legal_moves_check_single::<false>(pos) {
-                    pos.make_move(m);
-                    let nodes = do_perft(pos, depth - 1, cancellation_token.clone());
-                    result += nodes;
-                    f(m, nodes);
-                    pos.unmake_move(m);
-                }
-            }
-            CheckState::Double => {
-                for m in legal_moves_check_double::<false>(pos) {
-                    pos.make_move(m);
-                    let nodes = do_perft(pos, depth - 1, cancellation_token.clone());
-                    result += nodes;
-                    f(m, nodes);
-                    pos.unmake_move(m);
-                }
-            }
-        }
-        */
-
-        result
     }
 
     pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {
         match self.mode {
             Mode::Perft => {
                 println!("Perft depth: {}", self.target.depth.v());
-                let nodes = self.perft(position, self.target.depth, cancellation_token, |m, c| {
-                    sync::out(&format!("{m:?}: {c}"));
+                let nodes = self.perft(&mut UnsafeCell::new(position.clone()), self.target.depth, cancellation_token, |m, c| {
+                    sync::out(&format!("{m}: {c}"));
                 });
                 sync::out(&format!("Nodes searched: {nodes}"));
             }
