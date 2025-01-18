@@ -270,7 +270,7 @@ impl Position {
         self.t_bitboards[piece.piece_type().v() as usize] |= target;
         self.c_bitboards[piece.color().v() as usize] |= target;
         self.pieces[sq.v() as usize] = piece;
-        self.piece_counts[piece.piece_type().v() as usize] += 1;
+        self.piece_counts[piece.v() as usize] += 1;
     }
     
     #[inline]
@@ -280,11 +280,13 @@ impl Position {
         self.t_bitboards[piece.piece_type().v() as usize] ^= target;
         self.c_bitboards[piece.color().v() as usize] ^= target;
         self.pieces[sq.v() as usize] = Piece::default();
-        self.piece_counts[self.get_piece(sq).piece_type().v() as usize] -= 1;
+        self.piece_counts[piece.v() as usize] -= 1;
     }  
     
     #[inline]
     fn move_piece(&mut self, from: Square, to: Square) {
+        assert!(self.get_piece(from) != Piece::default());
+        assert!(self.get_piece(to) == Piece::default());
         let piece = self.get_piece(from);
         let from_to = Bitboard::from_c(from) ^ Bitboard::from_c(to);
         self.c_bitboards[piece.color().v() as usize] ^= from_to;
