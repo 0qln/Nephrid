@@ -170,7 +170,7 @@ impl Into<PieceType> for JumpingPieceType {
 
 pub type TPiece = u8;
       
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
 pub struct Piece { v: TPiece }
 
 impl Piece {
