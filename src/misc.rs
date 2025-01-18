@@ -14,7 +14,7 @@ where
     fn post_incr(&mut self, incr: T) -> T {
         let tmp = *self;
         *self += incr;
-        *self
+        tmp
     }
 }
 
