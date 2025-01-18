@@ -32,6 +32,7 @@ impl Search {
 
     fn perft(
         &self,
+    pub fn perft(
         pos: &mut UnsafeCell<Position>,
         depth: Depth,
         cancellation_token: CancellationToken,
@@ -46,7 +47,7 @@ impl Search {
         unsafe {
             fold_legal_move::<false, _, _, _>(&*pos.get(), 0, |acc, m| {
                 pos.get_mut().make_move(m);
-                let c = self.perft(pos, depth - 1, cancellation_token.clone(), |_, _| {});
+                let c = Self::perft(pos, depth - 1, cancellation_token.clone(), |_, _| {});
                 f(m, c);
                 pos.get_mut().unmake_move(m);
                 ControlFlow::Continue::<(), _>(acc + c)
@@ -57,7 +58,7 @@ impl Search {
     pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {
         match self.mode {
             Mode::Perft => {
-                let nodes = self.perft(&mut UnsafeCell::new(position.clone()), self.target.depth, cancellation_token, |m, c| {
+                let nodes = Self::perft(&mut UnsafeCell::new(position.clone()), self.target.depth, cancellation_token, |m, c| {
                     sync::out(&format!("{m}: {c}"));
                 });
                 sync::out(&format!("\nNodes searched: {nodes}"));
