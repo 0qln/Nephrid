@@ -156,6 +156,13 @@ impl<'a> SingleCheck<'a> {
         assert_eq!(pos.get_check_state(), CheckState::Single);
         Self { pos, }
     }
+    
+    fn get_blocks(&self) -> Bitboard {
+        let king = self.get_king();
+        // Safety: there is a single checker.
+        let checker = unsafe { self.pos.get_checkers().lsb().unwrap_unchecked() };
+        Bitboard::between(king, checker)
+    }
 }
 
 pub struct PawnMoves<T> {
@@ -305,7 +312,7 @@ impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let non_promo_pawns = info.get_pawns(color) & !Bitboard::from_c(promo_rank(color));
-        let tabu_squares = info.pieces | !t.get_blockers();
+        let tabu_squares = !t.get_blocks() | info.pieces;
         let single_step_tabus = backward(tabu_squares, single_step(color));
         let from = non_promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
@@ -315,7 +322,7 @@ impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
     fn double_step<const C: TColor>(info: &PawnMovesInfo, t: SingleCheck<'a>) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let tabu_squares = info.pieces | !t.get_blockers();
+        let tabu_squares = info.pieces | !t.get_blocks();
         let single_step_tabus = backward(info.pieces, single_step(color));
         let double_step_tabus = backward(tabu_squares, double_step(color)) | single_step_tabus;
         let double_step_pawns = info.get_pawns(color) & Bitboard::from_c(start_rank(color));
@@ -341,7 +348,7 @@ impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
     fn promo<const C: TColor>(info: &PawnMovesInfo, flag: MoveFlag, t: SingleCheck<'a>) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let tabu_squares = info.pieces | !t.get_blockers();
+        let tabu_squares = info.pieces | !t.get_blocks();
         let single_step_tabus = backward(tabu_squares, single_step(color));
         let promo_pawns = info.get_pawns(color) & Bitboard::from_c(promo_rank(color));
         let from = promo_pawns & !single_step_tabus;
