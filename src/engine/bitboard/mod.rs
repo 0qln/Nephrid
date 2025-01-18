@@ -14,7 +14,7 @@ use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose};
 #[cfg(test)]
 pub mod tests;
 
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Copy, Clone, Default, PartialEq, Eq)]
 pub struct Bitboard {
     pub v: u64,
 }
