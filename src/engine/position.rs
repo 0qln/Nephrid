@@ -9,7 +9,7 @@ use crate::{
 
 use super::{castling::CastlingSide, coordinates::{EpCaptureSquare, EpTargetSquare}, r#move::MoveFlag, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
 
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum CheckState {
     #[default]
     None,
@@ -17,7 +17,7 @@ pub enum CheckState {
     Double
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
 struct StateInfo {
     // Memoized state
     pub checkers: Bitboard,
@@ -133,24 +133,27 @@ impl StateStack {
     }
     
     /// Returns the pushed state.
-    ///
     #[inline]
-    pub fn push_new(&mut self, new: fn(&StateInfo) -> StateInfo) -> NonNull<StateInfo> {
-        self.current += 1;
+    pub fn get_next(&mut self, new: fn(&StateInfo) -> StateInfo) -> NonNull<StateInfo> {
+        let next = self.current + 1;
         
         // self.current can only ever be one greater than the length of the vector.
-        assert!(self.states.len() >= self.current);
-        
-        if self.states.len() == self.current {
+        assert!(self.states.len() >= next);
+
+        if self.states.len() == next {
             // Safety: self.states.len() >= 1 => self.states.len() > self.current - 1 >= 0
-            let previous = unsafe {
-                self.states.get_unchecked(self.current - 1)
-            };
-            self.states.push(new(previous));
+            let prev = unsafe { self.states.get_unchecked(self.current) };
+            self.states.push(new(prev));
         }
 
         // Safety: The current index is always in range.
-        NonNull::from_ref(unsafe { self.states.get_unchecked(self.current) })
+        NonNull::from_ref(unsafe { self.states.get_unchecked(next) })
+    }
+    
+    /// Increment the current index.
+    #[inline]
+    pub fn incr(&mut self) {
+        self.current += 1;
     }
     
     /// Returns the popped state.
@@ -302,18 +305,16 @@ impl Position {
         let (from, to, flag) = m.into();
         let moving_piece = self.get_piece(from);
         let target_piece = self.get_piece(to);
-        
+
         // Safety: During the lifetime of this pointer, no other pointer
         // reads or writes to the memory location of the next state. 
         let next_state = unsafe { 
-            self.state.push_new(|prev| {
+            self.state.get_next(|prev| {
                 StateInfo {
                     // These don't change across leafes on the same depth...
                     ply: prev.ply + 1,
                     turn: !prev.turn,
-                    // todo: the remaining fields can even be left uninitialized, 
-                    // because all of the are initialized one by one below.
-                    ..prev.clone()
+                    ..Default::default()
                 }
             }).as_mut() 
         };
@@ -421,6 +422,7 @@ impl Position {
         }
         
         next_state.init(self);
+        self.state.incr();
 
         #[inline(always)]
         const fn update_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
