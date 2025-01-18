@@ -116,14 +116,20 @@ pub fn gen_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = 
                 1 => match castling.is_true(CastlingSide::QUEEN_SIDE, self.color) {
                     false => self.next(),
                     true => {
-                        const TABU_MASK: [Bitboard; 2] = [ 
+                        const BLOCK_MASK: [Bitboard; 2] = [ 
                             Bitboard { v: 0xE_u64 }, 
                             Bitboard { v: 0xE00000000000000_u64 } 
                         ];
+                        const CHECK_MASK: [Bitboard; 2] = [
+                            Bitboard { v: 0xC_u64 }, 
+                            Bitboard { v: 0xC00000000000000_u64 } 
+                        ];
                         let to = Square::from_c((File::C, self.rank));
                         let nstm_attacks = self.pos.get_nstm_attacks();
-                        let tabus = nstm_attacks | self.pos.get_occupancy();
-                        if !(tabus & TABU_MASK[self.color.v() as usize]).is_empty() {
+                        let blockers = self.pos.get_occupancy();
+                        let blocked = BLOCK_MASK[self.color.v() as usize] & blockers;
+                        let checked = CHECK_MASK[self.color.v() as usize] & nstm_attacks;
+                        if !(blocked | checked).is_empty() {
                             return self.next(); 
                         }
                         Some(Move::new(self.from, to, MoveFlag::QUEEN_CASTLE))

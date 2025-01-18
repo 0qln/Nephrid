@@ -397,7 +397,7 @@ impl Position {
                         next_state.ep_capture_square = unsafe { EpCaptureSquare::try_from(to).unwrap_unchecked() };
                         next_state.key.toggle_ep_square(next_state.ep_capture_square);
                     }
-                    MoveFlag::PROMOTION_KNIGHT_C..MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
+                    MoveFlag::PROMOTION_KNIGHT_C..=MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
                         // Safety: We just checked, that the flag is in a valid range.
                         let promo_t = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
                         let promo = Piece::from_c((us, promo_t));

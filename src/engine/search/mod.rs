@@ -30,8 +30,6 @@ impl Search {
         todo!()
     }
 
-    fn perft(
-        &self,
     pub fn perft(
         pos: &mut UnsafeCell<Position>,
         depth: Depth,

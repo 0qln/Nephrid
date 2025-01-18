@@ -11,6 +11,8 @@ use crate::engine::{
 use crate::misc::ConstFrom;
 use const_for::const_for;
 
+use super::{bishop, rook};
+
 pub struct PawnMovesInfo<'a> {
     pos: &'a Position,
     pieces: Bitboard,
@@ -35,6 +37,10 @@ impl<'a> PawnMovesInfo<'a> {
 
     pub fn get_ep_sq(&self) -> EpCaptureSquare {
         self.pos.get_ep_capture_square()
+    }
+
+    pub fn get_pos(&self) -> &Position {
+        self.pos
     }
 }
 
@@ -111,7 +117,7 @@ impl Legal for NoCheck<'_> {
     fn get_blockers(&self) -> Bitboard {
         self.pos.get_blockers()
     }
-    
+
     fn get_king(&self) -> Square {
         let color = self.pos.get_turn();
         let king_bb = self.pos.get_bitboard(PieceType::KING, color);
@@ -121,7 +127,6 @@ impl Legal for NoCheck<'_> {
     }
 }
 impl Legallity for NoCheck<'_> {}
-impl CheckStateInfoEmpty for NoCheck<'_> {}
 impl CheckStateInfo for NoCheck<'_> {}
 
 impl<'a> NoCheck<'a> {
@@ -138,7 +143,7 @@ impl<'a> Legal for SingleCheck<'a> {
     fn get_blockers(&self) -> Bitboard {
         self.pos.get_blockers()
     }
-    
+
     fn get_king(&self) -> Square {
         let color = self.pos.get_turn();
         let king_bb = self.pos.get_bitboard(PieceType::KING, color);
@@ -154,9 +159,9 @@ impl<'a> CheckStateInfo for SingleCheck<'a> {}
 impl<'a> SingleCheck<'a> {
     pub fn new(pos: &'a Position, color: Color) -> Self {
         assert_eq!(pos.get_check_state(), CheckState::Single);
-        Self { pos, }
+        Self { pos }
     }
-    
+
     fn get_blocks(&self) -> Bitboard {
         let king = self.get_king();
         // Safety: there is a single checker.
@@ -299,6 +304,57 @@ where
     }
 }
 
+impl<'a> IPawnMoves<NoCheck<'a>> for PawnMoves<NoCheck<'a>> {
+    fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: NoCheck<'a>) -> Self {
+        assert!(
+            from.pop_cnt() >= to.pop_cnt(),
+            "From needs to have atleast as many squares as to."
+        );
+        Self { from, to, flag, t }
+    }
+
+    fn ep<const C: TColor, const DIR: TCompassRose>(info: &PawnMovesInfo, t: NoCheck<'a>) -> Self {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let capture_sq = info.get_ep_sq();
+        let target_sq = EpTargetSquare::from((capture_sq, !color));
+        let mut to = Bitboard::from_c(target_sq.v());
+        let from = if to.is_empty() {
+            Bitboard::empty()
+        } else {
+            let capture_dir = capture(color, CompassRose::new(DIR));
+            let capturing_pawns = info.get_pawns(color) & !Bitboard::from_c(File::edge::<DIR>());
+            let from = backward(forward(capturing_pawns, capture_dir) & to, capture_dir);
+            if from.is_empty() {
+                to = Bitboard::empty();
+                Bitboard::empty()
+            } else {
+                // Check that the king is not in check after the capture happens.
+                let occupancy = info.get_pos().get_occupancy();
+                let king_sq = t.get_king();
+                let capt_bb = Bitboard::from_c(capture_sq.v());
+                let occupancy_after_capture = (occupancy ^ from ^ capt_bb) | to;
+                let rooks = info.get_pos().get_bitboard(PieceType::ROOK, !color);
+                let bishops = info.get_pos().get_bitboard(PieceType::BISHOP, !color);
+                let queens = info.get_pos().get_bitboard(PieceType::QUEEN, !color);
+                let rook_attacks = rook::compute_attacks(king_sq, occupancy_after_capture);
+                let bishop_attacks = bishop::compute_attacks(king_sq, occupancy_after_capture);
+                let q_or_r_check = !rook_attacks.and_c(rooks | queens).is_empty();
+                let q_or_b_check = !bishop_attacks.and_c(bishops | queens).is_empty();
+                let check = q_or_r_check || q_or_b_check;
+                if check {
+                    to = Bitboard::empty();
+                    Bitboard::empty()
+                }
+                else {
+                    from
+                }
+            }
+        };
+        Self::new(from, to, MoveFlag::EN_PASSANT, t)
+    }
+}
+
 impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
     fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: SingleCheck<'a>) -> Self {
         assert!(
@@ -377,7 +433,8 @@ impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
     ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let target = EpTargetSquare::from((info.get_ep_sq(), !color));
+        let capture_sq = info.get_ep_sq();
+        let target = EpTargetSquare::from((capture_sq, !color));
         let mut to = Bitboard::from_c(target.v());
         let from = if to.is_empty() {
             Bitboard::empty()
@@ -387,8 +444,29 @@ impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
             let from = backward(forward(capturing_pawns, capture_dir) & to, capture_dir);
             if from.is_empty() {
                 to = Bitboard::empty();
+                Bitboard::empty()
+            } else {
+                // Check that the king is not in check after the capture happens.
+                let occupancy = info.get_pos().get_occupancy();
+                let king_sq = t.get_king();
+                let capt_bb = Bitboard::from_c(capture_sq.v());
+                let occupancy_after_capture = (occupancy ^ from ^ capt_bb) | to;
+                let rooks = info.get_pos().get_bitboard(PieceType::ROOK, !color);
+                let bishops = info.get_pos().get_bitboard(PieceType::BISHOP, !color);
+                let queens = info.get_pos().get_bitboard(PieceType::QUEEN, !color);
+                let rook_attacks = rook::compute_attacks(king_sq, occupancy_after_capture);
+                let bishop_attacks = bishop::compute_attacks(king_sq, occupancy_after_capture);
+                let q_or_r_check = !rook_attacks.and_c(rooks | queens).is_empty();
+                let q_or_b_check = !bishop_attacks.and_c(bishops | queens).is_empty();
+                let check = q_or_r_check || q_or_b_check;
+                if check {
+                    to = Bitboard::empty();
+                    Bitboard::empty()
+                }
+                else {
+                    from
+                }
             }
-            from
         };
         Self::new(from, to, MoveFlag::EN_PASSANT, t)
     }
@@ -431,7 +509,7 @@ impl<T: Legal> Iterator for PawnMoves<T> {
             // in the 'to' bb.
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
             let from_bb = Bitboard::from_c(from);
-            
+
             let blockers = self.t.get_blockers();
             let is_blocker = !(blockers & from_bb).is_empty();
             if is_blocker {
