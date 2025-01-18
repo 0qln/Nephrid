@@ -78,6 +78,8 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
                     "mate" => collect_and_parse!(search.target.mate, Depth::MIN),
                     "movetime" => collect_and_parse!(search.limit.movetime, 0),
                     "infinite" => search.limit.is_active = false,
+                    // to be compatible with stockfish
+                    depth if Depth::try_from(depth).is_ok() => search.target.depth = depth.try_into().unwrap(),
                     "searchmoves" | _ => {
                         let move_notation = LongAlgebraicUciNotation::new(tokenizer, &engine.position);
                         match Move::try_from(move_notation) {
