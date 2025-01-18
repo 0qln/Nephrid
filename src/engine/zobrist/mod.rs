@@ -15,7 +15,7 @@ use super::{
 };
 
 /// Note: the default hash is equivalent to the hash of the default (empty) position.
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Hash {
     v: u64,
 }
