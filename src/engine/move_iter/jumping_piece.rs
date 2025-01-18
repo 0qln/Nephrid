@@ -64,7 +64,8 @@ pub fn gen_legals_check_single(
                 .then(|| compute_attacks(piece))
                 .unwrap_or_default();
             let legal_resolves = resolves & legal_attacks;
-            let captures = gen_captures(legal_resolves, enemies, piece);
+            let legal_captures = legal_attacks & pos.get_checkers();
+            let captures = gen_captures(legal_captures, enemies, piece);
             let quiets = gen_quiets(legal_resolves, enemies, allies, piece);
             captures.chain(quiets)
         })
