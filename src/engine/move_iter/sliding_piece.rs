@@ -87,7 +87,7 @@ pub fn gen_legals_check_none(
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
             let is_blocker = !(blockers & piece_bb).is_empty(); 
-            let pin_mask = if is_blocker { Bitboard::ray(piece, king) } else { Bitboard::full() };
+            let pin_mask = is_blocker.then(|| Bitboard::ray(piece, king)).unwrap_or_default();
             let attacks = compute_attacks(piece, occupancy);
             let legal_attacks = attacks & pin_mask;
             let captures = gen_captures(legal_attacks, enemies, piece);

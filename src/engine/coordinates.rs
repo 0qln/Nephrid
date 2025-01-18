@@ -21,20 +21,25 @@ impl_variants! {
         EAST = 1,
         SOUT = -8,
         WEST = -1,
+        
+        NONO = 2 * CompassRose::NORT.v,
+        EAEA = 2 * CompassRose::EAST.v,
+        SOSO = 2 * CompassRose::SOUT.v,
+        WEWE = 2 * CompassRose::WEST.v,
 
         SOWE = CompassRose::SOUT.v + CompassRose::WEST.v,
         NOWE = CompassRose::NORT.v + CompassRose::WEST.v,
         SOEA = CompassRose::SOUT.v + CompassRose::EAST.v,
         NOEA = CompassRose::NORT.v + CompassRose::EAST.v,
 
-        NONOWE = 2 * CompassRose::NORT.v + CompassRose::WEST.v,
-        NONOEA = 2 * CompassRose::NORT.v + CompassRose::EAST.v,
-        NOWEWE = CompassRose::NORT.v + 2 * CompassRose::WEST.v,
-        NOEAEA = CompassRose::NORT.v + 2 * CompassRose::EAST.v,
-        SOSOWE = 2 * CompassRose::SOUT.v + CompassRose::WEST.v,
-        SOSOEA = 2 * CompassRose::SOUT.v + CompassRose::EAST.v,
-        SOWEWE = CompassRose::SOUT.v + 2 * CompassRose::WEST.v,
-        SOEAEA = CompassRose::SOUT.v + 2 * CompassRose::EAST.v,
+        NONOWE = CompassRose::NONO.v + CompassRose::WEST.v,
+        NONOEA = CompassRose::NONO.v + CompassRose::EAST.v,
+        NOWEWE = CompassRose::NORT.v + CompassRose::WEWE.v,
+        NOEAEA = CompassRose::NORT.v + CompassRose::EAEA.v,
+        SOSOWE = CompassRose::SOSO.v + CompassRose::WEST.v,
+        SOSOEA = CompassRose::SOSO.v + CompassRose::EAST.v,
+        SOWEWE = CompassRose::SOUT.v + CompassRose::WEWE.v,
+        SOEAEA = CompassRose::SOUT.v + CompassRose::EAEA.v,
     }
 }
 
@@ -205,7 +210,7 @@ impl From<(EpCaptureSquare, Color)> for EpTargetSquare {
     fn from((sq, color): (EpCaptureSquare, Color)) -> Self {
         Self {
             v: sq.v.map(|sq| Square {
-                v: sq.v + (color.v() * 2 - 1) * 8,
+                v: (sq.v as i8 + (color.v() as i8 * 2 - 1) * 8) as u8,
             }),
         }
     }

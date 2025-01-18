@@ -228,13 +228,17 @@ where
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let target = EpTargetSquare::from((info.ep_capture_sq, !color));
-        let to = Bitboard::from_c(target.v());
+        let mut to = Bitboard::from_c(target.v());
         let from = if to.is_empty() {
             Bitboard::empty()
         } else {
             let capture_dir = capture(color, CompassRose::new(DIR));
             let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
-            backward(forward(capturing_pawns, capture_dir) & to, capture_dir)
+            let from = backward(forward(capturing_pawns, capture_dir) & to, capture_dir);
+            if from.is_empty() {
+                to = Bitboard::empty();
+            }
+            from
         };
         Self::new(from, to, MoveFlag::EN_PASSANT, t)
     }
@@ -312,13 +316,16 @@ impl IPawnMoves<SingleCheck> for PawnMoves<SingleCheck> {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let target = EpTargetSquare::from((info.ep_capture_sq, !color));
-        let to = Bitboard::from_c(target.v());
+        let mut to = Bitboard::from_c(target.v());
         let from = if to.is_empty() {
             Bitboard::empty()
         } else {
             let capture_dir = capture(color, CompassRose::new(DIR));
             let capturing_pawns = info.pawns & !Bitboard::from_c(File::edge::<DIR>());
             let from = backward(forward(capturing_pawns, capture_dir) & to, capture_dir);
+            if from.is_empty() {
+                to = Bitboard::empty();
+            }
             from
         };
         Self::new(from, to, MoveFlag::EN_PASSANT, t)
