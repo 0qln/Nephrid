@@ -21,6 +21,10 @@ pub fn out(msg: &str) {
 pub struct CancellationToken { v: Arc<AtomicBool> }
 
 impl CancellationToken {
+    pub fn new() -> Self {
+        Self { v: Arc::new(AtomicBool::new(false)) }
+    }
+
     pub fn cancel(&self) {
         self.v.store(true, Ordering::Relaxed)
     }    
