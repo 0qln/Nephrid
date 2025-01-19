@@ -14,7 +14,7 @@ where
     fn post_incr(&mut self, incr: T) -> T {
         let tmp = *self;
         *self += incr;
-        *self
+        tmp
     }
 }
 
@@ -64,6 +64,8 @@ macro_rules! impl_variants_with_assertion {
 
                 /// Create a $type from a value that is a valid variant.
                 /// This is unsafe, because the value is not checked.
+                /// 
+                /// # Safety
                 /// Only use this if you are certain of v's range.
                 #[inline]
                 pub const unsafe fn from_v(v: $inner_type) -> Self {
@@ -102,6 +104,8 @@ macro_rules! impl_variants {
 
                 /// Create a $type from a value that is a valid variant.
                 /// This is unsafe, because the value is not checked.
+                ///
+                /// # Safety
                 /// Only use this if you are certain of v's range.
                 #[inline]
                 pub const unsafe fn from_v(v: $inner_type) -> Self {
@@ -127,6 +131,8 @@ macro_rules! impl_variants {
 
                 /// Create a $type from a value that is a valid variant.
                 /// This is unsafe, because the value is not checked.
+                ///
+                /// # Safety
                 /// Only use this if you are certain of v's range.
                 #[inline]
                 pub const unsafe fn from_v(v: $inner_type) -> Self {

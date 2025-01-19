@@ -8,14 +8,14 @@ use crate::misc::ConstFrom;
 use super::{
     bitboard::Bitboard,
     castling::CastlingRights,
-    coordinates::{EpCaptureSquare, EpTargetSquare, File, Square},
+    coordinates::{EpCaptureSquare, File, Square},
     piece::Piece,
     position::Position,
     turn::Turn,
 };
 
 /// Note: the default hash is equivalent to the hash of the default (empty) position.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Hash {
     v: u64,
 }

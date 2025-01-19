@@ -3,7 +3,7 @@ use std::ops;
 
 use crate::{impl_variants_with_assertion, misc::ParseError};
 
-#[derive(PartialEq, Copy, Clone, Default)]
+#[derive(PartialEq, Eq, Copy, Clone, Default)]
 pub struct Color { v: TColor }
 
 pub type TColor = u8;
@@ -29,9 +29,9 @@ impl TryFrom<char> for Color {
     }
 }
 
-impl Into<char> for Color {
-    fn into(self) -> char {
-        match self {
+impl From<Color> for char {
+    fn from(val: Color) -> Self {
+        match val {
             Color::WHITE => 'w',
             Color::BLACK => 'b',
             _ => unreachable!("Invalid program state.")

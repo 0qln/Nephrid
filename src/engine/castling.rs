@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::{
     engine::{color::Color, fen::Fen}, impl_variants, misc::ParseError
 };
@@ -30,7 +32,7 @@ impl TryFrom<File> for CastlingSide {
     }
 }
 
-#[derive(Copy, Clone, Default, PartialEq)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, Debug)]
 pub struct CastlingRights {
     v: u8,
 }
@@ -54,6 +56,18 @@ impl TryFrom<&mut Fen<'_>> for CastlingRights {
     }
 }
 
+impl fmt::Display for CastlingRights {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_empty() { return write!(f, "-"); }
+        write!(f, "{}{}{}{}",
+            if self.is_true(CastlingSide::KING_SIDE, Color::WHITE) { "K" } else { "" },
+            if self.is_true(CastlingSide::QUEEN_SIDE, Color::WHITE) { "Q" } else { "" },
+            if self.is_true(CastlingSide::KING_SIDE, Color::BLACK) { "k" } else { "" },
+            if self.is_true(CastlingSide::QUEEN_SIDE, Color::BLACK) { "q" } else { "" },
+        )
+    }
+}
+
 impl CastlingRights {
     #[inline]
     pub const fn set_false(&mut self, side: CastlingSide, color: Color) {
@@ -72,12 +86,14 @@ impl CastlingRights {
 
     #[inline]
     const fn to_index(side: CastlingSide, color: Color) -> u8 {
-        assert!(
-            CastlingSide::KING_SIDE.v  == 6 &&
-            CastlingSide::QUEEN_SIDE.v == 5, 
-            "King and queen side need to have specific values for this indexing scheme to work.");
-
+        // Note: King and queen side need to have specific 
+        // values for this indexing scheme to work.
         color.v() | (side.v & 0b10)
+    }
+    
+    #[inline]
+    pub const fn is_empty(&self) -> bool {
+        self.v == 0
     }
     
     #[inline]

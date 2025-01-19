@@ -1,5 +1,3 @@
-use std::iter::FlatMap;
-
 use crate::{engine::{
     bitboard::Bitboard, coordinates::Square, r#move::Move, piece::{PieceType, SlidingPieceType}, position::{CheckState, Position}
 }, misc::ConstFrom};
@@ -10,7 +8,7 @@ pub fn gen_legals_check_single(
     pos: &Position,
     piece_type: SlidingPieceType,
     compute_attacks: fn(Square, Bitboard) -> Bitboard,
-) -> impl Iterator<Item = Move> {
+) -> impl Iterator<Item = Move> + '_ {
     assert_eq!(pos.get_check_state(), CheckState::Single);
     let color = pos.get_turn();
     let allies = pos.get_color_bb(color);
@@ -28,11 +26,14 @@ pub fn gen_legals_check_single(
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
             let is_blocker = !(blockers & piece_bb).is_empty(); 
-            let pin_mask = if is_blocker { Bitboard::ray(piece, king) } else { Bitboard::full() };
+            let pin_mask = is_blocker
+                .then(|| Bitboard::ray(piece, king))
+                .unwrap_or(Bitboard::full());
             let attacks = compute_attacks(piece, occupancy);
             let legal_attacks = attacks & pin_mask;
             let legal_resolves = resolves & legal_attacks;
-            let captures = gen_captures(legal_resolves, enemies, piece);
+            let legal_captures = legal_attacks & pos.get_checkers();
+            let captures = gen_captures(legal_captures, enemies, piece);
             let quiets = gen_quiets(legal_resolves, enemies, allies, piece);
             captures.chain(quiets)
         })
@@ -42,7 +43,7 @@ pub fn gen_legal_captures_check_single(
     pos: &Position,
     piece_type: SlidingPieceType,
     compute_attacks: fn(Square, Bitboard) -> Bitboard,
-) -> impl Iterator<Item = Move> {
+) -> impl Iterator<Item = Move> + '_ {
     assert_eq!(pos.get_check_state(), CheckState::Single);
     let color = pos.get_turn();
     let allies = pos.get_color_bb(color);
@@ -60,11 +61,13 @@ pub fn gen_legal_captures_check_single(
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
             let is_blocker = !(blockers & piece_bb).is_empty(); 
-            let pin_mask = if is_blocker { Bitboard::ray(piece, king) } else { Bitboard::full() };
+            let pin_mask = is_blocker
+                .then(|| Bitboard::ray(piece, king))
+                .unwrap_or(Bitboard::full());
             let attacks = compute_attacks(piece, occupancy);
             let legal_attacks = attacks & pin_mask;
-            let legal_resolves = resolves & legal_attacks;
-            gen_captures(legal_resolves, enemies, piece)
+            let legal_captures = legal_attacks & pos.get_checkers();
+            gen_captures(legal_captures, enemies, piece)
         })
 }
 
@@ -87,7 +90,9 @@ pub fn gen_legals_check_none(
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
             let is_blocker = !(blockers & piece_bb).is_empty(); 
-            let pin_mask = if is_blocker { Bitboard::ray(piece, king) } else { Bitboard::full() };
+            let pin_mask = is_blocker
+                .then(|| Bitboard::ray(piece, king))
+                .unwrap_or(Bitboard::full());
             let attacks = compute_attacks(piece, occupancy);
             let legal_attacks = attacks & pin_mask;
             let captures = gen_captures(legal_attacks, enemies, piece);
@@ -115,7 +120,9 @@ pub fn gen_legal_captures_check_none(
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
             let is_blocker = !(blockers & piece_bb).is_empty(); 
-            let pin_mask = if is_blocker { Bitboard::ray(piece, king) } else { Bitboard::full() };
+            let pin_mask = is_blocker
+                .then(|| Bitboard::ray(piece, king))
+                .unwrap_or(Bitboard::full());
             let attacks = compute_attacks(piece, occupancy);
             let legal_attacks = attacks & pin_mask;
             gen_captures(legal_attacks, enemies, piece)

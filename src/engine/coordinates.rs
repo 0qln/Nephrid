@@ -21,20 +21,25 @@ impl_variants! {
         EAST = 1,
         SOUT = -8,
         WEST = -1,
+        
+        NONO = 2 * CompassRose::NORT.v,
+        EAEA = 2 * CompassRose::EAST.v,
+        SOSO = 2 * CompassRose::SOUT.v,
+        WEWE = 2 * CompassRose::WEST.v,
 
         SOWE = CompassRose::SOUT.v + CompassRose::WEST.v,
         NOWE = CompassRose::NORT.v + CompassRose::WEST.v,
         SOEA = CompassRose::SOUT.v + CompassRose::EAST.v,
         NOEA = CompassRose::NORT.v + CompassRose::EAST.v,
 
-        NONOWE = 2 * CompassRose::NORT.v + CompassRose::WEST.v,
-        NONOEA = 2 * CompassRose::NORT.v + CompassRose::EAST.v,
-        NOWEWE = CompassRose::NORT.v + 2 * CompassRose::WEST.v,
-        NOEAEA = CompassRose::NORT.v + 2 * CompassRose::EAST.v,
-        SOSOWE = 2 * CompassRose::SOUT.v + CompassRose::WEST.v,
-        SOSOEA = 2 * CompassRose::SOUT.v + CompassRose::EAST.v,
-        SOWEWE = CompassRose::SOUT.v + 2 * CompassRose::WEST.v,
-        SOEAEA = CompassRose::SOUT.v + 2 * CompassRose::EAST.v,
+        NONOWE = CompassRose::NONO.v + CompassRose::WEST.v,
+        NONOEA = CompassRose::NONO.v + CompassRose::EAST.v,
+        NOWEWE = CompassRose::NORT.v + CompassRose::WEWE.v,
+        NOEAEA = CompassRose::NORT.v + CompassRose::EAEA.v,
+        SOSOWE = CompassRose::SOSO.v + CompassRose::WEST.v,
+        SOSOEA = CompassRose::SOSO.v + CompassRose::EAST.v,
+        SOWEWE = CompassRose::SOUT.v + CompassRose::WEWE.v,
+        SOEAEA = CompassRose::SOUT.v + CompassRose::EAEA.v,
     }
 }
 
@@ -55,7 +60,7 @@ impl CompassRose {
     }
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub struct Square {
     v: TSquare,
 }
@@ -205,13 +210,13 @@ impl From<(EpCaptureSquare, Color)> for EpTargetSquare {
     fn from((sq, color): (EpCaptureSquare, Color)) -> Self {
         Self {
             v: sq.v.map(|sq| Square {
-                v: sq.v + (color.v() * 2 - 1) * 8,
+                v: (sq.v as i8 + (color.v() as i8 * 2 - 1) * 8) as u8,
             }),
         }
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct EpCaptureSquare {
     v: Option<Square>,
 }
@@ -241,7 +246,7 @@ impl From<(EpTargetSquare, Color)> for EpCaptureSquare {
     fn from((sq, color): (EpTargetSquare, Color)) -> Self {
         Self {
             v: sq.v.map(|sq| Square {
-                v: sq.v - (color.v() * 2 - 1) * 8,
+                v: (sq.v as i8 - (color.v() as i8 * 2 - 1) * 8) as u8,
             }),
         }
     }
@@ -300,7 +305,7 @@ impl TryFrom<char> for Rank {
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             '1'..='8' => Ok(Rank {
-                v: value as u8 - '1' as u8,
+                v: value as u8 - b'1',
             }),
             x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
@@ -368,16 +373,16 @@ impl TryFrom<char> for File {
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'a'..='h' => Ok(File {
-                v: value as u8 - 'a' as u8,
+                v: value as u8 - b'a',
             }),
             x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }
 
-impl Into<char> for File {
-    fn into(self) -> char {
-        (self.v + 'a' as u8) as char
+impl From<File> for char {
+    fn from(val: File) -> Self {
+        (val.v + b'a') as char
     }
 }
 
