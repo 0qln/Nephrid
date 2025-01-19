@@ -18,6 +18,37 @@ pub mod sliding_piece;
 #[cfg(test)]
 mod test;
 
+#[inline(always)]
+fn try_fold_multiple<B, F, G, R, const N: usize>(
+    iters: [G; N],
+    init: B,
+    mut f: F,
+) -> R
+where
+    F: FnMut(B, Move) -> R,
+    G: FnOnce(B, &mut F) -> R,
+    R: Try<Output = B>,
+{
+    iters.into_iter().try_fold(init, |acc, iter| {
+        iter(acc, &mut f)
+    })
+}
+
+#[inline]
+fn fold_moves_check_none<const CAPTURES_ONLY: bool, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    init = sliding_piece::fold_legals_check_none(pos, SlidingPieceType::ROOK, rook::compute_attacks, init, &mut f)?;
+    init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, bishop::compute_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, queen::compute_attacks).try_fold(init, &mut f)?;
+    init = pawn::fold_legals_check_none(pos, init, &mut f)?;
+    init = jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::compute_attacks).try_fold(init, &mut f)?;
+    init = king::gen_legals_check_none(pos).try_fold(init, &mut f)?;
+    king::gen_legal_castling(pos, pos.get_turn()).try_fold(init, f)
+}
+
 fn legal_moves_check_none<const CAPTURES_ONLY: bool>(
     pos: &Position,
 ) -> impl Iterator<Item = Move> + '_ {
@@ -31,6 +62,20 @@ fn legal_moves_check_none<const CAPTURES_ONLY: bool>(
     .chain(jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::compute_attacks))
     .chain(king::gen_legals_check_none(pos))
     .chain(king::gen_legal_castling(pos, pos.get_turn()))
+}
+
+#[inline]
+fn fold_moves_check_single<const CAPTURES_ONLY: bool, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::ROOK, rook::compute_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::BISHOP, bishop::compute_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::QUEEN, queen::compute_attacks).try_fold(init, &mut f)?;
+    init = king::gen_legals_check_some(pos).try_fold(init, &mut f)?;
+    init = pawn::fold_legals_check_single(pos, init, &mut f)?;
+    jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::compute_attacks).try_fold(init, &mut f)
 }
 
 fn legal_moves_check_single<const CAPTURES_ONLY: bool>(
@@ -74,8 +119,8 @@ where
     R: Try<Output = B>,
 {
     match pos.get_check_state() {
-        CheckState::None => legal_moves_check_none::<CAPTURES_ONLY>(pos).try_fold(init, f),
-        CheckState::Single => legal_moves_check_single::<CAPTURES_ONLY>(pos).try_fold(init, f),
+        CheckState::None => fold_moves_check_none::<CAPTURES_ONLY, _, _, _>(pos, init, f),
+        CheckState::Single => fold_moves_check_single::<CAPTURES_ONLY, _, _, _>(pos, init, f),
         CheckState::Double => legal_moves_check_double::<CAPTURES_ONLY>(pos).try_fold(init, f),
     }
 }

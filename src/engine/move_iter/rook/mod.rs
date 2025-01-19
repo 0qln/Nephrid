@@ -1,12 +1,19 @@
 use crate::{
     engine::{
-        bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}
+        bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}, r#move::Move, piece::SlidingPieceType, position::Position
     },
     misc::ConstFrom,
 };
 
+use super::sliding_piece;
+
 #[cfg(test)]
 mod tests;
+
+#[inline]
+pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> + '_ {
+    sliding_piece::gen_legals_check_none(pos, SlidingPieceType::ROOK, compute_attacks)
+}
 
 /// Computes the attacks of the rook on the square `sq`.
 pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {

@@ -27,6 +27,10 @@ criterion = "0.3"
 name = "rook_compute_attacks"
 harness = false
 
+[[bench]]
+name = "perft"
+harness = false
+
 [profile.test]
 opt-level = 2
 
