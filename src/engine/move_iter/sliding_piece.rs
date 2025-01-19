@@ -1,8 +1,15 @@
 use std::ops::Try;
 
-use crate::{engine::{
-    bitboard::Bitboard, coordinates::Square, r#move::Move, piece::{PieceType, SlidingPieceType}, position::{CheckState, Position}
-}, misc::ConstFrom};
+use crate::{
+    engine::{
+        bitboard::Bitboard,
+        coordinates::Square,
+        piece::{PieceType, SlidingPieceType},
+        position::{CheckState, Position},
+        r#move::Move,
+    },
+    misc::ConstFrom,
+};
 
 use super::{gen_captures, gen_quiets};
 
@@ -19,7 +26,7 @@ pub fn gen_legals_check_single(
     let blockers = pos.get_blockers();
     let king_bb = pos.get_bitboard(PieceType::KING, color);
     // Safety: king the board has no king, but gen_legal is used,
-    // the context is broken anyway. 
+    // the context is broken anyway.
     let king = unsafe { king_bb.lsb().unwrap_unchecked() };
     // Safety: there is a single checker.
     let checker = unsafe { pos.get_checkers().lsb().unwrap_unchecked() };
@@ -27,7 +34,7 @@ pub fn gen_legals_check_single(
     pos.get_bitboard(piece_type.into(), color)
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
-            let is_blocker = !(blockers & piece_bb).is_empty(); 
+            let is_blocker = !(blockers & piece_bb).is_empty();
             let pin_mask = is_blocker
                 .then(|| Bitboard::ray(piece, king))
                 .unwrap_or(Bitboard::full());
@@ -56,13 +63,13 @@ pub fn gen_legal_captures_check_single(
     // Safety: there is a single checker.
     let checker = unsafe { pos.get_checkers().lsb().unwrap_unchecked() };
     // Safety: king the board has no king, but gen_legal is used,
-    // the context is broken anyway. 
+    // the context is broken anyway.
     let king = unsafe { king_bb.lsb().unwrap_unchecked() };
     let resolves = Bitboard::between(king, checker);
     pos.get_bitboard(piece_type.into(), color)
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
-            let is_blocker = !(blockers & piece_bb).is_empty(); 
+            let is_blocker = !(blockers & piece_bb).is_empty();
             let pin_mask = is_blocker
                 .then(|| Bitboard::ray(piece, king))
                 .unwrap_or(Bitboard::full());
@@ -86,12 +93,12 @@ pub fn gen_legals_check_none(
     let blockers = pos.get_blockers();
     let king_bb = pos.get_bitboard(PieceType::KING, color);
     // Safety: king the board has no king, but gen_legal is used,
-    // the context is broken anyway. 
+    // the context is broken anyway.
     let king = unsafe { king_bb.lsb().unwrap_unchecked() };
     pos.get_bitboard(piece_type.into(), color)
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
-            let is_blocker = !(blockers & piece_bb).is_empty(); 
+            let is_blocker = !(blockers & piece_bb).is_empty();
             let pin_mask = is_blocker
                 .then(|| Bitboard::ray(piece, king))
                 .unwrap_or(Bitboard::full());
@@ -153,12 +160,12 @@ pub fn gen_legal_captures_check_none(
     let blockers = pos.get_blockers();
     let king_bb = pos.get_bitboard(PieceType::KING, color);
     // Safety: king the board has no king, but gen_legal is used,
-    // the context is broken anyway. 
+    // the context is broken anyway.
     let king = unsafe { king_bb.lsb().unwrap_unchecked() };
     pos.get_bitboard(piece_type.into(), color)
         .flat_map(move |piece| {
             let piece_bb = Bitboard::from_c(piece);
-            let is_blocker = !(blockers & piece_bb).is_empty(); 
+            let is_blocker = !(blockers & piece_bb).is_empty();
             let pin_mask = is_blocker
                 .then(|| Bitboard::ray(piece, king))
                 .unwrap_or(Bitboard::full());
