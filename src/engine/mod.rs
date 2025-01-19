@@ -80,7 +80,7 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
                     "infinite" => search.limit.is_active = false,
                     // to be compatible with stockfish
                     depth if Depth::try_from(depth).is_ok() => search.target.depth = depth.try_into().unwrap(),
-                    "searchmoves" | _ => {
+                    /*searchmoves*/ | _ => {
                         let move_notation = LongAlgebraicUciNotation::new(tokenizer, &engine.position);
                         match Move::try_from(move_notation) {
                             Ok(m) => search.target.search_moves.push(m),
@@ -120,8 +120,8 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
         }
         Some("uci") => {
             // Id response
-            sync::out(&"id name Nephrid");
-            sync::out(&"id author 0qln");
+            sync::out("id name Nephrid");
+            sync::out("id author 0qln");
             // Option response
             for option in &engine.config.0 {
                 let opt_str: String = option.into(); 
@@ -149,7 +149,7 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
             // collect value
             let mut new_value = String::new();
             while let Some(token) = tokenizer.collect_token().as_deref() {
-                new_value.push_str(&token);
+                new_value.push_str(token);
                 // Reintroduce spaces between parts
                 if !new_value.is_empty() {
                     new_value.push(' ')

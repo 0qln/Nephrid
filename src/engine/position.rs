@@ -161,7 +161,7 @@ impl StateStack {
     pub fn pop_current(&mut self) -> NonNull<StateInfo> {
         // Safety: The current index is always in range
         let ret = NonNull::from_ref(unsafe { self.states.get_unchecked(self.current) });
-        self.current = self.current.checked_sub(1).unwrap_or(0);
+        self.current = self.current.saturating_sub(1);
         ret
     }
 }
@@ -501,7 +501,7 @@ impl Position {
         // Safety: This FEN string is valid
         unsafe {
             Position::try_from(
-                &mut Fen::new(&"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+                &mut Fen::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
             ).unwrap_unchecked()
         }
     }
@@ -514,8 +514,8 @@ impl fmt::Debug for Position {
     }
 }
 
-impl Into<String> for &Position {
-    fn into(self) -> String {
+impl From<&Position> for String {
+    fn from(val: &Position) -> Self {
         let mut result = String::new();
         for rank in (0..=7).rev() {
             result.push_str(&(rank + 1).to_string());
@@ -525,7 +525,7 @@ impl Into<String> for &Position {
                     File::try_from(file).unwrap(), 
                     Rank::try_from(rank).unwrap()
                 ));
-                let piece = self.get_piece(sq);
+                let piece = val.get_piece(sq);
                 let c: char = piece.into();
                 result.push(c);
                 result.push(' ');

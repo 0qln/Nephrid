@@ -305,7 +305,7 @@ impl TryFrom<char> for Rank {
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             '1'..='8' => Ok(Rank {
-                v: value as u8 - '1' as u8,
+                v: value as u8 - b'1',
             }),
             x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
@@ -373,16 +373,16 @@ impl TryFrom<char> for File {
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'a'..='h' => Ok(File {
-                v: value as u8 - 'a' as u8,
+                v: value as u8 - b'a',
             }),
             x => Err(ParseError::InputOutOfRange(Box::new(x))),
         }
     }
 }
 
-impl Into<char> for File {
-    fn into(self) -> char {
-        (self.v + 'a' as u8) as char
+impl From<File> for char {
+    fn from(val: File) -> Self {
+        (val.v + b'a') as char
     }
 }
 

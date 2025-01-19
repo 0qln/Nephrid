@@ -62,9 +62,9 @@ impl TryFrom<char> for PieceType {
     }
 }
 
-impl Into<char> for PieceType {
-    fn into(self) -> char {
-        match self {
+impl From<PieceType> for char {
+    fn from(val: PieceType) -> Self {
+        match val {
             PieceType::PAWN => 'p',
             PieceType::KNIGHT => 'n',
             PieceType::BISHOP => 'b',
@@ -140,10 +140,10 @@ impl_variants! {
     }
 }
     
-impl Into<PieceType> for SlidingPieceType {
+impl From<SlidingPieceType> for PieceType {
     #[inline]
-    fn into(self) -> PieceType {
-        PieceType { v: self.v }
+    fn from(val: SlidingPieceType) -> Self {
+        PieceType { v: val.v }
     }
 }
 
@@ -160,10 +160,10 @@ impl_variants! {
     }
 }
     
-impl Into<PieceType> for JumpingPieceType {
+impl From<JumpingPieceType> for PieceType {
     #[inline]
-    fn into(self) -> PieceType {
-        PieceType { v: self.v }
+    fn from(val: JumpingPieceType) -> Self {
+        PieceType { v: val.v }
     }
 }
 
@@ -219,10 +219,10 @@ impl TryFrom<char> for Piece {
     }
 }
 
-impl Into<char> for Piece {
-    fn into(self) -> char {
-        let mut result: char = self.piece_type().into();
-        if self.color() == Color::WHITE {
+impl From<Piece> for char {
+    fn from(val: Piece) -> Self {
+        let mut result: char = val.piece_type().into();
+        if val.color() == Color::WHITE {
             result = result.to_uppercase().next().unwrap();
         }
         result

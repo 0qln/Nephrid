@@ -139,7 +139,7 @@ impl<'a> NoCheck<'a> {
 struct SingleCheck<'a> {
     pos: &'a Position,
 }
-impl<'a> Legal for SingleCheck<'a> {
+impl Legal for SingleCheck<'_> {
     fn get_blockers(&self) -> Bitboard {
         self.pos.get_blockers()
     }
@@ -152,9 +152,9 @@ impl<'a> Legal for SingleCheck<'a> {
         unsafe { king_bb.lsb().unwrap_unchecked() }
     }
 }
-impl<'a> Legallity for SingleCheck<'a> {}
-impl<'a> CheckStateInfoSome for SingleCheck<'a> {}
-impl<'a> CheckStateInfo for SingleCheck<'a> {}
+impl Legallity for SingleCheck<'_> {}
+impl CheckStateInfoSome for SingleCheck<'_> {}
+impl CheckStateInfo for SingleCheck<'_> {}
 
 impl<'a> SingleCheck<'a> {
     pub fn new(pos: &'a Position, color: Color) -> Self {

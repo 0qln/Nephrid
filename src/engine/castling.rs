@@ -86,11 +86,8 @@ impl CastlingRights {
 
     #[inline]
     const fn to_index(side: CastlingSide, color: Color) -> u8 {
-        assert!(
-            CastlingSide::KING_SIDE.v  == 6 &&
-            CastlingSide::QUEEN_SIDE.v == 5, 
-            "King and queen side need to have specific values for this indexing scheme to work.");
-
+        // Note: King and queen side need to have specific 
+        // values for this indexing scheme to work.
         color.v() | (side.v & 0b10)
     }
     

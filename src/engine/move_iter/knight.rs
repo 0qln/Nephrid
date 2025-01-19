@@ -24,7 +24,7 @@ pub /* const */ fn compute_attacks(sq: Square) -> Bitboard {
     compute_atttack::<{ CompassRose::SOSOEA_C }>(knights, &mut result);
     compute_atttack::<{ CompassRose::SOWEWE_C }>(knights, &mut result);
     compute_atttack::<{ CompassRose::SOEAEA_C }>(knights, &mut result);
-    return result;
+    result
 }
 
 #[inline]

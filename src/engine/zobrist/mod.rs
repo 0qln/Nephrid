@@ -8,7 +8,7 @@ use crate::misc::ConstFrom;
 use super::{
     bitboard::Bitboard,
     castling::CastlingRights,
-    coordinates::{EpCaptureSquare, EpTargetSquare, File, Square},
+    coordinates::{EpCaptureSquare, File, Square},
     piece::Piece,
     position::Position,
     turn::Turn,

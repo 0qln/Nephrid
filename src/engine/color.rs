@@ -29,9 +29,9 @@ impl TryFrom<char> for Color {
     }
 }
 
-impl Into<char> for Color {
-    fn into(self) -> char {
-        match self {
+impl From<Color> for char {
+    fn from(val: Color) -> Self {
+        match val {
             Color::WHITE => 'w',
             Color::BLACK => 'b',
             _ => unreachable!("Invalid program state.")

@@ -173,7 +173,7 @@ impl Bitboard {
 
     #[inline]
     pub const fn ray(sq1: Square, sq2: Square) -> Self {
-        const RAYS: [[Bitboard; 64]; 64] = {
+        static RAYS: [[Bitboard; 64]; 64] = {
             let mut rays = [[Bitboard::empty(); 64]; 64];
             const_for!(sq1 in Square::A1_C..(Square::H8_C+1) => {
                 const_for!(sq2 in Square::A1_C..(Square::H8_C+1) => {

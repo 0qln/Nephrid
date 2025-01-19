@@ -1,6 +1,12 @@
 use crate::{
     engine::{
-        bitboard::Bitboard, castling::{self, CastlingRights, CastlingSide}, color::Color, coordinates::{File, Rank, Square}, r#move::{Move, MoveFlag}, piece::{JumpingPieceType, PieceType}, position::{CheckState, Position}
+        bitboard::Bitboard,
+        castling::{CastlingRights, CastlingSide},
+        color::Color,
+        coordinates::{File, Rank, Square},
+        piece::PieceType,
+        position::Position,
+        r#move::{Move, MoveFlag},
     },
     misc::{ConstFrom, PostIncrement},
 };
@@ -24,13 +30,13 @@ pub fn gen_legals_check_some(pos: &Position) -> impl Iterator<Item = Move> {
         let to = Bitboard::from_c(m.get_to());
 
         // When the king has moved and a sliding piece was a checker, the attacks of
-        // that sliding piece will have changed. 
+        // that sliding piece will have changed.
         // Note that, in no case does a king move cause an enemy attack to get covered
         // without the king being in check after he moved, which is why we can just
-        // append the new attacks of the sliding piece to the existing attacks. 
+        // append the new attacks of the sliding piece to the existing attacks.
         // The new 'nstm_attacks' are not really nstm_attacks, but only reflect nstm_attacks
         // which are relevant to checking whether the our king is in check.
-        let occupancy_after_king_move = (occupancy ^ king_bb) | to;       
+        let occupancy_after_king_move = (occupancy ^ king_bb) | to;
         let nstm_attacks = checker_rooks.fold(nstm_attacks, |acc, checker| {
             acc | rook::compute_attacks(checker, occupancy_after_king_move)
         });
@@ -40,8 +46,8 @@ pub fn gen_legals_check_some(pos: &Position) -> impl Iterator<Item = Move> {
         let nstm_attacks = checker_queens.fold(nstm_attacks, |acc, checker| {
             acc | queen::compute_attacks(checker, occupancy_after_king_move)
         });
-        
-        return (to & nstm_attacks).is_empty();
+
+        (to & nstm_attacks).is_empty()
     })
 }
 
@@ -58,14 +64,14 @@ pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> {
     let quiets = {
         let targets = targets & !occupancy;
         targets.map(move |target| Move::new(king, target, MoveFlag::QUIET))
-    };    
+    };
 
     let captures = {
         let targets = targets & enemies;
         targets.map(move |target| Move::new(king, target, MoveFlag::CAPTURE))
     };
-    
-    captures.chain(quiets).into_iter()
+
+    captures.chain(quiets)
 }
 
 pub fn gen_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = Move> + '_ {
@@ -100,14 +106,16 @@ pub fn gen_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = 
                 0 => match castling.is_true(CastlingSide::KING_SIDE, self.color) {
                     false => self.next(),
                     true => {
-                        const TABU_MASK: [Bitboard; 2] = [ 
-                            Bitboard { v: 0x60_u64 }, 
-                            Bitboard { v: 0x6000000000000000_u64 } 
+                        const TABU_MASK: [Bitboard; 2] = [
+                            Bitboard { v: 0x60_u64 },
+                            Bitboard {
+                                v: 0x6000000000000000_u64,
+                            },
                         ];
                         let nstm_attacks = self.pos.get_nstm_attacks();
                         let tabus = nstm_attacks | self.pos.get_occupancy();
                         if !(tabus & TABU_MASK[self.color.v() as usize]).is_empty() {
-                            return self.next(); 
+                            return self.next();
                         }
                         let to = Square::from_c((File::G, self.rank));
                         Some(Move::new(self.from, to, MoveFlag::KING_CASTLE))
@@ -116,13 +124,17 @@ pub fn gen_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = 
                 1 => match castling.is_true(CastlingSide::QUEEN_SIDE, self.color) {
                     false => self.next(),
                     true => {
-                        const BLOCK_MASK: [Bitboard; 2] = [ 
-                            Bitboard { v: 0xE_u64 }, 
-                            Bitboard { v: 0xE00000000000000_u64 } 
+                        const BLOCK_MASK: [Bitboard; 2] = [
+                            Bitboard { v: 0xE_u64 },
+                            Bitboard {
+                                v: 0xE00000000000000_u64,
+                            },
                         ];
                         const CHECK_MASK: [Bitboard; 2] = [
-                            Bitboard { v: 0xC_u64 }, 
-                            Bitboard { v: 0xC00000000000000_u64 } 
+                            Bitboard { v: 0xC_u64 },
+                            Bitboard {
+                                v: 0xC00000000000000_u64,
+                            },
                         ];
                         let to = Square::from_c((File::C, self.rank));
                         let nstm_attacks = self.pos.get_nstm_attacks();
@@ -130,7 +142,7 @@ pub fn gen_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = 
                         let blocked = BLOCK_MASK[self.color.v() as usize] & blockers;
                         let checked = CHECK_MASK[self.color.v() as usize] & nstm_attacks;
                         if !(blocked | checked).is_empty() {
-                            return self.next(); 
+                            return self.next();
                         }
                         Some(Move::new(self.from, to, MoveFlag::QUEEN_CASTLE))
                     }
@@ -148,7 +160,7 @@ pub fn gen_pseudo_legal_castling(pos: &Position, color: Color) -> impl Iterator<
         _ => unreachable!(),
     };
     let from = Square::from_c((File::E, rank));
-    let castling = pos.get_castling().clone();
+    let castling = pos.get_castling();
     return Gen {
         state: 0,
         castling,
