@@ -1,3 +1,5 @@
+use std::ops::Try;
+
 use crate::engine::color::{Color, TColor};
 use crate::engine::coordinates::{EpCaptureSquare, EpTargetSquare, Rank, Square, TCompassRose};
 use crate::engine::position::CheckState;
@@ -11,7 +13,7 @@ use crate::engine::{
 use crate::misc::ConstFrom;
 use const_for::const_for;
 
-use super::{bishop, rook};
+use super::{bishop, rook, try_fold_multiple};
 
 pub struct PawnMovesInfo<'a> {
     pos: &'a Position,
@@ -527,7 +529,10 @@ impl<T: Legal> Iterator for PawnMoves<T> {
     }
 }
 
-fn get_moves<const C: TColor, P, T>() -> [fn(&PawnMovesInfo, T) -> P; 18]
+type Contructor<P, T> = fn(&PawnMovesInfo, T) -> P;
+
+#[inline]
+fn get_moves<const C: TColor, P, T>() -> [Contructor<P, T>; 18]
 where
     P: IPawnMoves<T>,
 {
@@ -554,6 +559,34 @@ where
     ]
 }
 
+#[inline]
+fn fold_moves<const C: TColor, P, T, B, F, R>(info: &PawnMovesInfo, legal: T, init: B, mut f: F) -> R
+where
+    T: Clone + Copy,
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>, 
+    P: IPawnMoves<T> + Iterator<Item = Move>,
+{
+    let init = P::single_step::<C>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init = P::double_step::<C>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_knight::<C>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_bishop::<C>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_rook::<C>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_queen::<C>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::capture::<C, { CompassRose::WEST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::capture::<C, { CompassRose::EAST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::ep::<C, { CompassRose::WEST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::ep::<C, { CompassRose::EAST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_capture_knight::<C, { CompassRose::WEST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_capture_knight::<C, { CompassRose::EAST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_capture_bishop::<C, { CompassRose::WEST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_capture_bishop::<C, { CompassRose::EAST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_capture_rook::<C, { CompassRose::WEST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_capture_rook::<C, { CompassRose::EAST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+    let init =        P::promo_capture_queen::<C, { CompassRose::WEST_C }>(info, legal).try_fold(init, |b, m| f(b, m))?;
+        P::promo_capture_queen::<C, { CompassRose::EAST_C }>(info, legal).try_fold(init, |b, m| f(b, m))
+}
+
 pub fn gen_pseudo_legals(pos: &Position) -> impl Iterator<Item = Move> + '_ {
     let plegal = IgnoreCheck {};
     let color = pos.get_turn();
@@ -578,6 +611,35 @@ pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> + '_ 
     };
 
     moves.into_iter().flat_map(move |f| f(&info, legal))
+}
+
+#[inline]
+pub fn fold_legals_check_none<const CAPTURES_ONLY: bool, B, F, R>(pos: &Position, init: B, f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    let legal = NoCheck::new(pos);
+    let color = pos.get_turn();
+    let info = &PawnMovesInfo::new(pos);
+    // match color {
+    //     Color::WHITE => fold_moves::<{ Color::WHITE_C }, PawnMoves<NoCheck>, _, _, _, _>(info, legal, init, f),
+    //     Color::BLACK => fold_moves::<{ Color::BLACK_C }, PawnMoves<NoCheck>, _, _, _, _>(info, legal, init, f),
+    //     _ => unreachable!(),
+    // }
+    
+    let moves = match color {
+        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<NoCheck>, _>(),
+        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<NoCheck>, _>(),
+        _ => unreachable!(),
+    };
+    
+    try_fold_multiple(
+        moves.map(#[inline(always)] |constructor| { 
+            #[inline(always)] move |acc: B, f: &mut F| constructor(info, legal).try_fold(acc, f) 
+        }), 
+        init, 
+        f)
 }
 
 pub fn gen_legals_check_single(pos: &Position) -> impl Iterator<Item = Move> + '_ {

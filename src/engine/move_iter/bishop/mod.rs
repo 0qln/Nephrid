@@ -1,7 +1,14 @@
-use crate::{engine::{bitboard::Bitboard, coordinates::{CompassRose, DiagA1H8, DiagA8H1, Square}}, misc::ConstFrom};
+use crate::{engine::{bitboard::Bitboard, coordinates::{CompassRose, DiagA1H8, DiagA8H1, Square}, r#move::Move, piece::SlidingPieceType, position::Position}, misc::ConstFrom};
+
+use super::sliding_piece;
 
 #[cfg(test)]
 mod tests;
+
+#[inline]
+pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> + '_ {
+    sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, compute_attacks)
+}
 
 /// Computes the attacks of the bishop on the square `sq`.
 pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
