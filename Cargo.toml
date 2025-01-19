@@ -22,6 +22,10 @@ opt-level = 0
 
 [profile.bench]
 opt-level = 3
+codegen-units = 1
+lto = "fat"
 
 [profile.release]
 opt-level = 3
+codegen-units = 1
+lto = "fat"
