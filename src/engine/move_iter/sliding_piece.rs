@@ -1,3 +1,5 @@
+use std::ops::Try;
+
 use crate::{engine::{
     bitboard::Bitboard, coordinates::Square, r#move::Move, piece::{PieceType, SlidingPieceType}, position::{CheckState, Position}
 }, misc::ConstFrom};
@@ -99,6 +101,43 @@ pub fn gen_legals_check_none(
             let quiets = gen_quiets(legal_attacks, enemies, allies, piece);
             captures.chain(quiets)
         })
+}
+
+pub fn fold_legals_check_none<B, F, R>(
+    pos: &Position,
+    piece_type: SlidingPieceType,
+    compute_attacks: fn(Square, Bitboard) -> Bitboard,
+    init: B,
+    f: F,
+) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    assert_eq!(pos.get_check_state(), CheckState::None);
+    let color = pos.get_turn();
+    let allies = pos.get_color_bb(color);
+    let enemies = pos.get_color_bb(!color);
+    let occupancy = allies | enemies;
+    let blockers = pos.get_blockers();
+    let king_bb = pos.get_bitboard(PieceType::KING, color);
+    // Safety: king the board has no king, but gen_legal is used,
+    // the context is broken anyway. 
+    let king = unsafe { king_bb.lsb().unwrap_unchecked() };
+    pos.get_bitboard(piece_type.into(), color)
+        .flat_map(move |piece| {
+            let piece_bb = Bitboard::from_c(piece);
+            let is_blocker = !(blockers & piece_bb).is_empty(); 
+            let pin_mask = is_blocker
+                .then(|| Bitboard::ray(piece, king))
+                .unwrap_or(Bitboard::full());
+            let attacks = compute_attacks(piece, occupancy);
+            let legal_attacks = attacks & pin_mask;
+            let captures = gen_captures(legal_attacks, enemies, piece);
+            let quiets = gen_quiets(legal_attacks, enemies, allies, piece);
+            captures.chain(quiets)
+        })
+        .try_fold(init, f)
 }
 
 pub fn gen_legal_captures_check_none(
