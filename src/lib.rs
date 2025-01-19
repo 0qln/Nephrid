@@ -17,6 +17,7 @@
 // todo: why does this feature not work?
 #![feature(gen_blocks)]
 #![feature(try_trait_v2)]
+#![feature(try_blocks)]
 
 #[macro_use]
 extern crate impl_ops;

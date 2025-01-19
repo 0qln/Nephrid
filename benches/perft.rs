@@ -7,8 +7,7 @@ use nephrid::engine::position::Position;
 use nephrid::engine::search::Search;
 use nephrid::uci::sync::CancellationToken;
 
-fn bench_perft(mut fen: Fen, depth: Depth) {
-    let pos = Position::try_from(&mut fen).unwrap();
+fn bench_perft(pos: Position, depth: Depth) {
     _ = Search::perft(
         &mut UnsafeCell::new(pos),
         depth,
@@ -17,16 +16,13 @@ fn bench_perft(mut fen: Fen, depth: Depth) {
     );
 }
 
-pub fn criterion_benchmark(c: &mut Criterion) {
+pub fn pawn_general_benchmark(c: &mut Criterion) {
+    let mut fen = Fen::new("K7/3p4/k7/4P3/5P2/8/3p4/4R3 b - - 0 1");
+    let pos = Position::try_from(&mut fen).unwrap();
     c.bench_function("perft::pos_0", |b| {
-        b.iter(|| {
-            bench_perft(
-                Fen::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
-                Depth::new(3),
-            )
-        })
+        b.iter(|| bench_perft(pos.clone(), Depth::new(3)))
     });
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group!(benches, pawn_general_benchmark);
 criterion_main!(benches);
