@@ -16,13 +16,25 @@ fn bench_perft(pos: Position, depth: Depth) {
     );
 }
 
-pub fn pawn_general_benchmark(c: &mut Criterion) {
+pub fn pawn_general_pos0_benchmark(c: &mut Criterion) {
     let mut fen = Fen::new("K7/3p4/k7/4P3/5P2/8/3p4/4R3 b - - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
-    c.bench_function("perft::pos_0", |b| {
+    c.bench_function("perft::pawns::general::pos0", |b| {
         b.iter(|| bench_perft(pos.clone(), Depth::new(3)))
     });
 }
 
-criterion_group!(benches, pawn_general_benchmark);
+pub fn rook_general_pos0_benchmark(c: &mut Criterion) {
+    let mut fen = Fen::new("1r2n2N/7r/1pP1R2p/8/5R2/k7/8/K7 w - - 0 1");
+    let pos = Position::try_from(&mut fen).unwrap();
+    c.bench_function("perft::rook::general::pos_0", |b| {
+        b.iter(|| bench_perft(pos.clone(), Depth::new(3)))
+    });
+}
+
+criterion_group!(
+    benches,
+    pawn_general_pos0_benchmark,
+    rook_general_pos0_benchmark
+);
 criterion_main!(benches);
