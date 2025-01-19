@@ -115,7 +115,7 @@ pub fn fold_legals_check_none<B, F, R>(
     piece_type: SlidingPieceType,
     compute_attacks: fn(Square, Bitboard) -> Bitboard,
     init: B,
-    f: F,
+    mut f: F,
 ) -> R
 where
     F: FnMut(B, Move) -> R,
@@ -128,23 +128,21 @@ where
     let occupancy = allies | enemies;
     let blockers = pos.get_blockers();
     let king_bb = pos.get_bitboard(PieceType::KING, color);
-    // Safety: king the board has no king, but gen_legal is used,
-    // the context is broken anyway. 
+    // Safety: the board has no king, but gen_legal is used,
+    // the context is broken anyway.
     let king = unsafe { king_bb.lsb().unwrap_unchecked() };
     pos.get_bitboard(piece_type.into(), color)
-        .flat_map(move |piece| {
+        .try_fold(init, move |mut acc, piece| {
             let piece_bb = Bitboard::from_c(piece);
-            let is_blocker = !(blockers & piece_bb).is_empty(); 
+            let is_blocker = !(blockers & piece_bb).is_empty();
             let pin_mask = is_blocker
                 .then(|| Bitboard::ray(piece, king))
                 .unwrap_or(Bitboard::full());
             let attacks = compute_attacks(piece, occupancy);
             let legal_attacks = attacks & pin_mask;
-            let captures = gen_captures(legal_attacks, enemies, piece);
-            let quiets = gen_quiets(legal_attacks, enemies, allies, piece);
-            captures.chain(quiets)
+            acc = gen_captures(legal_attacks, enemies, piece).try_fold(acc, &mut f)?;
+            gen_quiets(legal_attacks, enemies, allies, piece).try_fold(acc, &mut f)
         })
-        .try_fold(init, f)
 }
 
 pub fn gen_legal_captures_check_none(

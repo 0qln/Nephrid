@@ -40,7 +40,7 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::ROOK, rook::compute_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::fold_legals_check_none(pos, SlidingPieceType::ROOK, rook::compute_attacks, init, &mut f)?;
     init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, bishop::compute_attacks).try_fold(init, &mut f)?;
     init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, queen::compute_attacks).try_fold(init, &mut f)?;
     init = pawn::fold_legals_check_none(pos, init, &mut f)?;
