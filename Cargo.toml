@@ -24,7 +24,11 @@ typenum = "1.17.0"
 criterion = "0.3"
 
 [[bench]]
-name = "rook_compute_attacks"
+name = "rook_attacks"
+harness = false
+
+[[bench]]
+name = "bishop_attacks"
 harness = false
 
 [[bench]]
