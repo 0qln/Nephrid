@@ -61,7 +61,7 @@ pub struct MagicInfo {
 }
 
 impl MagicInfo {
-    pub fn init<'a>(self, table: &'a AttackTable) -> Magic<'a> {
+    pub fn init(self, table: &AttackTable) -> Magic<'_> {
         let ptr = &table.0[self.ptr_off..self.ptr_off + self.ptr_size];
         Magic::new(ptr, self.mask, self.magic, self.shift)
     }
@@ -83,10 +83,7 @@ impl<'a> MagicTable<'a> {
         unsafe { self.0.get_unchecked(index) }
     }
 
-    /// Safety:
-    /// The caller has to assert, that the table is initialized
-    /// in a single threaded context. Idealy, at the start of the program.
-    pub unsafe fn init<I: IntoIterator<Item = MagicInfo>>(
+    pub fn init<I: IntoIterator<Item = MagicInfo>>(
         &mut self,
         table: &'a AttackTable,
         magics: I,
@@ -133,8 +130,8 @@ pub fn init(seed: u64) {
     });
 }
 
-fn find_magics<'a, T: MagicGen + Attacks>(
-    table: &'a mut AttackTable,
+fn find_magics<T: MagicGen + Attacks>(
+    table: &mut AttackTable,
     rng: &mut SmallRng,
     prev: Option<&MagicInfo>,
 ) -> [MagicInfo; 64] {
@@ -211,7 +208,7 @@ fn find_magic<T: MagicGen + Attacks>(
             return false;
         }
 
-        return true;
+        true
     };
 
     let ptr = &mut table.0[idx..idx + attacks.len()];

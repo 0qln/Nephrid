@@ -1,6 +1,6 @@
 use crate::{
     engine::{
-        self, bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}, r#move::Move, piece::{IPieceType, PieceType, SlidingPieceType}, position::Position
+        bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}, r#move::Move, piece::{IPieceType, PieceType, SlidingPieceType}, position::Position
     },
     misc::ConstFrom,
 };

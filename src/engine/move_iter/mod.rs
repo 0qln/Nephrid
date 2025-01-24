@@ -3,11 +3,10 @@ use std::ops::Try;
 use bishop::Bishop;
 use queen::Queen;
 use rook::Rook;
-use sliding_piece::Attacks;
 
 use super::bitboard::Bitboard;
 use super::coordinates::Square;
-use super::piece::{JumpingPieceType, SlidingPieceType};
+use super::piece::JumpingPieceType;
 use super::position::{CheckState, Position};
 use super::r#move::{Move, MoveFlag};
 

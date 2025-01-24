@@ -7,8 +7,8 @@ use nephrid::uci::{
 use std::io::stdin;
 
 fn main() {
-    // Safety: this is the start of the program.
-    unsafe { magics::init(0xdeadbeef) };
+    magics::init(0xdeadbeef);
+
     let input_stream = stdin();
     let mut engine = Engine::default();
     let cmd_cancellation: CancellationToken = CancellationToken::default();
