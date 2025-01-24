@@ -50,9 +50,9 @@ impl StateInfo {
                 let enemy_attacks = match enemy.piece_type() {
                     PieceType::PAWN => pawn::lookup_attacks(enemy_sq, nstm),
                     PieceType::KNIGHT => knight::lookup_attacks(enemy_sq),
-                    PieceType::BISHOP => Bishop::compute_attacks(enemy_sq, occupancy),
-                    PieceType::ROOK => Rook::compute_attacks(enemy_sq, occupancy),
-                    PieceType::QUEEN => Queen::compute_attacks(enemy_sq, occupancy),
+                    PieceType::BISHOP => Bishop::lookup_attacks(enemy_sq, occupancy),
+                    PieceType::ROOK => Rook::lookup_attacks(enemy_sq, occupancy),
+                    PieceType::QUEEN => Queen::lookup_attacks(enemy_sq, occupancy),
                     PieceType::KING => king::lookup_attacks(enemy_sq),
                     _ => unreachable!("We are iterating the squares which contain enemies. PieceType::NONE should not be here."),
                 };

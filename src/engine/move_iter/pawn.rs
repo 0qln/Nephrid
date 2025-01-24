@@ -342,8 +342,8 @@ impl<'a> IPawnMoves<NoCheck<'a>> for PawnMoves<NoCheck<'a>> {
                 let rooks = info.get_pos().get_bitboard(PieceType::ROOK, !color);
                 let bishops = info.get_pos().get_bitboard(PieceType::BISHOP, !color);
                 let queens = info.get_pos().get_bitboard(PieceType::QUEEN, !color);
-                let rook_attacks = Rook::compute_attacks(king_sq, occupancy_after_capture);
-                let bishop_attacks = Bishop::compute_attacks(king_sq, occupancy_after_capture);
+                let rook_attacks = Rook::lookup_attacks(king_sq, occupancy_after_capture);
+                let bishop_attacks = Bishop::lookup_attacks(king_sq, occupancy_after_capture);
                 let q_or_r_check = !rook_attacks.and_c(rooks | queens).is_empty();
                 let q_or_b_check = !bishop_attacks.and_c(bishops | queens).is_empty();
                 let check = q_or_r_check || q_or_b_check;
@@ -458,8 +458,8 @@ impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
                 let rooks = info.get_pos().get_bitboard(PieceType::ROOK, !color);
                 let bishops = info.get_pos().get_bitboard(PieceType::BISHOP, !color);
                 let queens = info.get_pos().get_bitboard(PieceType::QUEEN, !color);
-                let rook_attacks = Rook::compute_attacks(king_sq, occupancy_after_capture);
-                let bishop_attacks = Bishop::compute_attacks(king_sq, occupancy_after_capture);
+                let rook_attacks = Rook::lookup_attacks(king_sq, occupancy_after_capture);
+                let bishop_attacks = Bishop::lookup_attacks(king_sq, occupancy_after_capture);
                 let q_or_r_check = !rook_attacks.and_c(rooks | queens).is_empty();
                 let q_or_b_check = !bishop_attacks.and_c(bishops | queens).is_empty();
                 let check = q_or_r_check || q_or_b_check;
