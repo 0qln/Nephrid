@@ -40,13 +40,13 @@ pub fn gen_legals_check_some(pos: &Position) -> impl Iterator<Item = Move> {
         // which are relevant to checking whether the our king is in check.
         let occupancy_after_king_move = (occupancy ^ king_bb) | to;
         let nstm_attacks = checker_rooks.fold(nstm_attacks, |acc, checker| {
-            acc | Rook::compute_attacks(checker, occupancy_after_king_move)
+            acc | Rook::lookup_attacks(checker, occupancy_after_king_move)
         });
         let nstm_attacks = checker_bishops.fold(nstm_attacks, |acc, checker| {
-            acc | Bishop::compute_attacks(checker, occupancy_after_king_move)
+            acc | Bishop::lookup_attacks(checker, occupancy_after_king_move)
         });
         let nstm_attacks = checker_queens.fold(nstm_attacks, |acc, checker| {
-            acc | Queen::compute_attacks(checker, occupancy_after_king_move)
+            acc | Queen::lookup_attacks(checker, occupancy_after_king_move)
         });
 
         (to & nstm_attacks).is_empty()
