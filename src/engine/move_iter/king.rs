@@ -11,7 +11,7 @@ use crate::{
     misc::{ConstFrom, PostIncrement},
 };
 
-use super::{bishop, queen, rook};
+use super::{bishop::{self, Bishop}, queen::{self, Queen}, rook::{self, Rook}, sliding_piece::Attacks};
 
 pub fn gen_legals_check_some(pos: &Position) -> impl Iterator<Item = Move> {
     let color = pos.get_turn();
@@ -38,13 +38,13 @@ pub fn gen_legals_check_some(pos: &Position) -> impl Iterator<Item = Move> {
         // which are relevant to checking whether the our king is in check.
         let occupancy_after_king_move = (occupancy ^ king_bb) | to;
         let nstm_attacks = checker_rooks.fold(nstm_attacks, |acc, checker| {
-            acc | rook::compute_attacks(checker, occupancy_after_king_move)
+            acc | Rook::compute_attacks(checker, occupancy_after_king_move)
         });
         let nstm_attacks = checker_bishops.fold(nstm_attacks, |acc, checker| {
-            acc | bishop::compute_attacks(checker, occupancy_after_king_move)
+            acc | Bishop::compute_attacks(checker, occupancy_after_king_move)
         });
         let nstm_attacks = checker_queens.fold(nstm_attacks, |acc, checker| {
-            acc | queen::compute_attacks(checker, occupancy_after_king_move)
+            acc | Queen::compute_attacks(checker, occupancy_after_king_move)
         });
 
         (to & nstm_attacks).is_empty()
