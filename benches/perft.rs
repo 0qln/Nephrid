@@ -3,6 +3,7 @@ use std::cell::UnsafeCell;
 use criterion::{criterion_group, criterion_main, Criterion};
 use nephrid::engine::depth::Depth;
 use nephrid::engine::fen::Fen;
+use nephrid::engine::move_iter::sliding_piece::magics::init;
 use nephrid::engine::position::Position;
 use nephrid::engine::search::Search;
 use nephrid::uci::sync::CancellationToken;
@@ -25,6 +26,7 @@ pub fn pawn_general_pos0_benchmark(c: &mut Criterion) {
 }
 
 pub fn rook_general_pos0_benchmark(c: &mut Criterion) {
+    unsafe { init(0xdead_beef) };
     let mut fen = Fen::new("1r2n2N/7r/1pP1R2p/8/5R2/k7/8/K7 w - - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
     c.bench_function("perft::rook::general::pos_0", |b| {
