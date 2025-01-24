@@ -1,9 +1,39 @@
 use crate::{engine::{bitboard::Bitboard, coordinates::{CompassRose, DiagA1H8, DiagA8H1, Square}, r#move::Move, piece::SlidingPieceType, position::Position}, misc::ConstFrom};
 
-use super::sliding_piece;
+use super::sliding_piece::{self, magics::MagicGen, Attacks};
 
 #[cfg(test)]
 mod tests;
+
+pub struct Bishop;
+
+impl MagicGen for Bishop {
+    fn relevant_occupancy(sq: Square) -> Bitboard {
+        Self::compute_attacks_0_occ(sq).and_not_c(Bitboard::edges())
+    }
+
+    fn relevant_occupancy_num_combinations() -> usize {
+        // center is generally max
+        let max = Self::relevant_occupancy(Square::E4);
+        (1 << max.pop_cnt()) as usize
+    }
+}
+
+impl Attacks for Bishop {
+    fn compute_attacks_0_occ(sq: Square) -> Bitboard {
+        crate::engine::move_iter::bishop::compute_attacks_0_occ(sq)
+    }
+
+    fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
+        crate::engine::move_iter::bishop::compute_attacks(sq, occupancy)
+    }
+
+    #[allow(static_mut_refs)]
+    fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
+        // Safety: The caller has to assert, that the table is initialized.
+        unsafe { sliding_piece::magics::BISHOP_MAGICS.get(sq).get(occupancy) }
+    }
+}
 
 #[inline]
 pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> + '_ {

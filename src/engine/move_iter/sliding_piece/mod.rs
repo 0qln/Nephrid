@@ -1,4 +1,4 @@
-use std::ops::Try;
+use std::{cell::{OnceCell, UnsafeCell}, marker::PhantomData, mem::{self, MaybeUninit}, ops::Try};
 
 use crate::{
     engine::{
@@ -12,6 +12,14 @@ use crate::{
 };
 
 use super::{gen_captures, gen_quiets};
+
+pub mod magics;
+
+pub trait Attacks {
+    fn compute_attacks_0_occ(sq: Square) -> Bitboard;
+    fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard;
+    fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard;
+}
 
 pub fn gen_legals_check_single(
     pos: &Position,

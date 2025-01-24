@@ -4,7 +4,7 @@ use crate::{
     uci::tokens::Tokenizer,
 };
 use core::{fmt, panic};
-use std::ops;
+use std::{iter::Step, ops};
 
 use super::color::Color;
 
@@ -60,7 +60,7 @@ impl CompassRose {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Square {
     v: TSquare,
 }
@@ -158,6 +158,20 @@ impl TryFrom<&mut Tokenizer<'_>> for Square {
             None => return Err(ParseError::MissingInput),
         };
         Ok(Square::from_c((file, rank)))
+    }
+}
+
+impl Step for Square {
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
+        Step::steps_between(&start.v, &end.v)
+    }
+
+    fn forward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::forward_checked(start.v, count)?).ok()
+    }
+
+    fn backward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::backward_checked(start.v, count)?).ok()
     }
 }
 

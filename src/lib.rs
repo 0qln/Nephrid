@@ -18,6 +18,7 @@
 #![feature(gen_blocks)]
 #![feature(try_trait_v2)]
 #![feature(try_blocks)]
+#![feature(substr_range)]
 
 #[macro_use]
 extern crate impl_ops;

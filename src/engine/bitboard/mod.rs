@@ -233,6 +233,10 @@ impl Bitboard {
     pub fn pop_cnt(&self) -> u32 {
         self.v.count_ones()
     }
+    
+    pub const fn edges() -> Bitboard {
+        Bitboard { v: !0x007E7E7E7E7E7E00_u64 }
+    }
 }
 
 impl const ConstFrom<Square> for Bitboard {
