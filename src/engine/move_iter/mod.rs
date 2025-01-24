@@ -1,5 +1,10 @@
 use std::ops::Try;
 
+use bishop::Bishop;
+use queen::Queen;
+use rook::Rook;
+use sliding_piece::Attacks;
+
 use super::bitboard::Bitboard;
 use super::coordinates::Square;
 use super::piece::{JumpingPieceType, SlidingPieceType};
@@ -40,9 +45,9 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    init = sliding_piece::fold_legals_check_none(pos, SlidingPieceType::ROOK, rook::compute_attacks, init, &mut f)?;
-    init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, bishop::compute_attacks).try_fold(init, &mut f)?;
-    init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, queen::compute_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::fold_legals_check_none(pos, SlidingPieceType::ROOK, Rook::lookup_attacks, init, &mut f)?;
+    init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, Bishop::lookup_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, Queen::lookup_attacks).try_fold(init, &mut f)?;
     init = pawn::fold_legals_check_none(pos, init, &mut f)?;
     init = jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::compute_attacks).try_fold(init, &mut f)?;
     init = king::gen_legals_check_none(pos).try_fold(init, &mut f)?;
@@ -53,9 +58,9 @@ fn legal_moves_check_none<const CAPTURES_ONLY: bool>(
     pos: &Position,
 ) -> impl Iterator<Item = Move> + '_ {
     [
-        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::ROOK, rook::compute_attacks),
-        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, bishop::compute_attacks),
-        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, queen::compute_attacks),
+        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::ROOK, Rook::lookup_attacks),
+        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, Bishop::lookup_attacks),
+        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, Queen::lookup_attacks),
     ].into_iter()
     .flatten()
     .chain(pawn::gen_legals_check_none(pos))
@@ -70,9 +75,9 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::ROOK, rook::compute_attacks).try_fold(init, &mut f)?;
-    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::BISHOP, bishop::compute_attacks).try_fold(init, &mut f)?;
-    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::QUEEN, queen::compute_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::ROOK, Rook::lookup_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::BISHOP, Bishop::lookup_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::QUEEN, Queen::lookup_attacks).try_fold(init, &mut f)?;
     init = king::gen_legals_check_some(pos).try_fold(init, &mut f)?;
     init = pawn::fold_legals_check_single(pos, init, &mut f)?;
     jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::compute_attacks).try_fold(init, &mut f)
@@ -82,9 +87,9 @@ fn legal_moves_check_single<const CAPTURES_ONLY: bool>(
     pos: &Position,
 ) -> impl Iterator<Item = Move> + '_ {
     [
-        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::ROOK, rook::compute_attacks),
-        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::BISHOP, bishop::compute_attacks),
-        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::QUEEN, queen::compute_attacks),
+        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::ROOK, Rook::lookup_attacks),
+        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::BISHOP, Bishop::lookup_attacks),
+        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::QUEEN, Queen::lookup_attacks),
     ].into_iter()
     .flatten()
     .chain(king::gen_legals_check_some(pos))
