@@ -5,7 +5,7 @@ use crate::engine::{
     move_iter::{bishop::Bishop, map_bits, rook::Rook, sliding_piece::Attacks},
 };
 
-use super::{init, MagicGen};
+use super::MagicGen;
 
 #[test]
 fn rook() {
@@ -18,7 +18,7 @@ fn bishop() {
 }
 
 fn test<T: MagicGen + Attacks>() {
-    unsafe { init(0xdead_beef) };
+    super::init(0xdead_beef);
 
     for sq in Square::A1..=Square::H8 {
         let full_blockers = T::relevant_occupancy(sq);

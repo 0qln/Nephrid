@@ -45,28 +45,13 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    init = sliding_piece::fold_legals_check_none(pos, SlidingPieceType::ROOK, Rook::lookup_attacks, init, &mut f)?;
-    init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, Bishop::lookup_attacks).try_fold(init, &mut f)?;
-    init = sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, Queen::lookup_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::fold_legals_check_none::<_, _, _, Rook>(pos, init, &mut f)?;
+    init = sliding_piece::fold_legals_check_none::<_, _, _, Bishop>(pos, init, &mut f)?;
+    init = sliding_piece::fold_legals_check_none::<_, _, _, Queen>(pos, init, &mut f)?;
     init = pawn::fold_legals_check_none(pos, init, &mut f)?;
     init = jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::compute_attacks).try_fold(init, &mut f)?;
     init = king::gen_legals_check_none(pos).try_fold(init, &mut f)?;
     king::gen_legal_castling(pos, pos.get_turn()).try_fold(init, f)
-}
-
-fn legal_moves_check_none<const CAPTURES_ONLY: bool>(
-    pos: &Position,
-) -> impl Iterator<Item = Move> + '_ {
-    [
-        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::ROOK, Rook::lookup_attacks),
-        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::BISHOP, Bishop::lookup_attacks),
-        sliding_piece::gen_legals_check_none(pos, SlidingPieceType::QUEEN, Queen::lookup_attacks),
-    ].into_iter()
-    .flatten()
-    .chain(pawn::gen_legals_check_none(pos))
-    .chain(jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::compute_attacks))
-    .chain(king::gen_legals_check_none(pos))
-    .chain(king::gen_legal_castling(pos, pos.get_turn()))
 }
 
 #[inline]
@@ -75,26 +60,12 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::ROOK, Rook::lookup_attacks).try_fold(init, &mut f)?;
-    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::BISHOP, Bishop::lookup_attacks).try_fold(init, &mut f)?;
-    init = sliding_piece::gen_legals_check_single(pos, SlidingPieceType::QUEEN, Queen::lookup_attacks).try_fold(init, &mut f)?;
+    init = sliding_piece::fold_legals_check_single::<_, _, _, Rook>(pos, init, &mut f)?;
+    init = sliding_piece::fold_legals_check_single::<_, _, _, Bishop>(pos, init, &mut f)?;
+    init = sliding_piece::fold_legals_check_single::<_, _, _, Queen>(pos, init, &mut f)?;
     init = king::gen_legals_check_some(pos).try_fold(init, &mut f)?;
     init = pawn::fold_legals_check_single(pos, init, &mut f)?;
     jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::compute_attacks).try_fold(init, &mut f)
-}
-
-fn legal_moves_check_single<const CAPTURES_ONLY: bool>(
-    pos: &Position,
-) -> impl Iterator<Item = Move> + '_ {
-    [
-        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::ROOK, Rook::lookup_attacks),
-        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::BISHOP, Bishop::lookup_attacks),
-        sliding_piece::gen_legals_check_single(pos, SlidingPieceType::QUEEN, Queen::lookup_attacks),
-    ].into_iter()
-    .flatten()
-    .chain(king::gen_legals_check_some(pos))
-    .chain(pawn::gen_legals_check_single(pos))
-    .chain(jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::compute_attacks))
 }
 
 fn legal_moves_check_double<const CAPTURES_ONLY: bool>(

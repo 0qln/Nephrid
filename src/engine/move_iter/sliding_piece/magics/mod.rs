@@ -1,4 +1,4 @@
-use std::{iter::once, mem};
+use std::{iter::once, mem, sync::Once};
 
 use itertools::Itertools;
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
@@ -47,9 +47,7 @@ impl Magic<'_> {
 
     #[inline(always)]
     pub fn get(&self, occupancy: Bitboard) -> Bitboard {
-        unsafe { 
-            *self.ptr.get_unchecked(self.key(occupancy)) 
-        }
+        unsafe { *self.ptr.get_unchecked(self.key(occupancy)) }
     }
 }
 
@@ -121,17 +119,18 @@ pub static mut BISHOP_MAGICS: MagicTable = MagicTable(
     }; 64],
 );
 
-/// Safety:
-/// The caller has to assert, that the table is initialized
-/// in a single threaded context. Idealy, at the start of the program.
+static INIT: Once = Once::new();
+
 #[allow(static_mut_refs)]
-pub unsafe fn init(seed: u64) {
-    let mut rng = SmallRng::seed_from_u64(seed);
-    let table = unsafe { &mut ATTACK_TABLE };
-    let rook_magics = find_magics::<Rook>(table, &mut rng, None);
-    let bishop_magics = find_magics::<Bishop>(table, &mut rng, Some(&rook_magics[63]));
-    ROOK_MAGICS.init(table, rook_magics);
-    BISHOP_MAGICS.init(table, bishop_magics);
+pub fn init(seed: u64) {
+    INIT.call_once(|| unsafe {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        let table = &mut ATTACK_TABLE;
+        let rook_magics = find_magics::<Rook>(table, &mut rng, None);
+        let bishop_magics = find_magics::<Bishop>(table, &mut rng, Some(&rook_magics[63]));
+        ROOK_MAGICS.init(table, rook_magics);
+        BISHOP_MAGICS.init(table, bishop_magics);
+    });
 }
 
 fn find_magics<'a, T: MagicGen + Attacks>(

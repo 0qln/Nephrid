@@ -1,11 +1,6 @@
 use crate::{
     engine::{
-        self,
-        bitboard::Bitboard,
-        coordinates::{CompassRose, File, Rank, Square},
-        piece::SlidingPieceType,
-        position::Position,
-        r#move::Move,
+        self, bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}, r#move::Move, piece::{IPieceType, PieceType, SlidingPieceType}, position::Position
     },
     misc::ConstFrom,
 };
@@ -16,6 +11,10 @@ use super::sliding_piece::{self, magics::MagicGen, Attacks};
 mod tests;
 
 pub struct Rook;
+
+impl IPieceType for Rook {
+    const ID: PieceType = PieceType::ROOK;
+}
 
 impl Rook {
     #[inline]

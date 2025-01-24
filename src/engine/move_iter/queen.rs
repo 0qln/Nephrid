@@ -1,8 +1,12 @@
-use crate::engine::{bitboard::Bitboard, coordinates::Square, r#move::Move, piece::SlidingPieceType, position::Position};
+use crate::engine::{bitboard::Bitboard, coordinates::Square, r#move::Move, piece::{IPieceType, PieceType, SlidingPieceType}, position::Position};
 
 use super::{bishop::{self, Bishop}, rook::{self, Rook}, sliding_piece::{self, Attacks}};
 
 pub struct Queen;
+
+impl IPieceType for Queen {
+    const ID: PieceType = PieceType::QUEEN;
+}
 
 impl Attacks for Queen {
     fn compute_attacks_0_occ(sq: Square) -> Bitboard {

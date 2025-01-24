@@ -1,4 +1,4 @@
-use crate::{engine::{bitboard::Bitboard, coordinates::{CompassRose, DiagA1H8, DiagA8H1, Square}, r#move::Move, piece::SlidingPieceType, position::Position}, misc::ConstFrom};
+use crate::{engine::{bitboard::Bitboard, coordinates::{CompassRose, DiagA1H8, DiagA8H1, Square}, r#move::Move, piece::{IPieceType, PieceType, SlidingPieceType}, position::Position}, misc::ConstFrom};
 
 use super::sliding_piece::{self, magics::MagicGen, Attacks};
 
@@ -6,6 +6,10 @@ use super::sliding_piece::{self, magics::MagicGen, Attacks};
 mod tests;
 
 pub struct Bishop;
+
+impl IPieceType for Bishop {
+    const ID: PieceType = PieceType::BISHOP;
+}
 
 impl MagicGen for Bishop {
     fn relevant_occupancy(sq: Square) -> Bitboard {
