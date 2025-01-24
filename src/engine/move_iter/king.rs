@@ -11,6 +11,8 @@ use crate::{
     misc::{ConstFrom, PostIncrement},
 };
 
+use const_for::const_for;
+
 use super::{bishop::{self, Bishop}, queen::{self, Queen}, rook::{self, Rook}, sliding_piece::Attacks};
 
 pub fn gen_legals_check_some(pos: &Position) -> impl Iterator<Item = Move> {
@@ -216,37 +218,52 @@ pub fn gen_pseudo_legal_castling(pos: &Position, color: Color) -> impl Iterator<
     // }.into_iter()
 }
 
-// todo: can be computed at compile time
-//
-pub fn compute_attacks(sq: Square) -> Bitboard {
+pub fn lookup_attacks(sq: Square) -> Bitboard {
+    static ATTACKS: [Bitboard; 64] = {
+        let mut attacks = [Bitboard::empty(); 64];
+        const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
+            // Safety: we are only iterating over valid squares.
+            let sq = unsafe { Square::from_v(sq) };
+            attacks[sq.v() as usize] = compute_attacks(sq);
+        });
+        attacks
+    };
+    // Safety: sq is in range 0..64
+    unsafe {
+        *ATTACKS.get_unchecked(sq.v() as usize)
+    }
+}
+
+pub const fn compute_attacks(sq: Square) -> Bitboard {
     let file = File::from_c(sq);
     let rank = Rank::from_c(sq);
+    let king = Bitboard::from_c(sq);
 
     let mut files = Bitboard::from_c(file);
-    if file > File::A {
+    if file.v() > File::A_C {
         // Safety: file is in range 1.., so file - 1 is still a valid file.
         let west = unsafe { File::from_v(file.v() - 1) };
-        files |= Bitboard::from_c(west);
+        files.v |= Bitboard::from_c(west).v;
     }
 
-    if file < File::H {
+    if file.v() < File::H_C {
         // Safety: file is in range 0..7, so file + 1 is still a valid file.
         let east = unsafe { File::from_v(file.v() + 1) };
-        files |= Bitboard::from_c(east);
+        files.v |= Bitboard::from_c(east).v;
     }
 
     let mut ranks = Bitboard::from_c(rank);
-    if rank > Rank::_1 {
+    if rank.v() > Rank::_1_C {
         // Safety: rank is in range 1.., so rank - 1 is still a valid rank.
         let south = unsafe { Rank::from_v(rank.v() - 1) };
-        ranks |= Bitboard::from_c(south);
+        ranks.v |= Bitboard::from_c(south).v;
     }
 
-    if rank < Rank::_8 {
+    if rank.v() < Rank::_8_C {
         // Safety: rank is in range 0..7, so rank + 1 is still a valid rank.
         let north = unsafe { Rank::from_v(rank.v() + 1) };
-        ranks |= Bitboard::from_c(north);
+        ranks.v |= Bitboard::from_c(north).v;
     }
 
-    files.and_c(ranks) ^ Bitboard::from_c(sq)
+    files.and_c(ranks).and_not_c(king)
 }
