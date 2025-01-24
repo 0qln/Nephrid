@@ -48,7 +48,7 @@ where
     init = sliding_piece::fold_legals_check_none::<_, _, _, Bishop>(pos, init, &mut f)?;
     init = sliding_piece::fold_legals_check_none::<_, _, _, Queen>(pos, init, &mut f)?;
     init = pawn::fold_legals_check_none(pos, init, &mut f)?;
-    init = jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::compute_attacks).try_fold(init, &mut f)?;
+    init = jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::lookup_attacks).try_fold(init, &mut f)?;
     init = king::gen_legals_check_none(pos).try_fold(init, &mut f)?;
     king::gen_legal_castling(pos, pos.get_turn()).try_fold(init, f)
 }
@@ -64,7 +64,7 @@ where
     init = sliding_piece::fold_legals_check_single::<_, _, _, Queen>(pos, init, &mut f)?;
     init = king::gen_legals_check_some(pos).try_fold(init, &mut f)?;
     init = pawn::fold_legals_check_single(pos, init, &mut f)?;
-    jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::compute_attacks).try_fold(init, &mut f)
+    jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::lookup_attacks).try_fold(init, &mut f)
 }
 
 fn legal_moves_check_double<const CAPTURES_ONLY: bool>(
