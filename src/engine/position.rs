@@ -49,7 +49,7 @@ impl StateInfo {
                 let enemy = pos.get_piece(enemy_sq);     
                 let enemy_attacks = match enemy.piece_type() {
                     PieceType::PAWN => pawn::lookup_attacks(enemy_sq, nstm),
-                    PieceType::KNIGHT => knight::compute_attacks(enemy_sq),
+                    PieceType::KNIGHT => knight::lookup_attacks(enemy_sq),
                     PieceType::BISHOP => Bishop::compute_attacks(enemy_sq, occupancy),
                     PieceType::ROOK => Rook::compute_attacks(enemy_sq, occupancy),
                     PieceType::QUEEN => Queen::compute_attacks(enemy_sq, occupancy),

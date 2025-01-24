@@ -40,6 +40,10 @@ name = "king_attacks"
 harness = false
 
 [[bench]]
+name = "knight_attacks"
+harness = false
+
+[[bench]]
 name = "perft"
 harness = false
 
