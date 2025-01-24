@@ -38,14 +38,18 @@ impl Magic<'_> {
         }
     }
 
+    #[inline(always)]
     pub fn key(&self, occupancy: Bitboard) -> usize {
         let relevant_occ = occupancy & self.mask;
         let key = relevant_occ.v.wrapping_mul(self.magic) >> self.shift;
         key as usize
     }
 
+    #[inline(always)]
     pub fn get(&self, occupancy: Bitboard) -> Bitboard {
-        self.ptr[self.key(occupancy)]
+        unsafe { 
+            *self.ptr.get_unchecked(self.key(occupancy)) 
+        }
     }
 }
 
@@ -74,10 +78,11 @@ impl MagicInfo {
 pub struct MagicTable<'a>([Magic<'a>; 64]);
 
 impl<'a> MagicTable<'a> {
+    #[inline(always)]
     pub fn get<'b>(&'b self, sq: Square) -> &'b Magic<'a> {
         let index = sq.v() as usize;
-        assert!(index < 64);
-        &self.0[index]
+        // Safety: A square is in range 0..64
+        unsafe { self.0.get_unchecked(index) }
     }
 
     /// Safety:
