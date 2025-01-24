@@ -49,11 +49,6 @@ impl MagicGen for Rook {
 
 impl Attacks for Rook {
     #[inline]
-    fn compute_attacks_0_occ(sq: Square) -> Bitboard {
-        crate::engine::move_iter::rook::compute_attacks_0_occ(sq)
-    }
-
-    #[inline]
     fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         crate::engine::move_iter::rook::compute_attacks(sq, occupancy)
     }
@@ -66,11 +61,6 @@ impl Attacks for Rook {
     }
 }
 
-#[inline]
-pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> + '_ {
-    sliding_piece::gen_legals_check_none(pos, SlidingPieceType::ROOK, compute_attacks)
-}
-
 /// Computes the attacks of the rook on the square `sq`.
 pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
     let file_bb = Bitboard::from_c(File::from_c(sq));
@@ -81,7 +71,7 @@ pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
 }
 
 /// Computes the attacks of the rook on the square `sq` with the given `occupancy`.
-pub const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
+const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let file = File::from_c(sq);
     let rank = Rank::from_c(sq);
     let file_bb = Bitboard::from_c(file);

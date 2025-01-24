@@ -7,6 +7,12 @@ mod tests;
 
 pub struct Bishop;
 
+impl Bishop {
+    fn compute_attacks_0_occ(sq: Square) -> Bitboard {
+        crate::engine::move_iter::bishop::compute_attacks_0_occ(sq)
+    }
+}
+
 impl IPieceType for Bishop {
     const ID: PieceType = PieceType::BISHOP;
 }
@@ -24,10 +30,6 @@ impl MagicGen for Bishop {
 }
 
 impl Attacks for Bishop {
-    fn compute_attacks_0_occ(sq: Square) -> Bitboard {
-        crate::engine::move_iter::bishop::compute_attacks_0_occ(sq)
-    }
-
     fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         crate::engine::move_iter::bishop::compute_attacks(sq, occupancy)
     }
@@ -52,7 +54,7 @@ pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
 }
 
 /// Computes the attacks of the bishop on the square `sq` with the given `occupancy`.
-pub const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
+const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let a1h8 = Bitboard::from_c(DiagA1H8::from_c(sq));
     let a8h1 = Bitboard::from_c(DiagA8H1::from_c(sq));
     let nort = Bitboard::split_north(sq);

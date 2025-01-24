@@ -12,7 +12,6 @@ use super::{gen_captures, gen_quiets};
 pub mod magics;
 
 pub trait Attacks {
-    fn compute_attacks_0_occ(sq: Square) -> Bitboard;
     fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard;
     fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard;
 }

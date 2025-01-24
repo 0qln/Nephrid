@@ -7,7 +7,7 @@ use crate::{
     }, misc::{ConstFrom, ParseError}
 };
 
-use super::{castling::CastlingSide, coordinates::{EpCaptureSquare, EpTargetSquare}, r#move::MoveFlag, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
+use super::{castling::CastlingSide, coordinates::{EpCaptureSquare, EpTargetSquare}, r#move::MoveFlag, move_iter::{bishop::Bishop, queen::Queen, rook::Rook, sliding_piece::Attacks}, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum CheckState {
@@ -50,10 +50,10 @@ impl StateInfo {
                 let enemy_attacks = match enemy.piece_type() {
                     PieceType::PAWN => pawn::lookup_attacks(enemy_sq, nstm),
                     PieceType::KNIGHT => knight::compute_attacks(enemy_sq),
-                    PieceType::BISHOP => bishop::compute_attacks(enemy_sq, occupancy),
-                    PieceType::ROOK => rook::compute_attacks(enemy_sq, occupancy),
-                    PieceType::QUEEN => queen::compute_attacks(enemy_sq, occupancy),
-                    PieceType::KING => king::compute_attacks(enemy_sq),
+                    PieceType::BISHOP => Bishop::compute_attacks(enemy_sq, occupancy),
+                    PieceType::ROOK => Rook::compute_attacks(enemy_sq, occupancy),
+                    PieceType::QUEEN => Queen::compute_attacks(enemy_sq, occupancy),
+                    PieceType::KING => king::lookup_attacks(enemy_sq),
                     _ => unreachable!("We are iterating the squares which contain enemies. PieceType::NONE should not be here."),
                 };
                 (
