@@ -4,6 +4,10 @@ use crate::{engine::color::Color, impl_variants, misc::{ConstFrom, ParseError}};
 
 use super::r#move::MoveFlag;
 
+pub trait IPieceType {
+    const ID: PieceType;
+}
+
 pub type TPieceType = u8;
 
 #[derive(Copy, Clone, Default, PartialEq, PartialOrd)]

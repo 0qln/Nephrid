@@ -1,3 +1,4 @@
+use nephrid::engine::move_iter::sliding_piece::magics;
 use nephrid::engine::{execute_uci, Engine};
 use nephrid::uci::{
     sync::{self, CancellationToken},
@@ -6,6 +7,8 @@ use nephrid::uci::{
 use std::io::stdin;
 
 fn main() {
+    magics::init(0xdeadbeef);
+
     let input_stream = stdin();
     let mut engine = Engine::default();
     let cmd_cancellation: CancellationToken = CancellationToken::default();

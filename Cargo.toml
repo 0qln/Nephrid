@@ -21,10 +21,18 @@ thiserror = "2.0.1"
 typenum = "1.17.0"
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = { version = "0.3", features = ["html_reports"] }
 
 [[bench]]
-name = "rook_compute_attacks"
+name = "rook_attacks"
+harness = false
+
+[[bench]]
+name = "bishop_attacks"
+harness = false
+
+[[bench]]
+name = "queen_attacks"
 harness = false
 
 [[bench]]

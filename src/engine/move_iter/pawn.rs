@@ -13,7 +13,7 @@ use crate::engine::{
 use crate::misc::ConstFrom;
 use const_for::const_for;
 
-use super::{bishop, rook, try_fold_multiple};
+use super::{bishop, rook};
 
 pub struct PawnMovesInfo<'a> {
     pos: &'a Position,
