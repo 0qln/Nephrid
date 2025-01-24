@@ -53,7 +53,7 @@ impl StateInfo {
                     PieceType::BISHOP => Bishop::compute_attacks(enemy_sq, occupancy),
                     PieceType::ROOK => Rook::compute_attacks(enemy_sq, occupancy),
                     PieceType::QUEEN => Queen::compute_attacks(enemy_sq, occupancy),
-                    PieceType::KING => king::compute_attacks(enemy_sq),
+                    PieceType::KING => king::lookup_attacks(enemy_sq),
                     _ => unreachable!("We are iterating the squares which contain enemies. PieceType::NONE should not be here."),
                 };
                 (

@@ -60,7 +60,7 @@ pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> {
     let enemies = pos.get_color_bb(!color);
     let king_bb = pos.get_bitboard(PieceType::KING, color);
     let king = king_bb.lsb().unwrap();
-    let attacks = compute_attacks(king);
+    let attacks = lookup_attacks(king);
     let targets = attacks & !nstm_attacks;
 
     let quiets = {
