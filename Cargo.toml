@@ -53,12 +53,14 @@ opt-level = 2
 [profile.dev]
 opt-level = 0
 
-[profile.bench]
-opt-level = 3
-codegen-units = 1
-lto = "fat"
-
 [profile.release]
 opt-level = 3
 codegen-units = 1
 lto = "fat"
+
+[profile.bench]
+inherits = "release"
+
+[profile.profiling]
+inherits = "release"
+debug = true
