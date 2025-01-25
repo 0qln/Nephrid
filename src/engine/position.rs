@@ -537,36 +537,34 @@ impl Position {
         // writes to the memory location of the popped state. 
         let popped_state = unsafe { self.state.pop_current().as_ref() };
 
-        let captured_piece = popped_state.captured_piece;
-
-        // promotions
-        if flag.is_promo() {
-            let pawn = Piece::from_c((us, PieceType::PAWN));
-            self.remove_piece(to);
-            self.put_piece(to, pawn);
-        }
-
-        // castling
-        match flag {
-            MoveFlag::KING_CASTLE => {
+        match flag.v() {
+            // castling
+            MoveFlag::KING_CASTLE_C => {
                 let rank = Rank::from_c(to);
                 let rook_from = Square::from_c((File::H, rank));
                 let rook_to   = Square::from_c((File::F, rank));
                 self.move_piece(rook_to, rook_from);
             },
-            MoveFlag::QUEEN_CASTLE => {
+            MoveFlag::QUEEN_CASTLE_C => {
                 let rank = Rank::from_c(to);
                 let rook_from = Square::from_c((File::A, rank));
                 let rook_to   = Square::from_c((File::D, rank));
                 self.move_piece(rook_to, rook_from);
             },
-            _ => ()
+            // promotions
+            MoveFlag::PROMOTION_KNIGHT_C..=MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
+                let pawn = Piece::from_c((us, PieceType::PAWN));
+                self.remove_piece(to);
+                self.put_piece(to, pawn);
+            }
+            _ => {}
         }
         
         // move the piece
         self.move_piece(to, from);
         
         // captures
+        let captured_piece = popped_state.captured_piece;
         if captured_piece != Piece::default() {
             let captured_sq = match flag {
                 MoveFlag::EN_PASSANT => {
