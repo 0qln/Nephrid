@@ -71,10 +71,7 @@ impl StateInfo {
             self.blockers = x_ray_checkers.fold(Bitboard::empty(), |acc, x_ray_checker| {
                 let between_squares = Bitboard::between(x_ray_checker, king_sq);
                 let between_occupancy = occupancy & between_squares;
-                match between_occupancy.pop_cnt() {
-                    1 => acc | between_squares,
-                    _ => acc
-                }
+                between_occupancy.pop_cnt_eq_1().then_some(acc | between_squares).unwrap_or(acc)
             });
         }
         

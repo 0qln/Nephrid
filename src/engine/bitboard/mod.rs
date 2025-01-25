@@ -46,15 +46,16 @@ impl Debug for Bitboard {
 }
 
 impl_op!(+ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v + r.v } });
-impl_op!(-|l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v - r.v } });
+impl_op!(- |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v - r.v } });
+impl_op!(- |l: Bitboard, r: u64| -> Bitboard { Bitboard { v: l.v - r } });
 impl_op!(^ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v ^ r.v } } );
 impl_op!(| |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v | r.v } } );
 impl_op!(| |l: Bitboard, r: usize| -> Bitboard { Bitboard { v: l.v | r as u64 } } );
-impl_op!(&|l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v & r.v } });
+impl_op!(& |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v & r.v } });
 impl_op!(^= |l: &mut Bitboard, r: Bitboard| { l.v ^= r.v } );
 impl_op!(|= |l: &mut Bitboard, r: Bitboard| { l.v |= r.v } );
 impl_op!(&= |l: &mut Bitboard, r: Bitboard| { l.v &= r.v } );
-impl_op!(!|x: Bitboard| -> Bitboard { Bitboard { v: !x.v } });
+impl_op!(! |x: Bitboard| -> Bitboard { Bitboard { v: !x.v } });
 
 impl Iterator for Bitboard {
     type Item = Square;
@@ -230,8 +231,20 @@ impl Bitboard {
         }
     }
 
+    #[inline]
     pub fn pop_cnt(&self) -> u32 {
         self.v.count_ones()
+    }
+    
+    #[inline]
+    pub fn pop_cnt_eq_1(&self) -> bool {
+        !self.is_empty() && !self.pop_cnt_gt_1()
+    }
+    
+    #[inline]
+    pub fn pop_cnt_gt_1(&self) -> bool {
+        let this = self.to_owned();
+        !(this & (this - 1_u64)).is_empty()
     }
     
     pub const fn edges() -> Bitboard {
