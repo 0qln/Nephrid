@@ -512,19 +512,13 @@ impl Position {
         self.state.incr();
 
         #[inline(always)]
-        const fn update_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
-            match c {
-                Color::WHITE => match sq {
-                    Square::A1 => cr.set_false(CastlingSide::QUEEN_SIDE, Color::WHITE),
-                    Square::H1 => cr.set_false(CastlingSide::KING_SIDE, Color::WHITE),
-                    _ => ()
-                },
-                Color::BLACK => match sq {
-                    Square::A8 => cr.set_false(CastlingSide::QUEEN_SIDE, Color::BLACK),
-                    Square::H8 => cr.set_false(CastlingSide::KING_SIDE, Color::BLACK),
-                    _ => ()
-                }
-                _ => ()
+        fn update_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
+            let color_case = Square::A8_C * c.v();
+            if sq.v() == (Square::A1_C | color_case) { 
+                cr.set_false(CastlingSide::QUEEN_SIDE, c) 
+            }               
+            else if sq.v() == (Square::H1_C | color_case) { 
+                cr.set_false(CastlingSide::KING_SIDE, c) 
             }
         }
     }
