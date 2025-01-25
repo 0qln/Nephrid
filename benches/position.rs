@@ -1,8 +1,9 @@
 use core::fmt;
-use std::fmt::Display;
+use std::{fmt::Display, ops::ControlFlow};
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use nephrid::{engine::{color::Color, coordinates::Square, move_iter::sliding_piece::magics, piece::{Piece, PieceType}, position::Position}, misc::ConstFrom};
+use itertools::Itertools;
+use nephrid::{engine::{color::Color, coordinates::Square, fen::Fen, move_iter::{fold_legal_move, foreach_legal_move, sliding_piece::magics}, piece::{Piece, PieceType}, position::Position}, misc::ConstFrom};
 
 pub fn get_bitboard(c: &mut Criterion) {
     let inputs = [
@@ -83,6 +84,25 @@ pub fn move_piece(c: &mut Criterion) {
     }
 }
 
+pub fn make_move(c: &mut Criterion) {
+    magics::init(0xdead_beef);
+
+    let mut fen = Fen::new("2n1k3/1P6/8/4pP2/8/6B1/P2P4/R3K2R w KQ e6 0 1");
+    let pos = Position::try_from(&mut fen).unwrap();
+    let moves = fold_legal_move::<false, _, _, _>(&pos, Vec::new(), |mut acc, m| {
+        acc.push(m);
+        ControlFlow::Continue::<(), _>(acc)
+    }).continue_value().unwrap();
+    
+    for m in moves.into_iter().unique_by(|m| m.get_flag()) {
+        c.bench_with_input(
+            BenchmarkId::new("position::make_move", m),
+            &m,
+            |b, &m| b.iter(|| pos.clone().make_move(m)),
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Pair<T1, T2>(T1, T2);
 
@@ -97,5 +117,7 @@ criterion_group!(benches,
     put_piece,
     remove_piece,
     move_piece,
+    make_move,
 );
+
 criterion_main!(benches);
