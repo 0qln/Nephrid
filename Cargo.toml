@@ -47,6 +47,10 @@ harness = false
 name = "perft"
 harness = false
 
+[[bench]]
+name = "bitboard"
+harness = false
+
 [profile.test]
 opt-level = 2
 

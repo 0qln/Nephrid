@@ -135,15 +135,3 @@ fn map_bits(mut bits: usize, mask: Bitboard) -> Bitboard {
         acc | (val << pos)
     })
 }
-
-// todo: remove when iterator is const
-/// Const version of map_bits
-const fn map_bits_c(mut bits: usize, mut mask: Bitboard) -> Bitboard {
-    let mut acc = Bitboard::empty();
-    while let Some(pos) = mask.next() {
-        let val = bits & 1;
-        bits >>= 1;
-        acc.v |= (val << pos.v()) as u64
-    }
-    acc
-}

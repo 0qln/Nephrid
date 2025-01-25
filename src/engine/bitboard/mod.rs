@@ -46,15 +46,16 @@ impl Debug for Bitboard {
 }
 
 impl_op!(+ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v + r.v } });
-impl_op!(-|l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v - r.v } });
+impl_op!(- |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v - r.v } });
+impl_op!(- |l: Bitboard, r: u64| -> Bitboard { Bitboard { v: l.v - r } });
 impl_op!(^ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v ^ r.v } } );
 impl_op!(| |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v | r.v } } );
 impl_op!(| |l: Bitboard, r: usize| -> Bitboard { Bitboard { v: l.v | r as u64 } } );
-impl_op!(&|l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v & r.v } });
+impl_op!(& |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v & r.v } });
 impl_op!(^= |l: &mut Bitboard, r: Bitboard| { l.v ^= r.v } );
 impl_op!(|= |l: &mut Bitboard, r: Bitboard| { l.v |= r.v } );
 impl_op!(&= |l: &mut Bitboard, r: Bitboard| { l.v &= r.v } );
-impl_op!(!|x: Bitboard| -> Bitboard { Bitboard { v: !x.v } });
+impl_op!(! |x: Bitboard| -> Bitboard { Bitboard { v: !x.v } });
 
 impl Iterator for Bitboard {
     type Item = Square;
@@ -74,12 +75,6 @@ impl Bitboard {
     #[inline]
     pub const fn full() -> Self {
         Self { v: !0 }
-    }
-
-    // todo: remove when iterator is const
-    #[inline]
-    pub const fn next(&mut self) -> Option<Square> {
-        self.pop_lsb()
     }
 
     /// Most significant bit or None if the bitboard is empty
@@ -136,10 +131,10 @@ impl Bitboard {
     #[inline]
     pub const fn shift(&self, dir: CompassRose) -> Self {
         match dir.v() >= 0 {
-            true => Bitboard {
+            true => Self {
                 v: self.v << dir.v(),
             },
-            false => Bitboard {
+            false => Self {
                 v: self.v >> -dir.v(),
             },
         }
@@ -148,8 +143,8 @@ impl Bitboard {
     #[inline]
     pub const fn shift_c<const DIR: TCompassRose>(&self) -> Self {
         match DIR >= 0 {
-            true => Bitboard { v: self.v << DIR },
-            false => Bitboard { v: self.v >> -DIR },
+            true => Self { v: self.v << DIR },
+            false => Self { v: self.v >> -DIR },
         }
     }
 
@@ -159,20 +154,20 @@ impl Bitboard {
     }
 
     #[inline]
-    pub const fn and_c(&self, other: Bitboard) -> Self {
-        Bitboard {
+    pub const fn and_c(&self, other: Self) -> Self {
+        Self {
             v: self.v & other.v,
         }
     }
     
-    pub const fn and_not_c(&self, other: Bitboard) -> Self {
-        Bitboard {
+    pub const fn and_not_c(&self, other: Self) -> Self {
+        Self {
             v: self.v & !other.v,
         }
     }
-
+    
     #[inline]
-    pub const fn ray(sq1: Square, sq2: Square) -> Self {
+    const fn rays() -> [[Bitboard; 64]; 64] { 
         static RAYS: [[Bitboard; 64]; 64] = {
             let mut rays = [[Bitboard::empty(); 64]; 64];
             const_for!(sq1 in Square::A1_C..(Square::H8_C+1) => {
@@ -212,37 +207,83 @@ impl Bitboard {
                 });
             });
             rays
-        };
-
-        RAYS[sq1.v() as usize][sq2.v() as usize]
+        }; 
+        RAYS
     }
 
     #[inline]
-    pub const fn between(sq1: Square, sq2: Square) -> Self {
-        let ray = Self::ray(sq1, sq2);
-        let (hi, lo) = if sq1.v() > sq2.v() {
-            (sq1, sq2)
-        } else {
-            (sq2, sq1)
+    pub fn ray(sq1: Square, sq2: Square) -> Self {
+        // Safety: sq1 and sq2 are in range 0..64
+        unsafe {
+            *Self::rays()
+                .get_unchecked(sq1.v() as usize)
+                .get_unchecked(sq2.v() as usize)
+        }
+    }
+    
+    #[inline]
+    pub const fn ray_c(sq1: Square, sq2: Square) -> Self {
+        Self::rays()
+            [sq1.v() as usize]
+            [sq2.v() as usize]
+    }
+
+    #[inline]
+    pub fn between(sq1: Square, sq2: Square) -> Self {
+        static BETWEEN: [[Bitboard; 64]; 64] = {
+            let mut between = [[Bitboard::empty(); 64]; 64];
+            const_for!(sq1 in Square::A1_C..(Square::H8_C+1) => {
+                const_for!(sq2 in Square::A1_C..(Square::H8_C+1) => {
+                    // Safety: we are only iterating over valid squares.
+                    let sq1 = unsafe { Square::from_v(sq1) };
+                    let sq2 = unsafe { Square::from_v(sq2) };
+                    let ray = Bitboard::ray_c(sq1, sq2);
+                    let (hi, lo) = if sq1.v() > sq2.v() {
+                        (sq1, sq2)
+                    } else {
+                        (sq2, sq1)
+                    };
+                    let bb = Bitboard {
+                        v: Bitboard::split_north(lo).v & Bitboard::split_south(hi).v & ray.v,
+                    };
+                    between[sq1.v() as usize][sq2.v() as usize] = bb;
+                });
+            });
+            between
         };
-        Bitboard {
-            v: Bitboard::split_north(lo).v & Bitboard::split_south(hi).v & ray.v,
+        // Safety: sq1 and sq2 are in range 0..64
+        unsafe {
+            *BETWEEN
+            .get_unchecked(sq1.v() as usize)
+            .get_unchecked(sq2.v() as usize)
         }
     }
 
+    #[inline]
     pub fn pop_cnt(&self) -> u32 {
         self.v.count_ones()
     }
     
-    pub const fn edges() -> Bitboard {
-        Bitboard { v: !0x007E7E7E7E7E7E00_u64 }
+    #[inline]
+    pub fn pop_cnt_eq_1(&self) -> bool {
+        !self.is_empty() && !self.pop_cnt_gt_1()
+    }
+    
+    #[inline]
+    pub fn pop_cnt_gt_1(&self) -> bool {
+        let this = self.to_owned();
+        !(this & (this - 1_u64)).is_empty()
+    }
+    
+    pub const fn edges() -> Self {
+        Self { v: !0x007E7E7E7E7E7E00_u64 }
     }
 }
 
 impl const ConstFrom<Square> for Bitboard {
     #[inline]
     fn from_c(sq: Square) -> Self {
-        Bitboard { v: 1u64 << sq.v() }
+        Self { v: 1u64 << sq.v() }
     }
 }
 
@@ -250,8 +291,8 @@ impl const ConstFrom<Option<Square>> for Bitboard {
     #[inline]
     fn from_c(sq: Option<Square>) -> Self {
         match sq {
-            Some(sq) => Bitboard::from_c(sq),
-            None => Bitboard::empty(),
+            Some(sq) => Self::from_c(sq),
+            None => Self::empty(),
         }
     }
 }
@@ -259,7 +300,7 @@ impl const ConstFrom<Option<Square>> for Bitboard {
 impl const ConstFrom<File> for Bitboard {
     #[inline]
     fn from_c(file: File) -> Self {
-        Bitboard {
+        Self {
             v: 0x0101010101010101u64 << file.v(),
         }
     }
@@ -268,7 +309,7 @@ impl const ConstFrom<File> for Bitboard {
 impl const ConstFrom<Rank> for Bitboard {
     #[inline]
     fn from_c(rank: Rank) -> Self {
-        Bitboard {
+        Self {
             v: 0xFFu64 << (rank.v() * 8),
         }
     }
@@ -327,7 +368,7 @@ impl const ConstFrom<DiagA1H8> for Bitboard {
             0x0000000000008040u64,
             0x0000000000000080u64,
         ];
-        Bitboard {
+        Self {
             v: A1H8[diag.v() as usize],
         }
     }
@@ -353,7 +394,7 @@ impl const ConstFrom<DiagA8H1> for Bitboard {
             0x4080000000000000u64,
             0x8000000000000000u64,
         ];
-        Bitboard {
+        Self {
             v: A8H1[diag.v() as usize],
         }
     }
