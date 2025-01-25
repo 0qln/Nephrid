@@ -245,6 +245,6 @@ impl fmt::Debug for Piece {
 
 impl fmt::Display for Piece {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}", Into::<char>::into(*self))
+        write!(f, "{}", Into::<char>::into(*self))
     }
 }
