@@ -43,6 +43,24 @@ pub fn between(c: &mut Criterion) {
     }
 }
 
+pub fn ray(c: &mut Criterion) {
+    let inputs = [
+        Pair(Square::B2, Square::G7),
+        Pair(Square::E1, Square::E8),
+        Pair(Square::G7, Square::B2),
+        Pair(Square::E8, Square::E1),
+        Pair(Square::A8, Square::E1),
+    ];
+
+    for pair in inputs {
+        c.bench_with_input(
+            BenchmarkId::new("bitboard::ray", pair),
+            &pair,
+            |b, &pair| b.iter(|| Bitboard::ray(pair.0, pair.1)),
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Pair<T>(T, T);
 
@@ -55,5 +73,6 @@ impl<T: Display> fmt::Display for Pair<T> {
 criterion_group!(benches, 
     pop_cnt,
     between,
+    ray,
 );
 criterion_main!(benches);

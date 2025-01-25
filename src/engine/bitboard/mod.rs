@@ -165,9 +165,9 @@ impl Bitboard {
             v: self.v & !other.v,
         }
     }
-
+    
     #[inline]
-    pub const fn ray(sq1: Square, sq2: Square) -> Self {
+    const fn rays() -> [[Bitboard; 64]; 64] { 
         static RAYS: [[Bitboard; 64]; 64] = {
             let mut rays = [[Bitboard::empty(); 64]; 64];
             const_for!(sq1 in Square::A1_C..(Square::H8_C+1) => {
@@ -207,9 +207,25 @@ impl Bitboard {
                 });
             });
             rays
-        };
+        }; 
+        RAYS
+    }
 
-        RAYS[sq1.v() as usize][sq2.v() as usize]
+    #[inline]
+    pub fn ray(sq1: Square, sq2: Square) -> Self {
+        // Safety: sq1 and sq2 are in range 0..64
+        unsafe {
+            *Self::rays()
+                .get_unchecked(sq1.v() as usize)
+                .get_unchecked(sq2.v() as usize)
+        }
+    }
+    
+    #[inline]
+    pub const fn ray_c(sq1: Square, sq2: Square) -> Self {
+        Self::rays()
+            [sq1.v() as usize]
+            [sq2.v() as usize]
     }
 
     #[inline]
@@ -221,7 +237,7 @@ impl Bitboard {
                     // Safety: we are only iterating over valid squares.
                     let sq1 = unsafe { Square::from_v(sq1) };
                     let sq2 = unsafe { Square::from_v(sq2) };
-                    let ray = Bitboard::ray(sq1, sq2);
+                    let ray = Bitboard::ray_c(sq1, sq2);
                     let (hi, lo) = if sq1.v() > sq2.v() {
                         (sq1, sq2)
                     } else {
