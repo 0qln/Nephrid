@@ -188,7 +188,15 @@ impl Default for Position {
 impl Position {
     #[inline]
     pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
-        self.c_bitboards[color.v() as usize] & self.t_bitboards[piece_type.v() as usize]
+        // Safety: 
+        // The value ranges are always in range.
+        // It's not possible to safely create an instance of these types, 
+        // without checking that the value is in range.
+        unsafe {
+            let c_bb = *self.c_bitboards.get_unchecked(color.v() as usize);
+            let t_bb = *self.t_bitboards.get_unchecked(piece_type.v() as usize);
+            c_bb & t_bb
+        }
     }
 
     #[inline]
