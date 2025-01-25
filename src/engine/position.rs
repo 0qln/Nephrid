@@ -386,7 +386,6 @@ impl Position {
         self.move_piece(from, to) 
     }
     
-    // todo: maybe this can be sped up by passing in the color of the moving side as a const generic param.
     /// Makes a move on the board.
     pub fn make_move(&mut self, m: Move) {
         let us = self.get_turn();
