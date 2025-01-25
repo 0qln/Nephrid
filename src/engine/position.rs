@@ -348,13 +348,23 @@ impl Position {
     fn remove_piece(&mut self, sq: Square) {
         let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
-        self.t_bitboards[piece.piece_type().v() as usize] ^= target;
-        self.c_bitboards[piece.color().v() as usize] ^= target;
-        self.pieces[sq.v() as usize] = Piece::default();
-        self.piece_counts[piece.v() as usize] -= 1;
+        *self.get_piece_bb_mut(piece.piece_type()) ^= target;
+        *self.get_color_bb_mut(piece.color()) ^= target;
+        *self.get_piece_mut(sq) = Piece::default();
+        *self.get_piece_count_mut(piece) -= 1;
     }  
     
     #[inline]
+    /// # Safety
+    /// This is unsafe, because it allows you to modify the internal
+    /// representation, without updating the state.
+    /// 
+    /// This pub, because it is used for benchmarking.
+    #[inline(never)]
+    pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) { 
+        self.remove_piece(sq) 
+    }
+    
     fn move_piece(&mut self, from: Square, to: Square) {
         assert!(self.get_piece(from) != Piece::default());
         assert!(self.get_piece(to) == Piece::default());
