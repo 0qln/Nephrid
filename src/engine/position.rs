@@ -188,25 +188,47 @@ impl Default for Position {
 impl Position {
     #[inline]
     pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
-        // Safety: 
-        // The value ranges are always in range.
-        // It's not possible to safely create an instance of these types, 
-        // without checking that the value is in range.
-        unsafe {
-            let c_bb = *self.c_bitboards.get_unchecked(color.v() as usize);
-            let t_bb = *self.t_bitboards.get_unchecked(piece_type.v() as usize);
-            c_bb & t_bb
-        }
+        self.get_color_bb(color) & self.get_piece_bb(piece_type)
     }
 
     #[inline]
     pub fn get_color_bb(&self, color: Color) -> Bitboard {
-        self.c_bitboards[color.v() as usize]
+        // Safety:
+        // It's not possible to safely create an instance of Color,
+        // without checking that the value is in range.
+        unsafe {
+            *self.c_bitboards.get_unchecked(color.v() as usize)
+        }
+    }
+    
+    #[inline]
+    fn get_color_bb_mut(&mut self, color: Color) -> &mut Bitboard {
+        // Safety:
+        // It's not possible to safely create an instance of Color,
+        // without checking that the value is in range.
+        unsafe {
+            self.c_bitboards.get_unchecked_mut(color.v() as usize)
+        }
     }
 
     #[inline]
     pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
-        self.t_bitboards[piece_type.v() as usize]
+        // Safety:
+        // It's not possible to safely create an instance of PieceType,
+        // without checking that the value is in range.
+        unsafe {
+            *self.t_bitboards.get_unchecked(piece_type.v() as usize)
+        }
+    }
+    
+    #[inline]
+    fn get_piece_bb_mut(&mut self, piece_type: PieceType) -> &mut Bitboard {
+        // Safety:
+        // It's not possible to safely create an instance of PieceType,
+        // without checking that the value is in range.
+        unsafe {
+            self.t_bitboards.get_unchecked_mut(piece_type.v() as usize)
+        }
     }
     
     #[inline]
@@ -216,7 +238,38 @@ impl Position {
     
     #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece {
-        self.pieces[sq.v() as usize]
+        // Safety: sq is in range 0..64
+        unsafe {
+            *self.pieces.get_unchecked(sq.v() as usize)
+        }
+    }
+    
+    #[inline]
+    fn get_piece_mut(&mut self, sq: Square) -> &mut Piece {
+        // Safety: sq is in range 0..64
+        unsafe {
+            self.pieces.get_unchecked_mut(sq.v() as usize)
+        }
+    }
+    
+    #[inline]
+    pub fn get_piece_count(&self, piece: Piece) -> i8 {
+        // Safety:
+        // It's not possible to safely create an instance of Piece,
+        // without checking that the value is in range.
+        unsafe {
+            *self.piece_counts.get_unchecked(piece.v() as usize)
+        }
+    }
+    
+    #[inline]
+    fn get_piece_count_mut(&mut self, piece: Piece) -> &mut i8 {
+        // Safety:
+        // It's not possible to safely create an instance of Piece,
+        // without checking that the value is in range.
+        unsafe {
+            self.piece_counts.get_unchecked_mut(piece.v() as usize)
+        }
     }
 
     #[inline]
@@ -275,10 +328,10 @@ impl Position {
     #[inline]
     fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
-        self.t_bitboards[piece.piece_type().v() as usize] |= target;
-        self.c_bitboards[piece.color().v() as usize] |= target;
-        self.pieces[sq.v() as usize] = piece;
-        self.piece_counts[piece.v() as usize] += 1;
+        *self.get_piece_bb_mut(piece.piece_type()) |= target;
+        *self.get_color_bb_mut(piece.color()) |= target;
+        *self.get_piece_mut(sq) = piece;
+        *self.get_piece_count_mut(piece) += 1;
     }
     
     /// # Safety
