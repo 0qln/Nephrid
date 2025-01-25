@@ -213,15 +213,33 @@ impl Bitboard {
     }
 
     #[inline]
-    pub const fn between(sq1: Square, sq2: Square) -> Self {
-        let ray = Self::ray(sq1, sq2);
-        let (hi, lo) = if sq1.v() > sq2.v() {
-            (sq1, sq2)
-        } else {
-            (sq2, sq1)
+    pub fn between(sq1: Square, sq2: Square) -> Self {
+        static BETWEEN: [[Bitboard; 64]; 64] = {
+            let mut between = [[Bitboard::empty(); 64]; 64];
+            const_for!(sq1 in Square::A1_C..(Square::H8_C+1) => {
+                const_for!(sq2 in Square::A1_C..(Square::H8_C+1) => {
+                    // Safety: we are only iterating over valid squares.
+                    let sq1 = unsafe { Square::from_v(sq1) };
+                    let sq2 = unsafe { Square::from_v(sq2) };
+                    let ray = Bitboard::ray(sq1, sq2);
+                    let (hi, lo) = if sq1.v() > sq2.v() {
+                        (sq1, sq2)
+                    } else {
+                        (sq2, sq1)
+                    };
+                    let bb = Bitboard {
+                        v: Bitboard::split_north(lo).v & Bitboard::split_south(hi).v & ray.v,
+                    };
+                    between[sq1.v() as usize][sq2.v() as usize] = bb;
+                });
+            });
+            between
         };
-        Bitboard {
-            v: Bitboard::split_north(lo).v & Bitboard::split_south(hi).v & ray.v,
+        // Safety: sq1 and sq2 are in range 0..64
+        unsafe {
+            *BETWEEN
+            .get_unchecked(sq1.v() as usize)
+            .get_unchecked(sq2.v() as usize)
         }
     }
 
