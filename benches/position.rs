@@ -64,6 +64,25 @@ pub fn remove_piece(c: &mut Criterion) {
     }
 }
 
+pub fn move_piece(c: &mut Criterion) {
+    let inputs = [
+        Pair(Square::A1, Square::A2),
+        Pair(Square::E2, Square::E4),
+        Pair(Square::H8, Square::H7),
+    ];
+
+    magics::init(0xdead_beef);
+    let mut pos = Position::start_position();
+
+    for pair in inputs {
+        c.bench_with_input(
+            BenchmarkId::new("position::move_piece", pair),
+            &pair,
+            |b, &pair| b.iter(|| unsafe { pos.move_piece_unsafe(pair.0, pair.1) }),
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Pair<T1, T2>(T1, T2);
 
@@ -77,5 +96,6 @@ criterion_group!(benches,
     get_bitboard,
     put_piece,
     remove_piece,
+    move_piece,
 );
 criterion_main!(benches);

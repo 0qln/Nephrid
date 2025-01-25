@@ -354,7 +354,6 @@ impl Position {
         *self.get_piece_count_mut(piece) -= 1;
     }  
     
-    #[inline]
     /// # Safety
     /// This is unsafe, because it allows you to modify the internal
     /// representation, without updating the state.
@@ -365,15 +364,26 @@ impl Position {
         self.remove_piece(sq) 
     }
     
+    #[inline] 
     fn move_piece(&mut self, from: Square, to: Square) {
-        assert!(self.get_piece(from) != Piece::default());
-        assert!(self.get_piece(to) == Piece::default());
+        debug_assert!(self.get_piece(from) != Piece::default());
+        debug_assert!(self.get_piece(to) == Piece::default());
         let piece = self.get_piece(from);
-        let from_to = Bitboard::from_c(from) ^ Bitboard::from_c(to);
-        self.c_bitboards[piece.color().v() as usize] ^= from_to;
-        self.t_bitboards[piece.piece_type().v() as usize] ^= from_to;
-        self.pieces[from.v() as usize] = Piece::default();
-        self.pieces[to.v() as usize] = piece;
+        let from_to = Bitboard::from_c(from) | Bitboard::from_c(to);
+        *self.get_color_bb_mut(piece.color()) ^= from_to;
+        *self.get_piece_bb_mut(piece.piece_type()) ^= from_to;
+        *self.get_piece_mut(from) = Piece::default();
+        *self.get_piece_mut(to) = piece;
+    }
+    
+    /// # Safety
+    /// This is unsafe, because it allows you to modify the internal
+    /// representation, without updating the state.
+    /// 
+    /// This pub, because it is used for benchmarking.
+    #[inline(never)]
+    pub unsafe fn move_piece_unsafe(&mut self, from: Square, to: Square) { 
+        self.move_piece(from, to) 
     }
     
     // todo: maybe this can be sped up by passing in the color of the moving side as a const generic param.
