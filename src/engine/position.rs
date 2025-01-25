@@ -281,6 +281,16 @@ impl Position {
         self.piece_counts[piece.v() as usize] += 1;
     }
     
+    /// # Safety
+    /// This is unsafe, because it allows you to modify the internal
+    /// representation, without updating the state.
+    /// 
+    /// This pub, because it is used for benchmarking.
+    #[inline(never)]
+    pub unsafe fn put_piece_unsafe(&mut self, sq: Square, piece: Piece) { 
+        self.put_piece(sq, piece) 
+    }
+    
     #[inline]
     fn remove_piece(&mut self, sq: Square) {
         let target = Bitboard::from_c(sq);
