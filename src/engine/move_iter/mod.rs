@@ -11,7 +11,6 @@ use super::position::{CheckState, Position};
 use super::r#move::{Move, MoveFlag};
 
 pub mod bishop;
-pub mod jumping_piece;
 pub mod king;
 pub mod knight;
 pub mod pawn;
@@ -64,7 +63,7 @@ where
     init = sliding_piece::fold_legals_check_single::<_, _, _, Queen>(pos, init, &mut f)?;
     init = king::fold_legals_check_some(pos, init, &mut f)?;
     init = pawn::fold_legals_check_single(pos, init, &mut f)?;
-    jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::lookup_attacks).try_fold(init, &mut f)
+    knight::fold_legals_check_single(pos, init, &mut f)
 }
 
 #[inline]
