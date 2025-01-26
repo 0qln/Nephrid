@@ -16,7 +16,6 @@ use const_for::const_for;
 use super::bishop::Bishop;
 use super::rook::Rook;
 use super::sliding_piece::Attacks;
-use super::{bishop, rook};
 
 pub struct PawnMovesInfo<'a> {
     pos: &'a Position,

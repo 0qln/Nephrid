@@ -3,14 +3,13 @@ use std::ops::Try;
 use crate::{
     engine::{
         bitboard::Bitboard,
-        castling::{CastlingRights, CastlingSide},
-        color::Color,
+        castling::CastlingSide,
         coordinates::{File, Rank, Square},
         piece::PieceType,
         position::Position,
         r#move::{Move, MoveFlag},
     },
-    misc::{ConstFrom, PostIncrement},
+    misc::ConstFrom,
 };
 
 use const_for::const_for;
