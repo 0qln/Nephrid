@@ -1,4 +1,4 @@
-use std::ops::Try;
+use std::ops::{ControlFlow, Try};
 
 use crate::{
     engine::{
@@ -55,7 +55,41 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>, 
 {
-    gen_legals_check_some(pos).try_fold(init, &mut f)
+    let color = pos.get_turn();
+    let king_bb = pos.get_bitboard(PieceType::KING, color);
+    let occupancy = pos.get_occupancy();
+    let occupancy_after_king_move = occupancy ^ king_bb;
+    let rooks = pos.get_bitboard(PieceType::ROOK, !color);
+    let bishops = pos.get_bitboard(PieceType::BISHOP, !color);
+    let queens = pos.get_bitboard(PieceType::QUEEN, !color);
+    let rooks_queens = rooks | queens;
+    let bishops_queens = bishops | queens;
+
+    fold_legals_check_none(pos, init, |acc, m| {
+        // Make sure that we move the king out of check
+        let is_legal = {
+            let to_sq = m.get_to();
+
+            // When the king has moved and a sliding piece was a checker, the attacks of
+            // that sliding piece will have changed.
+            // Note that, in no case does a king move cause an enemy attack to get covered
+            // without the king being in check after he moved, which is why we can just
+            // append the new attacks of the sliding piece to the existing attacks.
+            // The new 'nstm_attacks' are not really nstm_attacks, but only reflect nstm_attacks
+            // which are relevant to checking whether the our king is in check.
+        
+            // If the to square covers anything, it doesn't matter, because the king will be in check.
+            // (=> we don't need to add the to square to occupancy)
+            let rook_attacks = Rook::lookup_attacks(to_sq, occupancy_after_king_move);
+            let bishop_attacks = Bishop::lookup_attacks(to_sq, occupancy_after_king_move);
+            let q_or_r_check = !rook_attacks.and_c(rooks_queens).is_empty();
+            let q_or_b_check = !bishop_attacks.and_c(bishops_queens).is_empty();
+            let new_check = q_or_r_check || q_or_b_check;
+            !new_check
+        };
+        
+        if is_legal { f(acc, m) } else { try { acc } }
+    })
 }
 
 pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> {
