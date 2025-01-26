@@ -440,7 +440,8 @@ impl Position {
             next_state.captured_piece = captured_piece;
             next_state.key.toggle_piece_sq(captured_sq, captured_piece);
             next_state.plys50 = Ply { v: 0 };
-            update_castling(captured_sq, !us, &mut next_state.castling);
+
+            remove_castling(captured_sq, !us, &mut next_state.castling);
         }
         
         // move the piece
@@ -473,7 +474,7 @@ impl Position {
                 }
             }
             PieceType::ROOK => {
-                update_castling(from, us, &mut next_state.castling);
+                remove_castling(from, us, &mut next_state.castling);
             }
             // pawns
             PieceType::PAWN => {
@@ -512,7 +513,7 @@ impl Position {
         self.state.incr();
 
         #[inline(always)]
-        fn update_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
+        fn remove_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
             let color_case = Square::A8_C * c.v();
             if sq.v() == (Square::A1_C | color_case) { 
                 cr.set_false(CastlingSide::QUEEN_SIDE, c) 

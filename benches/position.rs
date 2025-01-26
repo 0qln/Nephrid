@@ -3,7 +3,7 @@ use std::{fmt::Display, ops::ControlFlow};
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
-use nephrid::{engine::{color::Color, coordinates::Square, fen::Fen, move_iter::{fold_legal_move, foreach_legal_move, sliding_piece::magics}, piece::{Piece, PieceType}, position::Position}, misc::ConstFrom};
+use nephrid::{engine::{color::Color, coordinates::Square, fen::Fen, move_iter::{fold_legal_move, sliding_piece::magics}, piece::{Piece, PieceType}, position::Position}, misc::ConstFrom};
 
 pub fn get_bitboard(c: &mut Criterion) {
     let inputs = [
