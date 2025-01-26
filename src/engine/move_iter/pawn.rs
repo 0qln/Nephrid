@@ -529,36 +529,6 @@ impl<T: Legal> Iterator for PawnMoves<T> {
     }
 }
 
-type Contructor<P, T> = fn(&PawnMovesInfo, T) -> P;
-
-#[inline]
-fn get_moves<const C: TColor, P, T>() -> [Contructor<P, T>; 18]
-where
-    P: IPawnMoves<T>,
-{
-    // todo: tune the ordering
-    [
-        P::single_step::<C>,
-        P::double_step::<C>,
-        P::promo_knight::<C>,
-        P::promo_bishop::<C>,
-        P::promo_rook::<C>,
-        P::promo_queen::<C>,
-        P::capture::<C, { CompassRose::WEST_C }>,
-        P::capture::<C, { CompassRose::EAST_C }>,
-        P::ep::<C, { CompassRose::WEST_C }>,
-        P::ep::<C, { CompassRose::EAST_C }>,
-        P::promo_capture_knight::<C, { CompassRose::WEST_C }>,
-        P::promo_capture_knight::<C, { CompassRose::EAST_C }>,
-        P::promo_capture_bishop::<C, { CompassRose::WEST_C }>,
-        P::promo_capture_bishop::<C, { CompassRose::EAST_C }>,
-        P::promo_capture_rook::<C, { CompassRose::WEST_C }>,
-        P::promo_capture_rook::<C, { CompassRose::EAST_C }>,
-        P::promo_capture_queen::<C, { CompassRose::WEST_C }>,
-        P::promo_capture_queen::<C, { CompassRose::EAST_C }>,
-    ]
-}
-
 #[inline]
 fn fold_moves<const C: TColor, P, T, B, F, R>(info: PawnMovesInfo, legal: T, init: B, mut f: F) -> R
 where
@@ -574,11 +544,12 @@ where
                 $(
                     acc = $constructor(&info, legal).try_fold(acc, &mut f)?;
                 )+
-                Try::from_output(acc)
+                try { acc }
             }
         };
     }
 
+    // todo: tune the ordering
     apply!(
         init,
         P::single_step::<C>,
@@ -642,7 +613,7 @@ where
     }
 }
 
-pub const fn compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
+const fn compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
     Color::assert_variant(C); // Safety
     let color = unsafe { Color::from_v(C) };
     Bitboard {
