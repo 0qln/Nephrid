@@ -274,6 +274,7 @@ pub struct Rank {
 pub type TRank = u8;
 
 impl_op!(*|a: u8, b: Rank| -> Rank { Rank { v: a * b.v } });
+impl_op!(*|a: Color, b: Rank| -> Rank { Rank { v: a.v() * b.v } });
 
 impl_variants! {
     TRank as Rank {

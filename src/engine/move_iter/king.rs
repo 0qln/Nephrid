@@ -97,7 +97,8 @@ where
     R: Try<Output = B>,
 {
     let color = pos.get_turn();
-    let rank = unsafe { Rank::from_v(color.v() * Rank::_8_C) };
+    let color_v = color.v() as usize;
+    let rank = color * Rank::_8;
     let from = Square::from_c((File::E, rank));
     let castling = pos.get_castling();
     let nstm_attacks = pos.get_nstm_attacks();
@@ -105,9 +106,11 @@ where
     if castling.is_true(CastlingSide::KING_SIDE, color) {
         const TABU_MASK: [Bitboard; 2] = [Bitboard { v: 0x60_u64 }, Bitboard { v: 0x60_u64 << 56 }];
         let tabus = nstm_attacks | pos.get_occupancy();
-        let tabu_mask = unsafe { TABU_MASK.get_unchecked(color.v() as usize) };
+        // Safety: Color is in range [0..2]
+        let tabu_mask = unsafe { TABU_MASK.get_unchecked(color_v) };
         if (tabus & *tabu_mask).is_empty() {
-            let to = Square::from_c((File::G, rank));
+            // Safety: [e1|e8] + 2 < 63
+            let to = unsafe { Square::from_v(from.v() + 2) };
             init = f(init, Move::new(from, to, MoveFlag::KING_CASTLE))?;
         }
     }
@@ -115,13 +118,15 @@ where
     if castling.is_true(CastlingSide::QUEEN_SIDE, color) {
         const BLOCK_MASK: [Bitboard; 2] = [Bitboard { v: 0xE_u64 }, Bitboard { v: 0xE_u64 << 56 }];
         const CHECK_MASK: [Bitboard; 2] = [Bitboard { v: 0xC_u64 }, Bitboard { v: 0xC_u64 << 56 }];
-        let block_mask = unsafe { *BLOCK_MASK.get_unchecked(color.v() as usize) };
-        let check_mask = unsafe { *CHECK_MASK.get_unchecked(color.v() as usize) };
+        // Safety: Color is in range [0..2]
+        let block_mask = unsafe { BLOCK_MASK.get_unchecked(color_v) };
+        let check_mask = unsafe { CHECK_MASK.get_unchecked(color_v) };
         let blockers = pos.get_occupancy();
-        let blocked = block_mask & blockers;
-        let checked = check_mask & nstm_attacks;
+        let blocked = *block_mask & blockers;
+        let checked = *check_mask & nstm_attacks;
         if (blocked | checked).is_empty() {
-            let to = Square::from_c((File::C, rank));
+            // Safety: [e1|e8] - 2 > 0
+            let to = unsafe { Square::from_v(from.v() - 2) };
             return f(init, Move::new(from, to, MoveFlag::QUEEN_CASTLE));
         }
     }
