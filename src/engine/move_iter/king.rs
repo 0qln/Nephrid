@@ -1,12 +1,8 @@
+use std::ops::Try;
+
 use crate::{
     engine::{
-        bitboard::Bitboard,
-        castling::{CastlingRights, CastlingSide},
-        color::Color,
-        coordinates::{File, Rank, Square},
-        piece::PieceType,
-        position::Position,
-        r#move::{Move, MoveFlag},
+        bitboard::Bitboard, castling::{CastlingRights, CastlingSide}, color::Color, coordinates::{File, Rank, Square}, r#move::{Move, MoveFlag}, piece::{IPieceType, PieceType}, position::Position
     },
     misc::{ConstFrom, PostIncrement},
 };
@@ -74,6 +70,38 @@ pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> {
     };
 
     captures.chain(quiets)
+}
+
+pub fn fold_legals_check_none<B, F, R>(
+    pos: &Position,
+    init: B,
+    mut f: F,
+) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    let color = pos.get_turn();
+    let nstm_attacks = pos.get_nstm_attacks();
+    let occupancy = pos.get_occupancy();
+    let enemies = pos.get_color_bb(!color);
+    let king_bb = pos.get_bitboard(PieceType::KING, color);
+    let king = king_bb.lsb().unwrap();
+    let attacks = lookup_attacks(king);
+    let targets = attacks & !nstm_attacks;
+
+    let mut quiets = {
+        let targets = targets & !occupancy;
+        targets.map(move |target| Move::new(king, target, MoveFlag::QUIET))
+    };
+
+    let mut captures = {
+        let targets = targets & enemies;
+        targets.map(move |target| Move::new(king, target, MoveFlag::CAPTURE))
+    };
+
+    let acc = quiets.try_fold(init, &mut f)?;
+    captures.try_fold(acc, &mut f)
 }
 
 pub fn gen_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = Move> + '_ {

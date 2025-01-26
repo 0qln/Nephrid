@@ -36,7 +36,7 @@ name = "queen_attacks"
 harness = false
 
 [[bench]]
-name = "king_attacks"
+name = "king"
 harness = false
 
 [[bench]]
