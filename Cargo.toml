@@ -44,6 +44,10 @@ name = "knight"
 harness = false
 
 [[bench]]
+name = "pawn"
+harness = false
+
+[[bench]]
 name = "perft"
 harness = false
 

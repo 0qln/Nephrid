@@ -560,12 +560,7 @@ where
 }
 
 #[inline]
-fn fold_moves<const C: TColor, P, T, B, F, R>(
-    info: PawnMovesInfo,
-    legal: T,
-    init: B,
-    mut f: F,
-) -> R
+fn fold_moves<const C: TColor, P, T, B, F, R>(info: PawnMovesInfo, legal: T, init: B, mut f: F) -> R
 where
     T: Copy,
     F: FnMut(B, Move) -> R,
@@ -607,38 +602,8 @@ where
     )
 }
 
-pub fn gen_pseudo_legals(pos: &Position) -> impl Iterator<Item = Move> + '_ {
-    let plegal = IgnoreCheck {};
-    let color = pos.get_turn();
-    let info = PawnMovesInfo::new(pos);
-    let moves = match color {
-        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<IgnoreCheck>, _>(),
-        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<IgnoreCheck>, _>(),
-        _ => unreachable!(),
-    };
-
-    moves.into_iter().flat_map(move |f| f(&info, plegal))
-}
-
-pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> + '_ {
-    let legal = NoCheck::new(pos);
-    let color = pos.get_turn();
-    let info = PawnMovesInfo::new(pos);
-    let moves = match color {
-        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<NoCheck>, _>(),
-        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<NoCheck>, _>(),
-        _ => unreachable!(),
-    };
-
-    moves.into_iter().flat_map(move |f| f(&info, legal))
-}
-
 #[inline]
-pub fn fold_legals_check_none<B, F, R>(
-    pos: &Position,
-    init: B,
-    f: F,
-) -> R
+pub fn fold_legals_check_none<B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
@@ -657,25 +622,8 @@ where
     }
 }
 
-pub fn gen_legals_check_single(pos: &Position) -> impl Iterator<Item = Move> + '_ {
-    let color = pos.get_turn();
-    let resolve = SingleCheck::new(pos, color);
-    let info = PawnMovesInfo::new(pos);
-    let moves = match color {
-        Color::WHITE => get_moves::<{ Color::WHITE_C }, PawnMoves<SingleCheck>, _>(),
-        Color::BLACK => get_moves::<{ Color::BLACK_C }, PawnMoves<SingleCheck>, _>(),
-        _ => unreachable!(),
-    };
-
-    moves.into_iter().flat_map(move |f| f(&info, resolve))
-}
-
 #[inline]
-pub fn fold_legals_check_single<B, F, R>(
-    pos: &Position,
-    init: B,
-    f: F,
-) -> R
+pub fn fold_legals_check_single<B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
@@ -684,17 +632,17 @@ where
     let resolve = SingleCheck::new(pos, color);
     let info = PawnMovesInfo::new(pos);
     match color {
-        Color::WHITE => {
-            fold_moves::<{ Color::WHITE_C }, PawnMoves<SingleCheck>, _, _, _, _>(info, resolve, init, f)
-        }
-        Color::BLACK => {
-            fold_moves::<{ Color::BLACK_C }, PawnMoves<SingleCheck>, _, _, _, _>(info, resolve, init, f)
-        }
+        Color::WHITE => fold_moves::<{ Color::WHITE_C }, PawnMoves<SingleCheck>, _, _, _, _>(
+            info, resolve, init, f,
+        ),
+        Color::BLACK => fold_moves::<{ Color::BLACK_C }, PawnMoves<SingleCheck>, _, _, _, _>(
+            info, resolve, init, f,
+        ),
         _ => unreachable!(),
     }
 }
 
-pub const fn generic_compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
+pub const fn compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
     Color::assert_variant(C); // Safety
     let color = unsafe { Color::from_v(C) };
     Bitboard {
@@ -710,44 +658,30 @@ pub const fn generic_compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboa
     }
 }
 
-pub const fn compute_attacks(pawns: Bitboard, color: Color) -> Bitboard {
-    match color {
-        Color::WHITE => generic_compute_attacks::<{ Color::WHITE_C }>(pawns),
-        Color::BLACK => generic_compute_attacks::<{ Color::BLACK_C }>(pawns),
-        _ => unreachable!(),
-    }
-}
-
-pub const fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
-    match color {
-        Color::WHITE => lookup_attacks_white(sq),
-        Color::BLACK => lookup_attacks_black(sq),
-        _ => unreachable!(),
-    }
-}
-
-pub const fn lookup_attacks_white(sq: Square) -> Bitboard {
-    const ATTACKS: [Bitboard; 64] = {
+pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
+    const ATTACKS_W: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
-            result[sq.v() as usize] = generic_compute_attacks::<{ Color::WHITE_C }>(pawn);
+            result[sq.v() as usize] = compute_attacks::<{ Color::WHITE_C }>(pawn);
         });
         result
     };
-    ATTACKS[sq.v() as usize]
-}
-
-pub const fn lookup_attacks_black(sq: Square) -> Bitboard {
-    const ATTACKS: [Bitboard; 64] = {
+    const ATTACKS_B: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
-            result[sq.v() as usize] = generic_compute_attacks::<{ Color::BLACK_C }>(pawn);
+            result[sq.v() as usize] = compute_attacks::<{ Color::BLACK_C }>(pawn);
         });
         result
     };
-    ATTACKS[sq.v() as usize]
+    const ATTACKS: [[Bitboard; 64]; 2] = [ATTACKS_W, ATTACKS_B];
+    unsafe {
+        // Safety: sq is in range 0..64 and color is in range 0..2
+        *ATTACKS
+            .get_unchecked(color.v() as usize)
+            .get_unchecked(sq.v() as usize)
+    }
 }
