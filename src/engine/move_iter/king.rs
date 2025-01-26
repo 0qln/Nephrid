@@ -91,146 +91,42 @@ where
     captures.try_fold(acc, &mut f)
 }
 
-pub fn gen_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = Move> + '_ {
-    let rank = match color {
-        Color::WHITE => Rank::_1,
-        Color::BLACK => Rank::_8,
-        _ => unreachable!(),
-    };
-    let from = Square::from_c((File::E, rank));
-    return Gen {
-        state: 0,
-        pos,
-        from,
-        rank,
-        color,
-    };
-
-    // probably has a simpler solution, but this is just temporary.
-    struct Gen<'a> {
-        state: u8,
-        pos: &'a Position,
-        from: Square,
-        rank: Rank,
-        color: Color,
-    }
-    impl Iterator for Gen<'_> {
-        type Item = Move;
-
-        fn next(&mut self) -> Option<Self::Item> {
-            let castling = self.pos.get_castling();
-            match self.state.post_incr(1) {
-                0 => match castling.is_true(CastlingSide::KING_SIDE, self.color) {
-                    false => self.next(),
-                    true => {
-                        const TABU_MASK: [Bitboard; 2] = [
-                            Bitboard { v: 0x60_u64 },
-                            Bitboard {
-                                v: 0x6000000000000000_u64,
-                            },
-                        ];
-                        let nstm_attacks = self.pos.get_nstm_attacks();
-                        let tabus = nstm_attacks | self.pos.get_occupancy();
-                        if !(tabus & TABU_MASK[self.color.v() as usize]).is_empty() {
-                            return self.next();
-                        }
-                        let to = Square::from_c((File::G, self.rank));
-                        Some(Move::new(self.from, to, MoveFlag::KING_CASTLE))
-                    }
-                },
-                1 => match castling.is_true(CastlingSide::QUEEN_SIDE, self.color) {
-                    false => self.next(),
-                    true => {
-                        const BLOCK_MASK: [Bitboard; 2] = [
-                            Bitboard { v: 0xE_u64 },
-                            Bitboard {
-                                v: 0xE00000000000000_u64,
-                            },
-                        ];
-                        const CHECK_MASK: [Bitboard; 2] = [
-                            Bitboard { v: 0xC_u64 },
-                            Bitboard {
-                                v: 0xC00000000000000_u64,
-                            },
-                        ];
-                        let to = Square::from_c((File::C, self.rank));
-                        let nstm_attacks = self.pos.get_nstm_attacks();
-                        let blockers = self.pos.get_occupancy();
-                        let blocked = BLOCK_MASK[self.color.v() as usize] & blockers;
-                        let checked = CHECK_MASK[self.color.v() as usize] & nstm_attacks;
-                        if !(blocked | checked).is_empty() {
-                            return self.next();
-                        }
-                        Some(Move::new(self.from, to, MoveFlag::QUEEN_CASTLE))
-                    }
-                },
-                _ => None,
-            }
-        }
-    }
-}
-
-pub fn gen_pseudo_legal_castling(pos: &Position, color: Color) -> impl Iterator<Item = Move> {
-    let rank = match color {
-        Color::WHITE => Rank::_1,
-        Color::BLACK => Rank::_8,
-        _ => unreachable!(),
-    };
+pub fn fold_legal_castling<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    let color = pos.get_turn();
+    let rank = unsafe { Rank::from_v(color.v() * Rank::_8_C) };
     let from = Square::from_c((File::E, rank));
     let castling = pos.get_castling();
-    return Gen {
-        state: 0,
-        castling,
-        from,
-        rank,
-        color,
-    };
+    let nstm_attacks = pos.get_nstm_attacks();
 
-    // probably has a simpler solution, but this is just temporary.
-    struct Gen {
-        state: u8,
-        castling: CastlingRights,
-        from: Square,
-        rank: Rank,
-        color: Color,
-    }
-    impl Iterator for Gen {
-        type Item = Move;
-
-        #[inline]
-        fn next(&mut self) -> Option<Self::Item> {
-            match self.state.post_incr(1) {
-                0 => match self.castling.is_true(CastlingSide::KING_SIDE, self.color) {
-                    true => {
-                        let to = Square::from_c((File::G, self.rank));
-                        Some(Move::new(self.from, to, MoveFlag::KING_CASTLE))
-                    }
-                    false => self.next(),
-                },
-                1 => match self.castling.is_true(CastlingSide::QUEEN_SIDE, self.color) {
-                    true => {
-                        let to = Square::from_c((File::C, self.rank));
-                        Some(Move::new(self.from, to, MoveFlag::QUEEN_CASTLE))
-                    }
-                    false => self.next(),
-                },
-                _ => None,
-            }
+    if castling.is_true(CastlingSide::KING_SIDE, color) {
+        const TABU_MASK: [Bitboard; 2] = [Bitboard { v: 0x60_u64 }, Bitboard { v: 0x60_u64 << 56 }];
+        let tabus = nstm_attacks | pos.get_occupancy();
+        let tabu_mask = unsafe { TABU_MASK.get_unchecked(color.v() as usize) };
+        if (tabus & *tabu_mask).is_empty() {
+            let to = Square::from_c((File::G, rank));
+            init = f(init, Move::new(from, to, MoveFlag::KING_CASTLE))?;
         }
     }
 
-    // todo: uncomment when gen_blocks feature works again.
-    //
-    // gen {
-    //     if castling.is_true(CastlingSide::KING_SIDE, color) {
-    //         let to = Square::from_c((File::G, rank));
-    //         yield Move::new(from, to, MoveFlag::KING_CASTLE);
-    //     }
-    //     if castling.is_true(CastlingSide::QUEEN_SIDE, color) {
-    //         let to = Square::from_c((File::C, rank));
-    //         yield Move::new(from, to, MoveFlag::QUEEN_CASTLE);
-    //     }
-    // }.into_iter()
+    if castling.is_true(CastlingSide::QUEEN_SIDE, color) {
+        const BLOCK_MASK: [Bitboard; 2] = [Bitboard { v: 0xE_u64 }, Bitboard { v: 0xE_u64 << 56 }];
+        const CHECK_MASK: [Bitboard; 2] = [Bitboard { v: 0xC_u64 }, Bitboard { v: 0xC_u64 << 56 }];
+        let block_mask = unsafe { *BLOCK_MASK.get_unchecked(color.v() as usize) };
+        let check_mask = unsafe { *CHECK_MASK.get_unchecked(color.v() as usize) };
+        let blockers = pos.get_occupancy();
+        let blocked = block_mask & blockers;
+        let checked = check_mask & nstm_attacks;
+        if (blocked | checked).is_empty() {
+            let to = Square::from_c((File::C, rank));
+            return f(init, Move::new(from, to, MoveFlag::QUEEN_CASTLE));
+        }
+    }
+
+    try { init }
 }
 
 pub fn lookup_attacks(sq: Square) -> Bitboard {

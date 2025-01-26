@@ -50,7 +50,7 @@ where
     init = pawn::fold_legals_check_none(pos, init, &mut f)?;
     init = jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::lookup_attacks).try_fold(init, &mut f)?;
     init = king::fold_legals_check_none(pos, init, &mut f)?;
-    king::gen_legal_castling(pos, pos.get_turn()).try_fold(init, f)
+    king::fold_legal_castling(pos, init, f)
 }
 
 #[inline]
