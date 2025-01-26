@@ -6,7 +6,6 @@ use rook::Rook;
 
 use super::bitboard::Bitboard;
 use super::coordinates::Square;
-use super::piece::JumpingPieceType;
 use super::position::{CheckState, Position};
 use super::r#move::{Move, MoveFlag};
 

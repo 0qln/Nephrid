@@ -152,26 +152,6 @@ impl From<SlidingPieceType> for PieceType {
 }
 
 
-#[derive(Copy, Clone, Default, Debug, PartialEq)]
-pub struct JumpingPieceType {
-    v: TPieceType
-}
-
-impl_variants! {
-    TPieceType as JumpingPieceType {
-        KNIGHT = PieceType::KNIGHT_C,
-        KING = PieceType::KING_C,
-    }
-}
-    
-impl From<JumpingPieceType> for PieceType {
-    #[inline]
-    fn from(val: JumpingPieceType) -> Self {
-        PieceType { v: val.v }
-    }
-}
-
-
 pub type TPiece = u8;
       
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
