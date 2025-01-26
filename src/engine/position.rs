@@ -188,17 +188,47 @@ impl Default for Position {
 impl Position {
     #[inline]
     pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
-        self.c_bitboards[color.v() as usize] & self.t_bitboards[piece_type.v() as usize]
+        self.get_color_bb(color) & self.get_piece_bb(piece_type)
     }
 
     #[inline]
     pub fn get_color_bb(&self, color: Color) -> Bitboard {
-        self.c_bitboards[color.v() as usize]
+        // Safety:
+        // It's not possible to safely create an instance of Color,
+        // without checking that the value is in range.
+        unsafe {
+            *self.c_bitboards.get_unchecked(color.v() as usize)
+        }
+    }
+    
+    #[inline]
+    fn get_color_bb_mut(&mut self, color: Color) -> &mut Bitboard {
+        // Safety:
+        // It's not possible to safely create an instance of Color,
+        // without checking that the value is in range.
+        unsafe {
+            self.c_bitboards.get_unchecked_mut(color.v() as usize)
+        }
     }
 
     #[inline]
     pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
-        self.t_bitboards[piece_type.v() as usize]
+        // Safety:
+        // It's not possible to safely create an instance of PieceType,
+        // without checking that the value is in range.
+        unsafe {
+            *self.t_bitboards.get_unchecked(piece_type.v() as usize)
+        }
+    }
+    
+    #[inline]
+    fn get_piece_bb_mut(&mut self, piece_type: PieceType) -> &mut Bitboard {
+        // Safety:
+        // It's not possible to safely create an instance of PieceType,
+        // without checking that the value is in range.
+        unsafe {
+            self.t_bitboards.get_unchecked_mut(piece_type.v() as usize)
+        }
     }
     
     #[inline]
@@ -208,7 +238,38 @@ impl Position {
     
     #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece {
-        self.pieces[sq.v() as usize]
+        // Safety: sq is in range 0..64
+        unsafe {
+            *self.pieces.get_unchecked(sq.v() as usize)
+        }
+    }
+    
+    #[inline]
+    fn get_piece_mut(&mut self, sq: Square) -> &mut Piece {
+        // Safety: sq is in range 0..64
+        unsafe {
+            self.pieces.get_unchecked_mut(sq.v() as usize)
+        }
+    }
+    
+    #[inline]
+    pub fn get_piece_count(&self, piece: Piece) -> i8 {
+        // Safety:
+        // It's not possible to safely create an instance of Piece,
+        // without checking that the value is in range.
+        unsafe {
+            *self.piece_counts.get_unchecked(piece.v() as usize)
+        }
+    }
+    
+    #[inline]
+    fn get_piece_count_mut(&mut self, piece: Piece) -> &mut i8 {
+        // Safety:
+        // It's not possible to safely create an instance of Piece,
+        // without checking that the value is in range.
+        unsafe {
+            self.piece_counts.get_unchecked_mut(piece.v() as usize)
+        }
     }
 
     #[inline]
@@ -267,35 +328,64 @@ impl Position {
     #[inline]
     fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
-        self.t_bitboards[piece.piece_type().v() as usize] |= target;
-        self.c_bitboards[piece.color().v() as usize] |= target;
-        self.pieces[sq.v() as usize] = piece;
-        self.piece_counts[piece.v() as usize] += 1;
+        *self.get_piece_bb_mut(piece.piece_type()) |= target;
+        *self.get_color_bb_mut(piece.color()) |= target;
+        *self.get_piece_mut(sq) = piece;
+        *self.get_piece_count_mut(piece) += 1;
+    }
+    
+    /// # Safety
+    /// This is unsafe, because it allows you to modify the internal
+    /// representation, without updating the state.
+    /// 
+    /// This pub, because it is used for benchmarking.
+    #[inline(never)]
+    pub unsafe fn put_piece_unsafe(&mut self, sq: Square, piece: Piece) { 
+        self.put_piece(sq, piece) 
     }
     
     #[inline]
     fn remove_piece(&mut self, sq: Square) {
         let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
-        self.t_bitboards[piece.piece_type().v() as usize] ^= target;
-        self.c_bitboards[piece.color().v() as usize] ^= target;
-        self.pieces[sq.v() as usize] = Piece::default();
-        self.piece_counts[piece.v() as usize] -= 1;
+        *self.get_piece_bb_mut(piece.piece_type()) ^= target;
+        *self.get_color_bb_mut(piece.color()) ^= target;
+        *self.get_piece_mut(sq) = Piece::default();
+        *self.get_piece_count_mut(piece) -= 1;
     }  
     
-    #[inline]
-    fn move_piece(&mut self, from: Square, to: Square) {
-        assert!(self.get_piece(from) != Piece::default());
-        assert!(self.get_piece(to) == Piece::default());
-        let piece = self.get_piece(from);
-        let from_to = Bitboard::from_c(from) ^ Bitboard::from_c(to);
-        self.c_bitboards[piece.color().v() as usize] ^= from_to;
-        self.t_bitboards[piece.piece_type().v() as usize] ^= from_to;
-        self.pieces[from.v() as usize] = Piece::default();
-        self.pieces[to.v() as usize] = piece;
+    /// # Safety
+    /// This is unsafe, because it allows you to modify the internal
+    /// representation, without updating the state.
+    /// 
+    /// This pub, because it is used for benchmarking.
+    #[inline(never)]
+    pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) { 
+        self.remove_piece(sq) 
     }
     
-    // todo: maybe this can be sped up by passing in the color of the moving side as a const generic param.
+    #[inline] 
+    fn move_piece(&mut self, from: Square, to: Square) {
+        debug_assert!(self.get_piece(from) != Piece::default());
+        debug_assert!(self.get_piece(to) == Piece::default());
+        let piece = self.get_piece(from);
+        let from_to = Bitboard::from_c(from) | Bitboard::from_c(to);
+        *self.get_color_bb_mut(piece.color()) ^= from_to;
+        *self.get_piece_bb_mut(piece.piece_type()) ^= from_to;
+        *self.get_piece_mut(from) = Piece::default();
+        *self.get_piece_mut(to) = piece;
+    }
+    
+    /// # Safety
+    /// This is unsafe, because it allows you to modify the internal
+    /// representation, without updating the state.
+    /// 
+    /// This pub, because it is used for benchmarking.
+    #[inline(never)]
+    pub unsafe fn move_piece_unsafe(&mut self, from: Square, to: Square) { 
+        self.move_piece(from, to) 
+    }
+    
     /// Makes a move on the board.
     pub fn make_move(&mut self, m: Move) {
         let us = self.get_turn();
@@ -350,7 +440,8 @@ impl Position {
             next_state.captured_piece = captured_piece;
             next_state.key.toggle_piece_sq(captured_sq, captured_piece);
             next_state.plys50 = Ply { v: 0 };
-            update_castling(captured_sq, !us, &mut next_state.castling);
+
+            remove_castling(captured_sq, !us, &mut next_state.castling);
         }
         
         // move the piece
@@ -383,7 +474,7 @@ impl Position {
                 }
             }
             PieceType::ROOK => {
-                update_castling(from, us, &mut next_state.castling);
+                remove_castling(from, us, &mut next_state.castling);
             }
             // pawns
             PieceType::PAWN => {
@@ -422,19 +513,13 @@ impl Position {
         self.state.incr();
 
         #[inline(always)]
-        const fn update_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
-            match c {
-                Color::WHITE => match sq {
-                    Square::A1 => cr.set_false(CastlingSide::QUEEN_SIDE, Color::WHITE),
-                    Square::H1 => cr.set_false(CastlingSide::KING_SIDE, Color::WHITE),
-                    _ => ()
-                },
-                Color::BLACK => match sq {
-                    Square::A8 => cr.set_false(CastlingSide::QUEEN_SIDE, Color::BLACK),
-                    Square::H8 => cr.set_false(CastlingSide::KING_SIDE, Color::BLACK),
-                    _ => ()
-                }
-                _ => ()
+        fn remove_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
+            let color_case = Square::A8_C * c.v();
+            if sq.v() == (Square::A1_C | color_case) { 
+                cr.set_false(CastlingSide::QUEEN_SIDE, c) 
+            }               
+            else if sq.v() == (Square::H1_C | color_case) { 
+                cr.set_false(CastlingSide::KING_SIDE, c) 
             }
         }
     }
@@ -447,36 +532,34 @@ impl Position {
         // writes to the memory location of the popped state. 
         let popped_state = unsafe { self.state.pop_current().as_ref() };
 
-        let captured_piece = popped_state.captured_piece;
-
-        // promotions
-        if flag.is_promo() {
-            let pawn = Piece::from_c((us, PieceType::PAWN));
-            self.remove_piece(to);
-            self.put_piece(to, pawn);
-        }
-
-        // castling
-        match flag {
-            MoveFlag::KING_CASTLE => {
+        match flag.v() {
+            // castling
+            MoveFlag::KING_CASTLE_C => {
                 let rank = Rank::from_c(to);
                 let rook_from = Square::from_c((File::H, rank));
                 let rook_to   = Square::from_c((File::F, rank));
                 self.move_piece(rook_to, rook_from);
             },
-            MoveFlag::QUEEN_CASTLE => {
+            MoveFlag::QUEEN_CASTLE_C => {
                 let rank = Rank::from_c(to);
                 let rook_from = Square::from_c((File::A, rank));
                 let rook_to   = Square::from_c((File::D, rank));
                 self.move_piece(rook_to, rook_from);
             },
-            _ => ()
+            // promotions
+            MoveFlag::PROMOTION_KNIGHT_C..=MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
+                let pawn = Piece::from_c((us, PieceType::PAWN));
+                self.remove_piece(to);
+                self.put_piece(to, pawn);
+            }
+            _ => {}
         }
         
         // move the piece
         self.move_piece(to, from);
         
         // captures
+        let captured_piece = popped_state.captured_piece;
         if captured_piece != Piece::default() {
             let captured_sq = match flag {
                 MoveFlag::EN_PASSANT => {

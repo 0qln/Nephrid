@@ -27,7 +27,7 @@ impl<'a, 'b, 'c> LongAlgebraicUciNotation<'a, 'b, 'c> {
 
 pub struct StandardAlgebraicNotation;
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct MoveFlag { v: TMoveFlag }
 
 pub type TMoveFlag = u8;

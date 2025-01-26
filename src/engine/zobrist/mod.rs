@@ -27,6 +27,7 @@ impl Hash {
         *self
     }
     
+    #[inline]
     pub fn toggle_turn(&mut self) -> Self {
         // xor is it's own inverse.
         self.v ^= HASHER.stm;
