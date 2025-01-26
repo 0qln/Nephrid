@@ -11,21 +11,21 @@ use const_for::const_for;
 
 use super::{bishop::{self, Bishop}, queen::{self, Queen}, rook::{self, Rook}, sliding_piece::Attacks};
 
-pub fn gen_legals_check_some(pos: &Position) -> impl Iterator<Item = Move> {
+pub fn gen_legals_check_some(pos: &Position) -> impl Iterator<Item = Move> + '_ {
     let color = pos.get_turn();
     let moves = gen_legals_check_none(pos);
-    let nstm_attacks = pos.get_nstm_attacks();
     let king_bb = pos.get_bitboard(PieceType::KING, color);
     let occupancy = pos.get_occupancy();
-    let checkers = pos.get_checkers();
+    let occupancy_after_king_move = occupancy ^ king_bb;
+    let rooks = pos.get_bitboard(PieceType::ROOK, !color);
+    let bishops = pos.get_bitboard(PieceType::BISHOP, !color);
+    let queens = pos.get_bitboard(PieceType::QUEEN, !color);
+    let rooks_queens = rooks | queens;
+    let bishops_queens = bishops | queens;
 
     // Make sure that we move the king out of check
-    let checker_rooks = checkers & pos.get_bitboard(PieceType::ROOK, !color);
-    let checker_bishops = checkers & pos.get_bitboard(PieceType::BISHOP, !color);
-    // todo: queen can be merged into rook and bishop?
-    let checker_queens = checkers & pos.get_bitboard(PieceType::QUEEN, !color);
     moves.filter(move |m| {
-        let to = Bitboard::from_c(m.get_to());
+        let to_sq = m.get_to();
 
         // When the king has moved and a sliding piece was a checker, the attacks of
         // that sliding piece will have changed.
@@ -34,19 +34,28 @@ pub fn gen_legals_check_some(pos: &Position) -> impl Iterator<Item = Move> {
         // append the new attacks of the sliding piece to the existing attacks.
         // The new 'nstm_attacks' are not really nstm_attacks, but only reflect nstm_attacks
         // which are relevant to checking whether the our king is in check.
-        let occupancy_after_king_move = (occupancy ^ king_bb) | to;
-        let nstm_attacks = checker_rooks.fold(nstm_attacks, |acc, checker| {
-            acc | Rook::lookup_attacks(checker, occupancy_after_king_move)
-        });
-        let nstm_attacks = checker_bishops.fold(nstm_attacks, |acc, checker| {
-            acc | Bishop::lookup_attacks(checker, occupancy_after_king_move)
-        });
-        let nstm_attacks = checker_queens.fold(nstm_attacks, |acc, checker| {
-            acc | Queen::lookup_attacks(checker, occupancy_after_king_move)
-        });
-
-        (to & nstm_attacks).is_empty()
+        
+        // If the to square covers anything, it doesn't matter, because the king will be in check.
+        // (=> we don't need to add the to square to occupancy)
+        let rook_attacks = Rook::lookup_attacks(to_sq, occupancy_after_king_move);
+        let bishop_attacks = Bishop::lookup_attacks(to_sq, occupancy_after_king_move);
+        let q_or_r_check = !rook_attacks.and_c(rooks_queens).is_empty();
+        let q_or_b_check = !bishop_attacks.and_c(bishops_queens).is_empty();
+        let new_check = q_or_r_check || q_or_b_check;
+        !new_check
     })
+}
+
+pub fn fold_legals_check_some<B, F, R>(
+    pos: &Position,
+    init: B,
+    mut f: F,
+) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>, 
+{
+    gen_legals_check_some(pos).try_fold(init, &mut f)
 }
 
 pub fn gen_legals_check_none(pos: &Position) -> impl Iterator<Item = Move> {

@@ -69,7 +69,7 @@ where
 
 fn legal_moves_check_double<const CAPTURES_ONLY: bool>(
     pos: &Position,
-) -> impl Iterator<Item = Move> {
+) -> impl Iterator<Item = Move> + '_ {
     king::gen_legals_check_some(pos)
 }
 
