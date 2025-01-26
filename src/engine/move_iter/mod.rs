@@ -48,7 +48,7 @@ where
     init = sliding_piece::fold_legals_check_none::<_, _, _, Bishop>(pos, init, &mut f)?;
     init = sliding_piece::fold_legals_check_none::<_, _, _, Queen>(pos, init, &mut f)?;
     init = pawn::fold_legals_check_none(pos, init, &mut f)?;
-    init = jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::lookup_attacks).try_fold(init, &mut f)?;
+    init = knight::fold_legals_check_none(pos, init, &mut f)?;
     init = king::fold_legals_check_none(pos, init, &mut f)?;
     king::fold_legal_castling(pos, init, f)
 }
