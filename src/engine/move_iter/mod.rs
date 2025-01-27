@@ -6,12 +6,10 @@ use rook::Rook;
 
 use super::bitboard::Bitboard;
 use super::coordinates::Square;
-use super::piece::JumpingPieceType;
 use super::position::{CheckState, Position};
 use super::r#move::{Move, MoveFlag};
 
 pub mod bishop;
-pub mod jumping_piece;
 pub mod king;
 pub mod knight;
 pub mod pawn;
@@ -48,9 +46,9 @@ where
     init = sliding_piece::fold_legals_check_none::<_, _, _, Bishop>(pos, init, &mut f)?;
     init = sliding_piece::fold_legals_check_none::<_, _, _, Queen>(pos, init, &mut f)?;
     init = pawn::fold_legals_check_none(pos, init, &mut f)?;
-    init = jumping_piece::gen_legals_check_none(pos, JumpingPieceType::KNIGHT, knight::lookup_attacks).try_fold(init, &mut f)?;
-    init = king::gen_legals_check_none(pos).try_fold(init, &mut f)?;
-    king::gen_legal_castling(pos, pos.get_turn()).try_fold(init, f)
+    init = knight::fold_legals_check_none(pos, init, &mut f)?;
+    init = king::fold_legals_check_none(pos, init, &mut f)?;
+    king::fold_legal_castling(pos, init, f)
 }
 
 #[inline]
@@ -62,15 +60,18 @@ where
     init = sliding_piece::fold_legals_check_single::<_, _, _, Rook>(pos, init, &mut f)?;
     init = sliding_piece::fold_legals_check_single::<_, _, _, Bishop>(pos, init, &mut f)?;
     init = sliding_piece::fold_legals_check_single::<_, _, _, Queen>(pos, init, &mut f)?;
-    init = king::gen_legals_check_some(pos).try_fold(init, &mut f)?;
+    init = king::fold_legals_check_some(pos, init, &mut f)?;
     init = pawn::fold_legals_check_single(pos, init, &mut f)?;
-    jumping_piece::gen_legals_check_single(pos, JumpingPieceType::KNIGHT, knight::lookup_attacks).try_fold(init, &mut f)
+    knight::fold_legals_check_single(pos, init, &mut f)
 }
 
-fn legal_moves_check_double<const CAPTURES_ONLY: bool>(
-    pos: &Position,
-) -> impl Iterator<Item = Move> {
-    king::gen_legals_check_some(pos)
+#[inline]
+fn fold_moves_check_double<const CAPTURES_ONLY: bool, B, F, R>(pos: &Position, init: B, mut f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    king::fold_legals_check_some(pos, init, &mut f)
 }
 
 #[inline]
@@ -96,7 +97,7 @@ where
     match pos.get_check_state() {
         CheckState::None => fold_moves_check_none::<CAPTURES_ONLY, _, _, _>(pos, init, f),
         CheckState::Single => fold_moves_check_single::<CAPTURES_ONLY, _, _, _>(pos, init, f),
-        CheckState::Double => legal_moves_check_double::<CAPTURES_ONLY>(pos).try_fold(init, f),
+        CheckState::Double => fold_moves_check_double::<CAPTURES_ONLY, _, _, _>(pos, init, f),
     }
 }
 

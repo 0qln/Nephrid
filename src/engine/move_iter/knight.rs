@@ -1,12 +1,84 @@
+use std::ops::Try;
+
 use crate::{
     engine::{
         bitboard::Bitboard,
         coordinates::{CompassRose, Square, TCompassRose},
+        move_iter::{gen_captures, gen_quiets},
+        piece::PieceType,
+        position::{CheckState, Position},
+        r#move::Move,
     },
     misc::ConstFrom,
 };
 
 use const_for::const_for;
+
+pub fn fold_legals_check_none<B, F, R>(pos: &Position, init: B, mut f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    debug_assert_eq!(pos.get_check_state(), CheckState::None);
+
+    let color = pos.get_turn();
+    let enemies = pos.get_color_bb(!color);
+    let allies = pos.get_color_bb(color);
+    let blockers = pos.get_blockers();
+
+    // Safety: the board has no king, but gen_legal is used, the context is broken anyway.
+    let king_bb = pos.get_bitboard(PieceType::KING, color);
+    let king = unsafe { king_bb.lsb().unwrap_unchecked() };
+
+    pos.get_bitboard(PieceType::KNIGHT, color)
+        .filter_map(|from| {
+            let from_bb = Bitboard::from_c(from);
+            let is_not_blocker = (blockers & from_bb).is_empty();
+            is_not_blocker.then(|| (lookup_attacks(from), from))
+        })
+        .try_fold(init, |mut acc, (attacks, from)| {
+            acc = gen_captures(attacks, enemies, from).try_fold(acc, &mut f)?;
+            gen_quiets(attacks, enemies, allies, from).try_fold(acc, &mut f)
+        })
+}
+
+pub fn fold_legals_check_single<B, F, R>(pos: &Position, init: B, mut f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    debug_assert_eq!(pos.get_check_state(), CheckState::Single);
+
+    let color = pos.get_turn();
+    let enemies = pos.get_color_bb(!color);
+    let allies = pos.get_color_bb(color);
+    let blockers = pos.get_blockers();
+
+    // Safety: king the board has no king, but gen_legal is used,
+    // the context is broken anyway.
+    let king_bb = pos.get_bitboard(PieceType::KING, color);
+    let king = unsafe { king_bb.lsb().unwrap_unchecked() };
+
+    // Safety: there is a single checker.
+    let checker = unsafe { pos.get_checkers().lsb().unwrap_unchecked() };
+
+    pos.get_bitboard(PieceType::KNIGHT, color)
+        .filter_map(|from| {
+            let from_bb = Bitboard::from_c(from);
+            let is_not_blocker = (blockers & from_bb).is_empty();
+            is_not_blocker.then(|| {
+                let resolves = Bitboard::between(king, checker);
+                let legal_attacks = lookup_attacks(from);
+                let legal_resolves = resolves & legal_attacks;
+                let legal_captures = legal_attacks & pos.get_checkers();
+                (legal_captures, legal_resolves, from)
+            })
+        })
+        .try_fold(init, |mut acc, (captures, resolves, from)| {
+            acc = gen_captures(captures, enemies, from).try_fold(acc, &mut f)?;
+            gen_quiets(resolves, enemies, allies, from).try_fold(acc, &mut f)
+        })
+}
 
 #[inline]
 pub fn lookup_attacks(sq: Square) -> Bitboard {
@@ -20,9 +92,7 @@ pub fn lookup_attacks(sq: Square) -> Bitboard {
         attacks
     };
     // Safety: sq is in range 0..64
-    unsafe {
-        *ATTACKS.get_unchecked(sq.v() as usize)
-    }
+    unsafe { *ATTACKS.get_unchecked(sq.v() as usize) }
 }
 
 #[inline]

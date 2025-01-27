@@ -75,7 +75,7 @@ macro_rules! impl_variants_with_assertion {
                 /// Assert, that v is a variant of $type.
                 #[inline]
                 pub const fn assert_variant(v: $inner_type) {
-                    assert!(
+                    debug_assert!(
                         false $(|| v == $type::$name.v)*,
                         "v is not a variant of type."
                     );

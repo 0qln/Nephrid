@@ -36,11 +36,15 @@ name = "queen_attacks"
 harness = false
 
 [[bench]]
-name = "king_attacks"
+name = "king"
 harness = false
 
 [[bench]]
-name = "knight_attacks"
+name = "knight"
+harness = false
+
+[[bench]]
+name = "pawn"
 harness = false
 
 [[bench]]
