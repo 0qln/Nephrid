@@ -1,7 +1,7 @@
-use std::ops::{ControlFlow, Try};
+use std::ops::Try;
 
 use crate::engine::color::{Color, TColor};
-use crate::engine::coordinates::{EpCaptureSquare, EpTargetSquare, Rank, Square, TCompassRose};
+use crate::engine::coordinates::{EpTargetSquare, Rank, Square, TCompassRose};
 use crate::engine::position::CheckState;
 use crate::engine::{
     bitboard::Bitboard,
