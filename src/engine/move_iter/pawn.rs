@@ -629,8 +629,9 @@ const fn compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
     }
 }
 
+#[inline(always)]
 pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
-    const ATTACKS_W: [Bitboard; 64] = {
+    static ATTACKS_W: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
@@ -639,7 +640,7 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
         });
         result
     };
-    const ATTACKS_B: [Bitboard; 64] = {
+    static ATTACKS_B: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
@@ -648,7 +649,7 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
         });
         result
     };
-    const ATTACKS: [[Bitboard; 64]; 2] = [ATTACKS_W, ATTACKS_B];
+    static ATTACKS: [[Bitboard; 64]; 2] = [ATTACKS_W, ATTACKS_B];
     unsafe {
         // Safety: sq is in range 0..64 and color is in range 0..2
         *ATTACKS
