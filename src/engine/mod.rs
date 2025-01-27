@@ -30,7 +30,6 @@ pub mod config;
 pub mod castling;
 pub mod r#move;
 pub mod ply;
-pub mod masks;
 
 
 #[derive(Default)]
