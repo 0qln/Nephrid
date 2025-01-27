@@ -135,7 +135,7 @@ impl StateStack {
         let next = self.current + 1;
         
         // self.current can only ever be one greater than the length of the vector.
-        assert!(self.states.len() >= next);
+        debug_assert!(self.states.len() >= next);
 
         if self.states.len() == next {
             // Safety: self.states.len() >= 1 => self.states.len() > self.current - 1 >= 0

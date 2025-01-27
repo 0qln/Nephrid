@@ -310,7 +310,7 @@ where
 
 impl<'a> IPawnMoves<NoCheck<'a>> for PawnMoves<NoCheck<'a>> {
     fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: NoCheck<'a>) -> Self {
-        assert!(
+        debug_assert!(
             from.pop_cnt() >= to.pop_cnt(),
             "From needs to have atleast as many squares as to."
         );
@@ -360,7 +360,7 @@ impl<'a> IPawnMoves<NoCheck<'a>> for PawnMoves<NoCheck<'a>> {
 
 impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
     fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: SingleCheck<'a>) -> Self {
-        assert!(
+        debug_assert!(
             from.pop_cnt() >= to.pop_cnt(),
             "From needs to have atleast as many squares as to."
         );
@@ -476,7 +476,7 @@ impl<'a> IPawnMoves<SingleCheck<'a>> for PawnMoves<SingleCheck<'a>> {
 
 impl<T: CheckStateInfoEmpty> IPawnMoves<T> for PawnMoves<T> {
     fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, t: T) -> Self {
-        assert!(
+        debug_assert!(
             from.pop_cnt() >= to.pop_cnt(),
             "From needs to have atleast as many squares as to."
         );
