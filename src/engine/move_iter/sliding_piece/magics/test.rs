@@ -2,7 +2,7 @@ use std::iter::once;
 
 use crate::engine::{
     coordinates::Square,
-    move_iter::{bishop::Bishop, map_bits, rook::Rook, sliding_piece::Attacks},
+    move_iter::{bishop::Bishop, map_bits, rook::Rook, sliding_piece::SlidingAttacks},
 };
 
 use super::MagicGen;
@@ -17,7 +17,7 @@ fn bishop() {
     test::<Bishop>()
 }
 
-fn test<T: MagicGen + Attacks>() {
+fn test<T: MagicGen + SlidingAttacks>() {
     super::init(0xdead_beef);
 
     for sq in Square::A1..=Square::H8 {

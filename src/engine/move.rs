@@ -133,9 +133,9 @@ impl Move {
     #[inline]
     pub const fn new(from: Square, to: Square, flag: MoveFlag) -> Self {
         Move {
-            v: (from.v() as u16) << Move::SHIFT_FROM
-               | (to.v() as u16) << Move::SHIFT_TO
-               | (flag.v as u16) << Move::SHIFT_FLAG
+            v: ((from.v() as u16) << Move::SHIFT_FROM)
+               | ((to.v() as u16) << Move::SHIFT_TO)
+               | ((flag.v as u16) << Move::SHIFT_FLAG)
         }
     }
     

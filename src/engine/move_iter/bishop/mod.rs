@@ -7,7 +7,7 @@ use crate::{
     misc::ConstFrom,
 };
 
-use super::sliding_piece::{self, magics::MagicGen, Attacks};
+use super::sliding_piece::{self, magics::MagicGen, SlidingAttacks, SlidingPieceType};
 
 #[cfg(test)]
 mod tests;
@@ -36,7 +36,7 @@ impl MagicGen for Bishop {
     }
 }
 
-impl Attacks for Bishop {
+impl SlidingAttacks for Bishop {
     fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         crate::engine::move_iter::bishop::compute_attacks(sq, occupancy)
     }
@@ -47,6 +47,8 @@ impl Attacks for Bishop {
         unsafe { sliding_piece::magics::BISHOP_MAGICS.get(sq).get(occupancy) }
     }
 }
+
+impl SlidingPieceType for Bishop {}
 
 /// Computes the attacks of the bishop on the square `sq`.
 pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
@@ -70,7 +72,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let ray = a8h1 & sout;
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
-    let range = nearest.map_or(Bitboard::full(), |t| Bitboard::split_north(t));
+    let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
     let moves = range.shift_c::<{ CompassRose::SOEA.v() }>() & ray;
     result |= moves;
 
@@ -78,7 +80,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let ray = a1h8 & sout;
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
-    let range = nearest.map_or(Bitboard::full(), |t| Bitboard::split_north(t));
+    let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
     let moves = range.shift_c::<{ CompassRose::SOWE.v() }>() & ray;
     result |= moves;
 
@@ -86,7 +88,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let ray = a8h1 & nort;
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
-    let range = nearest.map_or(Bitboard::full(), |t| Bitboard::split_south(t));
+    let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
     let moves = range.shift_c::<{ CompassRose::NOWE.v() }>() & ray;
     result |= moves;
 
@@ -94,7 +96,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let ray = a1h8 & nort;
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
-    let range = nearest.map_or(Bitboard::full(), |t| Bitboard::split_south(t));
+    let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
     let moves = range.shift_c::<{ CompassRose::NOEA.v() }>() & ray;
     result |= moves;
 

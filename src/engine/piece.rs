@@ -131,27 +131,6 @@ impl TryFrom<MoveFlag> for PromoPieceType {
 }
 
 
-#[derive(Copy, Clone, Default, Debug, PartialEq)]
-pub struct SlidingPieceType {
-    v: TPieceType
-}
-
-impl_variants! {
-    TPieceType as SlidingPieceType {
-        BISHOP = PieceType::BISHOP_C,
-        ROOK = PieceType::ROOK_C,
-        QUEEN = PieceType::QUEEN_C,
-    }
-}
-    
-impl From<SlidingPieceType> for PieceType {
-    #[inline]
-    fn from(val: SlidingPieceType) -> Self {
-        PieceType { v: val.v }
-    }
-}
-
-
 pub type TPiece = u8;
       
 #[derive(Copy, Clone, Default, PartialEq, Eq)]

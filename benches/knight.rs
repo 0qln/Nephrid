@@ -4,8 +4,9 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use nephrid::engine::coordinates::Square;
 use nephrid::engine::fen::Fen;
 use nephrid::engine::r#move::Move;
-use nephrid::engine::move_iter::knight::{self, compute_attacks, lookup_attacks};
+use nephrid::engine::move_iter::knight::{self, compute_attacks, lookup_attacks, Knight};
 use nephrid::engine::move_iter::sliding_piece::magics;
+use nephrid::engine::move_iter::{FoldMoves, NoCheck, SingleCheck};
 use nephrid::engine::position::Position;
 
 pub fn knight_attacks(c: &mut Criterion) {
@@ -36,7 +37,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
         c.bench_with_input(
             BenchmarkId::new("knight::move_iter::check_none", input), &pos, |b, pos| {
             b.iter(|| {
-                knight::fold_legals_check_none(
+                <Knight as FoldMoves<NoCheck>>::fold_moves(
                     black_box(&pos),
                     black_box(0),
                     black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),
@@ -60,7 +61,7 @@ pub fn move_iter_check_single(c: &mut Criterion) {
         c.bench_with_input(
             BenchmarkId::new("knight::move_iter::check_single", input), &pos, |b, pos| {
             b.iter(|| {
-                knight::fold_legals_check_single(
+                <Knight as FoldMoves<SingleCheck>>::fold_moves(
                     black_box(&pos),
                     black_box(0),
                     black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),

@@ -9,7 +9,7 @@ use crate::engine::{
     move_iter::{bishop::Bishop, map_bits, rook::Rook},
 };
 
-use super::Attacks;
+use super::SlidingAttacks;
 
 #[cfg(test)]
 mod test;
@@ -130,7 +130,7 @@ pub fn init(seed: u64) {
     });
 }
 
-fn find_magics<T: MagicGen + Attacks>(
+fn find_magics<T: MagicGen + SlidingAttacks>(
     table: &mut AttackTable,
     rng: &mut SmallRng,
     prev: Option<&MagicInfo>,
@@ -148,7 +148,7 @@ fn find_magics<T: MagicGen + Attacks>(
     result
 }
 
-fn find_magic<T: MagicGen + Attacks>(
+fn find_magic<T: MagicGen + SlidingAttacks>(
     table: &mut AttackTable,
     sq: Square,
     rng: &mut SmallRng,

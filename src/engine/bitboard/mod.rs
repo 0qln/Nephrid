@@ -5,7 +5,7 @@ use crate::{
     },
     misc::ConstFrom,
 };
-use std::{fmt::Debug, ops};
+use std::{fmt::Debug, ops::{self, ControlFlow, FromResidual, Try}};
 
 use const_for::const_for;
 
@@ -17,6 +17,27 @@ pub mod tests;
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 pub struct Bitboard {
     pub v: u64,
+}
+
+impl Try for Bitboard {
+    type Output = Self;
+    type Residual = Self;
+
+    #[inline(always)]
+    fn from_output(output: Self::Output) -> Self {
+        output
+    }
+
+    #[inline(always)]
+    fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
+        if self.is_empty() { ControlFlow::Break(self) } else { ControlFlow::Continue(self) }
+    }
+}
+
+impl FromResidual for Bitboard {
+    fn from_residual(residual: <Self as Try>::Residual) -> Self {
+        residual
+    }
 }
 
 impl Debug for Bitboard {

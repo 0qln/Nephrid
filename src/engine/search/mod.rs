@@ -4,7 +4,6 @@ use std::ops::ControlFlow;
 use crate::uci::sync::{self, CancellationToken};
 use limit::Limit;
 use mode::Mode;
-use score::Score;
 use target::Target;
 
 use crate::engine::position::Position;
@@ -43,7 +42,7 @@ impl Search {
         // Safety: 
         // This is safe iff unmake_move perfectly reverses the muations made by make_move.
         unsafe {
-            fold_legal_move::<false, _, _, _>(&*pos.get(), 0, |acc, m| {
+            fold_legal_move::<_, _, _>(&*pos.get(), 0, |acc, m| {
                 pos.get_mut().make_move(m);
                 let c = Self::perft(pos, depth - 1, cancellation_token.clone(), |_, _| {});
                 f(m, c);
@@ -63,20 +62,5 @@ impl Search {
             }
             _ => unimplemented!(),
         };
-    }
-
-    fn alpha_beta(
-        &self,
-        position: &mut Position,
-        depth: Depth,
-        alpha: Score,
-        beta: Score,
-    ) -> Score {
-        // fold_legal_move::<false>(position, 0, |m| {
-        //     ControlFlow::Continue(0)
-        //         ControlFlow::Break(())
-        // })
-
-        Default::default()
     }
 }

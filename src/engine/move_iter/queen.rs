@@ -4,7 +4,7 @@ use crate::engine::{
     piece::{IPieceType, PieceType},
 };
 
-use super::{bishop::Bishop, rook::Rook, sliding_piece::Attacks};
+use super::{bishop::Bishop, rook::Rook, sliding_piece::{SlidingAttacks, SlidingPieceType}};
 
 pub struct Queen;
 
@@ -12,7 +12,7 @@ impl IPieceType for Queen {
     const ID: PieceType = PieceType::QUEEN;
 }
 
-impl Attacks for Queen {
+impl SlidingAttacks for Queen {
     #[inline]
     fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         Rook::compute_attacks(sq, occupancy) | Bishop::compute_attacks(sq, occupancy)
@@ -23,3 +23,5 @@ impl Attacks for Queen {
         Rook::lookup_attacks(sq, occupancy) | Bishop::lookup_attacks(sq, occupancy)
     }
 }
+
+impl SlidingPieceType for Queen {}

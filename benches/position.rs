@@ -89,7 +89,7 @@ pub fn make_move(c: &mut Criterion) {
 
     let mut fen = Fen::new("2n1k3/1P6/8/4pP2/8/6B1/P2P4/R3K2R w KQ e6 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
-    let moves = fold_legal_move::<false, _, _, _>(&pos, Vec::new(), |mut acc, m| {
+    let moves = fold_legal_move(&pos, Vec::new(), |mut acc, m| {
         acc.push(m);
         ControlFlow::Continue::<(), _>(acc)
     }).continue_value().unwrap();

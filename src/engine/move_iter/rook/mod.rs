@@ -5,7 +5,7 @@ use crate::{
     misc::ConstFrom,
 };
 
-use super::sliding_piece::{self, magics::MagicGen, Attacks};
+use super::sliding_piece::{self, magics::MagicGen, SlidingAttacks, SlidingPieceType};
 
 #[cfg(test)]
 mod tests;
@@ -47,7 +47,7 @@ impl MagicGen for Rook {
     }
 }
 
-impl Attacks for Rook {
+impl SlidingAttacks for Rook {
     #[inline]
     fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         crate::engine::move_iter::rook::compute_attacks(sq, occupancy)
@@ -60,6 +60,8 @@ impl Attacks for Rook {
         unsafe { sliding_piece::magics::ROOK_MAGICS.get(sq).get(occupancy) }
     }
 }
+
+impl SlidingPieceType for Rook {}
 
 /// Computes the attacks of the rook on the square `sq`.
 pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
@@ -84,7 +86,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let ray = file_bb & sout_bb;
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
-    let range = nearest.map_or(Bitboard::full(), |t| Bitboard::split_north(t));
+    let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
     let moves = range.shift_c::<{ CompassRose::SOUT.v() }>() & ray;
     result |= moves;
 
@@ -92,7 +94,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let ray = file_bb & nort_bb;
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
-    let range = nearest.map_or(Bitboard::full(), |t| Bitboard::split_south(t));
+    let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
     let moves = range.shift_c::<{ CompassRose::NORT.v() }>() & ray;
     result |= moves;
 
@@ -100,7 +102,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let ray = rank_bb & sout_bb;
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
-    let range = nearest.map_or(Bitboard::full(), |t| Bitboard::split_north(t));
+    let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
     let moves = range.shift_c::<{ CompassRose::WEST.v() }>() & ray;
     result |= moves;
 
@@ -108,7 +110,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let ray = rank_bb & nort_bb;
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
-    let range = nearest.map_or(Bitboard::full(), |t| Bitboard::split_south(t));
+    let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
     let moves = range.shift_c::<{ CompassRose::EAST.v() }>() & ray;
     result |= moves;
 
