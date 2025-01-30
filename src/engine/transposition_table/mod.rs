@@ -1,3 +1,7 @@
+// temp
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
 use super::zobrist;
 
 pub struct Hash {

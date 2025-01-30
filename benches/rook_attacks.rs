@@ -3,7 +3,7 @@ use nephrid::engine::bitboard::Bitboard;
 use nephrid::engine::coordinates::Square;
 use nephrid::engine::move_iter::rook::Rook;
 use nephrid::engine::move_iter::sliding_piece::magics;
-use nephrid::engine::move_iter::sliding_piece::Attacks;
+use nephrid::engine::move_iter::sliding_piece::SlidingAttacks;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let rook = Square::E4;

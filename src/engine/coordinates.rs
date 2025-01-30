@@ -401,6 +401,7 @@ impl From<File> for char {
     }
 }
 
+
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub struct DiagA1H8 {
     v: u8,

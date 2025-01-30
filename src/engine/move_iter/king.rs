@@ -14,80 +14,79 @@ use crate::{
 
 use const_for::const_for;
 
-use super::{bishop::Bishop, rook::Rook, sliding_piece::Attacks};
+use super::{
+    bishop::Bishop, map_captures, map_quiets, rook::Rook, sliding_piece::SlidingAttacks, FoldMoves,
+    NoCheck, NoDoubleCheck, SomeCheck,
+};
 
-pub fn fold_legals_check_some<B, F, R>(pos: &Position, init: B, mut f: F) -> R
-where
-    F: FnMut(B, Move) -> R,
-    R: Try<Output = B>,
-{
-    let color = pos.get_turn();
-    let king_bb = pos.get_bitboard(PieceType::KING, color);
-    let occupancy = pos.get_occupancy();
-    let occupancy_after_king_move = occupancy ^ king_bb;
-    let rooks = pos.get_bitboard(PieceType::ROOK, !color);
-    let bishops = pos.get_bitboard(PieceType::BISHOP, !color);
-    let queens = pos.get_bitboard(PieceType::QUEEN, !color);
-    let rooks_queens = rooks | queens;
-    let bishops_queens = bishops | queens;
+pub struct King;
 
-    fold_legals_check_none(pos, init, |acc, m| {
-        // Make sure that we move the king out of check
-        let is_legal = {
-            let to_sq = m.get_to();
+impl FoldMoves<NoCheck> for King {
+    #[inline(always)]
+    fn fold_moves<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+    where
+        F: FnMut(B, Move) -> R,
+        R: Try<Output = B>,
+    {
+        let color = pos.get_turn();
+        let nstm_attacks = pos.get_nstm_attacks();
 
-            // When the king has moved and a sliding piece was a checker, the attacks of
-            // that sliding piece will have changed.
-            // Note that, in no case does a king move cause an enemy attack to get covered
-            // without the king being in check after he moved, which is why we can just
-            // append the new attacks of the sliding piece to the existing attacks.
-            // The new 'nstm_attacks' are not really nstm_attacks, but only reflect nstm_attacks
-            // which are relevant to checking whether the our king is in check.
+        let king_bb = pos.get_bitboard(PieceType::KING, color);
+        let king = king_bb.lsb().unwrap();
 
-            // If the to square covers anything, it doesn't matter, because the king will be in check.
-            // (=> we don't need to add the to square to occupancy)
-            let rook_attacks = Rook::lookup_attacks(to_sq, occupancy_after_king_move);
-            let bishop_attacks = Bishop::lookup_attacks(to_sq, occupancy_after_king_move);
-            let q_or_r_check = !rook_attacks.and_c(rooks_queens).is_empty();
-            let q_or_b_check = !bishop_attacks.and_c(bishops_queens).is_empty();
-            let new_check = q_or_r_check || q_or_b_check;
-            !new_check
-        };
+        let attacks = lookup_attacks(king);
+        let legal_attacks = attacks & !nstm_attacks;
 
-        if is_legal {
-            f(acc, m)
-        } else {
-            try { acc }
-        }
-    })
+        let legal_captures = legal_attacks & NoCheck::captures_mask(pos, color);
+        let legal_quiets = legal_attacks & NoCheck::quiets_mask(pos, color);
+
+        init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
+        map_quiets(legal_quiets, king).try_fold(init, &mut f)
+    }
 }
 
-pub fn fold_legals_check_none<B, F, R>(pos: &Position, init: B, mut f: F) -> R
-where
-    F: FnMut(B, Move) -> R,
-    R: Try<Output = B>,
-{
-    let color = pos.get_turn();
-    let nstm_attacks = pos.get_nstm_attacks();
-    let occupancy = pos.get_occupancy();
-    let enemies = pos.get_color_bb(!color);
-    let king_bb = pos.get_bitboard(PieceType::KING, color);
-    let king = king_bb.lsb().unwrap();
-    let attacks = lookup_attacks(king);
-    let targets = attacks & !nstm_attacks;
+impl<C: SomeCheck> FoldMoves<C> for King {
+    #[inline(always)]
+    fn fold_moves<B, F, R>(pos: &Position, init: B, mut f: F) -> R
+    where
+        F: FnMut(B, Move) -> R,
+        R: Try<Output = B>,
+    {
+        let color = pos.get_turn();
+        let rooks = pos.get_bitboard(PieceType::ROOK, !color);
+        let bishops = pos.get_bitboard(PieceType::BISHOP, !color);
+        let queens = pos.get_bitboard(PieceType::QUEEN, !color);
+        let rooks_queens = rooks | queens;
+        let bishops_queens = bishops | queens;
 
-    let mut quiets = {
-        let targets = targets & !occupancy;
-        targets.map(move |target| Move::new(king, target, MoveFlag::QUIET))
-    };
+        // If the to square covers anything, it doesn't matter, because the king will be in check.
+        // (=> we don't need to add the to square to occupancy)
+        let king_bb = pos.get_bitboard(PieceType::KING, color);
+        let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
 
-    let mut captures = {
-        let targets = targets & enemies;
-        targets.map(move |target| Move::new(king, target, MoveFlag::CAPTURE))
-    };
+        <Self as FoldMoves<NoCheck>>::fold_moves(pos, init, |acc, m| {
+            // Make sure that we move the king out of check
+            let is_legal = {
+                let to_sq = m.get_to();
 
-    let acc = quiets.try_fold(init, &mut f)?;
-    captures.try_fold(acc, &mut f)
+                // When the king has moved and a sliding piece was a checker, the attacks of
+                // that sliding piece will have changed.
+                // Note that, in no case does a king move cause an enemy attack to get covered
+                // without the king being in check after he moved, which is why we can just
+                // append the new attacks of the sliding piece to the existing attacks.
+                // The new 'nstm_attacks' are not really nstm_attacks, but only reflect nstm_attacks
+                // which are relevant to checking whether the our king is in check.
+                let rook_attacks = Rook::lookup_attacks(to_sq, occupancy_after_king_move);
+                let bishop_attacks = Bishop::lookup_attacks(to_sq, occupancy_after_king_move);
+                let q_or_r_check = !rook_attacks.and_c(rooks_queens).is_empty();
+                let q_or_b_check = !bishop_attacks.and_c(bishops_queens).is_empty();
+                let check_after_move = q_or_r_check || q_or_b_check;
+                !check_after_move
+            };
+
+            if is_legal { f(acc, m) } else { try { acc } }
+        })
+    }
 }
 
 pub fn fold_legal_castling<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R

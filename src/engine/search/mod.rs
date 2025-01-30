@@ -4,7 +4,6 @@ use std::ops::ControlFlow;
 use crate::uci::sync::{self, CancellationToken};
 use limit::Limit;
 use mode::Mode;
-use score::Score;
 use target::Target;
 
 use crate::engine::position::Position;
@@ -63,20 +62,5 @@ impl Search {
             }
             _ => unimplemented!(),
         };
-    }
-
-    fn alpha_beta(
-        &self,
-        position: &mut Position,
-        depth: Depth,
-        alpha: Score,
-        beta: Score,
-    ) -> Score {
-        // fold_legal_move::<false>(position, 0, |m| {
-        //     ControlFlow::Continue(0)
-        //         ControlFlow::Break(())
-        // })
-
-        Default::default()
     }
 }

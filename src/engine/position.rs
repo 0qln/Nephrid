@@ -3,11 +3,11 @@ use std::ptr::NonNull;
 
 use crate::{
     engine::{
-        bitboard::Bitboard, castling::CastlingRights, color::Color, coordinates::{File, Rank, Square}, fen::Fen, r#move::Move, move_iter::{bishop, king, knight, pawn, queen, rook}, piece::{Piece, PieceType}, turn::Turn, zobrist
+        bitboard::Bitboard, castling::CastlingRights, color::Color, coordinates::{File, Rank, Square}, fen::Fen, r#move::Move, move_iter::{bishop, king, knight, pawn, rook}, piece::{Piece, PieceType}, turn::Turn, zobrist
     }, misc::{ConstFrom, ParseError}
 };
 
-use super::{castling::CastlingSide, coordinates::{EpCaptureSquare, EpTargetSquare}, r#move::MoveFlag, move_iter::{bishop::Bishop, queen::Queen, rook::Rook, sliding_piece::Attacks}, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
+use super::{castling::CastlingSide, coordinates::{EpCaptureSquare, EpTargetSquare}, r#move::MoveFlag, move_iter::{bishop::Bishop, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks}, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
 
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum CheckState {
@@ -71,7 +71,7 @@ impl StateInfo {
             self.blockers = x_ray_checkers.fold(Bitboard::empty(), |acc, x_ray_checker| {
                 let between_squares = Bitboard::between(x_ray_checker, king_sq);
                 let between_occupancy = occupancy & between_squares;
-                between_occupancy.pop_cnt_eq_1().then_some(acc | between_squares).unwrap_or(acc)
+                if between_occupancy.pop_cnt_eq_1() { acc | between_squares } else { acc }
             });
         }
         
@@ -114,20 +114,20 @@ impl StateStack {
         }
     }     
     
-    /// Returns a mutable reference to the current state.
-    #[inline]
-    pub fn get_current_mut(&mut self) -> &mut StateInfo {
-        // Safety: The current index is always in range
-        unsafe {
-            self.states.get_unchecked_mut(self.current)
-        }
-    }
-    
-    /// Returns a pointer to the current state.
-    #[inline]
-    pub fn get_current_ptr(&mut self) -> NonNull<StateInfo> {
-        NonNull::from_ref(self.get_current_mut())
-    }
+    // /// Returns a mutable reference to the current state.
+    // #[inline]
+    // pub fn get_current_mut(&mut self) -> &mut StateInfo {
+    //     // Safety: The current index is always in range
+    //     unsafe {
+    //         self.states.get_unchecked_mut(self.current)
+    //     }
+    // }
+    // 
+    // /// Returns a pointer to the current state.
+    // #[inline]
+    // pub fn get_current_ptr(&mut self) -> NonNull<StateInfo> {
+    //     NonNull::from_ref(self.get_current_mut())
+    // }
     
     /// Returns the pushed state.
     #[inline]
