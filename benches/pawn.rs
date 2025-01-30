@@ -2,15 +2,10 @@ use std::ops::ControlFlow;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use nephrid::engine::{
-    color::Color,
-    coordinates::Square,
-    fen::Fen,
-    move_iter::{
-        pawn::{self, lookup_attacks},
-        sliding_piece::magics,
-    },
-    position::Position,
-    r#move::Move,
+    color::Color, coordinates::Square, fen::Fen, r#move::Move, move_iter::{
+        pawn::{self, lookup_attacks, Pawn},
+        sliding_piece::magics, FoldMoves, NoCheck,
+    }, position::Position
 };
 
 pub fn pawn_attacks(c: &mut Criterion) {
@@ -39,7 +34,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
             &pos,
             |b, pos| {
                 b.iter(|| {
-                    pawn::fold_legals_check_none(
+                    <Pawn as FoldMoves<NoCheck>>::fold_moves(
                         black_box(&pos),
                         black_box(0),
                         black_box(|acc, m: Move| {

@@ -42,7 +42,7 @@ impl Search {
         // Safety: 
         // This is safe iff unmake_move perfectly reverses the muations made by make_move.
         unsafe {
-            fold_legal_move::<false, _, _, _>(&*pos.get(), 0, |acc, m| {
+            fold_legal_move::<_, _, _>(&*pos.get(), 0, |acc, m| {
                 pos.get_mut().make_move(m);
                 let c = Self::perft(pos, depth - 1, cancellation_token.clone(), |_, _| {});
                 f(m, c);

@@ -210,15 +210,12 @@ impl Position {
             self.c_bitboards.get_unchecked_mut(color.v() as usize)
         }
     }
+    
+    // todo: these get_unchecked's are not neccesary anymore.
 
     #[inline]
     pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
-        // Safety:
-        // It's not possible to safely create an instance of PieceType,
-        // without checking that the value is in range.
-        unsafe {
-            *self.t_bitboards.get_unchecked(piece_type.v() as usize)
-        }
+        self.t_bitboards[piece_type.v() as usize]
     }
     
     #[inline]

@@ -3,9 +3,9 @@ use std::ops::ControlFlow;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use nephrid::engine::coordinates::Square;
 use nephrid::engine::fen::Fen;
-use nephrid::engine::move_iter::king::{compute_attacks, lookup_attacks};
+use nephrid::engine::move_iter::king::{compute_attacks, lookup_attacks, King};
 use nephrid::engine::move_iter::sliding_piece::magics;
-use nephrid::engine::move_iter::king;
+use nephrid::engine::move_iter::{king, FoldMoves, NoCheck, SingleCheck};
 use nephrid::engine::position::Position;
 use nephrid::engine::r#move::Move;
 
@@ -31,7 +31,7 @@ pub fn king_move_iter_check_none(c: &mut Criterion) {
 
     c.bench_function("king::move_iter::check_none", |b| {
         b.iter(|| {
-            king::fold_legals_check_none(
+            <King as FoldMoves<NoCheck>>::fold_moves(
                 black_box(&pos),
                 black_box(0),
                 black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),
@@ -48,7 +48,7 @@ pub fn king_move_iter_check_some(c: &mut Criterion) {
 
     c.bench_function("king::move_iter::check_some", |b| {
         b.iter(|| {
-            king::fold_legals_check_some(
+            <King as FoldMoves<SingleCheck>>::fold_moves(
                 black_box(&pos),
                 black_box(0),
                 black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),

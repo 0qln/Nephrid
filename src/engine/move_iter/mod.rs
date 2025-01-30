@@ -12,7 +12,7 @@ use crate::misc::ConstFrom;
 use super::bitboard::Bitboard;
 use super::color::Color;
 use super::coordinates::Square;
-use super::piece::PieceType;
+use super::piece::IPieceType;
 use super::position::{CheckState, Position};
 use super::r#move::{Move, MoveFlag};
 
@@ -66,7 +66,7 @@ impl NoDoubleCheck for SingleCheck {
     fn quiets_mask(pos: &Position, color: Color) -> Bitboard {
         // Safety: king the board has no king, but gen_legal is used,
         // the context is broken anyway.
-        let king_bb = pos.get_bitboard(PieceType::KING, color);
+        let king_bb = pos.get_bitboard(King::ID, color);
         let king = unsafe { king_bb.lsb().unwrap_unchecked() };
 
         // Safety: there is a single checker.
@@ -137,12 +137,19 @@ impl FoldMoves<Self> for DoubleCheck {
     }
 }
 
+#[inline(never)]
+fn test(pos: &Position) -> std::ops::ControlFlow::<(), usize> {
+    <NoCheck as FoldMoves<_>>::fold_moves(pos, 0, |acc, m| std::ops::ControlFlow::Continue::<(), usize>(acc + m.get_to().v() as usize))
+}
+
 #[inline]
-pub fn fold_legal_move<const CAPTURES_ONLY: bool, B, F, R>(pos: &Position, init: B, f: F) -> R
+pub fn fold_legal_move<B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
+    test(pos);
+
     match pos.get_check_state() {
         CheckState::None => <NoCheck as FoldMoves<_>>::fold_moves(pos, init, f),
         CheckState::Single => <SingleCheck as FoldMoves<_>>::fold_moves(pos, init, f),
@@ -165,7 +172,7 @@ pub fn pin_mask(pos: &Position, piece: Square) -> Bitboard {
             let king = unsafe {
                 let color = pos.get_turn();
                 // todo: safely remove branching
-                let bb = pos.get_bitboard(PieceType::KING, color)?;
+                let bb = pos.get_bitboard(King::ID, color)?;
                 bb.lsb().unwrap_unchecked()
             };
             Bitboard::ray(piece, king)

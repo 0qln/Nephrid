@@ -1,14 +1,9 @@
 use super::{
-    bishop::Bishop, pin_mask, rook::Rook, sliding_piece::SlidingAttacks, FoldMoves, NoDoubleCheck,
+    bishop::Bishop, king::King, pin_mask, rook::Rook, sliding_piece::SlidingAttacks, FoldMoves, NoDoubleCheck
 };
 use crate::{
     engine::{
-        bitboard::Bitboard,
-        color::{Color, TColor},
-        coordinates::{CompassRose, EpTargetSquare, File, Square, TCompassRose},
-        piece::PieceType,
-        position::Position,
-        r#move::{Move, MoveFlag},
+        bitboard::Bitboard, color::{Color, TColor}, coordinates::{CompassRose, EpTargetSquare, File, Square, TCompassRose}, r#move::{Move, MoveFlag}, piece::{IPieceType, PieceType}, position::Position
     },
     misc::ConstFrom,
 };
@@ -185,7 +180,7 @@ impl<'a> PawnMoves<'a> {
             } else {
                 // Safety: king the board has no king, but gen_legal is used,
                 // the context is broken anyway.
-                let king_bb = pos.get_bitboard(PieceType::KING, color);
+                let king_bb = pos.get_bitboard(King::ID, color);
                 let king_sq = unsafe { king_bb.lsb().unwrap_unchecked() };
                 // Check that the king is not in check after the capture happens.
                 let occupancy = pos.get_occupancy();

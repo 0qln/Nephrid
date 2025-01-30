@@ -2,12 +2,7 @@ use std::ops::Try;
 
 use crate::{
     engine::{
-        bitboard::Bitboard,
-        castling::CastlingSide,
-        coordinates::{File, Rank, Square},
-        piece::PieceType,
-        position::Position,
-        r#move::{Move, MoveFlag},
+        bitboard::Bitboard, castling::CastlingSide, coordinates::{File, Rank, Square}, r#move::{Move, MoveFlag}, piece::{IPieceType, PieceType}, position::Position
     },
     misc::ConstFrom,
 };
@@ -15,11 +10,14 @@ use crate::{
 use const_for::const_for;
 
 use super::{
-    bishop::Bishop, map_captures, map_quiets, rook::Rook, sliding_piece::SlidingAttacks, FoldMoves,
-    NoCheck, NoDoubleCheck, SomeCheck,
+    bishop::Bishop, map_captures, map_quiets, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks, FoldMoves, NoCheck, NoDoubleCheck, SomeCheck
 };
 
 pub struct King;
+
+impl IPieceType for King {
+    const ID: PieceType = PieceType::KING;
+}
 
 impl FoldMoves<NoCheck> for King {
     #[inline(always)]
@@ -31,7 +29,7 @@ impl FoldMoves<NoCheck> for King {
         let color = pos.get_turn();
         let nstm_attacks = pos.get_nstm_attacks();
 
-        let king_bb = pos.get_bitboard(PieceType::KING, color);
+        let king_bb = pos.get_bitboard(King::ID, color);
         let king = king_bb.lsb().unwrap();
 
         let attacks = lookup_attacks(king);
@@ -53,15 +51,15 @@ impl<C: SomeCheck> FoldMoves<C> for King {
         R: Try<Output = B>,
     {
         let color = pos.get_turn();
-        let rooks = pos.get_bitboard(PieceType::ROOK, !color);
-        let bishops = pos.get_bitboard(PieceType::BISHOP, !color);
-        let queens = pos.get_bitboard(PieceType::QUEEN, !color);
+        let rooks = pos.get_bitboard(Rook::ID, !color);
+        let bishops = pos.get_bitboard(Bishop::ID, !color);
+        let queens = pos.get_bitboard(Queen::ID, !color);
         let rooks_queens = rooks | queens;
         let bishops_queens = bishops | queens;
 
         // If the to square covers anything, it doesn't matter, because the king will be in check.
         // (=> we don't need to add the to square to occupancy)
-        let king_bb = pos.get_bitboard(PieceType::KING, color);
+        let king_bb = pos.get_bitboard(King::ID, color);
         let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
 
         <Self as FoldMoves<NoCheck>>::fold_moves(pos, init, |acc, m| {
