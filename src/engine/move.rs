@@ -192,7 +192,11 @@ impl fmt::Display for Move {
 
 impl fmt::Debug for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Move").field("v", &self.v).finish()
+        f.debug_struct("Move")
+            .field("from", &self.get_from())
+            .field("to", &self.get_to())
+            .field("flag", &self.get_flag())
+            .finish()
     }
 }
 

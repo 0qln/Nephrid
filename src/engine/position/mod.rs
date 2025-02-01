@@ -22,7 +22,7 @@ pub enum CheckState {
 mod repetitions;
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
-struct StateInfo {
+pub struct StateInfo {
     // Memoized state
     pub checkers: Bitboard,
     pub blockers: Bitboard,
@@ -86,10 +86,16 @@ impl StateInfo {
     }
 }
 
-#[derive(Clone)]
-struct StateStack {
+#[derive(Debug, Clone, Eq)]
+pub struct StateStack {
     states: Vec::<StateInfo>,
     current: usize,
+}
+
+impl PartialEq for StateStack {
+    fn eq(&self, other: &Self) -> bool {
+        self.states[..self.current] == other.states[..other.current]
+    }
 }
 
 impl Default for StateStack {
@@ -116,6 +122,10 @@ impl StateStack {
             self.states.get_unchecked(self.current)
         }
     }     
+    
+    pub fn get_prev(&self, go_back: usize) -> Option<&StateInfo> {
+        self.states.get(self.current - go_back)
+    }
     
     // /// Returns a mutable reference to the current state.
     // #[inline]
@@ -166,7 +176,7 @@ impl StateStack {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Position {
     c_bitboards: [Bitboard; 2],
     t_bitboards: [Bitboard; 7],
@@ -346,6 +356,7 @@ impl Position {
     #[inline]
     fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
+        assert_eq!(self.get_piece(sq), Piece::default(), "Piece already at {sq}: {}", self.get_piece(sq));
         *self.get_piece_bb_mut(piece.piece_type()) |= target;
         *self.get_color_bb_mut(piece.color()) |= target;
         *self.get_piece_mut(sq) = piece;
@@ -366,6 +377,7 @@ impl Position {
     fn remove_piece(&mut self, sq: Square) {
         let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
+        assert_ne!(piece, Piece::default(), "No piece at {sq}");
         *self.get_piece_bb_mut(piece.piece_type()) ^= target;
         *self.get_color_bb_mut(piece.color()) ^= target;
         *self.get_piece_mut(sq) = Piece::default();
@@ -384,8 +396,8 @@ impl Position {
     
     #[inline] 
     fn move_piece(&mut self, from: Square, to: Square) {
-        debug_assert!(self.get_piece(from) != Piece::default());
-        debug_assert!(self.get_piece(to) == Piece::default());
+        assert!(self.get_piece(from) != Piece::default(), "No piece at {from}");
+        assert!(self.get_piece(to) == Piece::default(), "Piece already at {to}: {}", self.get_piece(to));
         let piece = self.get_piece(from);
         let from_to = Bitboard::from_c(from) | Bitboard::from_c(to);
         *self.get_color_bb_mut(piece.color()) ^= from_to;

@@ -1,4 +1,7 @@
+use itertools::Itertools;
 use rand::{thread_rng, Rng};
+use std::assert_matches::assert_matches;
+use std::cmp::Ordering;
 use std::ops::ControlFlow;
 use std::ptr::NonNull;
 
@@ -25,16 +28,16 @@ impl PlayoutResult {
             Self::Draw
         }
     }
-    
+
     pub fn maybe_new(pos: &Position, move_cnt: usize) -> Option<Self> {
         if pos.has_threefold_repetition() || pos.fifty_move_rule() {
             return Some(Self::Draw);
         }
-        
+
         if move_cnt == 0 {
             return Some(Self::new(pos));
         }
-        
+
         None
     }
 }
@@ -49,21 +52,68 @@ impl Tree {
         Self { root }
     }
 
-    pub fn best_move(&self) -> Move {
-        self.root.select().mov
+    pub fn best_move(&self) -> Option<Move> {
+        if self.root.children.iter().any(|n| n.score.v().is_none()) {
+            return None;
+        }
+        Some(
+            self.root
+                .children
+                .iter()
+                .max_by(|a, b| {
+                    a.score
+                        .partial_cmp(&b.score)
+                        .expect("not all root nodes have not been searched yet")
+                })
+                .expect("Root need's to have children.")
+                .mov,
+        )
+    }
+    
+    // pub fn pv(&self) -> Option<Vec<Move>> {
+    //     
+    // }
+
+    pub fn dbg(&self) {
+        println!("root: {:#?}", self.root);
+        // println!("root: {:?}", self.root.score);
+        // println!("children:");
+        // self.root
+        //     .children        
+        //     .iter()
+        //     .inspect(|n| println!("{}: {:?}", n.mov, n.score))
+        //     .for_each(|n| {});
+        println!("\r\n");
     }
 
     pub fn grow(&mut self, pos: &mut Position) {
+        let dbg = pos.clone();
+
         let mut stack = self.select_leaf_mut(pos);
-        let leaf = unsafe { stack.last_mut().unwrap().as_mut() };
+        let leaf = unsafe {
+            stack
+                .last_mut()
+                .expect("This is only None, if root.state == Leaf, which is not the case.")
+                .as_mut()
+        };
+
         let result = leaf.simulate(pos);
-        Self::backpropagate(pos, stack, result);
+
+        self.backpropagate(pos, stack, result);
+
+        assert_eq!(dbg, *pos, "Position was not reset correctly.");
     }
 
-    fn backpropagate(pos: &mut Position, mut stack: Vec<NonNull<Node>>, result: PlayoutResult) {
+    fn backpropagate(
+        &mut self,
+        pos: &mut Position,
+        mut stack: Vec<NonNull<Node>>,
+        result: PlayoutResult,
+    ) {
         unsafe {
-            for node in stack.iter_mut().map(|n| n.as_mut()) {
+            for node in stack.iter_mut().rev().map(|n| n.as_mut()) {
                 pos.unmake_move(node.mov);
+
                 node.score.playouts += 1;
                 node.score.wins += match result {
                     PlayoutResult::Win { relative_to } if relative_to == pos.get_turn() => 1,
@@ -72,36 +122,72 @@ impl Tree {
                 };
             }
         }
+        self.root.score.playouts += 1;
+        self.root.score.wins += match result {
+            PlayoutResult::Win { relative_to } if relative_to == pos.get_turn() => 1,
+            PlayoutResult::Win { relative_to: _ } => 0,
+            PlayoutResult::Draw => 0,
+        };
     }
 
     fn select_leaf_mut(&mut self, pos: &mut Position) -> Vec<NonNull<Node>> {
-        let mut stack = vec![NonNull::from_ref(&self.root)];
+        let mut stack: Vec<NonNull<Node>> = vec![];
+        let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
         loop {
-            let current = unsafe { stack.last_mut().unwrap().as_mut() };
-            if current.state == NodeState::Leaf {
-                if current.score.playouts == 0 {
-                    current.expand(pos);
-                    let next = current.select_mut();
-                    pos.make_move(next.mov);
-                    stack.push(NonNull::from_ref(next));
-                    break;
-                } else {
-                    break;
+            // println!("{:?}", current.state);
+            match current.state {
+                NodeState::Root | NodeState::Branch => {
+                    current = current.select_mut();
+                    pos.make_move(current.mov);
+                    // println!("{}", current.mov);
+                    stack.push(NonNull::from_ref(current));
                 }
-            } else {
-                let next = current.select_mut();
-                pos.make_move(next.mov);
-                stack.push(NonNull::from_ref(next));
+                NodeState::Leaf if current.score.playouts != 0 => {
+                    current.expand(pos);
+                    if current.state == NodeState::Terminal {
+                        // println!("Terminal");
+                        return stack;
+                    }
+                    current = current.select_mut();
+                    pos.make_move(current.mov);
+                    // println!("{}", current.mov);
+                    stack.push(NonNull::from_ref(current));
+                    return stack;
+                }
+                NodeState::Leaf | NodeState::Terminal => {
+                    return stack;
+                }
             }
+            // println!("{}", current.mov);
         }
-        stack
     }
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, Clone)]
 struct Score {
     playouts: u32,
     wins: u32,
+}
+
+impl Score {
+    pub fn v(&self) -> Option<f32> {
+        match self.playouts {
+            0 => None,
+            _ => Some(self.wins as f32 / self.playouts as f32),
+        }
+    }
+}
+
+impl PartialEq for Score {
+    fn eq(&self, other: &Self) -> bool {
+        self.v().eq(&other.v())
+    }
+}
+
+impl PartialOrd for Score {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.v()?.partial_cmp(&other.v()?)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -109,14 +195,25 @@ enum NodeState {
     Root,
     Leaf,
     Branch,
+    Terminal,
 }
 
-#[derive(Debug)]
 struct Node {
     score: Score,
     mov: Move,
     state: NodeState,
     children: Vec<Self>,
+}
+
+impl std::fmt::Debug for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Node")
+            .field("score", &self.score)
+            .field("mov", &self.mov)
+            .field("state", &self.state)
+            .field("children", &self.children.iter().filter(|c| c.score.playouts != 0).collect_vec())
+            .finish()
+    }
 }
 
 impl Node {
@@ -159,30 +256,36 @@ impl Node {
     }
 
     fn select_mut(&mut self) -> &mut Self {
+        assert_matches!(self.state, NodeState::Branch | NodeState::Root);
+
+        // if self.score.playouts == 0 {
+        //     return self.children
+        //         .get_mut(0)
+        //         .expect("This is not a terminal node, so there has to be atleast on child.");
+        // }
+
         self.children
             .iter_mut()
             .max_by(|a, b| {
                 let a_ucb = a.ucb(self.score.playouts);
+                if a_ucb == f32::INFINITY {
+                    return Ordering::Greater;
+                }
                 let b_ucb = b.ucb(self.score.playouts);
-                a_ucb.partial_cmp(&b_ucb).unwrap()
+                a_ucb.partial_cmp(&b_ucb).expect(&format!(
+                    "Comparison failed: {}, {} <=> {}, {} | {}",
+                    a_ucb, a.score.playouts, b_ucb, b.score.playouts, self.score.playouts
+                ))
             })
-            .expect("No children to select from")
-    }
-
-    fn select(&self) -> &Self {
-        self.children
-            .iter()
-            .max_by(|a, b| {
-                let a_ucb = a.ucb(self.score.playouts);
-                let b_ucb = b.ucb(self.score.playouts);
-                a_ucb.partial_cmp(&b_ucb).unwrap()
-            })
-            .expect("No children to select from")
+            .expect("This is not a terminal node, so there has to be atleast on child.")
     }
 
     fn simulate(&self, pos: &mut Position) -> PlayoutResult {
+        assert_matches!(self.state, NodeState::Leaf | NodeState::Terminal);
+
         let mut rng = thread_rng();
-        let mut moves_stack = Vec::new();
+        let mut stack: Vec<Move> = Vec::new();
+
         loop {
             let mut moves = Vec::new();
             fold_legal_moves(pos, &mut moves, |acc, m| {
@@ -192,27 +295,31 @@ impl Node {
                 })
             });
             if let Some(result) = PlayoutResult::maybe_new(pos, moves.len()) {
-                while let Some(m) = moves_stack.pop() {
+                while let Some(m) = stack.pop() {
                     pos.unmake_move(m);
                 }
                 return result;
             }
+
             let mov = moves[rng.gen_range(0..moves.len())];
             pos.make_move(mov);
-            moves_stack.push(mov);
+            stack.push(mov);
         }
     }
 
-    fn expand(&mut self, pos: &mut Position) {
-        if self.state != NodeState::Leaf {
-            return;
-        }
+    fn expand(&mut self, pos: &Position) {
+        assert_matches!(self.state, NodeState::Leaf);
+
         fold_legal_moves(pos, &mut self.children, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Node::new(m, NodeState::Leaf));
                 acc
             })
         });
-        self.state = NodeState::Branch;
+        self.state = if self.children.is_empty() {
+            NodeState::Terminal
+        } else {
+            NodeState::Branch
+        };
     }
 }

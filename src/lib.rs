@@ -8,6 +8,7 @@
 #![feature(step_trait)]
 #![feature(try_trait_v2)]
 #![feature(try_blocks)]
+#![feature(assert_matches)]
 
 #[macro_use]
 extern crate impl_ops;

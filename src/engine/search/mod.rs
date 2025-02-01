@@ -63,10 +63,9 @@ impl Search {
     ) -> Move {
         let mut tree = mcts::Tree::new(&pos);
         while !cancellation_token.is_cancelled() {
-            println!("{}", tree.best_move());
             tree.grow(&mut pos);
         }
-        tree.best_move()       
+        tree.best_move().expect("search did not complete")       
     }
 
     pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {
