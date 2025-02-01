@@ -17,6 +17,7 @@ impl_ops = "0.1.1"
 itertools = "0.13.0"
 paste = "1.0.15"
 rand = { version = "0.8.5", features = ["small_rng"] }
+rustc-hash = { version = "2.1.0", features = ["nightly"] }
 thiserror = "2.0.1"
 typenum = "1.17.0"
 

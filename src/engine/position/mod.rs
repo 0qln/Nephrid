@@ -1,6 +1,8 @@
 use core::fmt;
 use std::ptr::NonNull;
 
+use repetitions::RepetitionTable;
+
 use crate::{
     engine::{
         bitboard::Bitboard, castling::CastlingRights, color::Color, coordinates::{File, Rank, Square}, fen::Fen, r#move::Move, move_iter::{bishop, king, knight, pawn, rook}, piece::{Piece, PieceType}, turn::Turn, zobrist
@@ -16,6 +18,8 @@ pub enum CheckState {
     Single,
     Double
 }
+
+mod repetitions;
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 struct StateInfo {
@@ -33,7 +37,6 @@ struct StateInfo {
     pub castling: CastlingRights,
     pub captured_piece: Piece,
     pub key: zobrist::Hash,
-    pub has_threefold_repetition: bool
 }
 
 impl StateInfo {
@@ -170,6 +173,7 @@ pub struct Position {
     pieces: [Piece; 64],
     piece_counts: [i8; 14],
     state: StateStack,
+    repetitions: RepetitionTable,
 }
 
 impl Default for Position {
@@ -181,6 +185,7 @@ impl Default for Position {
             pieces: [Piece::default(); 64],
             piece_counts: Default::default(),
             state: Default::default(),
+            repetitions: Default::default(),
         }
     }
 }
@@ -307,6 +312,22 @@ impl Position {
     #[inline]
     pub fn get_blockers(&self) -> Bitboard {
         self.state.get_current().blockers
+    }
+    
+    #[inline]
+    pub fn has_threefold_repetition(&self) -> bool {
+        let hash = self.state.get_current().key;
+        self.repetitions.get(hash) >= Some(3)
+    }
+    
+    #[inline]
+    pub fn plys_50(&self) -> Ply {
+        self.state.get_current().plys50
+    }
+    
+    #[inline]
+    pub fn fifty_move_rule(&self) -> bool {
+        self.plys_50() >= Ply { v: 100 }
     }
     
     /// Returns the X-Ray checkers for the given king.
@@ -507,6 +528,7 @@ impl Position {
         }
         
         next_state.init(self);
+        self.repetitions.push(next_state.key);
         self.state.incr();
 
         #[inline(always)]
@@ -524,10 +546,12 @@ impl Position {
     pub fn unmake_move(&mut self, m: Move) {
         let us = !self.get_turn();
         let (from, to, flag) = m.into();
-        
+
         // Safety: During the lifetime of this pointer, no other pointer
         // writes to the memory location of the popped state. 
         let popped_state = unsafe { self.state.pop_current().as_ref() };
+        
+        self.repetitions.pop(popped_state.key);
 
         match flag.v() {
             // castling

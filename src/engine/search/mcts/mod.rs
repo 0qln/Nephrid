@@ -25,6 +25,18 @@ impl PlayoutResult {
             Self::Draw
         }
     }
+    
+    pub fn maybe_new(pos: &Position, move_cnt: usize) -> Option<Self> {
+        if pos.has_threefold_repetition() || pos.fifty_move_rule() {
+            return Some(Self::Draw);
+        }
+        
+        if move_cnt == 0 {
+            return Some(Self::new(pos));
+        }
+        
+        None
+    }
 }
 
 pub struct Tree {
@@ -66,8 +78,6 @@ impl Tree {
         let mut stack = vec![NonNull::from_ref(&self.root)];
         loop {
             let current = unsafe { stack.last_mut().unwrap().as_mut() };
-            println!("{}", current.mov);
-            println!("{:?}", current.state);
             if current.state == NodeState::Leaf {
                 if current.score.playouts == 0 {
                     current.expand(pos);
@@ -181,8 +191,7 @@ impl Node {
                     acc
                 })
             });
-            if moves.is_empty() {
-                let result = PlayoutResult::new(pos);
+            if let Some(result) = PlayoutResult::maybe_new(pos, moves.len()) {
                 while let Some(m) = moves_stack.pop() {
                     pos.unmake_move(m);
                 }
