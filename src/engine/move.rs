@@ -131,6 +131,11 @@ impl Move {
     const MASK_FLAG: u16 = 0b1111 << Move::SHIFT_FLAG;
     
     #[inline]
+    pub const fn null() -> Self {
+        Move { v: 0 }
+    }
+    
+    #[inline]
     pub const fn new(from: Square, to: Square, flag: MoveFlag) -> Self {
         Move {
             v: ((from.v() as u16) << Move::SHIFT_FROM)

@@ -16,7 +16,6 @@ use self::r#move::LongAlgebraicUciNotation;
 
 pub mod search;
 pub mod zobrist;
-pub mod transposition_table;
 pub mod move_iter;
 pub mod color;
 pub mod piece;
@@ -51,7 +50,6 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
         }
         Some("stop") => {
             cancellation_token.cancel();
-            // output should get sent from the calculation thread
         }
         Some("go") => {
             let mut search = engine.search.clone();

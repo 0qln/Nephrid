@@ -143,7 +143,7 @@ fn test(pos: &Position) -> std::ops::ControlFlow::<(), usize> {
 }
 
 #[inline]
-pub fn fold_legal_move<B, F, R>(pos: &Position, init: B, f: F) -> R
+pub fn fold_legal_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
