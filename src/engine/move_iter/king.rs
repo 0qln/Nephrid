@@ -2,7 +2,12 @@ use std::ops::Try;
 
 use crate::{
     engine::{
-        bitboard::Bitboard, castling::CastlingSide, coordinates::{File, Rank, Square}, r#move::{Move, MoveFlag}, piece::{IPieceType, PieceType}, position::Position
+        bitboard::Bitboard,
+        castling::CastlingSide,
+        coordinates::{File, Rank, Square},
+        piece::{IPieceType, PieceType},
+        position::Position,
+        r#move::{Move, MoveFlag},
     },
     misc::ConstFrom,
 };
@@ -10,7 +15,8 @@ use crate::{
 use const_for::const_for;
 
 use super::{
-    bishop::Bishop, map_captures, map_quiets, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks, FoldMoves, NoCheck, NoDoubleCheck, SomeCheck
+    bishop::Bishop, map_captures, map_quiets, queen::Queen, rook::Rook,
+    sliding_piece::SlidingAttacks, FoldMoves, NoCheck, NoDoubleCheck, SomeCheck,
 };
 
 pub struct King;
@@ -82,7 +88,11 @@ impl<C: SomeCheck> FoldMoves<C> for King {
                 !check_after_move
             };
 
-            if is_legal { f(acc, m) } else { try { acc } }
+            if is_legal {
+                f(acc, m)
+            } else {
+                try { acc }
+            }
         })
     }
 }

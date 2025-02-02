@@ -9,6 +9,9 @@ use crate::engine::move_iter::king::King;
 use crate::engine::piece::IPieceType;
 use crate::engine::{color::Color, move_iter::fold_legal_moves, position::Position, r#move::Move};
 
+#[cfg(test)]
+mod test;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum PlayoutResult {
     Win { relative_to: Color },
@@ -16,26 +19,24 @@ pub enum PlayoutResult {
 }
 
 impl PlayoutResult {
-    pub fn new(pos: &Position) -> Self {
-        let us = pos.get_turn();
-        let king = pos.get_bitboard(King::ID, us);
-        let nstm_attacks = pos.get_nstm_attacks();
-        let in_check = !(king & nstm_attacks).is_empty();
-        if in_check {
-            // If in check and no moves, it's a loss for the current player
-            Self::Win { relative_to: !us }
-        } else {
-            Self::Draw
-        }
-    }
-
-    pub fn maybe_new(pos: &Position, move_cnt: usize) -> Option<Self> {
+    pub fn maybe_new(pos: &Position, moves: &[Move]) -> Option<Self> {
         if pos.has_threefold_repetition() || pos.fifty_move_rule() {
             return Some(Self::Draw);
         }
 
-        if move_cnt == 0 {
-            return Some(Self::new(pos));
+        if moves.is_empty() {
+            return Some({
+                let us = pos.get_turn();
+                let king = pos.get_bitboard(King::ID, us);
+                let nstm_attacks = pos.get_nstm_attacks();
+                let in_check = !(king & nstm_attacks).is_empty();
+                if in_check {
+                    // If in check and no moves, it's a loss for the current player
+                    Self::Win { relative_to: !us }
+                } else {
+                    Self::Draw
+                }
+            });
         }
 
         None
@@ -69,20 +70,9 @@ impl Tree {
                 .mov,
         )
     }
-    
-    // pub fn pv(&self) -> Option<Vec<Move>> {
-    //     
-    // }
 
     pub fn dbg(&self) {
         println!("root: {:#?}", self.root);
-        // println!("root: {:?}", self.root.score);
-        // println!("children:");
-        // self.root
-        //     .children        
-        //     .iter()
-        //     .inspect(|n| println!("{}: {:?}", n.mov, n.score))
-        //     .for_each(|n| {});
         println!("\r\n");
     }
 
@@ -134,31 +124,19 @@ impl Tree {
         let mut stack: Vec<NonNull<Node>> = vec![];
         let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
         loop {
-            // println!("{:?}", current.state);
             match current.state {
                 NodeState::Root | NodeState::Branch => {
                     current = current.select_mut();
                     pos.make_move(current.mov);
-                    // println!("{}", current.mov);
                     stack.push(NonNull::from_ref(current));
                 }
                 NodeState::Leaf if current.score.playouts != 0 => {
                     current.expand(pos);
-                    if current.state == NodeState::Terminal {
-                        // println!("Terminal");
-                        return stack;
-                    }
-                    current = current.select_mut();
-                    pos.make_move(current.mov);
-                    // println!("{}", current.mov);
-                    stack.push(NonNull::from_ref(current));
-                    return stack;
                 }
                 NodeState::Leaf | NodeState::Terminal => {
                     return stack;
                 }
             }
-            // println!("{}", current.mov);
         }
     }
 }
@@ -211,7 +189,14 @@ impl std::fmt::Debug for Node {
             .field("score", &self.score)
             .field("mov", &self.mov)
             .field("state", &self.state)
-            .field("children", &self.children.iter().filter(|c| c.score.playouts != 0).collect_vec())
+            .field(
+                "children",
+                &self
+                    .children
+                    .iter()
+                    .filter(|c| c.score.playouts != 0)
+                    .collect_vec(),
+            )
             .finish()
     }
 }
@@ -221,10 +206,11 @@ impl Node {
         let mut children = Vec::new();
         fold_legal_moves(pos, &mut children, |acc, m| {
             ControlFlow::Continue::<(), _>({
-                acc.push(Node::new(m, NodeState::Leaf));
+                acc.push(Node::leaf(m));
                 acc
             })
         });
+        assert!(children.len() > 0, "A root node cannot be a terminal node.");
         Self {
             score: Score::default(),
             mov: Move::null(),
@@ -233,51 +219,43 @@ impl Node {
         }
     }
 
-    pub fn new(mov: Move, state: NodeState) -> Self {
+    pub fn leaf(mov: Move) -> Self {
         Self {
             score: Score::default(),
             mov,
-            state,
+            state: NodeState::Leaf,
             children: Vec::new(),
         }
     }
 
     fn ucb(&self, cap_n_i: u32) -> f32 {
-        if self.score.playouts == 0 {
-            f32::INFINITY
-        } else {
-            let w_i = self.score.wins as f32;
-            let n_i = self.score.playouts as f32;
-            let exploitation = w_i / n_i;
-            let c = f32::sqrt(2.0);
-            let exploration = c * f32::sqrt((cap_n_i as f32).ln() / n_i);
-            exploitation + exploration
+        match self.score.playouts {
+            0 => f32::INFINITY,
+            n_i => {
+                let w_i = self.score.wins as f32;
+                let n_i = self.score.playouts as f32;
+                let exploitation = w_i / n_i;
+                let c = f32::sqrt(2.0);
+                let exploration = c * f32::sqrt((cap_n_i as f32).ln() / n_i);
+                exploitation + exploration
+            }
         }
     }
 
     fn select_mut(&mut self) -> &mut Self {
         assert_matches!(self.state, NodeState::Branch | NodeState::Root);
 
-        // if self.score.playouts == 0 {
-        //     return self.children
-        //         .get_mut(0)
-        //         .expect("This is not a terminal node, so there has to be atleast on child.");
-        // }
-
         self.children
             .iter_mut()
             .max_by(|a, b| {
                 let a_ucb = a.ucb(self.score.playouts);
-                if a_ucb == f32::INFINITY {
-                    return Ordering::Greater;
-                }
                 let b_ucb = b.ucb(self.score.playouts);
                 a_ucb.partial_cmp(&b_ucb).expect(&format!(
-                    "Comparison failed: {}, {} <=> {}, {} | {}",
-                    a_ucb, a.score.playouts, b_ucb, b.score.playouts, self.score.playouts
+                    "UCB comparison failed: ({}, {}) <=> ({}, {})",
+                    a_ucb, a.score.playouts, b_ucb, b.score.playouts
                 ))
             })
-            .expect("This is not a terminal node, so there has to be atleast on child.")
+            .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
     }
 
     fn simulate(&self, pos: &mut Position) -> PlayoutResult {
@@ -294,7 +272,7 @@ impl Node {
                     acc
                 })
             });
-            if let Some(result) = PlayoutResult::maybe_new(pos, moves.len()) {
+            if let Some(result) = PlayoutResult::maybe_new(pos, &moves) {
                 while let Some(m) = stack.pop() {
                     pos.unmake_move(m);
                 }
@@ -312,7 +290,7 @@ impl Node {
 
         fold_legal_moves(pos, &mut self.children, |acc, m| {
             ControlFlow::Continue::<(), _>({
-                acc.push(Node::new(m, NodeState::Leaf));
+                acc.push(Node::leaf(m));
                 acc
             })
         });
