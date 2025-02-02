@@ -181,7 +181,10 @@ impl From<Move> for (Square, Square, MoveFlag) {
 
 impl fmt::Display for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
+        if self.v == 0 { 
+            write!(f, "0000") 
+        }
+        else if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
             write!(f, "{}{}{}", self.get_from(), self.get_to(), promo)
         }
         else {
