@@ -2,6 +2,7 @@ use std::cell::UnsafeCell;
 use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::uci::sync::{self, CancellationToken};
 use limit::Limit;
@@ -10,6 +11,7 @@ use target::Target;
 
 use crate::engine::position::Position;
 
+use super::color::Color;
 use super::depth::Depth;
 use super::move_iter::fold_legal_moves;
 use super::r#move::Move;
@@ -66,8 +68,14 @@ impl Search {
     ) -> Move {
         let mut tree = mcts::Tree::new(&pos);
         let mut last_best_move = None;
+        
+        let time_per_move = self.limit.time_per_move(&pos);
+        let time_limit = Instant::now() + time_per_move;
 
-        while !cancellation_token.is_cancelled() {
+        while {
+            !cancellation_token.is_cancelled() &&
+            (!self.limit.is_active || Instant::now() < time_limit)
+        } {
 
             tree.grow(&mut pos);
 

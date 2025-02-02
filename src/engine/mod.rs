@@ -1,4 +1,4 @@
-use search::Search;
+use search::{limit::Limit, Search};
 
 use crate::uci::{
     sync::{self, CancellationToken},
@@ -11,7 +11,7 @@ use crate::engine::{
     position::Position,
     r#move::Move,
 };
-use std::{process, sync::{atomic::{AtomicBool, Ordering}, Arc}, thread};
+use std::{default, process, sync::{atomic::{AtomicBool, Ordering}, Arc}, thread};
 use self::r#move::LongAlgebraicUciNotation;
 
 pub mod search;
@@ -60,6 +60,8 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
                     $field = token.map_or($default, |s| s.parse().unwrap_or($default));
                 }};
             }
+
+            engine.search.limit = Limit::default();
 
             while let Some(token) = tokenizer.collect_token().as_deref() {
                 match token {
