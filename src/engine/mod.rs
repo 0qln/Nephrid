@@ -205,6 +205,9 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
             
             engine.search.debug.store(debug, Ordering::Relaxed)
         }
+        Some("isready") => {
+            sync::out(&"readyok")
+        }
         Some(unknown) => { 
             sync::out(&format!("Unknown UCI command: '{unknown}'")) 
         }
