@@ -1,5 +1,7 @@
 use std::cell::UnsafeCell;
 use std::ops::ControlFlow;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use crate::uci::sync::{self, CancellationToken};
 use limit::Limit;
@@ -22,6 +24,7 @@ pub struct Search {
     pub limit: Limit,
     pub target: Target,
     pub mode: Mode,
+    pub debug: Arc<AtomicBool>,
 }
 
 impl Search {
@@ -62,9 +65,22 @@ impl Search {
         cancellation_token: CancellationToken
     ) -> Move {
         let mut tree = mcts::Tree::new(&pos);
+        let mut last_best_move = None;
+
         while !cancellation_token.is_cancelled() {
+
             tree.grow(&mut pos);
+
+            let curr_best_move = tree.best_move();
+            if last_best_move != curr_best_move {
+                if let Some(best_move) = curr_best_move {
+                    sync::out(&format!("currmove {best_move}"));
+                }
+                last_best_move = curr_best_move;
+            }
+
         }
+
         tree.best_move().expect("search did not complete")       
     }
 
@@ -81,7 +97,7 @@ impl Search {
                     position.clone(),
                     cancellation_token
                 );
-                sync::out(&format!("bestmove: {result}"));
+                sync::out(&format!("bestmove {result}"));
             }
             _ => unimplemented!(),
         };
