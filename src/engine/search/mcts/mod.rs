@@ -64,7 +64,7 @@ impl Tree {
                 .max_by(|a, b| {
                     a.score
                         .partial_cmp(&b.score)
-                        .expect("not all root nodes have not been searched yet")
+                        .expect("not all root nodes have been searched yet")
                 })
                 .expect("Root need's to have children.")
                 .mov,
@@ -211,6 +211,7 @@ impl Node {
             })
         });
         assert!(children.len() > 0, "A root node cannot be a terminal node.");
+
         Self {
             score: Score::default(),
             mov: Move::null(),
@@ -233,10 +234,12 @@ impl Node {
             0 => f32::INFINITY,
             n_i => {
                 let w_i = self.score.wins as f32;
-                let n_i = self.score.playouts as f32;
+                let n_i = n_i as f32;
                 let exploitation = w_i / n_i;
+
                 let c = f32::sqrt(2.0);
                 let exploration = c * f32::sqrt((cap_n_i as f32).ln() / n_i);
+
                 exploitation + exploration
             }
         }
