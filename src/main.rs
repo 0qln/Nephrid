@@ -12,6 +12,22 @@ fn main() {
     let input_stream = stdin();
     let mut engine = Engine::default();
     let mut cmd_cancellation = CancellationToken::new();
+
+    execute_uci(
+        &mut engine, 
+        &mut Tokenizer::new("ucinewgame"), 
+        cmd_cancellation.clone());
+
+    // execute_uci(
+    //     &mut engine, 
+    //     &mut Tokenizer::new("position startpos"), 
+    //     cmd_cancellation.clone());
+
+    // execute_uci(
+    //     &mut engine, 
+    //     &mut Tokenizer::new("go infinite"), 
+    //     cmd_cancellation.clone());
+
     loop {
         let mut input = String::new();
         match input_stream.read_line(&mut input) {

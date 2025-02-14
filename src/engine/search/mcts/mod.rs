@@ -2,7 +2,7 @@ use itertools::Itertools;
 use rand::{thread_rng, Rng};
 use std::assert_matches::assert_matches;
 use std::cmp::Ordering;
-use std::ops::ControlFlow;
+use std::ops::{AddAssign, ControlFlow};
 use std::ptr::NonNull;
 
 use crate::engine::move_iter::king::King;
@@ -12,7 +12,7 @@ use crate::engine::{color::Color, move_iter::fold_legal_moves, position::Positio
 #[cfg(test)]
 mod test;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PlayoutResult {
     Win { relative_to: Color },
     Draw,
@@ -104,20 +104,10 @@ impl Tree {
             for node in stack.iter_mut().rev().map(|n| n.as_mut()) {
                 pos.unmake_move(node.mov);
 
-                node.score.playouts += 1;
-                node.score.wins += match result {
-                    PlayoutResult::Win { relative_to } if relative_to == pos.get_turn() => 1,
-                    PlayoutResult::Win { relative_to: _ } => 0,
-                    PlayoutResult::Draw => 0,
-                };
+                node.score += (result, pos.get_turn());
             }
         }
-        self.root.score.playouts += 1;
-        self.root.score.wins += match result {
-            PlayoutResult::Win { relative_to } if relative_to == pos.get_turn() => 1,
-            PlayoutResult::Win { relative_to: _ } => 0,
-            PlayoutResult::Draw => 0,
-        };
+        self.root.score += (result, pos.get_turn());
     }
 
     fn select_leaf_mut(&mut self, pos: &mut Position) -> Vec<NonNull<Node>> {
@@ -144,15 +134,27 @@ impl Tree {
 #[derive(Debug, Default, Clone)]
 struct Score {
     playouts: u32,
-    wins: u32,
+    wins: f32,
 }
 
 impl Score {
     pub fn v(&self) -> Option<f32> {
         match self.playouts {
             0 => None,
-            _ => Some(self.wins as f32 / self.playouts as f32),
+            _ => Some(self.wins / self.playouts as f32),
         }
+    }
+}
+
+impl AddAssign<(PlayoutResult, Color)> for Score {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: (PlayoutResult, Color)) {
+        self.playouts += 1;
+        self.wins += match rhs.0 {
+            PlayoutResult::Win { relative_to } if relative_to == rhs.1 => 1.0,
+            PlayoutResult::Win { relative_to: _ } => 0.0,
+            PlayoutResult::Draw => 0.5,
+        };
     }
 }
 
@@ -233,7 +235,7 @@ impl Node {
         match self.score.playouts {
             0 => f32::INFINITY,
             n_i => {
-                let w_i = self.score.wins as f32;
+                let w_i = self.score.wins;
                 let n_i = n_i as f32;
                 let exploitation = w_i / n_i;
 
