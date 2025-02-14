@@ -1,4 +1,4 @@
-use search::Search;
+use search::{limit::Limit, Search};
 
 use crate::uci::{
     sync::{self, CancellationToken},
@@ -11,12 +11,11 @@ use crate::engine::{
     position::Position,
     r#move::Move,
 };
-use std::{process, thread};
+use std::{default, process, sync::{atomic::{AtomicBool, Ordering}, Arc}, thread};
 use self::r#move::LongAlgebraicUciNotation;
 
 pub mod search;
 pub mod zobrist;
-pub mod transposition_table;
 pub mod move_iter;
 pub mod color;
 pub mod piece;
@@ -36,7 +35,7 @@ pub mod ply;
 pub struct Engine {
     config: Configuration,
     position: Position,
-    search: Search
+    search: Search,
 }
 
 // mod uci
@@ -51,7 +50,6 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
         }
         Some("stop") => {
             cancellation_token.cancel();
-            // output should get sent from the calculation thread
         }
         Some("go") => {
             let mut search = engine.search.clone();
@@ -62,6 +60,8 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
                     $field = token.map_or($default, |s| s.parse().unwrap_or($default));
                 }};
             }
+
+            engine.search.limit = Limit::default();
 
             while let Some(token) = tokenizer.collect_token().as_deref() {
                 match token {
@@ -194,6 +194,19 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
         }
         Some("ucinewgame") => {
             engine.position = Position::start_position();
+        }
+        Some("debug") => {
+            let debug = match tokenizer.collect_token().as_deref() {
+                Some("on") => true,
+                Some("off") => false,
+                Some(x) => return sync::out(&format!("Error: Invalid argument: {}", x)),
+                None => return sync::out("Error: Missing arguments"),
+            };
+            
+            engine.search.debug.store(debug, Ordering::Relaxed)
+        }
+        Some("isready") => {
+            sync::out(&"readyok")
         }
         Some(unknown) => { 
             sync::out(&format!("Unknown UCI command: '{unknown}'")) 

@@ -1,3 +1,4 @@
+use core::hash;
 use std::ops;
 use std::sync::LazyLock;
 
@@ -18,6 +19,12 @@ use super::{
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub struct Hash {
     v: u64,
+}
+
+impl hash::Hash for Hash {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.v.hash(state);
+    }
 }
 
 impl Hash {

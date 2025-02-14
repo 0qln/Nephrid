@@ -118,7 +118,7 @@ impl const ConstFrom<CastlingSide> for MoveFlag {
     }
 }
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
 pub struct Move { v: u16 }
 
 impl Move {
@@ -129,6 +129,11 @@ impl Move {
     const MASK_FROM: u16 = 0b111111 << Move::SHIFT_FROM;
     const MASK_TO: u16 = 0b111111 << Move::SHIFT_TO;
     const MASK_FLAG: u16 = 0b1111 << Move::SHIFT_FLAG;
+    
+    #[inline]
+    pub const fn null() -> Self {
+        Move { v: 0 }
+    }
     
     #[inline]
     pub const fn new(from: Square, to: Square, flag: MoveFlag) -> Self {
@@ -176,7 +181,10 @@ impl From<Move> for (Square, Square, MoveFlag) {
 
 impl fmt::Display for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
+        if self.v == 0 { 
+            write!(f, "0000") 
+        }
+        else if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
             write!(f, "{}{}{}", self.get_from(), self.get_to(), promo)
         }
         else {
@@ -187,7 +195,11 @@ impl fmt::Display for Move {
 
 impl fmt::Debug for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Move").field("v", &self.v).finish()
+        f.debug_struct("Move")
+            .field("from", &self.get_from())
+            .field("to", &self.get_to())
+            .field("flag", &self.get_flag())
+            .finish()
     }
 }
 

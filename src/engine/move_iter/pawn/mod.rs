@@ -1,9 +1,15 @@
 use super::{
-    bishop::Bishop, king::King, pin_mask, rook::Rook, sliding_piece::SlidingAttacks, FoldMoves, NoDoubleCheck
+    bishop::Bishop, king::King, pin_mask, rook::Rook, sliding_piece::SlidingAttacks, FoldMoves,
+    NoDoubleCheck,
 };
 use crate::{
     engine::{
-        bitboard::Bitboard, color::{Color, TColor}, coordinates::{CompassRose, EpTargetSquare, File, Square, TCompassRose}, r#move::{Move, MoveFlag}, piece::{IPieceType, PieceType}, position::Position
+        bitboard::Bitboard,
+        color::{Color, TColor},
+        coordinates::{CompassRose, EpTargetSquare, File, Square, TCompassRose},
+        piece::{IPieceType, PieceType},
+        position::Position,
+        r#move::{Move, MoveFlag},
     },
     misc::ConstFrom,
 };
@@ -216,8 +222,8 @@ impl Iterator for PawnMoves<'_> {
             // per 'to' square, so unwrap_unchecked is safe.
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
 
-            // todo: the result of this branch is the same for some of the moves, 
-            // e.g: single and double step, so it can be cached. 
+            // todo: the result of this branch is the same for some of the moves,
+            // e.g: single and double step, so it can be cached.
             // maybe we can remove this inner loop aswell.
 
             // Check if the pawn is pinned and the move is valid.

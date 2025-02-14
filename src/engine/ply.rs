@@ -27,7 +27,7 @@ impl TryFrom<&mut Fen<'_>> for FullMoveCount {
     }
 }
 
-#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Ply { pub v: u16 }
 
 impl_op!(- |a: Ply, b: Ply| -> Ply { Ply { v: a.v - b.v } } );

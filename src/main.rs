@@ -11,7 +11,7 @@ fn main() {
 
     let input_stream = stdin();
     let mut engine = Engine::default();
-    let cmd_cancellation: CancellationToken = CancellationToken::default();
+    let mut cmd_cancellation = CancellationToken::new();
     loop {
         let mut input = String::new();
         match input_stream.read_line(&mut input) {
@@ -21,6 +21,10 @@ fn main() {
                 cmd_cancellation.clone(),
             ),
             Err(err) => sync::out(&format!("Error: {err}")),
+        }
+        // Replace the cancellation token if it's burned.
+        if cmd_cancellation.is_cancelled() {
+            cmd_cancellation = Default::default();
         }
     }
 }

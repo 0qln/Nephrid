@@ -64,15 +64,13 @@ pub struct SingleCheck;
 impl SomeCheck for SingleCheck {}
 impl NoDoubleCheck for SingleCheck {
     fn quiets_mask(pos: &Position, color: Color) -> Bitboard {
-        // Safety: king the board has no king, but gen_legal is used,
-        // the context is broken anyway.
         let king_bb = pos.get_bitboard(King::ID, color);
-        let king = unsafe { king_bb.lsb().unwrap_unchecked() };
-
-        // Safety: there is a single checker.
-        let checker = unsafe { pos.get_checkers().lsb().unwrap_unchecked() };
-
-        Bitboard::between(king, checker)
+        Bitboard::between(
+            // Safety: there is a check, so there has to be a king.
+            unsafe { king_bb.lsb().unwrap_unchecked() }, 
+            // Safety: there is a single checker.
+            unsafe { pos.get_checkers().lsb().unwrap_unchecked() }
+        )
     }
 
     fn captures_mask(pos: &Position, _: Color) -> Bitboard {
@@ -143,7 +141,7 @@ fn test(pos: &Position) -> std::ops::ControlFlow::<(), usize> {
 }
 
 #[inline]
-pub fn fold_legal_move<B, F, R>(pos: &Position, init: B, f: F) -> R
+pub fn fold_legal_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,

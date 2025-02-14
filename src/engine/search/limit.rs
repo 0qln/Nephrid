@@ -1,3 +1,7 @@
+use std::time::Duration;
+
+use crate::engine::{color::Color, position::Position};
+
 #[derive(Debug, Clone)]
 pub struct Limit {
     pub is_active: bool,
@@ -22,6 +26,21 @@ impl Limit {
             nodes: u64::MAX,
             movetime: u64::MAX,
         }
+    }
+    
+    pub fn time_per_move(&self, pos: &Position) -> Duration {
+        let time = match pos.get_turn() {
+            Color::WHITE => self.wtime,
+            Color::BLACK => self.btime,
+            _ => unreachable!()
+        };
+        let inc = match pos.get_turn() {
+            Color::WHITE => self.winc,
+            Color::BLACK => self.binc,
+            _ => unreachable!()
+        };
+
+        Duration::from_millis(time / 50 + inc)
     }
 }
 

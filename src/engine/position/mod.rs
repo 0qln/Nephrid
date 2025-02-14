@@ -1,6 +1,8 @@
 use core::fmt;
 use std::ptr::NonNull;
 
+use repetitions::RepetitionTable;
+
 use crate::{
     engine::{
         bitboard::Bitboard, castling::CastlingRights, color::Color, coordinates::{File, Rank, Square}, fen::Fen, r#move::Move, move_iter::{bishop, king, knight, pawn, rook}, piece::{Piece, PieceType}, turn::Turn, zobrist
@@ -17,8 +19,10 @@ pub enum CheckState {
     Double
 }
 
+mod repetitions;
+
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
-struct StateInfo {
+pub struct StateInfo {
     // Memoized state
     pub checkers: Bitboard,
     pub blockers: Bitboard,
@@ -33,7 +37,6 @@ struct StateInfo {
     pub castling: CastlingRights,
     pub captured_piece: Piece,
     pub key: zobrist::Hash,
-    pub has_threefold_repetition: bool
 }
 
 impl StateInfo {
@@ -83,10 +86,16 @@ impl StateInfo {
     }
 }
 
-#[derive(Clone)]
-struct StateStack {
+#[derive(Debug, Clone, Eq)]
+pub struct StateStack {
     states: Vec::<StateInfo>,
     current: usize,
+}
+
+impl PartialEq for StateStack {
+    fn eq(&self, other: &Self) -> bool {
+        self.states[..self.current] == other.states[..other.current]
+    }
 }
 
 impl Default for StateStack {
@@ -113,6 +122,10 @@ impl StateStack {
             self.states.get_unchecked(self.current)
         }
     }     
+    
+    pub fn get_prev(&self, go_back: usize) -> Option<&StateInfo> {
+        self.states.get(self.current - go_back)
+    }
     
     // /// Returns a mutable reference to the current state.
     // #[inline]
@@ -163,13 +176,14 @@ impl StateStack {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Position {
     c_bitboards: [Bitboard; 2],
     t_bitboards: [Bitboard; 7],
     pieces: [Piece; 64],
     piece_counts: [i8; 14],
     state: StateStack,
+    repetitions: RepetitionTable,
 }
 
 impl Default for Position {
@@ -181,6 +195,7 @@ impl Default for Position {
             pieces: [Piece::default(); 64],
             piece_counts: Default::default(),
             state: Default::default(),
+            repetitions: Default::default(),
         }
     }
 }
@@ -309,6 +324,22 @@ impl Position {
         self.state.get_current().blockers
     }
     
+    #[inline]
+    pub fn has_threefold_repetition(&self) -> bool {
+        let hash = self.state.get_current().key;
+        self.repetitions.get(hash) >= Some(3)
+    }
+    
+    #[inline]
+    pub fn plys_50(&self) -> Ply {
+        self.state.get_current().plys50
+    }
+    
+    #[inline]
+    pub fn fifty_move_rule(&self) -> bool {
+        self.plys_50() >= Ply { v: 100 }
+    }
+    
     /// Returns the X-Ray checkers for the given king.
     /// X-Ray checkers are pieces which attack a king 
     /// through zero or more pieces.
@@ -325,6 +356,7 @@ impl Position {
     #[inline]
     fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
+        assert_eq!(self.get_piece(sq), Piece::default(), "Piece already at {sq}: {}", self.get_piece(sq));
         *self.get_piece_bb_mut(piece.piece_type()) |= target;
         *self.get_color_bb_mut(piece.color()) |= target;
         *self.get_piece_mut(sq) = piece;
@@ -345,6 +377,7 @@ impl Position {
     fn remove_piece(&mut self, sq: Square) {
         let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
+        assert_ne!(piece, Piece::default(), "No piece at {sq}");
         *self.get_piece_bb_mut(piece.piece_type()) ^= target;
         *self.get_color_bb_mut(piece.color()) ^= target;
         *self.get_piece_mut(sq) = Piece::default();
@@ -363,8 +396,8 @@ impl Position {
     
     #[inline] 
     fn move_piece(&mut self, from: Square, to: Square) {
-        debug_assert!(self.get_piece(from) != Piece::default());
-        debug_assert!(self.get_piece(to) == Piece::default());
+        assert!(self.get_piece(from) != Piece::default(), "No piece at {from}");
+        assert!(self.get_piece(to) == Piece::default(), "Piece already at {to}: {}", self.get_piece(to));
         let piece = self.get_piece(from);
         let from_to = Bitboard::from_c(from) | Bitboard::from_c(to);
         *self.get_color_bb_mut(piece.color()) ^= from_to;
@@ -507,6 +540,7 @@ impl Position {
         }
         
         next_state.init(self);
+        self.repetitions.push(next_state.key);
         self.state.incr();
 
         #[inline(always)]
@@ -524,10 +558,12 @@ impl Position {
     pub fn unmake_move(&mut self, m: Move) {
         let us = !self.get_turn();
         let (from, to, flag) = m.into();
-        
+
         // Safety: During the lifetime of this pointer, no other pointer
         // writes to the memory location of the popped state. 
         let popped_state = unsafe { self.state.pop_current().as_ref() };
+        
+        self.repetitions.pop(popped_state.key);
 
         match flag.v() {
             // castling
