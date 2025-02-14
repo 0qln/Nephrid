@@ -55,7 +55,8 @@ fn selects_unexpanded_leaf() {
     let mut pos = Position::try_from(&mut fen).unwrap();
     let mut tree = Tree::new(&pos);
 
-    let stack = tree.select_leaf_mut(&mut pos);
+    tree.select_leaf_mut(&mut pos);
+    let stack = tree.selection_buffer;
 
     // Should select the only child
     assert_eq!(stack.len(), 1);
@@ -82,7 +83,8 @@ fn expands_leaf_and_selects_child() {
         tree.grow(&mut pos.clone());
     }
 
-    let stack = tree.select_leaf_mut(&mut pos);
+    tree.select_leaf_mut(&mut pos);
+    let stack = tree.selection_buffer;
 
     // Should have root -> branch -> leaf
     assert_eq!(stack.len(), 2);
@@ -134,7 +136,8 @@ fn traverses_multiple_branch_nodes() {
         tree.grow(&mut pos.clone());
     }
 
-    let stack = tree.select_leaf_mut(&mut pos);
+    tree.select_leaf_mut(&mut pos);
+    let stack = tree.selection_buffer;
 
     // Verify path depth and node types
     assert!(stack.len() >= 2);

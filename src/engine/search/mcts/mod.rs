@@ -45,12 +45,13 @@ impl PlayoutResult {
 
 pub struct Tree {
     root: Node,
+    selection_buffer: Vec<NonNull<Node>>,
 }
 
 impl Tree {
     pub fn new(pos: &Position) -> Self {
         let root = Node::root(pos);
-        Self { root }
+        Self { root, selection_buffer: Vec::new() }
     }
 
     pub fn best_move(&self) -> Option<Move> {
@@ -79,9 +80,9 @@ impl Tree {
     pub fn grow(&mut self, pos: &mut Position) {
         let dbg = pos.clone();
 
-        let mut stack = self.select_leaf_mut(pos);
+        self.select_leaf_mut(pos);
         let leaf = unsafe {
-            stack
+            self.selection_buffer
                 .last_mut()
                 .expect("This is only None, if root.state == Leaf, which is not the case.")
                 .as_mut()
@@ -89,7 +90,7 @@ impl Tree {
 
         let result = leaf.simulate(pos);
 
-        self.backpropagate(pos, stack, result);
+        self.backpropagate(pos, result);
 
         assert_eq!(dbg, *pos, "Position was not reset correctly.");
     }
@@ -97,34 +98,32 @@ impl Tree {
     fn backpropagate(
         &mut self,
         pos: &mut Position,
-        mut stack: Vec<NonNull<Node>>,
         result: PlayoutResult,
     ) {
         unsafe {
-            for node in stack.iter_mut().rev().map(|n| n.as_mut()) {
+            for node in self.selection_buffer.iter_mut().rev().map(|n| n.as_mut()) {
                 pos.unmake_move(node.mov);
-
                 node.score += (result, pos.get_turn());
             }
         }
         self.root.score += (result, pos.get_turn());
     }
 
-    fn select_leaf_mut(&mut self, pos: &mut Position) -> Vec<NonNull<Node>> {
-        let mut stack: Vec<NonNull<Node>> = vec![];
+    fn select_leaf_mut(&mut self, pos: &mut Position) {
+        self.selection_buffer.clear();
         let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
         loop {
             match current.state {
                 NodeState::Root | NodeState::Branch => {
                     current = current.select_mut();
                     pos.make_move(current.mov);
-                    stack.push(NonNull::from_ref(current));
+                    self.selection_buffer.push(NonNull::from_ref(current));
                 }
                 NodeState::Leaf if current.score.playouts != 0 => {
                     current.expand(pos);
                 }
                 NodeState::Leaf | NodeState::Terminal => {
-                    return stack;
+                    break;
                 }
             }
         }
