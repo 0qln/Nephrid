@@ -15,11 +15,11 @@ fn ucb_selection() {
 
     let mut root = Node::root(&pos);
     root.score.playouts = 1;
-    root.score.wins = 0;
+    root.score.wins = 0.0;
 
     let mut child1 = Node::leaf(Move::null());
     child1.score.playouts = 1;
-    child1.score.wins = 1;
+    child1.score.wins = 1.0;
 
     let child2 = Node::leaf(Move::null()); // 0 playouts
 
