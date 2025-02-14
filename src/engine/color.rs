@@ -3,6 +3,8 @@ use std::ops;
 
 use crate::{impl_variants_with_assertion, misc::ParseError};
 
+use super::fen::Fen;
+
 #[derive(PartialEq, Eq, Copy, Clone, Default)]
 pub struct Color { v: TColor }
 
@@ -24,7 +26,18 @@ impl TryFrom<char> for Color {
         match value {
             'w' => Ok(Color::WHITE),
             'b' => Ok(Color::BLACK),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
+        }
+    }
+}
+
+impl TryFrom<&mut Fen<'_>> for Color {
+    type Error = ParseError;
+
+    fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
+        match fen.iter_token().next() {
+            Some(c) => Color::try_from(c),
+            None => Err(ParseError::MissingValue),
         }
     }
 }

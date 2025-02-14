@@ -103,7 +103,7 @@ impl TryFrom<TMoveFlag> for MoveFlag {
     fn try_from(value: TMoveFlag) -> Result<Self, Self::Error> {
         match value {
             0..=13 => Ok(MoveFlag { v: value }),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }

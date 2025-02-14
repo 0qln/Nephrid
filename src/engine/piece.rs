@@ -1,4 +1,5 @@
 use core::fmt;
+use std::fmt::{Debug, Display};
 
 use crate::{engine::color::Color, impl_variants, misc::{ConstFrom, ParseError}};
 
@@ -61,7 +62,7 @@ impl TryFrom<char> for PieceType {
             'q' => Ok(PieceType::QUEEN),
             'k' => Ok(PieceType::KING),
             '.' => Ok(PieceType::NONE),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }
@@ -98,7 +99,7 @@ impl_variants! {
     
 impl fmt::Display for PromoPieceType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.v.fmt(f)
+        Display::fmt(&self.v, f)
     }
 }
 
@@ -111,7 +112,7 @@ impl TryFrom<char> for PromoPieceType {
             'b' => Ok(PromoPieceType::BISHOP),
             'r' => Ok(PromoPieceType::ROOK),
             'q' => Ok(PromoPieceType::QUEEN),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }
@@ -121,7 +122,7 @@ impl TryFrom<MoveFlag> for PromoPieceType {
 
     fn try_from(flag: MoveFlag) -> Result<Self, Self::Error> {
         if !flag.is_promo() {
-            Err(ParseError::InputOutOfRange(Box::new(flag)))?
+            Err(ParseError::InputOutOfRange(format!("{flag:?}")))?
         }
         else {
             let pt = PieceType { v: (flag.v() - 2) % 4 + 2 };

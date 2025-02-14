@@ -11,7 +11,6 @@ use target::Target;
 
 use crate::engine::position::Position;
 
-use super::color::Color;
 use super::depth::Depth;
 use super::move_iter::fold_legal_moves;
 use super::r#move::Move;
@@ -21,15 +20,20 @@ pub mod mode;
 pub mod mcts;
 pub mod target;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Debug, Clone)]
 pub struct Search {
     pub limit: Limit,
     pub target: Target,
     pub mode: Mode,
     pub debug: Arc<AtomicBool>,
+    tree: mcts::Tree,
 }
 
 impl Search {
+    pub fn new(limit: Limit, target: Target, mode: Mode, debug: Arc<AtomicBool>) -> Self {
+        Self { limit, target, mode, debug, ..Default::default() }
+    }
+
     pub fn reset() {
         todo!()
     }
@@ -88,8 +92,10 @@ impl Search {
             }
 
         }
-
-        tree.best_move().expect("search did not complete")       
+        
+        let last_best_move = last_best_move.expect("search did not complete");
+        tree.advance(last_best_move);
+        last_best_move
     }
 
     pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {

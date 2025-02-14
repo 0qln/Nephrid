@@ -16,7 +16,8 @@ fn main() {
     execute_uci(
         &mut engine, 
         &mut Tokenizer::new("ucinewgame"), 
-        cmd_cancellation.clone());
+        cmd_cancellation.clone())
+    .unwrap();
 
     // execute_uci(
     //     &mut engine, 
@@ -31,11 +32,15 @@ fn main() {
     loop {
         let mut input = String::new();
         match input_stream.read_line(&mut input) {
-            Ok(_) => execute_uci(
-                &mut engine,
-                &mut Tokenizer::new(input.as_str()),
-                cmd_cancellation.clone(),
-            ),
+            Ok(_) => {
+                if let Err(e) = execute_uci(
+                    &mut engine,
+                    &mut Tokenizer::new(input.as_str()),
+                    cmd_cancellation.clone(),
+                ) {
+                    sync::out(&format!("Error: {e}"));
+                }
+            },
             Err(err) => sync::out(&format!("Error: {err}")),
         }
         // Replace the cancellation token if it's burned.

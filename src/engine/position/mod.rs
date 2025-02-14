@@ -661,7 +661,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
         for char in fen.iter_token() {
             match char {
                 '/' => continue,
-                '1'..='8' => sq -= char.to_digit(10).ok_or(ParseError::InputOutOfRange(Box::new(char)))? as i8,        
+                '1'..='8' => sq -= Into::<i8>::into(Rank::try_from(char)?) + 1,        
                 _ => {
                     let piece = Piece::try_from(char)?; 
                     let pos_sq = Square::try_from(sq as u8)?.flip_h();
@@ -674,7 +674,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
             }
         }
         
-        let turn = Turn::try_from(fen.iter_token().next().ok_or(ParseError::MissingInput)?)?;
+        let turn = Turn::try_from(&mut *fen)?;
         let mut state = StateInfo {
             // 2. Side to move
             turn,

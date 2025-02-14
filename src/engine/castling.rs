@@ -27,7 +27,7 @@ impl TryFrom<File> for CastlingSide {
         match value {
             File::G => Ok(CastlingSide::KING_SIDE),
             File::C => Ok(CastlingSide::QUEEN_SIDE),
-            x => Err(ParseError::InputOutOfRange(Box::new(x)))
+            x => Err(ParseError::InputOutOfRange(x.to_string()))
         }
     }
 }
@@ -49,7 +49,7 @@ impl TryFrom<&mut Fen<'_>> for CastlingRights {
                 'k' => result.set_true(CastlingSide::KING_SIDE, Color::BLACK),
                 'q' => result.set_true(CastlingSide::QUEEN_SIDE, Color::BLACK),
                 '-' => return Ok(result),
-                x => return Err(ParseError::InputOutOfRange(Box::new(x))),
+                x => return Err(ParseError::InputOutOfRange(x.to_string())),
             }
         }
         Ok(result)

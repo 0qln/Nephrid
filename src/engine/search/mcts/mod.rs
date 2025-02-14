@@ -2,6 +2,7 @@ use itertools::Itertools;
 use rand::{thread_rng, Rng};
 use std::assert_matches::assert_matches;
 use std::cmp::Ordering;
+use std::fmt;
 use std::ops::{AddAssign, ControlFlow};
 use std::ptr::NonNull;
 
@@ -43,6 +44,7 @@ impl PlayoutResult {
     }
 }
 
+#[derive(Default, Debug, Clone)]
 pub struct Tree {
     root: Node,
     selection_buffer: Vec<NonNull<Node>>,
@@ -78,8 +80,6 @@ impl Tree {
     }
 
     pub fn grow(&mut self, pos: &mut Position) {
-        let dbg = pos.clone();
-
         self.select_leaf_mut(pos);
         let leaf = unsafe {
             self.selection_buffer
@@ -87,12 +87,12 @@ impl Tree {
                 .expect("This is only None, if root.state == Leaf, which is not the case.")
                 .as_mut()
         };
-
         let result = leaf.simulate(pos);
-
         self.backpropagate(pos, result);
-
-        assert_eq!(dbg, *pos, "Position was not reset correctly.");
+    }
+    
+    pub fn advance(&mut self, mov: Move) {
+        self.root = self.root.children.iter().find(|n| n.mov == mov).unwrap().clone();        
     }
 
     fn backpropagate(
@@ -169,13 +169,15 @@ impl PartialOrd for Score {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 enum NodeState {
     Leaf,
     Branch,
+    #[default]
     Terminal,
 }
 
+#[derive(Clone, Default)]
 struct Node {
     score: Score,
     mov: Move,
@@ -183,8 +185,8 @@ struct Node {
     children: Vec<Self>,
 }
 
-impl std::fmt::Debug for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Debug for Node {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Node")
             .field("score", &self.score)
             .field("mov", &self.mov)
