@@ -114,7 +114,7 @@ impl Tree {
         let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
         loop {
             match current.state {
-                NodeState::Root | NodeState::Branch => {
+                NodeState::Branch => {
                     current = current.select_mut();
                     pos.make_move(current.mov);
                     self.selection_buffer.push(NonNull::from_ref(current));
@@ -171,7 +171,6 @@ impl PartialOrd for Score {
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum NodeState {
-    Root,
     Leaf,
     Branch,
     Terminal,
@@ -216,7 +215,7 @@ impl Node {
         Self {
             score: Score::default(),
             mov: Move::null(),
-            state: NodeState::Root,
+            state: NodeState::Branch,
             children,
         }
     }
@@ -247,7 +246,7 @@ impl Node {
     }
 
     fn select_mut(&mut self) -> &mut Self {
-        assert_matches!(self.state, NodeState::Branch | NodeState::Root);
+        assert_matches!(self.state, NodeState::Branch | NodeState::Branch);
 
         self.children
             .iter_mut()

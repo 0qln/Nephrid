@@ -20,7 +20,7 @@ fn initialization() {
     let pos = Position::try_from(&mut fen).unwrap();
     let tree = Tree::new(&pos);
 
-    assert_eq!(tree.root.state, NodeState::Root);
+    assert_eq!(tree.root.state, NodeState::Branch);
     assert!(!tree.root.children.is_empty());
     assert!(tree
         .root
