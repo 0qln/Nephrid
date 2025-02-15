@@ -55,7 +55,10 @@ pub struct Tree {
 impl Tree {
     pub fn new(pos: &Position) -> Self {
         let root = Node::root(pos);
-        Self { root, ..Default::default() }
+        Self {
+            root,
+            ..Default::default()
+        }
     }
 
     pub fn best_move(&self) -> Option<Move> {
@@ -263,10 +266,7 @@ impl Node {
             .max_by(|a, b| {
                 let a_ucb = a.ucb(self.score.playouts);
                 let b_ucb = b.ucb(self.score.playouts);
-                a_ucb.partial_cmp(&b_ucb).expect(&format!(
-                    "UCB comparison failed: ({}, {}) <=> ({}, {})",
-                    a_ucb, a.score.playouts, b_ucb, b.score.playouts
-                ))
+                a_ucb.partial_cmp(&b_ucb).expect("UCB comparison failed!")
             })
             .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
     }
