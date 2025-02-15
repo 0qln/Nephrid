@@ -157,6 +157,7 @@ pub fn execute_uci(
             let mut name = String::new();
             while let Some(token) = tokenizer.collect_token().as_deref() {
                 match token {
+                    "name" => continue,
                     "value" => break,
                     part => {
                         name.push_str(part);
@@ -182,7 +183,9 @@ pub fn execute_uci(
                 }
             }
 
-            match engine.config.find_mut(name.as_str()) {
+            let new_value = new_value.trim();
+
+            match engine.config.find_mut(name.trim()) {
                 None => Err(UciError::UnknownOption)?,
                 Some(option) => match &mut option.cfg_type {
                     ConfigOptionType::Check { value, .. } => {
@@ -200,7 +203,7 @@ pub fn execute_uci(
                         let parsed = new_value.parse()?;
                         if parsed < *min || parsed > *max {
                             return Err(UciError::InputOutOfRange(
-                                new_value,
+                                new_value.to_string(),
                                 min.to_string(),
                                 max.to_string(),
                             )
@@ -209,6 +212,7 @@ pub fn execute_uci(
                         *value = parsed;
                     }
                     ConfigOptionType::Combo { options, value, .. } => {
+                        let new_value = new_value.to_string();
                         if !options.0.contains(&new_value) {
                             return Err(UciError::InvalidValue(new_value, options.clone().0).into());
                         }
@@ -220,10 +224,7 @@ pub fn execute_uci(
             };
             Ok(())
         }
-        Some("ucinewgame") => {
-            engine.position = Position::start_position();
-            Ok(())
-        }
+        Some("ucinewgame") => Ok(engine.position = Position::start_position()),
         Some("debug") => {
             let debug = match tokenizer.collect_token().as_deref() {
                 Some("on") => true,

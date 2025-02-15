@@ -31,9 +31,9 @@ impl Default for StringType {
     }
 }
 
-impl From<String> for StringType {
-    fn from(value: String) -> Self {
-        StringType(value)    
+impl From<&str> for StringType {
+    fn from(value: &str) -> Self {
+        StringType(value.to_string())    
     }
 }
 
@@ -53,19 +53,19 @@ impl fmt::Display for ConfigOptionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ConfigOptionType::Check { default, value } => {
-                write!(f, "check default {default} value {value}")
+                write!(f, "check default {default}")
             },
             ConfigOptionType::Spin { default, min, max, value } => {
-                write!(f, "spin default {default} min {min} max {max} value {value}")
+                write!(f, "spin default {default} min {min} max {max}")
             },
             ConfigOptionType::Combo { default, options, value } => {
-                write!(f, "combo default {default} options {options} value {value}")
+                write!(f, "combo default {default} {options}")
             },
             ConfigOptionType::Button { callback: _ } => {
                 write!(f, "button")
             },
             ConfigOptionType::String(string_type) => {
-                write!(f, "string value {}", string_type.0)
+                write!(f, "string default {}", string_type.0)
             },
         }
     }
