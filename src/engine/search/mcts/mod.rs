@@ -48,12 +48,14 @@ impl PlayoutResult {
 pub struct Tree {
     root: Node,
     selection_buffer: Vec<NonNull<Node>>,
+    simulation_stack_buffer: Vec<Move>,
+    simulation_moves_buffer: Vec<Move>,
 }
 
 impl Tree {
     pub fn new(pos: &Position) -> Self {
         let root = Node::root(pos);
-        Self { root, selection_buffer: Vec::new() }
+        Self { root, ..Default::default() }
     }
 
     pub fn best_move(&self) -> Option<Move> {
@@ -87,19 +89,25 @@ impl Tree {
                 .expect("This is only None, if root.state == Leaf, which is not the case.")
                 .as_mut()
         };
-        let result = leaf.simulate(pos);
+        let result = leaf.simulate(
+            pos,
+            &mut self.simulation_stack_buffer,
+            &mut self.simulation_moves_buffer,
+        );
         self.backpropagate(pos, result);
     }
-    
+
     pub fn advance(&mut self, mov: Move) {
-        self.root = self.root.children.iter().find(|n| n.mov == mov).unwrap().clone();        
+        self.root = self
+            .root
+            .children
+            .iter()
+            .find(|n| n.mov == mov)
+            .unwrap()
+            .clone();
     }
 
-    fn backpropagate(
-        &mut self,
-        pos: &mut Position,
-        result: PlayoutResult,
-    ) {
+    fn backpropagate(&mut self, pos: &mut Position, result: PlayoutResult) {
         unsafe {
             for node in self.selection_buffer.iter_mut().rev().map(|n| n.as_mut()) {
                 pos.unmake_move(node.mov);
@@ -248,7 +256,7 @@ impl Node {
     }
 
     fn select_mut(&mut self) -> &mut Self {
-        assert_matches!(self.state, NodeState::Branch | NodeState::Branch);
+        assert_matches!(self.state, NodeState::Branch);
 
         self.children
             .iter_mut()
@@ -263,20 +271,26 @@ impl Node {
             .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
     }
 
-    fn simulate(&self, pos: &mut Position) -> PlayoutResult {
+    fn simulate(
+        &self,
+        pos: &mut Position,
+        stack: &mut Vec<Move>,
+        moves: &mut Vec<Move>,
+    ) -> PlayoutResult {
         assert_matches!(self.state, NodeState::Leaf | NodeState::Terminal);
 
         let mut rng = thread_rng();
-        let mut stack: Vec<Move> = Vec::new();
+        stack.clear();
+        moves.clear();
 
         loop {
-            let mut moves = Vec::new();
-            fold_legal_moves(pos, &mut moves, |acc, m| {
+            fold_legal_moves(pos, &mut *moves, |acc, m| {
                 ControlFlow::Continue::<(), _>({
                     acc.push(m);
                     acc
                 })
             });
+
             if let Some(result) = PlayoutResult::maybe_new(pos, &moves) {
                 while let Some(m) = stack.pop() {
                     pos.unmake_move(m);
@@ -287,6 +301,8 @@ impl Node {
             let mov = moves[rng.gen_range(0..moves.len())];
             pos.make_move(mov);
             stack.push(mov);
+
+            moves.clear();
         }
     }
 
