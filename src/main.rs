@@ -38,7 +38,7 @@ fn main() {
                     &mut Tokenizer::new(input.as_str()),
                     cmd_cancellation.clone(),
                 ) {
-                    sync::out(&format!("Error: {e}"));
+                    sync::out(&format!("{e}"));
                 }
             },
             Err(err) => sync::out(&format!("Error: {err}")),
