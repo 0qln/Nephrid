@@ -127,15 +127,15 @@ impl StateStack {
         self.states.get(self.current - go_back)
     }
     
-    // /// Returns a mutable reference to the current state.
-    // #[inline]
-    // pub fn get_current_mut(&mut self) -> &mut StateInfo {
-    //     // Safety: The current index is always in range
-    //     unsafe {
-    //         self.states.get_unchecked_mut(self.current)
-    //     }
-    // }
-    // 
+    /// Returns a mutable reference to the current state.
+    #[inline]
+    pub fn get_current_mut(&mut self) -> &mut StateInfo {
+        // Safety: The current index is always in range
+        unsafe {
+            self.states.get_unchecked_mut(self.current)
+        }
+    }
+
     // /// Returns a pointer to the current state.
     // #[inline]
     // pub fn get_current_ptr(&mut self) -> NonNull<StateInfo> {
@@ -687,12 +687,12 @@ impl TryFrom<&mut Fen<'_>> for Position {
             // 6. Fullmove counter
             ply: Ply::from((FullMoveCount::try_from(fen.iter_token())?, turn)),
 
-            // TODO: init zobrist hash
-
             ..Default::default()
         };
+
         state.init(&position);
         position.state = StateStack::new(state);
+        position.state.get_current_mut().key = zobrist::Hash::from(&position);
         
         Ok(position)
     }

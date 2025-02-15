@@ -1,4 +1,3 @@
-use core::hash;
 use std::ops;
 use std::sync::LazyLock;
 
@@ -16,15 +15,9 @@ use super::{
 };
 
 /// Note: the default hash is equivalent to the hash of the default (empty) position.
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
 pub struct Hash {
     v: u64,
-}
-
-impl hash::Hash for Hash {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.v.hash(state);
-    }
 }
 
 impl Hash {
@@ -73,7 +66,7 @@ impl_op!(^ |l: Hash, r: u64| -> Hash { Hash { v: l.v ^ r } });
 impl From<&Position> for Hash {
     fn from(pos: &Position) -> Self {
         Bitboard::full()
-            .fold(Hash { v: 0 }, |mut acc, sq| {
+            .fold(Hash::default(), |mut acc, sq| {
                 acc.toggle_piece_sq(sq, pos.get_piece(sq))
             })
             .toggle_ep_square(pos.get_ep_capture_square())
