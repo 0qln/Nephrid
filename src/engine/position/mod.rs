@@ -183,7 +183,7 @@ pub struct Position {
     pieces: [Piece; 64],
     piece_counts: [i8; 14],
     state: StateStack,
-    repetitions: RepetitionTable,
+    repetitions: RepetitionTable<{ 1 << 22 }>,
 }
 
 impl Default for Position {
