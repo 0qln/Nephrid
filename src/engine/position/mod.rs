@@ -183,7 +183,7 @@ pub struct Position {
     pieces: [Piece; 64],
     piece_counts: [i8; 14],
     state: StateStack,
-    repetitions: RepetitionTable<{ 1 << 21 }>,
+    repetitions: RepetitionTable<{ 1 << 16 }>,
 }
 
 impl Default for Position {
@@ -333,6 +333,21 @@ impl Position {
     #[inline]
     pub fn repetition_table_collisions(&self) -> usize {
         self.repetitions.collisions()
+    }
+    
+    #[inline]
+    pub fn repetition_table_free(&self) -> usize {
+        self.repetitions.free()
+    }
+    
+    #[inline]
+    pub fn repetition_table_full(&self) -> usize {
+        self.repetitions.full()
+    }
+    
+    #[inline]
+    pub fn repetition_table_size(&self) -> usize {
+        self.repetitions.size()
     }
     
     #[inline]

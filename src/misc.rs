@@ -1,4 +1,4 @@
-use std::{num::ParseIntError, ops::AddAssign};
+use std::{any::Any, fmt::{self, Debug}, num::ParseIntError, ops::AddAssign};
 
 use thiserror::Error;
 
@@ -64,7 +64,7 @@ macro_rules! impl_variants_with_assertion {
 
                 /// Create a $type from a value that is a valid variant.
                 /// This is unsafe, because the value is not checked.
-                ///
+                /// 
                 /// # Safety
                 /// Only use this if you are certain of v's range.
                 #[inline]

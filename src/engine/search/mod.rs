@@ -39,17 +39,12 @@ impl Search {
     }
 
     pub fn perft(
-        &self,
         pos: &mut UnsafeCell<Position>,
         depth: Depth,
         cancellation_token: CancellationToken,
-        time_limit: Instant,
         f: fn(Move, u64) -> (),
     ) -> u64 {
-        if {
-            cancellation_token.is_cancelled() ||
-            (self.limit.is_active && Instant::now() >= time_limit)
-        } {
+        if cancellation_token.is_cancelled() {
             return 0;
         }
 
@@ -62,7 +57,7 @@ impl Search {
         unsafe {
             fold_legal_moves::<_, _, _>(&*pos.get(), 0, |acc, m| {
                 pos.get_mut().make_move(m);
-                let c = self.perft(pos, depth - 1, cancellation_token.clone(), time_limit, |_, _| {});
+                let c = Self::perft(pos, depth - 1, cancellation_token.clone(), |_, _| {});
                 f(m, c);
                 pos.get_mut().unmake_move(m);
                 ControlFlow::Continue::<(), _>(acc + c)
@@ -106,8 +101,7 @@ impl Search {
     pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {
         match self.mode {
             Mode::Perft => {
-                let time_limit = Instant::now() + Duration::from_millis(self.limit.wtime);
-                let nodes = self.perft(&mut UnsafeCell::new(position.clone()), self.target.depth, cancellation_token, time_limit, |m, c| {
+                let nodes = Self::perft(&mut UnsafeCell::new(position.clone()), self.target.depth, cancellation_token, |m, c| {
                     sync::out(&format!("{m}: {c}"));
                 });
                 sync::out(&format!("\nNodes searched: {nodes}"));

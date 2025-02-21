@@ -1,4 +1,4 @@
-use std::cell::UnsafeCell;
+use std::{cell::UnsafeCell, time::{Duration, Instant}};
 
 use crate::{
     engine::{depth::Depth, fen::Fen, move_iter::sliding_piece::magics, position::Position, search::Search},

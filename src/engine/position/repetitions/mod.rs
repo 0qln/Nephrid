@@ -1,5 +1,3 @@
-use std::array;
-
 use itertools::Itertools;
 
 use crate::engine::zobrist;
@@ -37,46 +35,55 @@ impl TableBucket {
             .enumerate()
             .find_map(|(idx, e)| (e.key == hash).then_some((e, idx)))
     }
-    
+
     fn collisions(&self) -> usize {
         self.entries.len().saturating_sub(1)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct RepetitionTable<const N: usize> {
     buckets: Box<[TableBucket; N]>,
+    full: usize,
 }
 
 impl<const N: usize> Clone for RepetitionTable<N> {
     fn clone(&self) -> Self {
-        Self {
-            buckets: self
-                .buckets
+        Self::new(
+            self.buckets
                 .iter()
                 .cloned()
                 .collect_vec()
                 .into_boxed_slice()
                 .try_into()
                 .expect("Failed to convert vec to array."),
-        }
+        )
     }
 }
 
 impl<const N: usize> Default for RepetitionTable<N> {
     fn default() -> Self {
-        Self {
-            buckets: (0..N)
+        Self::new(
+            (0..N)
                 .map(|_| TableBucket::default())
                 .collect_vec()
                 .into_boxed_slice()
                 .try_into()
                 .expect("Failed to convert vec to array."),
-        }
+        )
     }
 }
 
 impl<const N: usize> RepetitionTable<N> {
+    #[inline]
+    fn new(buckets: Box<[TableBucket; N]>) -> Self {
+        Self { buckets, full: 0 }
+    }
+
     fn bucket<'a>(&'a self, hash: zobrist::Hash) -> &'a TableBucket {
         &self.buckets[hash.v() as usize % N]
     }
@@ -85,7 +92,7 @@ impl<const N: usize> RepetitionTable<N> {
         &mut self.buckets[hash.v() as usize % N]
     }
 
-    pub fn push(&mut self, hash: zobrist::Hash) {
+    pub fn push<const DBG: bool>(&mut self, hash: zobrist::Hash) {
         let bucket = self.bucket_mut(hash);
         match bucket.entry_mut(hash) {
             Some(e) => e.occurances += 1,
@@ -96,7 +103,7 @@ impl<const N: usize> RepetitionTable<N> {
         };
     }
 
-    pub fn pop(&mut self, hash: zobrist::Hash) {
+    pub fn pop<const DBG: bool>(&mut self, hash: zobrist::Hash) {
         let bucket = self.bucket_mut(hash);
         match bucket.entry_with_index_mut(hash) {
             Some((e, idx)) if e.occurances <= 1 => _ = bucket.entries.swap_remove(idx),
@@ -108,8 +115,23 @@ impl<const N: usize> RepetitionTable<N> {
     pub fn get(&self, hash: zobrist::Hash) -> Option<u16> {
         self.bucket(hash).entry(hash).map(|e| e.occurances)
     }
-    
+
     pub fn collisions(&self) -> usize {
-        self.buckets.iter().fold(0, |acc, bucket| acc + bucket.collisions())
+        self.buckets.iter().map(TableBucket::collisions).sum()
+    }
+
+    pub fn free(&self) -> usize {
+        self.buckets
+            .iter()
+            .filter(|b| TableBucket::is_empty(&b))
+            .count()
+    }
+
+    pub fn len(&self) -> usize {
+        self.capacity() - self.free()
+    }
+
+    pub fn capacity(&self) -> usize {
+        N
     }
 }
