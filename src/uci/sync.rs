@@ -1,4 +1,3 @@
-use core::error;
 use std::{
     fmt::Debug, io::{
         stdout, 

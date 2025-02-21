@@ -4,19 +4,14 @@ use self::r#move::LongAlgebraicUciNotation;
 use crate::engine::{
     config::{ConfigOptionType, Configuration},
     depth::Depth,
-    fen::Fen,
     position::Position,
     r#move::Move,
 };
-use crate::{
-    misc::ParseError,
-    uci::{
-        sync::{self, CancellationToken, UciError},
-        tokens::Tokenizer,
-    },
+use crate::uci::{
+    sync::{self, CancellationToken, UciError},
+    tokens::Tokenizer,
 };
 use std::{
-    default,
     error::Error,
     process,
     sync::{

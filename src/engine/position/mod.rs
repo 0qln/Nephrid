@@ -19,7 +19,7 @@ pub enum CheckState {
     Double
 }
 
-mod repetitions;
+pub mod repetitions;
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct StateInfo {
@@ -183,7 +183,7 @@ pub struct Position {
     pieces: [Piece; 64],
     piece_counts: [i8; 14],
     state: StateStack,
-    repetitions: RepetitionTable<{ 1 << 22 }>,
+    repetitions: RepetitionTable<{ 1 << 21 }>,
 }
 
 impl Default for Position {
@@ -328,6 +328,11 @@ impl Position {
     pub fn has_threefold_repetition(&self) -> bool {
         let hash = self.state.get_current().key;
         self.repetitions.get(hash) >= Some(3)
+    }
+    
+    #[inline]
+    pub fn repetition_table_collisions(&self) -> usize {
+        self.repetitions.collisions()
     }
     
     #[inline]

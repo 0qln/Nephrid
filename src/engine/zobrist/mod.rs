@@ -1,16 +1,25 @@
-use std::ops;
+use std::sync::atomic::AtomicBool;
 use std::sync::LazyLock;
+use std::{ops, sync::Arc};
 
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
 use crate::misc::ConstFrom;
+use crate::uci::sync::CancellationToken;
 
+use super::position::repetitions::RepetitionTable;
 use super::{
     bitboard::Bitboard,
     castling::CastlingRights,
     coordinates::{EpCaptureSquare, File, Square},
     piece::Piece,
     position::Position,
+    search::{
+        limit::{self, Limit},
+        mode::Mode,
+        target::Target,
+        Search,
+    },
     turn::Turn,
 };
 
@@ -21,12 +30,23 @@ pub struct Hash {
 }
 
 impl Hash {
+    pub fn v(self) -> u64 {
+        self.v
+    }
+
+    pub fn from_v(v: u64) -> Self {
+        Self { v }
+    }
+
     #[inline]
     pub fn set_turn(&mut self, turn: Turn) -> Self {
-        self.v ^= match turn { Turn::BLACK => HASHER.stm, _ => 0, };
+        self.v ^= match turn {
+            Turn::BLACK => HASHER.stm,
+            _ => 0,
+        };
         *self
     }
-    
+
     #[inline]
     pub fn toggle_turn(&mut self) -> Self {
         // xor is it's own inverse.
@@ -54,7 +74,7 @@ impl Hash {
         self.v ^= HASHER.piece_sq[sq.v() as usize][piece.v() as usize];
         *self
     }
-    
+
     #[inline]
     pub fn move_piece_sq(&mut self, from: Square, to: Square, piece: Piece) -> Self {
         self.toggle_piece_sq(from, piece).toggle_piece_sq(to, piece)
@@ -94,4 +114,18 @@ impl Hasher {
             stm: rng.next_u64(),
         }
     }
+}
+
+fn collisions(hasher: &Hasher) -> usize {
+    let pos = Position::start_position();
+    let search = Search::new(
+        Limit {
+            wtime: 100,
+            ..Default::default()
+        },
+        Target::default(),
+        Mode::Perft,
+        Arc::new(AtomicBool::new(false)),
+    );
+    search.perft(&mut pos, CancellationToken::new());
 }

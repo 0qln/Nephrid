@@ -52,13 +52,13 @@ impl fmt::Display for ComboOptions {
 impl fmt::Display for ConfigOptionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ConfigOptionType::Check { default, value } => {
+            ConfigOptionType::Check { default, .. } => {
                 write!(f, "check default {default}")
             },
-            ConfigOptionType::Spin { default, min, max, value } => {
+            ConfigOptionType::Spin { default, min, max, .. } => {
                 write!(f, "spin default {default} min {min} max {max}")
             },
-            ConfigOptionType::Combo { default, options, value } => {
+            ConfigOptionType::Combo { default, options, .. } => {
                 write!(f, "combo default {default} {options}")
             },
             ConfigOptionType::Button { callback: _ } => {
