@@ -1,5 +1,7 @@
+use core::hash;
+use std::mem;
 use std::sync::atomic::AtomicBool;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Once};
 use std::{ops, sync::Arc};
 
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
@@ -8,6 +10,7 @@ use crate::misc::ConstFrom;
 use crate::uci::sync::CancellationToken;
 
 use super::position::repetitions::RepetitionTable;
+use super::search::mcts;
 use super::{
     bitboard::Bitboard,
     castling::CastlingRights,
@@ -87,7 +90,7 @@ impl From<&Position> for Hash {
     fn from(pos: &Position) -> Self {
         Bitboard::full()
             .fold(Hash::default(), |mut acc, sq| {
-                acc.toggle_piece_sq(sq, pos.get_piece(sq))
+                acc.toggle_piece_sq(sq, pos.get_piece(sq, ))
             })
             .toggle_ep_square(pos.get_ep_capture_square())
             .toggle_castling(pos.get_castling())
@@ -95,7 +98,27 @@ impl From<&Position> for Hash {
     }
 }
 
-static HASHER: LazyLock<Hasher> = LazyLock::new(|| Hasher::new(0xdead_beef));
+static HASHER: Hasher = unsafe { mem::zeroed() };
+
+static INIT: Once = Once::new();
+
+pub fn init() {
+    INIT.call_once(|| unsafe {
+        // Safety: This is the only place that mutates the tables, and it is only done once.
+        let global_hasher = (&HASHER as *const _ as *mut Hasher).as_mut().unwrap();
+
+        let mut rng = SmallRng::seed_from_u64(0xdeadbeef);
+        let mut min = usize::MAX;
+        loop {
+            global_hasher.init(rng.next_u64());
+            let collisions = collisions(global_hasher, 10_000);
+            if collisions < min {
+                min = collisions;
+                println!("new min collisions: {collisions}");
+            }
+        }
+    });
+}
 
 struct Hasher {
     piece_sq: [[u64; 14]; 64],
@@ -114,18 +137,23 @@ impl Hasher {
             stm: rng.next_u64(),
         }
     }
+    
+    pub fn init(&mut self, seed: u64) {
+        let mut rng = SmallRng::seed_from_u64(seed);
+        self.piece_sq = [[0; 14]; 64].map(|pieces| pieces.map(|_| rng.next_u64()));
+        self.en_passant = [0; 8].map(|_| rng.next_u64());
+        self.castling = [0; 16].map(|_| rng.next_u64());
+        self.stm = rng.next_u64();        
+    }
 }
 
-fn collisions(hasher: &Hasher) -> usize {
-    let pos = Position::start_position();
-    let search = Search::new(
-        Limit {
-            wtime: 100,
-            ..Default::default()
-        },
-        Target::default(),
-        Mode::Perft,
-        Arc::new(AtomicBool::new(false)),
-    );
-    search.perft(&mut pos, CancellationToken::new());
+fn collisions(hasher: &Hasher, rounds: usize) -> usize {
+    let mut pos = Position::start_position();
+    let mut tree = mcts::Tree::new(&pos);
+    tree.select_leaf_mut(&mut pos);
+    let leaf = unsafe { tree.selected_leaf().as_mut() };
+    (0..rounds).map(|_| {
+        leaf.simulate(&mut pos, &mut vec![], &mut vec![]);
+        pos.repetition_table_collisions()
+    }).sum()
 }

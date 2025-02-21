@@ -1,5 +1,5 @@
 use nephrid::engine::move_iter::sliding_piece::magics;
-use nephrid::engine::{execute_uci, Engine};
+use nephrid::engine::{execute_uci, zobrist, Engine};
 use nephrid::uci::{
     sync::{self, CancellationToken},
     tokens::Tokenizer,
@@ -8,6 +8,7 @@ use std::io::stdin;
 
 fn main() {
     magics::init(0xdeadbeef);
+    zobrist::init();
 
     let input_stream = stdin();
     let mut engine = Engine::default();
