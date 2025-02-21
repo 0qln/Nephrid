@@ -86,18 +86,19 @@ impl Tree {
 
     pub fn grow(&mut self, pos: &mut Position) {
         self.select_leaf_mut(pos);
-        let leaf = unsafe {
-            self.selection_buffer
-                .last_mut()
-                .expect("This is only None, if root.state == Leaf, which is not the case.")
-                .as_mut()
-        };
+        let leaf = unsafe { self.selected_leaf().as_mut() };
         let result = leaf.simulate(
             pos,
             &mut self.simulation_stack_buffer,
             &mut self.simulation_moves_buffer,
         );
         self.backpropagate(pos, result);
+    }
+    
+    pub fn selected_leaf(&mut self) -> NonNull<Node> {
+        *self.selection_buffer
+                .last_mut()
+                .expect("This is only None, if root.state == Leaf, which is not the case.")
     }
 
     pub fn advance(&mut self, mov: Move) {
@@ -120,7 +121,7 @@ impl Tree {
         self.root.score += (result, pos.get_turn());
     }
 
-    fn select_leaf_mut(&mut self, pos: &mut Position) {
+    pub fn select_leaf_mut(&mut self, pos: &mut Position) {
         self.selection_buffer.clear();
         let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
         loop {
@@ -189,7 +190,7 @@ enum NodeState {
 }
 
 #[derive(Clone, Default)]
-struct Node {
+pub struct Node {
     score: Score,
     mov: Move,
     state: NodeState,
@@ -271,7 +272,7 @@ impl Node {
             .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
     }
 
-    fn simulate(
+    pub fn simulate(
         &self,
         pos: &mut Position,
         stack: &mut Vec<Move>,
