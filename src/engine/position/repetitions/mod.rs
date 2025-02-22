@@ -18,14 +18,17 @@ struct TableBucket {
 }
 
 impl TableBucket {
+    #[inline]
     fn entry<'a>(&'a self, hash: zobrist::Hash) -> Option<&'a TableEntry> {
         self.entries.iter().find(|entry| entry.key == hash)
     }
 
+    #[inline]
     fn entry_mut<'a>(&'a mut self, hash: zobrist::Hash) -> Option<&'a mut TableEntry> {
         self.entries.iter_mut().find(|entry| entry.key == hash)
     }
 
+    #[inline]
     fn entry_with_index_mut<'a>(
         &'a mut self,
         hash: zobrist::Hash,
@@ -36,22 +39,25 @@ impl TableBucket {
             .find_map(|(idx, e)| (e.key == hash).then_some((e, idx)))
     }
 
+    #[inline]
     fn collisions(&self) -> usize {
         self.entries.len().saturating_sub(1)
     }
 
+    #[inline]
     fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct RepetitionTable<const N: usize> {
-    buckets: Box<[TableBucket; N]>,
-    full: usize,
+pub struct RepetitionTable<const N: usize>
+where
+    [(); 1 << N]: {
+    buckets: Box<[TableBucket; 1 << N]>,
 }
 
-impl<const N: usize> Clone for RepetitionTable<N> {
+impl<const N: usize> Clone for RepetitionTable<N> where [(); 1 << N]: {
     fn clone(&self) -> Self {
         Self::new(
             self.buckets
@@ -65,10 +71,10 @@ impl<const N: usize> Clone for RepetitionTable<N> {
     }
 }
 
-impl<const N: usize> Default for RepetitionTable<N> {
+impl<const N: usize> Default for RepetitionTable<N> where [(); 1 << N]: {
     fn default() -> Self {
         Self::new(
-            (0..N)
+            (0..Self::capacity())
                 .map(|_| TableBucket::default())
                 .collect_vec()
                 .into_boxed_slice()
@@ -78,21 +84,29 @@ impl<const N: usize> Default for RepetitionTable<N> {
     }
 }
 
-impl<const N: usize> RepetitionTable<N> {
+impl<const N: usize> RepetitionTable<N> where [(); 1 << N]: {
     #[inline]
-    fn new(buckets: Box<[TableBucket; N]>) -> Self {
-        Self { buckets, full: 0 }
+    fn new(buckets: Box<[TableBucket; 1 << N]>) -> Self {
+        Self { buckets }
     }
 
+    #[inline]
     fn bucket<'a>(&'a self, hash: zobrist::Hash) -> &'a TableBucket {
-        &self.buckets[hash.v() as usize % N]
+        &self.buckets[Self::index(hash)]
+    }
+    
+    #[inline]
+    const fn index(hash: zobrist::Hash) -> usize {
+        hash.v() as usize & (Self::capacity() - 1)
     }
 
+    #[inline]
     fn bucket_mut<'a>(&'a mut self, hash: zobrist::Hash) -> &'a mut TableBucket {
-        &mut self.buckets[hash.v() as usize % N]
+        &mut self.buckets[Self::index(hash)]
     }
 
-    pub fn push<const DBG: bool>(&mut self, hash: zobrist::Hash) {
+    #[inline]
+    pub fn push(&mut self, hash: zobrist::Hash) {
         let bucket = self.bucket_mut(hash);
         match bucket.entry_mut(hash) {
             Some(e) => e.occurances += 1,
@@ -103,7 +117,8 @@ impl<const N: usize> RepetitionTable<N> {
         };
     }
 
-    pub fn pop<const DBG: bool>(&mut self, hash: zobrist::Hash) {
+    #[inline]
+    pub fn pop(&mut self, hash: zobrist::Hash) {
         let bucket = self.bucket_mut(hash);
         match bucket.entry_with_index_mut(hash) {
             Some((e, idx)) if e.occurances <= 1 => _ = bucket.entries.swap_remove(idx),
@@ -112,14 +127,17 @@ impl<const N: usize> RepetitionTable<N> {
         }
     }
 
+    #[inline]
     pub fn get(&self, hash: zobrist::Hash) -> Option<u16> {
         self.bucket(hash).entry(hash).map(|e| e.occurances)
     }
 
+    #[inline]
     pub fn collisions(&self) -> usize {
         self.buckets.iter().map(TableBucket::collisions).sum()
     }
 
+    #[inline]
     pub fn free(&self) -> usize {
         self.buckets
             .iter()
@@ -127,11 +145,13 @@ impl<const N: usize> RepetitionTable<N> {
             .count()
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
-        self.capacity() - self.free()
+        Self::capacity() - self.free()
     }
 
-    pub fn capacity(&self) -> usize {
-        N
+    #[inline]
+    pub const fn capacity() -> usize {
+        1 << N
     }
 }

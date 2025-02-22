@@ -176,6 +176,8 @@ impl StateStack {
     }
 }
 
+type Repetitions = repetitions::RepetitionTable<16>;
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Position {
     c_bitboards: [Bitboard; 2],
@@ -183,7 +185,7 @@ pub struct Position {
     pieces: [Piece; 64],
     piece_counts: [i8; 14],
     state: StateStack,
-    repetitions: RepetitionTable<{ 1 << 16 }>,
+    repetitions: Repetitions,
 }
 
 impl Default for Position {
@@ -341,18 +343,17 @@ impl Position {
     }
     
     #[inline]
-    pub fn repetition_table_full(&self) -> usize {
-        self.repetitions.full()
-    }
-    
-    #[inline]
-    pub fn repetition_table_size(&self) -> usize {
-        self.repetitions.size()
+    pub fn repetition_table_capacity(&self) -> usize {
+        Repetitions::capacity()
     }
     
     #[inline]
     pub fn plys_50(&self) -> Ply {
         self.state.get_current().plys50
+    }
+    
+    pub fn ply(&self) -> Ply {
+        self.state.get_current().ply
     }
     
     #[inline]

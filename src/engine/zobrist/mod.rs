@@ -41,7 +41,7 @@ pub struct Hash {
 }
 
 impl Hash {
-    pub fn v(self) -> u64 {
+    pub const fn v(self) -> u64 {
         self.v
     }
 
@@ -112,16 +112,16 @@ static INIT: Once = Once::new();
 
 pub fn init() {
     INIT.call_once(|| unsafe {
-        let mut seed = 1;
+        let mut seed = 11459972786511497394;
         let mut min = usize::MAX;
         loop {
             HASHER.init(seed);
-            let r = test_seed(500, &mut SmallRng::seed_from_u64(0xdeadbeef));
+            let r = test_seed(20000, &mut SmallRng::seed_from_u64(0xdeadbeef), min);
             if r.total_collisions < min {
                 min = r.total_collisions;
                 println!(
-                    "collisions: {}, free: {}, full: {}, seed: {}",
-                    r.total_collisions, r.total_free, r.total_full, seed
+                    "collisions: {}, seed: {}",
+                    r.total_collisions, seed
                 );
             }
             seed = SmallRng::seed_from_u64(seed).next_u64();
@@ -131,17 +131,19 @@ pub fn init() {
 
 struct SeedTestResult {
     total_collisions: usize,
-    total_free: usize,
-    total_full: usize,
 }
 
-fn test_seed(rounds: usize, rng: &mut SmallRng) -> SeedTestResult {
+fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
     let pos = Position::start_position();
     let collisions = (0..rounds)
-        .map(|_| {
+        .try_fold(0, |acc, _| {
+            if acc >= min {
+                return ControlFlow::Break(());
+            }
+
             let pos = &mut pos.clone();
 
-            // simulate a random game, just like mcts would do...
+            // simulate a random game...
             loop {
                 let buffer = &mut vec![];
                 fold_legal_moves(pos, &mut *buffer, |acc, m| {
@@ -159,16 +161,14 @@ fn test_seed(rounds: usize, rng: &mut SmallRng) -> SeedTestResult {
                 pos.make_move(mov);
             }
 
-            pos.repetition_table_collisions()
-        })
-        .sum();
-    let free = pos.repetition_table_free();
-    let full = pos.repetition_table_full();
-    SeedTestResult {
-        total_collisions: collisions,
-        total_free: free,
-        total_full: full,
-    }
+            let collisions_per_ply = pos.repetition_table_collisions() as f32 / pos.ply().v as f32;
+            let collisions_per_ply_threshold = 0.0021428571 * pos.repetition_table_capacity() as f32;
+            if collisions_per_ply > collisions_per_ply_threshold {
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(acc + pos.repetition_table_collisions())
+        }).continue_value().unwrap_or(usize::MAX);
+    SeedTestResult { total_collisions: collisions, }
 }
 
 struct Hasher {

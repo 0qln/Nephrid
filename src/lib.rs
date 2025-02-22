@@ -9,6 +9,7 @@
 #![feature(try_trait_v2)]
 #![feature(try_blocks)]
 #![feature(assert_matches)]
+#![feature(generic_const_exprs)]
 
 #[macro_use]
 extern crate impl_ops;
