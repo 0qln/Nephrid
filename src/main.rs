@@ -7,7 +7,7 @@ use nephrid::uci::{
 use std::io::stdin;
 
 fn main() {
-    magics::init(0xdeadbeef);
+    magics::init();
     zobrist::init();
 
     let input_stream = stdin();

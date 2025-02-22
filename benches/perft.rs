@@ -18,7 +18,7 @@ fn bench_perft(pos: Position, depth: Depth) {
 }
 
 fn bench_pos(c: &mut Criterion, name: &str, mut fen: Fen, depth: Depth) {
-    magics::init(0xdead_beef);
+    magics::init();
     let pos = Position::try_from(&mut fen).unwrap();
     c.bench_function(name, |b| b.iter(|| bench_perft(pos.clone(), depth)));
 }

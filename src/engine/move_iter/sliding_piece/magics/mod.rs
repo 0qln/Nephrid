@@ -14,6 +14,9 @@ use super::SlidingAttacks;
 #[cfg(test)]
 mod test;
 
+#[cfg(test)]
+mod seeding;
+
 #[const_trait]
 pub trait MagicGen {
     fn relevant_occupancy(sq: Square) -> Bitboard;
@@ -58,6 +61,7 @@ pub struct MagicInfo {
     mask: Bitboard,
     magic: u64,
     shift: u8,
+    init_cost: u32,
 }
 
 impl MagicInfo {
@@ -83,11 +87,7 @@ impl<'a> MagicTable<'a> {
         unsafe { self.0.get_unchecked(index) }
     }
 
-    pub fn init<I: IntoIterator<Item = MagicInfo>>(
-        &mut self,
-        table: &'a AttackTable,
-        magics: I,
-    ) {
+    pub fn init<I: IntoIterator<Item = MagicInfo>>(&mut self, table: &'a AttackTable, magics: I) {
         for (sq, m) in magics.into_iter().enumerate() {
             self.0[sq] = m.init(table);
         }
@@ -119,12 +119,13 @@ pub static mut BISHOP_MAGICS: MagicTable = MagicTable(
 static INIT: Once = Once::new();
 
 #[allow(static_mut_refs)]
-pub fn init(seed: u64) {
+pub fn init() {
     INIT.call_once(|| unsafe {
-        let mut rng = SmallRng::seed_from_u64(seed);
+        let mut rook_rng = SmallRng::seed_from_u64(2947477585843578870);
+        let mut bishop_rng = SmallRng::seed_from_u64(16342894268649274550);
         let table = &mut ATTACK_TABLE;
-        let rook_magics = find_magics::<Rook>(table, &mut rng, None);
-        let bishop_magics = find_magics::<Bishop>(table, &mut rng, Some(&rook_magics[63]));
+        let rook_magics = find_magics::<Rook>(table, &mut rook_rng, None);
+        let bishop_magics = find_magics::<Bishop>(table, &mut bishop_rng, Some(&rook_magics[63]));
         ROOK_MAGICS.init(table, rook_magics);
         BISHOP_MAGICS.init(table, bishop_magics);
     });
@@ -177,10 +178,12 @@ fn find_magic<T: MagicGen + SlidingAttacks>(
         shift,
         ptr_off: idx,
         ptr_size: attacks.len(),
+        init_cost: 0,
     };
 
     let mut verify_magic = |magic: u64, ptr: &mut [Bitboard]| {
         m.magic = magic;
+        m.init_cost += 1;
 
         // check each blocker composition
         for (&occ, &attack) in blockers.iter().zip(attacks.iter()) {

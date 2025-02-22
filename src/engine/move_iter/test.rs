@@ -5,7 +5,7 @@ use crate::{
     uci::sync::CancellationToken,
 };
 fn test_pos(mut fen: Fen, depth: Depth, expected: u64) {
-    magics::init(0xdead_beef);
+    magics::init();
     let pos = Position::try_from(&mut fen).unwrap();
     let result = Search::perft(
         &mut UnsafeCell::new(pos),

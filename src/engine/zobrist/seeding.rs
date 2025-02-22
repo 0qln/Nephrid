@@ -13,7 +13,7 @@ use super::HASHER;
 #[test]
 #[allow(static_mut_refs)]
 pub fn find_seeds() {
-    magics::init(0xdeadbeef);
+    magics::init();
     super::init();
 
     unsafe {

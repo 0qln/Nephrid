@@ -13,7 +13,7 @@ pub fn get_bitboard(c: &mut Criterion) {
         Pair(PieceType::QUEEN, Color::BLACK),
     ];
     
-    magics::init(0xdead_beef);
+    magics::init();
     let pos = Position::start_position();
 
     for pair in inputs {
@@ -33,7 +33,7 @@ pub fn put_piece(c: &mut Criterion) {
         Pair(Square::H5, Piece::from_c((Color::BLACK, PieceType::QUEEN))),
     ];
 
-    magics::init(0xdead_beef);
+    magics::init();
     let mut pos = Position::default();
 
     for pair in inputs {
@@ -53,7 +53,7 @@ pub fn remove_piece(c: &mut Criterion) {
         Square::H8,
     ];
 
-    magics::init(0xdead_beef);
+    magics::init();
     let mut pos = Position::start_position();
 
     for sq in inputs {
@@ -72,7 +72,7 @@ pub fn move_piece(c: &mut Criterion) {
         Pair(Square::H8, Square::H7),
     ];
 
-    magics::init(0xdead_beef);
+    magics::init();
     let mut pos = Position::start_position();
 
     for pair in inputs {
@@ -85,7 +85,7 @@ pub fn move_piece(c: &mut Criterion) {
 }
 
 pub fn make_move(c: &mut Criterion) {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let mut fen = Fen::new("2n1k3/1P6/8/4pP2/8/6B1/P2P4/R3K2R w KQ e6 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
