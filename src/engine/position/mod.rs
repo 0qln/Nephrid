@@ -1,8 +1,6 @@
 use core::fmt;
 use std::ptr::NonNull;
 
-use repetitions::RepetitionTable;
-
 use crate::{
     engine::{
         bitboard::Bitboard, castling::CastlingRights, color::Color, coordinates::{File, Rank, Square}, fen::Fen, r#move::Move, move_iter::{bishop, king, knight, pawn, rook}, piece::{Piece, PieceType}, turn::Turn, zobrist

@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use nephrid::engine::{
     color::Color, coordinates::Square, fen::Fen, r#move::Move, move_iter::{
-        pawn::{self, lookup_attacks, Pawn},
+        pawn::{lookup_attacks, Pawn},
         sliding_piece::magics, FoldMoves, NoCheck,
     }, position::Position
 };

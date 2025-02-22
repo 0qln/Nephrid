@@ -1,4 +1,7 @@
+#![allow(incomplete_features)]
+
 #![warn(clippy::obfuscated_if_else)]
+
 // todo when feature (github.com/rust-lang/rust/issues/67792) is complete:
 // - remove the ConstFrom trait and use the core::From trait instead.
 #![feature(const_trait_impl)]

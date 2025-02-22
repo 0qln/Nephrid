@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 use std::ops::ControlFlow;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::uci::sync::{self, CancellationToken};
 use limit::Limit;

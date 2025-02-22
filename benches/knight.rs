@@ -4,7 +4,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use nephrid::engine::coordinates::Square;
 use nephrid::engine::fen::Fen;
 use nephrid::engine::r#move::Move;
-use nephrid::engine::move_iter::knight::{self, compute_attacks, lookup_attacks, Knight};
+use nephrid::engine::move_iter::knight::{compute_attacks, lookup_attacks, Knight};
 use nephrid::engine::move_iter::sliding_piece::magics;
 use nephrid::engine::move_iter::{FoldMoves, NoCheck, SingleCheck};
 use nephrid::engine::position::Position;
