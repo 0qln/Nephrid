@@ -65,8 +65,7 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
             }
 
             let collisions_per_ply = pos.repetition_table_collisions() as f32 / pos.ply().v as f32;
-            let collisions_per_ply_threshold =
-                0.0021428571 * pos.repetition_table_capacity() as f32;
+            let collisions_per_ply_threshold = 0.002142857 * pos.repetition_table_capacity() as f32;
             if collisions_per_ply > collisions_per_ply_threshold {
                 return ControlFlow::Break(());
             }
