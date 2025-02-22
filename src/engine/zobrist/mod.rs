@@ -97,7 +97,7 @@ static INIT: Once = Once::new();
 
 #[allow(static_mut_refs)]
 pub fn init() {
-    INIT.call_once(|| unsafe { HASHER.init(11459972786511497394) });
+    INIT.call_once(|| unsafe { HASHER.init(15334318053502972112) });
 }
 
 struct Hasher {

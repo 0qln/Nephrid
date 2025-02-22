@@ -1,11 +1,13 @@
 use std::cell::UnsafeCell;
 
 use crate::{
-    engine::{depth::Depth, fen::Fen, move_iter::sliding_piece::magics, position::Position, search::Search},
+    engine::{depth::Depth, fen::Fen, move_iter::sliding_piece::magics, position::Position, search::Search, zobrist},
     uci::sync::CancellationToken,
 };
 fn test_pos(mut fen: Fen, depth: Depth, expected: u64) {
     magics::init();
+    zobrist::init();
+
     let pos = Position::try_from(&mut fen).unwrap();
     let result = Search::perft(
         &mut UnsafeCell::new(pos),
