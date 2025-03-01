@@ -8,7 +8,7 @@ use crate::engine::{
 
 #[test]
 fn ucb_selection() {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let mut fen = Fen::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
@@ -33,7 +33,7 @@ fn ucb_selection() {
 
 #[test]
 fn test_terminal_expansion() {
-    magics::init(0xdead_beef);
+    magics::init();
 
     // Checkmate position
     let mut fen = Fen::new("2k2R2/4R3/K7/8/8/8/8/8 b - - 0 1");

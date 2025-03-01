@@ -14,13 +14,13 @@ use crate::{
 
 #[test]
 fn initialization() {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let mut fen = Fen::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
     let tree = Tree::new(&pos);
 
-    assert_eq!(tree.root.state, NodeState::Root);
+    assert_eq!(tree.root.state, NodeState::Branch);
     assert!(!tree.root.children.is_empty());
     assert!(tree
         .root
@@ -48,14 +48,15 @@ fn growth() {
 
 #[test]
 fn selects_unexpanded_leaf() {
-    magics::init(0xdead_beef);
+    magics::init();
 
     // Setup position with one legal move
     let mut fen = Fen::new("K7/8/1k6/8/8/8/8/8 w - - 0 1");
     let mut pos = Position::try_from(&mut fen).unwrap();
     let mut tree = Tree::new(&pos);
 
-    let stack = tree.select_leaf_mut(&mut pos);
+    tree.select_leaf_mut(&mut pos);
+    let stack = tree.selection_buffer;
 
     // Should select the only child
     assert_eq!(stack.len(), 1);
@@ -70,7 +71,7 @@ fn selects_unexpanded_leaf() {
 
 #[test]
 fn expands_leaf_and_selects_child() {
-    magics::init(0xdead_beef);
+    magics::init();
 
     // Position with known follow-up moves
     let mut fen = Fen::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
@@ -82,7 +83,8 @@ fn expands_leaf_and_selects_child() {
         tree.grow(&mut pos.clone());
     }
 
-    let stack = tree.select_leaf_mut(&mut pos);
+    tree.select_leaf_mut(&mut pos);
+    let stack = tree.selection_buffer;
 
     // Should have root -> branch -> leaf
     assert_eq!(stack.len(), 2);
@@ -97,7 +99,7 @@ fn expands_leaf_and_selects_child() {
 
 #[test]
 fn handles_terminal_nodes_through_expansion() {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let fen = "7k/P7/6K1/5nn1/6n1/5nn1/8/8 w - - 0 1";
     let mut fen = Fen::new(fen);
@@ -122,7 +124,7 @@ fn handles_terminal_nodes_through_expansion() {
 
 #[test]
 fn traverses_multiple_branch_nodes() {
-    magics::init(0xdead_beef);
+    magics::init();
 
     // Setup deep tree with known structure
     let mut fen = Fen::new("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
@@ -134,7 +136,8 @@ fn traverses_multiple_branch_nodes() {
         tree.grow(&mut pos.clone());
     }
 
-    let stack = tree.select_leaf_mut(&mut pos);
+    tree.select_leaf_mut(&mut pos);
+    let stack = tree.selection_buffer;
 
     // Verify path depth and node types
     assert!(stack.len() >= 2);

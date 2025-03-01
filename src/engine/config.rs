@@ -1,3 +1,5 @@
+use std::fmt;
+
 pub enum ConfigOptionType {
     Check {
         default: bool,
@@ -11,61 +13,61 @@ pub enum ConfigOptionType {
     },
     Combo {
         default: String,
-        options: Vec<String>,
+        options: ComboOptions,
         value: String
     },
     Button {
         callback: Box<fn()>,
     },
-    String(Option<String>), // Some -> value, None -> "<empty>"
+    String(StringType),
 }
 
-impl From<&ConfigOptionType> for String {
-    fn from(val: &ConfigOptionType) -> Self {
-        let mut result = String::new();
-        
-        macro_rules! push_field {
-            ($name:expr, $field:expr) => {
-                result.push_str($name);
-                result.push_str(" ");
-                result.push_str(&$field.to_string());
-                result.push_str(" ");
-            };
-        }
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct StringType(String);
 
-        match val {
-            ConfigOptionType::Check { default, value } => {
-                result.push_str("check ");
-                push_field!("default", default);
-                push_field!("value", value);
+impl Default for StringType {
+    fn default() -> Self {
+        Self("<empty>".to_string())
+    }
+}
+
+impl From<&str> for StringType {
+    fn from(value: &str) -> Self {
+        StringType(value.to_string())    
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct ComboOptions(pub Vec<String>);
+
+impl fmt::Display for ComboOptions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for opt in &self.0 {
+            write!(f, "var {} ", opt)?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for ConfigOptionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConfigOptionType::Check { default, .. } => {
+                write!(f, "check default {default}")
             },
-            ConfigOptionType::Spin { default, min, max, value } => {
-                result.push_str("spin ");
-                push_field!("default", default);
-                push_field!("min", min);
-                push_field!("max", max);
-                push_field!("value", value);
+            ConfigOptionType::Spin { default, min, max, .. } => {
+                write!(f, "spin default {default} min {min} max {max}")
             },
-            ConfigOptionType::Combo { default, options, value } => {
-                result.push_str("combo ");
-                push_field!("default", default);
-                for opt in options {
-                    push_field!("var", opt);
-                }
-                push_field!("value", value);
+            ConfigOptionType::Combo { default, options, .. } => {
+                write!(f, "combo default {default} {options}")
             },
             ConfigOptionType::Button { callback: _ } => {
-                result.push_str("button ");
+                write!(f, "button")
             },
-            ConfigOptionType::String(maybe) => {
-                result.push_str("string");
-                push_field!("value", &match maybe {
-                    Some(str) => str.clone(),
-                    None => String::from("<empty>")
-                });
+            ConfigOptionType::String(string_type) => {
+                write!(f, "string default {}", string_type.0)
             },
-        };
-        result
+        }
     }
 }
 
@@ -74,18 +76,11 @@ pub struct ConfigOption {
     pub cfg_type: ConfigOptionType,
 }
 
-impl From<&ConfigOption> for String {
-    fn from(option: &ConfigOption) -> String {
-        let type_str: String = (&option.cfg_type).into();
-        let mut result = String::from("option");
-        result.push_str(" name ");
-        result.push_str(&option.cfg_name);
-        result.push_str(" type ");
-        result.push_str(&type_str);
-        result
+impl fmt::Display for ConfigOption {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "option name {} type {}", self.cfg_name, self.cfg_type)
     }
 }
-
 
 pub struct Configuration(pub Vec<ConfigOption>);
 

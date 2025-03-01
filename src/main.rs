@@ -1,5 +1,5 @@
 use nephrid::engine::move_iter::sliding_piece::magics;
-use nephrid::engine::{execute_uci, Engine};
+use nephrid::engine::{execute_uci, zobrist, Engine};
 use nephrid::uci::{
     sync::{self, CancellationToken},
     tokens::Tokenizer,
@@ -7,7 +7,8 @@ use nephrid::uci::{
 use std::io::stdin;
 
 fn main() {
-    magics::init(0xdeadbeef);
+    magics::init();
+    zobrist::init();
 
     let input_stream = stdin();
     let mut engine = Engine::default();
@@ -16,7 +17,8 @@ fn main() {
     execute_uci(
         &mut engine, 
         &mut Tokenizer::new("ucinewgame"), 
-        cmd_cancellation.clone());
+        cmd_cancellation.clone())
+    .unwrap();
 
     // execute_uci(
     //     &mut engine, 
@@ -31,11 +33,15 @@ fn main() {
     loop {
         let mut input = String::new();
         match input_stream.read_line(&mut input) {
-            Ok(_) => execute_uci(
-                &mut engine,
-                &mut Tokenizer::new(input.as_str()),
-                cmd_cancellation.clone(),
-            ),
+            Ok(_) => {
+                if let Err(e) = execute_uci(
+                    &mut engine,
+                    &mut Tokenizer::new(input.as_str()),
+                    cmd_cancellation.clone(),
+                ) {
+                    sync::out(&format!("{e}"));
+                }
+            },
             Err(err) => sync::out(&format!("Error: {err}")),
         }
         // Replace the cancellation token if it's burned.

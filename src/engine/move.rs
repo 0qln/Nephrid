@@ -1,4 +1,5 @@
 use core::fmt;
+use std::ops::{Index, IndexMut, Range};
 
 use crate::{
     engine::{
@@ -103,7 +104,7 @@ impl TryFrom<TMoveFlag> for MoveFlag {
     fn try_from(value: TMoveFlag) -> Result<Self, Self::Error> {
         match value {
             0..=13 => Ok(MoveFlag { v: value }),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }
@@ -238,3 +239,33 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
 }
 
 
+/// A list of moves in a single position. 
+/// Since the 218 is the maximum number of moves in a single position, 
+/// we can use a fixed length array to store the moves and by using a 
+/// size of 256 we can safely index into the array with a u8. 
+#[derive(Debug, Clone)]
+pub struct MoveList([Move; 256]);
+
+impl Default for MoveList {
+    fn default() -> Self {
+        Self([Move::default(); 256])
+    }
+}
+    
+impl Index<u8> for MoveList {
+    type Output = Move;
+
+    fn index(&self, index: u8) -> &Self::Output {
+        unsafe {
+            self.0.get_unchecked(index as usize)
+        }
+    }
+}
+
+impl IndexMut<u8> for MoveList {
+    fn index_mut(&mut self, index: u8) -> &mut Self::Output {
+        unsafe {
+            self.0.get_unchecked_mut(index as usize)
+        }
+    }
+}

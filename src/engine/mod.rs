@@ -1,121 +1,139 @@
-use search::{limit::Limit, Search};
+use search::{limit::Limit, mode::Mode, target::Target, Search};
 
-use crate::uci::{
-    sync::{self, CancellationToken},
-    tokens::Tokenizer,
-};
+use self::r#move::LongAlgebraicUciNotation;
 use crate::engine::{
     config::{ConfigOptionType, Configuration},
     depth::Depth,
-    fen::Fen,
     position::Position,
     r#move::Move,
 };
-use std::{default, process, sync::{atomic::{AtomicBool, Ordering}, Arc}, thread};
-use self::r#move::LongAlgebraicUciNotation;
+use crate::uci::{
+    sync::{self, CancellationToken, UciError},
+    tokens::Tokenizer,
+};
+use std::{
+    error::Error,
+    process,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    thread,
+};
 
-pub mod search;
-pub mod zobrist;
-pub mod move_iter;
-pub mod color;
-pub mod piece;
-pub mod depth;
-pub mod turn;
-pub mod fen;
 pub mod bitboard;
-pub mod position;
-pub mod coordinates;
-pub mod config;
 pub mod castling;
+pub mod color;
+pub mod config;
+pub mod coordinates;
+pub mod depth;
+pub mod fen;
 pub mod r#move;
+pub mod move_iter;
+pub mod piece;
 pub mod ply;
-
+pub mod position;
+pub mod search;
+pub mod turn;
+pub mod zobrist;
 
 #[derive(Default)]
 pub struct Engine {
     config: Configuration,
+    debug: Arc<AtomicBool>,
     position: Position,
-    search: Search,
 }
 
 // mod uci
-pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellation_token: CancellationToken) {
+pub fn execute_uci(
+    engine: &mut Engine,
+    tokenizer: &mut Tokenizer<'_>,
+    cancellation_token: CancellationToken,
+) -> Result<(), Box<dyn Error>> {
     match tokenizer.collect_token().as_deref() {
         Some("d") => {
             let pos: String = (&engine.position).into();
             sync::out(&pos);
+            Ok(())
         }
-        Some("quit")=> {
+        Some("quit") => {
             process::exit(0);
         }
         Some("stop") => {
             cancellation_token.cancel();
+            Ok(())
         }
         Some("go") => {
-            let mut search = engine.search.clone();
+            let token = cancellation_token.clone();
+            let mut position = engine.position.clone();
+            let debug = engine.debug.clone();
 
             macro_rules! collect_and_parse {
-                ($field:expr, $default:expr) => {{
+                ($field:expr) => {{
                     let token = tokenizer.collect_token();
-                    $field = token.map_or($default, |s| s.parse().unwrap_or($default));
+                    $field = token.map_or(Ok(Default::default()), |s| s.parse())?;
                 }};
             }
 
-            engine.search.limit = Limit::default();
+            let mut mode = Mode::default();
+            let mut limit = Limit::default();
+            let mut target = Target::default();
 
             while let Some(token) = tokenizer.collect_token().as_deref() {
                 match token {
-                    "perft" => search.mode = search::mode::Mode::Perft,
-                    "ponder" => search.mode = search::mode::Mode::Ponder,
-                    "wtime" => collect_and_parse!(search.limit.wtime, 0),
-                    "btime" => collect_and_parse!(search.limit.btime, 0),
-                    "winc" => collect_and_parse!(search.limit.winc, 0),
-                    "binc" => collect_and_parse!(search.limit.binc, 0),
-                    "movestogo" => collect_and_parse!(search.limit.movestogo, 0),
-                    "depth" => collect_and_parse!(search.target.depth, Depth::MIN),
-                    "nodes" => collect_and_parse!(search.limit.nodes, 0),
-                    "mate" => collect_and_parse!(search.target.mate, Depth::MIN),
-                    "movetime" => collect_and_parse!(search.limit.movetime, 0),
-                    "infinite" => search.limit.is_active = false,
+                    "perft" => mode = Mode::Perft,
+                    "ponder" => mode = Mode::Ponder,
+                    "wtime" => collect_and_parse!(limit.wtime),
+                    "btime" => collect_and_parse!(limit.btime),
+                    "winc" => collect_and_parse!(limit.winc),
+                    "binc" => collect_and_parse!(limit.binc),
+                    "movestogo" => collect_and_parse!(limit.movestogo),
+                    "depth" => collect_and_parse!(target.depth),
+                    "nodes" => collect_and_parse!(limit.nodes),
+                    "mate" => collect_and_parse!(target.mate),
+                    "movetime" => collect_and_parse!(limit.movetime),
+                    "infinite" => limit.is_active = false,
                     // to be compatible with stockfish
-                    depth if Depth::try_from(depth).is_ok() => search.target.depth = depth.try_into().unwrap(),
-                    /*searchmoves*/ | _ => {
-                        let move_notation = LongAlgebraicUciNotation::new(tokenizer, &engine.position);
+                    depth if Depth::try_from(depth).is_ok() => {
+                        target.depth = depth.try_into().unwrap()
+                    }
+                    /*searchmoves*/
+                    _ => {
+                        let move_notation = LongAlgebraicUciNotation::new(tokenizer, &position);
                         match Move::try_from(move_notation) {
-                            Ok(m) => search.target.search_moves.push(m),
-                            Err(e) => sync::out(&format!("Error: {e}"))
+                            Ok(m) => target.search_moves.push(m),
+                            Err(e) => sync::out(&format!("Error: {e}")),
                         }
-                    },
+                    }
                 };
             }
 
-            let token = cancellation_token.clone();
-            let mut position = engine.position.clone();
-
-            thread::spawn(move || { search.go(&mut position, token); }); 
+            thread::spawn(move || {
+                let search = Search::new(limit, target, mode, debug);
+                search.go(&mut position, token);
+            });
+            Ok(())
         }
         Some("position") => {
             match tokenizer.collect_token().as_deref() {
-                Some("fen") => {
-                    let fen: &mut Fen = tokenizer;
-                    match Position::try_from(fen) {
-                        Ok(pos) => engine.position = pos,
-                        Err(e) => sync::out(&format!("Error: {e}"))
-                    }
-                },
+                Some("fen") => engine.position = Position::try_from(&mut *tokenizer)?,
                 Some("startpos") => engine.position = Position::start_position(),
-                None => sync::out("Error: Missing arguments"),
-                Some(x) => sync::out(&format!("Error: Invalid argument: {}", x))
+                None => return Err(UciError::MissingArgument("value").into()),
+                Some(x) => {
+                    return Err(UciError::InvalidValue(
+                        x.to_string(),
+                        vec!["fen".to_string(), "startpos".to_string()],
+                    )
+                    .into())
+                }
             };
             if tokenizer.collect_token().as_deref() == Some("moves") {
                 while tokenizer.goto_next_token() {
-                    let move_notation = LongAlgebraicUciNotation::new(&mut *tokenizer, &engine.position);
-                    match Move::try_from(move_notation) {
-                        Ok(m) => engine.position.make_move(m),
-                        Err(e) => sync::out(&format!("Error: {e}"))
-                    };
+                    let mov = LongAlgebraicUciNotation::new(&mut *tokenizer, &engine.position);
+                    engine.position.make_move(Move::try_from(mov)?);
                 }
             }
+            Ok(())
         }
         Some("uci") => {
             // Id response
@@ -123,17 +141,18 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
             sync::out("id author 0qln");
             // Option response
             for option in &engine.config.0 {
-                let opt_str: String = option.into(); 
-                sync::out(&opt_str);                    
+                sync::out(&option.to_string());
             }
             // Uciok response
-            sync::out("uciok")
+            sync::out("uciok");
+            Ok(())
         }
         Some("setoption") => {
             // collect name
             let mut name = String::new();
             while let Some(token) = tokenizer.collect_token().as_deref() {
                 match token {
+                    "name" => continue,
                     "value" => break,
                     part => {
                         name.push_str(part);
@@ -143,6 +162,10 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
                         }
                     }
                 };
+            }
+
+            if name.is_empty() {
+                return Err(UciError::MissingArgument("name").into());
             }
 
             // collect value
@@ -155,64 +178,65 @@ pub fn execute_uci(engine: &mut Engine, tokenizer: &mut Tokenizer<'_>, cancellat
                 }
             }
 
-            match engine.config.find_mut(name.as_str()) {
-                None => sync::out(&format!("Unknown option: '{name}'")),
-                Some(option) => {
-                    match &mut option.cfg_type {
-                        ConfigOptionType::Check { value, .. } => {
-                            match new_value.parse() {
-                                Ok(parsed) => *value = parsed,
-                                Err(_) => sync::out("Error: Missing or invalid value")
-                            }
-                        },
-                        ConfigOptionType::Spin { min, max, value, .. } => {
-                            match new_value.parse() {
-                                Ok(parsed) if *value >= *min && *value <= *max => *value = parsed,
-                                Ok(_) => sync::out("Error: Value out of range"),
-                                Err(_) => sync::out("Error: Missing or invalid value")
-                            }
-                        },
-                        ConfigOptionType::Combo { options, value, .. } => {
-                            match !new_value.is_empty() {
-                                true if options.contains(&new_value) => *value = String::from(&new_value),
-                                true => sync::out("Error: Invalid value"),
-                                false => sync::out("Error: Missing value"),
-                            }
-                        },
-                        ConfigOptionType::Button { callback } => {
-                            callback()
-                        },
-                        ConfigOptionType::String(value) => {
-                            match new_value.is_empty() {
-                                true => *value = Some(String::from("<empty>")),
-                                false => *value = Some(new_value)
-                            }
-                        },
+            let new_value = new_value.trim();
+
+            match engine.config.find_mut(name.trim()) {
+                None => Err(UciError::UnknownOption)?,
+                Some(option) => match &mut option.cfg_type {
+                    ConfigOptionType::Check { value, .. } => {
+                        if new_value.is_empty() {
+                            return Err(UciError::MissingArgument("value").into());
+                        }
+                        *value = new_value.parse()?;
                     }
+                    ConfigOptionType::Spin {
+                        min, max, value, ..
+                    } => {
+                        if new_value.is_empty() {
+                            return Err(UciError::MissingArgument("value").into());
+                        }
+                        let parsed = new_value.parse()?;
+                        if parsed < *min || parsed > *max {
+                            return Err(UciError::InputOutOfRange(
+                                new_value.to_string(),
+                                min.to_string(),
+                                max.to_string(),
+                            )
+                            .into());
+                        }
+                        *value = parsed;
+                    }
+                    ConfigOptionType::Combo { options, value, .. } => {
+                        let new_value = new_value.to_string();
+                        if !options.0.contains(&new_value) {
+                            return Err(UciError::InvalidValue(new_value, options.clone().0).into());
+                        }
+                        *value = new_value;
+                    }
+                    ConfigOptionType::Button { callback } => callback(),
+                    ConfigOptionType::String(value) => *value = new_value.into(),
                 },
-            }
+            };
+            Ok(())
         }
-        Some("ucinewgame") => {
-            engine.position = Position::start_position();
-        }
+        Some("ucinewgame") => Ok(engine.position = Position::start_position()),
         Some("debug") => {
             let debug = match tokenizer.collect_token().as_deref() {
                 Some("on") => true,
                 Some("off") => false,
-                Some(x) => return sync::out(&format!("Error: Invalid argument: {}", x)),
-                None => return sync::out("Error: Missing arguments"),
+                Some(x) => {
+                    return Err(UciError::InvalidValue(
+                        x.to_string(),
+                        vec!["on".to_string(), "off".to_string()],
+                    )
+                    .into())
+                }
+                None => return Err(UciError::MissingArgument("value").into()),
             };
-            
-            engine.search.debug.store(debug, Ordering::Relaxed)
+            Ok(engine.debug.store(debug, Ordering::Relaxed))
         }
-        Some("isready") => {
-            sync::out(&"readyok")
-        }
-        Some(unknown) => { 
-            sync::out(&format!("Unknown UCI command: '{unknown}'")) 
-        }
-        None => {
-
-        }
-    }    
+        Some("isready") => Ok(sync::out(&"readyok")),
+        Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
+        None => Ok(()),
+    }
 }

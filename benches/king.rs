@@ -24,7 +24,7 @@ pub fn king_attacks(c: &mut Criterion) {
 }
 
 pub fn king_move_iter_check_none(c: &mut Criterion) {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let mut fen = Fen::new("7k/8/8/8/8/7b/5n2/4K3 w - - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
@@ -41,7 +41,7 @@ pub fn king_move_iter_check_none(c: &mut Criterion) {
 }
 
 pub fn king_move_iter_check_some(c: &mut Criterion) {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let mut fen = Fen::new("4r2k/8/8/8/8/5b2/4K3/8 w - - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
@@ -58,7 +58,7 @@ pub fn king_move_iter_check_some(c: &mut Criterion) {
 }
 
 pub fn king_move_iter_castling(c: &mut Criterion) {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let inputs = [
         "4r2k/8/8/8/8/5b2/4K3/8 w KQ - 0 1",

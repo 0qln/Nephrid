@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 use crate::engine::{color::Color, fen::Fen, move_iter::{fold_legal_moves, sliding_piece::magics}, position::Position, search::mcts::PlayoutResult};
 
 fn test(fen: &str, expected_result: Option<PlayoutResult>) {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let mut fen = Fen::new(fen);
     let pos = Position::try_from(&mut fen).unwrap();
@@ -14,7 +14,7 @@ fn test(fen: &str, expected_result: Option<PlayoutResult>) {
             acc
         })
     });
-    let result = PlayoutResult::maybe_new(&pos, &moves);
+    let result = PlayoutResult::maybe_new(&pos, moves.len() as u8);
     assert_eq!(result, expected_result);
 }
 

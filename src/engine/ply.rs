@@ -21,7 +21,7 @@ impl TryFrom<&mut Fen<'_>> for FullMoveCount {
 
     fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
         match fen.collect_token() {
-            None => Err(ParseError::MissingInput),
+            None => Err(ParseError::MissingValue),
             Some(tok) => FullMoveCount::try_from(tok.as_str()),
         }
     }
@@ -35,7 +35,6 @@ impl_op!(- |a: Ply, b: u16| -> Ply { Ply { v: a.v - b } } );
 impl_op!(+ |a: Ply, b: Ply| -> Ply { Ply { v: a.v + b.v } } );
 impl_op!(+ |a: Ply, b: u16| -> Ply { Ply { v: a.v + b } } );
 
-// todo: test
 impl From<(FullMoveCount, Turn)> for Ply {
     fn from(value: (FullMoveCount, Turn)) -> Self {
         let (fmc, turn) = value;
@@ -63,7 +62,7 @@ impl TryFrom<&mut Fen<'_>> for Ply {
 
     fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
         match fen.collect_token() {
-            None => Err(ParseError::MissingInput),
+            None => Err(ParseError::MissingValue),
             Some(tok) => Ply::try_from(tok.as_str()),
         }
     }

@@ -116,7 +116,7 @@ impl TryFrom<TSquare> for Square {
     fn try_from(value: TSquare) -> Result<Self, Self::Error> {
         match value {
             Square::MIN..=Square::MAX => Ok(Square { v: value }),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }
@@ -130,7 +130,7 @@ impl TryFrom<u16> for Square {
         const MAX: u16 = Square::MAX as u16;
         match value {
             MIN..=MAX => Ok(Square { v: value as u8 }),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }
@@ -151,11 +151,11 @@ impl TryFrom<&mut Tokenizer<'_>> for Square {
     fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let file = match tokens.next() {
             Some(c) => File::try_from(c)?,
-            None => return Err(ParseError::MissingInput),
+            None => return Err(ParseError::MissingValue),
         };
         let rank = match tokens.next() {
             Some(c) => Rank::try_from(c)?,
-            None => return Err(ParseError::MissingInput),
+            None => return Err(ParseError::MissingValue),
         };
         Ok(Square::from_c((file, rank)))
     }
@@ -194,7 +194,7 @@ impl TryFrom<Square> for EpTargetSquare {
         let rank = Rank::from_c(sq);
         match rank {
             Rank::_3 | Rank::_6 => Ok(Self { v: Some(sq) }),
-            _ => Err(ParseError::InputOutOfRange(Box::new(sq))),
+            _ => Err(ParseError::InputOutOfRange(sq.to_string())),
         }
     }
 }
@@ -207,11 +207,11 @@ impl TryFrom<&mut Tokenizer<'_>> for EpTargetSquare {
         let file = match tokens.next() {
             Some('-') => return Ok(Self { v: None }),
             Some(c) => File::try_from(c)?,
-            None => return Err(ParseError::MissingInput),
+            None => return Err(ParseError::MissingValue),
         };
         let rank = match tokens.next() {
             Some(c) => Rank::try_from(c)?,
-            None => return Err(ParseError::MissingInput),
+            None => return Err(ParseError::MissingValue),
         };
         let sq = Square::from_c((file, rank));
         Self::try_from(sq)
@@ -249,7 +249,7 @@ impl TryFrom<Square> for EpCaptureSquare {
         let rank = Rank::from_c(sq);
         match rank {
             Rank::_4 | Rank::_5 => Ok(Self { v: Some(sq) }),
-            _ => Err(ParseError::InputOutOfRange(Box::new(sq))),
+            _ => Err(ParseError::InputOutOfRange(sq.to_string())),
         }
     }
 }
@@ -301,6 +301,12 @@ impl const ConstFrom<Square> for Rank {
     }
 }
 
+impl From<Rank> for i8 {
+    fn from(value: Rank) -> Self {
+        value.v as i8
+    }
+}
+
 impl TryFrom<u8> for Rank {
     type Error = ParseError;
 
@@ -308,7 +314,7 @@ impl TryFrom<u8> for Rank {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0..=7 => Ok(Rank { v: value }),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }
@@ -322,7 +328,7 @@ impl TryFrom<char> for Rank {
             '1'..='8' => Ok(Rank {
                 v: value as u8 - b'1',
             }),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }
@@ -376,7 +382,7 @@ impl TryFrom<u8> for File {
     fn try_from(value: u8) -> Result<Self, Self::Error> {
         match value {
             0..=7 => Ok(File { v: value }),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }
@@ -390,7 +396,7 @@ impl TryFrom<char> for File {
             'a'..='h' => Ok(File {
                 v: value as u8 - b'a',
             }),
-            x => Err(ParseError::InputOutOfRange(Box::new(x))),
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }

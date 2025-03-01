@@ -1,8 +1,6 @@
 use core::fmt;
 use std::ptr::NonNull;
 
-use repetitions::RepetitionTable;
-
 use crate::{
     engine::{
         bitboard::Bitboard, castling::CastlingRights, color::Color, coordinates::{File, Rank, Square}, fen::Fen, r#move::Move, move_iter::{bishop, king, knight, pawn, rook}, piece::{Piece, PieceType}, turn::Turn, zobrist
@@ -19,7 +17,7 @@ pub enum CheckState {
     Double
 }
 
-mod repetitions;
+pub mod repetitions;
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct StateInfo {
@@ -127,15 +125,15 @@ impl StateStack {
         self.states.get(self.current - go_back)
     }
     
-    // /// Returns a mutable reference to the current state.
-    // #[inline]
-    // pub fn get_current_mut(&mut self) -> &mut StateInfo {
-    //     // Safety: The current index is always in range
-    //     unsafe {
-    //         self.states.get_unchecked_mut(self.current)
-    //     }
-    // }
-    // 
+    /// Returns a mutable reference to the current state.
+    #[inline]
+    pub fn get_current_mut(&mut self) -> &mut StateInfo {
+        // Safety: The current index is always in range
+        unsafe {
+            self.states.get_unchecked_mut(self.current)
+        }
+    }
+
     // /// Returns a pointer to the current state.
     // #[inline]
     // pub fn get_current_ptr(&mut self) -> NonNull<StateInfo> {
@@ -176,6 +174,8 @@ impl StateStack {
     }
 }
 
+type Repetitions = repetitions::RepetitionTable<16>;
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Position {
     c_bitboards: [Bitboard; 2],
@@ -183,7 +183,7 @@ pub struct Position {
     pieces: [Piece; 64],
     piece_counts: [i8; 14],
     state: StateStack,
-    repetitions: RepetitionTable,
+    repetitions: Repetitions,
 }
 
 impl Default for Position {
@@ -331,8 +331,27 @@ impl Position {
     }
     
     #[inline]
+    pub fn repetition_table_collisions(&self) -> usize {
+        self.repetitions.collisions()
+    }
+    
+    #[inline]
+    pub fn repetition_table_free(&self) -> usize {
+        self.repetitions.free()
+    }
+    
+    #[inline]
+    pub fn repetition_table_capacity(&self) -> usize {
+        Repetitions::capacity()
+    }
+    
+    #[inline]
     pub fn plys_50(&self) -> Ply {
         self.state.get_current().plys50
+    }
+    
+    pub fn ply(&self) -> Ply {
+        self.state.get_current().ply
     }
     
     #[inline]
@@ -661,7 +680,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
         for char in fen.iter_token() {
             match char {
                 '/' => continue,
-                '1'..='8' => sq -= char.to_digit(10).ok_or(ParseError::InputOutOfRange(Box::new(char)))? as i8,        
+                '1'..='8' => sq -= Into::<i8>::into(Rank::try_from(char)?) + 1,        
                 _ => {
                     let piece = Piece::try_from(char)?; 
                     let pos_sq = Square::try_from(sq as u8)?.flip_h();
@@ -674,7 +693,7 @@ impl TryFrom<&mut Fen<'_>> for Position {
             }
         }
         
-        let turn = Turn::try_from(fen.iter_token().next().ok_or(ParseError::MissingInput)?)?;
+        let turn = Turn::try_from(&mut *fen)?;
         let mut state = StateInfo {
             // 2. Side to move
             turn,
@@ -687,12 +706,12 @@ impl TryFrom<&mut Fen<'_>> for Position {
             // 6. Fullmove counter
             ply: Ply::from((FullMoveCount::try_from(fen.iter_token())?, turn)),
 
-            // TODO: init zobrist hash
-
             ..Default::default()
         };
+
         state.init(&position);
         position.state = StateStack::new(state);
+        position.state.get_current_mut().key = zobrist::Hash::from(&position);
         
         Ok(position)
     }

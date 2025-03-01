@@ -1,4 +1,4 @@
-use std::{any::Any, num::ParseIntError, ops::AddAssign};
+use std::{fmt::Debug, num::ParseIntError, ops::AddAssign};
 
 use thiserror::Error;
 
@@ -30,11 +30,11 @@ pub trait ConstDefault {
 
 #[derive(Error, Debug)]
 pub enum ParseError {
-    #[error("Invalid value: {0:?}")]
-    InputOutOfRange(Box<dyn Any>),
+    #[error("Invalid value: {0}")]
+    InputOutOfRange(String),
 
     #[error("Missing value")]
-    MissingInput,
+    MissingValue,
 
     #[error("ParseIntError: {0:?}")]
     ParseIntError(ParseIntError),

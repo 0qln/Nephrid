@@ -10,7 +10,7 @@ pub fn criterion_benchmark(c: &mut Criterion) {
     let occupancy = Bitboard {
         v: 0x24814c6240174d0_u64,
     };
-    magics::init(0xdead_beef);
+    magics::init();
 
     let mut group = c.benchmark_group("queen::attacks");
 

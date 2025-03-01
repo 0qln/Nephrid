@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use nephrid::engine::{
     color::Color, coordinates::Square, fen::Fen, r#move::Move, move_iter::{
-        pawn::{self, lookup_attacks, Pawn},
+        pawn::{lookup_attacks, Pawn},
         sliding_piece::magics, FoldMoves, NoCheck,
     }, position::Position
 };
@@ -20,7 +20,7 @@ pub fn pawn_attacks(c: &mut Criterion) {
 }
 
 pub fn move_iter_check_none(c: &mut Criterion) {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let inputs = [
         "K4n1n/6P1/k7/1p1pP3/2P5/8/5P2/8 w - d6 0 1",

@@ -18,7 +18,7 @@ fn bishop() {
 }
 
 fn test<T: MagicGen + SlidingAttacks>() {
-    super::init(0xdead_beef);
+    super::init();
 
     for sq in Square::A1..=Square::H8 {
         let full_blockers = T::relevant_occupancy(sq);

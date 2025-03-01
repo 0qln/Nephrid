@@ -4,7 +4,7 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use nephrid::engine::coordinates::Square;
 use nephrid::engine::fen::Fen;
 use nephrid::engine::r#move::Move;
-use nephrid::engine::move_iter::knight::{self, compute_attacks, lookup_attacks, Knight};
+use nephrid::engine::move_iter::knight::{compute_attacks, lookup_attacks, Knight};
 use nephrid::engine::move_iter::sliding_piece::magics;
 use nephrid::engine::move_iter::{FoldMoves, NoCheck, SingleCheck};
 use nephrid::engine::position::Position;
@@ -24,7 +24,7 @@ pub fn knight_attacks(c: &mut Criterion) {
 }
 
 pub fn move_iter_check_none(c: &mut Criterion) {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let inputs = [
         "N3N3/6p1/1pp2p2/8/3N4/7k/8/7K w - - 0 1",
@@ -49,7 +49,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
 }
 
 pub fn move_iter_check_single(c: &mut Criterion) {
-    magics::init(0xdead_beef);
+    magics::init();
 
     let inputs = [
         "N7/6p1/1pp2p2/5r2/8/3b1N1k/8/2N2K2 w - - 0 1",
