@@ -6,6 +6,7 @@ use std::fmt;
 use std::ops::{AddAssign, ControlFlow};
 use std::ptr::NonNull;
 
+use crate::engine::r#move::MoveList;
 use crate::engine::move_iter::king::King;
 use crate::engine::piece::IPieceType;
 use crate::engine::{color::Color, move_iter::fold_legal_moves, position::Position, r#move::Move};
@@ -20,12 +21,12 @@ pub enum PlayoutResult {
 }
 
 impl PlayoutResult {
-    pub fn maybe_new(pos: &Position, moves: &[Move]) -> Option<Self> {
+    pub fn maybe_new(pos: &Position, move_cnt: u8) -> Option<Self> {
         if pos.has_threefold_repetition() || pos.fifty_move_rule() {
             return Some(Self::Draw);
         }
 
-        if moves.is_empty() {
+        if move_cnt == 0 {
             return Some({
                 let us = pos.get_turn();
                 let king = pos.get_bitboard(King::ID, us);
@@ -54,7 +55,7 @@ pub struct Tree {
     
     /// Buffers used during simulation.
     simulation_stack_buffer: Vec<Move>,
-    simulation_moves_buffer: Vec<Move>,
+    simulation_moves_buffer: MoveList,
 }
 
 impl Tree {
@@ -282,34 +283,33 @@ impl Node {
         &self,
         pos: &mut Position,
         stack: &mut Vec<Move>,
-        moves: &mut Vec<Move>,
+        moves: &mut MoveList,
         rng: &mut impl Rng,
     ) -> PlayoutResult {
         assert_matches!(self.state, NodeState::Leaf | NodeState::Terminal);
 
         stack.clear();
-        moves.clear();
 
         loop {
+            let mut move_cnt = 0;
             fold_legal_moves(pos, &mut *moves, |acc, m| {
                 ControlFlow::Continue::<(), _>({
-                    acc.push(m);
+                    acc[move_cnt] = m;
+                    move_cnt += 1;
                     acc
                 })
             });
 
-            if let Some(result) = PlayoutResult::maybe_new(pos, &moves) {
+            if let Some(result) = PlayoutResult::maybe_new(pos, move_cnt) {
                 while let Some(m) = stack.pop() {
                     pos.unmake_move(m);
                 }
                 return result;
             }
 
-            let mov = moves[rng.gen_range(0..moves.len())];
+            let mov = moves[rng.gen_range(0..move_cnt)];
             pos.make_move(mov);
             stack.push(mov);
-
-            moves.clear();
         }
     }
 

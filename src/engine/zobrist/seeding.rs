@@ -56,7 +56,7 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
                     })
                 });
 
-                if mcts::PlayoutResult::maybe_new(pos, &buffer).is_some() {
+                if mcts::PlayoutResult::maybe_new(pos, buffer.len() as u8).is_some() {
                     break;
                 }
 

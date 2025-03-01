@@ -14,7 +14,7 @@ fn test(fen: &str, expected_result: Option<PlayoutResult>) {
             acc
         })
     });
-    let result = PlayoutResult::maybe_new(&pos, &moves);
+    let result = PlayoutResult::maybe_new(&pos, moves.len() as u8);
     assert_eq!(result, expected_result);
 }
 

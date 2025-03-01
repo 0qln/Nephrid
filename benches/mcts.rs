@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use nephrid::engine::{
-    move_iter::sliding_piece::magics, position::Position, search::mcts::Node, zobrist,
+    r#move::{Move, MoveList}, move_iter::sliding_piece::magics, position::Position, search::mcts::Node, zobrist
 };
 use rand::{rngs::SmallRng, SeedableRng};
 
@@ -13,7 +13,7 @@ pub fn node_simulate(c: &mut Criterion) {
     let leaf = root.select_mut();
 
     let mut stack = Vec::with_capacity(256);
-    let mut moves = Vec::with_capacity(256);
+    let mut moves = MoveList::default();
     let mut rng = SmallRng::seed_from_u64(1);
 
     c.bench_function("mcts::node_simulate", |b| {
