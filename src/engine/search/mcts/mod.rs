@@ -46,8 +46,13 @@ impl PlayoutResult {
 
 #[derive(Default, Debug, Clone)]
 pub struct Tree {
+    /// Root of the tree.
     root: Node,
+    
+    /// Stack of nodes that were selected during the selection phase.
     selection_buffer: Vec<NonNull<Node>>,
+    
+    /// Buffers used during simulation.
     simulation_stack_buffer: Vec<Move>,
     simulation_moves_buffer: Vec<Move>,
 }
@@ -259,7 +264,7 @@ impl Node {
         }
     }
 
-    fn select_mut(&mut self) -> &mut Self {
+    pub fn select_mut(&mut self) -> &mut Self {
         assert_matches!(self.state, NodeState::Branch);
 
         self.children
