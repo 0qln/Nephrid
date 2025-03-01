@@ -96,6 +96,7 @@ impl Tree {
             pos,
             &mut self.simulation_stack_buffer,
             &mut self.simulation_moves_buffer,
+            &mut thread_rng(),
         );
         self.backpropagate(pos, result);
     }
@@ -282,10 +283,10 @@ impl Node {
         pos: &mut Position,
         stack: &mut Vec<Move>,
         moves: &mut Vec<Move>,
+        rng: &mut impl Rng,
     ) -> PlayoutResult {
         assert_matches!(self.state, NodeState::Leaf | NodeState::Terminal);
 
-        let mut rng = thread_rng();
         stack.clear();
         moves.clear();
 
