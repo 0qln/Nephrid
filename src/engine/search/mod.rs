@@ -26,7 +26,6 @@ pub struct Search {
     pub target: Target,
     pub mode: Mode,
     pub debug: Arc<AtomicBool>,
-    tree: mcts::Tree,
 }
 
 impl Search {
@@ -93,9 +92,7 @@ impl Search {
 
         }
         
-        let last_best_move = last_best_move.expect("search did not complete");
-        tree.advance(last_best_move);
-        last_best_move
+        last_best_move.expect("search did not complete")
     }
 
     pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {
