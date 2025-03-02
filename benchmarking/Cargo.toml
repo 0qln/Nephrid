@@ -1,0 +1,52 @@
+[package]
+name = "benchmarking"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+engine = { path = "../engine" }
+itertools = "0.14.0"
+rand = { version = "0.9.0", features = ["small_rng"] }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "rook_attacks"
+harness = false
+
+[[bench]]
+name = "bishop_attacks"
+harness = false
+
+[[bench]]
+name = "queen_attacks"
+harness = false
+
+[[bench]]
+name = "king"
+harness = false
+
+[[bench]]
+name = "knight"
+harness = false
+
+[[bench]]
+name = "pawn"
+harness = false
+
+[[bench]]
+name = "perft"
+harness = false
+
+[[bench]]
+name = "bitboard"
+harness = false
+
+[[bench]]
+name = "position"
+harness = false
+
+[[bench]]
+name = "mcts"
+harness = false
