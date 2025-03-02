@@ -3,7 +3,7 @@ use std::{fmt::Display, ops::ControlFlow};
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use itertools::Itertools;
-use engine::{core::{color::Color, coordinates::Square, fen::Fen, move_iter::{fold_legal_moves, sliding_piece::magics}, piece::{Piece, PieceType}, position::Position}, misc::ConstFrom};
+use engine::{core::{color::Color, coordinates::Square, move_iter::{fold_legal_moves, sliding_piece::magics}, piece::{Piece, PieceType}, position::Position}, misc::ConstFrom, uci::tokens::Tokenizer};
 
 pub fn get_bitboard(c: &mut Criterion) {
     let inputs = [
@@ -87,7 +87,7 @@ pub fn move_piece(c: &mut Criterion) {
 pub fn make_move(c: &mut Criterion) {
     magics::init();
 
-    let mut fen = Fen::new("2n1k3/1P6/8/4pP2/8/6B1/P2P4/R3K2R w KQ e6 0 1");
+    let mut fen = Tokenizer::new("2n1k3/1P6/8/4pP2/8/6B1/P2P4/R3K2R w KQ e6 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
     let moves = fold_legal_moves(&pos, Vec::new(), |mut acc, m| {
         acc.push(m);

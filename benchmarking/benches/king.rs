@@ -1,13 +1,13 @@
 use std::ops::ControlFlow;
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use engine::core::coordinates::Square;
-use engine::core::fen::Fen;
-use engine::core::move_iter::king::{compute_attacks, lookup_attacks, King};
-use engine::core::move_iter::sliding_piece::magics;
-use engine::core::move_iter::{king, FoldMoves, NoCheck, SingleCheck};
-use engine::core::position::Position;
 use engine::core::r#move::Move;
+use engine::core::move_iter::king::{King, compute_attacks, lookup_attacks};
+use engine::core::move_iter::sliding_piece::magics;
+use engine::core::move_iter::{FoldMoves, NoCheck, SingleCheck, king};
+use engine::core::position::Position;
+use engine::uci::tokens::Tokenizer;
 
 pub fn king_attacks(c: &mut Criterion) {
     let king = Square::E4;
@@ -26,7 +26,7 @@ pub fn king_attacks(c: &mut Criterion) {
 pub fn king_move_iter_check_none(c: &mut Criterion) {
     magics::init();
 
-    let mut fen = Fen::new("7k/8/8/8/8/7b/5n2/4K3 w - - 0 1");
+    let mut fen = Tokenizer::new("7k/8/8/8/8/7b/5n2/4K3 w - - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
 
     c.bench_function("king::move_iter::check_none", |b| {
@@ -43,7 +43,7 @@ pub fn king_move_iter_check_none(c: &mut Criterion) {
 pub fn king_move_iter_check_some(c: &mut Criterion) {
     magics::init();
 
-    let mut fen = Fen::new("4r2k/8/8/8/8/5b2/4K3/8 w - - 0 1");
+    let mut fen = Tokenizer::new("4r2k/8/8/8/8/5b2/4K3/8 w - - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
 
     c.bench_function("king::move_iter::check_some", |b| {
@@ -65,20 +65,25 @@ pub fn king_move_iter_castling(c: &mut Criterion) {
         "2r3k1/8/8/8/8/8/8/R3K2R w KQ - 0 1",
         "6k1/8/8/8/8/8/8/R3K2R w Q - 0 1",
     ];
-    
+
     for &input in &mut inputs.iter() {
-        let mut fen = Fen::new(input);
+        let mut fen = Tokenizer::new(input);
         let pos = Position::try_from(&mut fen).unwrap();
         c.bench_with_input(
-            BenchmarkId::new("king::move_iter::castling", input), &pos, |b, pos| {
-            b.iter(|| {
-                king::fold_legal_castling(
-                    black_box(&pos),
-                    black_box(0),
-                    black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),
-                )
-            })
-        });
+            BenchmarkId::new("king::move_iter::castling", input),
+            &pos,
+            |b, pos| {
+                b.iter(|| {
+                    king::fold_legal_castling(
+                        black_box(pos),
+                        black_box(0),
+                        black_box(|acc, m: Move| {
+                            ControlFlow::Continue::<(), _>(acc + m.get_to().v())
+                        }),
+                    )
+                })
+            },
+        );
     }
 }
 

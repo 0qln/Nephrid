@@ -30,7 +30,7 @@ pub struct Search {
 
 impl Search {
     pub fn new(limit: Limit, target: Target, mode: Mode, debug: Arc<AtomicBool>) -> Self {
-        Self { limit, target, mode, debug, ..Default::default() }
+        Self { limit, target, mode, debug }
     }
 
     pub fn reset() {

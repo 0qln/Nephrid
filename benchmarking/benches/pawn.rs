@@ -1,12 +1,12 @@
 use std::ops::ControlFlow;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use engine::core::{
-    color::Color, coordinates::Square, fen::Fen, r#move::Move, move_iter::{
+use engine::{core::{
+    color::Color, coordinates::Square, r#move::Move, move_iter::{
         pawn::{lookup_attacks, Pawn},
         sliding_piece::magics, FoldMoves, NoCheck,
     }, position::Position
-};
+}, uci::tokens::Tokenizer};
 
 pub fn pawn_attacks(c: &mut Criterion) {
     let pawn = Square::E4;
@@ -27,7 +27,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
     ];
 
     for &input in &mut inputs.iter() {
-        let mut fen = Fen::new(input);
+        let mut fen = Tokenizer::new(input);
         let pos = Position::try_from(&mut fen).unwrap();
         c.bench_with_input(
             BenchmarkId::new("pawn::move_iter::check_none", input),
@@ -35,7 +35,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
             |b, pos| {
                 b.iter(|| {
                     <Pawn as FoldMoves<NoCheck>>::fold_moves(
-                        black_box(&pos),
+                        black_box(pos),
                         black_box(0),
                         black_box(|acc, m: Move| {
                             ControlFlow::Continue::<(), _>(acc + m.get_to().v())

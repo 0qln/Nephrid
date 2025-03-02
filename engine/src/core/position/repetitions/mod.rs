@@ -19,20 +19,20 @@ struct TableBucket {
 
 impl TableBucket {
     #[inline]
-    fn entry<'a>(&'a self, hash: zobrist::Hash) -> Option<&'a TableEntry> {
+    fn entry(&self, hash: zobrist::Hash) -> Option<&TableEntry> {
         self.entries.iter().find(|entry| entry.key == hash)
     }
 
     #[inline]
-    fn entry_mut<'a>(&'a mut self, hash: zobrist::Hash) -> Option<&'a mut TableEntry> {
+    fn entry_mut(&mut self, hash: zobrist::Hash) -> Option<&mut TableEntry> {
         self.entries.iter_mut().find(|entry| entry.key == hash)
     }
 
     #[inline]
-    fn entry_with_index_mut<'a>(
-        &'a mut self,
+    fn entry_with_index_mut(
+        &mut self,
         hash: zobrist::Hash,
-    ) -> Option<(&'a mut TableEntry, usize)> {
+    ) -> Option<(&mut TableEntry, usize)> {
         self.entries
             .iter_mut()
             .enumerate()
@@ -91,7 +91,7 @@ impl<const N: usize> RepetitionTable<N> where [(); 1 << N]: {
     }
 
     #[inline]
-    fn bucket<'a>(&'a self, hash: zobrist::Hash) -> &'a TableBucket {
+    fn bucket(&self, hash: zobrist::Hash) -> &TableBucket {
         &self.buckets[Self::index(hash)]
     }
     
@@ -101,7 +101,7 @@ impl<const N: usize> RepetitionTable<N> where [(); 1 << N]: {
     }
 
     #[inline]
-    fn bucket_mut<'a>(&'a mut self, hash: zobrist::Hash) -> &'a mut TableBucket {
+    fn bucket_mut(&mut self, hash: zobrist::Hash) -> &mut TableBucket {
         &mut self.buckets[Self::index(hash)]
     }
 
@@ -141,13 +141,18 @@ impl<const N: usize> RepetitionTable<N> where [(); 1 << N]: {
     pub fn free(&self) -> usize {
         self.buckets
             .iter()
-            .filter(|b| TableBucket::is_empty(&b))
+            .filter(|b| TableBucket::is_empty(b))
             .count()
     }
 
     #[inline]
     pub fn len(&self) -> usize {
         Self::capacity() - self.free()
+    }
+    
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     #[inline]
