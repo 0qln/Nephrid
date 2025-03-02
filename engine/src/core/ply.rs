@@ -1,5 +1,5 @@
-use crate::misc::ParseError;
-use super::{fen::Fen, turn::Turn};
+use crate::{misc::ParseError, uci::tokens::Tokenizer};
+use super::turn::Turn;
 use std::ops;
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -16,13 +16,13 @@ impl TryFrom<&str> for FullMoveCount {
     }
 }
 
-impl TryFrom<&mut Fen<'_>> for FullMoveCount {
+impl TryFrom<&mut Tokenizer<'_>> for FullMoveCount {
     type Error = ParseError;
 
-    fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
-        match fen.collect_token() {
+    fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
+        match fen.next_token() {
             None => Err(ParseError::MissingValue),
-            Some(tok) => FullMoveCount::try_from(tok.as_str()),
+            Some(tok) => FullMoveCount::try_from(tok),
         }
     }
 }
@@ -57,13 +57,13 @@ impl TryFrom<&str> for Ply {
     }
 }
 
-impl TryFrom<&mut Fen<'_>> for Ply {
+impl TryFrom<&mut Tokenizer<'_>> for Ply {
     type Error = ParseError;
 
-    fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
-        match fen.collect_token() {
+    fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
+        match fen.next_token() {
             None => Err(ParseError::MissingValue),
-            Some(tok) => Ply::try_from(tok.as_str()),
+            Some(tok) => Ply::try_from(tok),
         }
     }
 }

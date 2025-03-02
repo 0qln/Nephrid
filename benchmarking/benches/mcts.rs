@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use engine::core::{
-    r#move::{Move, MoveList}, move_iter::sliding_piece::magics, position::Position, search::mcts::Node, zobrist
+    r#move::MoveList, move_iter::sliding_piece::magics, position::Position, search::mcts::Node, zobrist
 };
 use rand::{rngs::SmallRng, SeedableRng};
 

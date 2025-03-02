@@ -3,8 +3,8 @@ use std::ptr::NonNull;
 
 use crate::{
     core::{
-        bitboard::Bitboard, castling::CastlingRights, color::Color, coordinates::{File, Rank, Square}, fen::Fen, r#move::Move, move_iter::{bishop, king, knight, pawn, rook}, piece::{Piece, PieceType}, turn::Turn, zobrist
-    }, misc::{ConstFrom, ParseError}
+        bitboard::Bitboard, castling::CastlingRights, color::Color, coordinates::{File, Rank, Square}, r#move::Move, move_iter::{bishop, king, knight, pawn, rook}, piece::{Piece, PieceType}, turn::Turn, zobrist
+    }, misc::{ConstFrom, ParseError}, uci::tokens::Tokenizer
 };
 
 use super::{castling::CastlingSide, coordinates::{EpCaptureSquare, EpTargetSquare}, r#move::MoveFlag, move_iter::{bishop::Bishop, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks}, piece::PromoPieceType, ply::{FullMoveCount, Ply}};
@@ -633,7 +633,7 @@ impl Position {
         // Safety: This FEN string is valid
         unsafe {
             Position::try_from(
-                &mut Fen::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+                &mut Tokenizer::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
             ).unwrap_unchecked()
         }
     }
@@ -669,15 +669,15 @@ impl From<&Position> for String {
     }
 }
 
-impl TryFrom<&mut Fen<'_>> for Position {
+impl TryFrom<&mut Tokenizer<'_>> for Position {
     type Error = ParseError;
     
-    fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
+    fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let mut position = Position::default();
         let mut sq = Square::H8.v() as i8;
 
         // 1. Piece placement
-        for char in fen.iter_token() {
+        for char in fen.skip_ws().chars() {
             match char {
                 '/' => continue,
                 '1'..='8' => sq -= Into::<i8>::into(Rank::try_from(char)?) + 1,        
@@ -700,11 +700,11 @@ impl TryFrom<&mut Fen<'_>> for Position {
             // 3. Castling ability
             castling: CastlingRights::try_from(&mut *fen)?,
             // 4. En passant target square
-            ep_capture_square: EpCaptureSquare::from((EpTargetSquare::try_from(fen.iter_token())?, !turn)),
+            ep_capture_square: EpCaptureSquare::from((EpTargetSquare::try_from(fen.skip_ws())?, !turn)),
             // 5. Halfmove clock
-            plys50: Ply::try_from(fen.iter_token())?,
+            plys50: Ply::try_from(fen.skip_ws())?,
             // 6. Fullmove counter
-            ply: Ply::from((FullMoveCount::try_from(fen.iter_token())?, turn)),
+            ply: Ply::from((FullMoveCount::try_from(fen.skip_ws())?, turn)),
 
             ..Default::default()
         };

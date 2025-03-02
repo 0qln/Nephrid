@@ -2,12 +2,12 @@ use std::ops::ControlFlow;
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use engine::core::coordinates::Square;
-use engine::core::fen::Fen;
 use engine::core::r#move::Move;
 use engine::core::move_iter::knight::{compute_attacks, lookup_attacks, Knight};
 use engine::core::move_iter::sliding_piece::magics;
 use engine::core::move_iter::{FoldMoves, NoCheck, SingleCheck};
 use engine::core::position::Position;
+use engine::uci::tokens::Tokenizer;
 
 pub fn knight_attacks(c: &mut Criterion) {
     let knight = Square::E4;
@@ -32,13 +32,13 @@ pub fn move_iter_check_none(c: &mut Criterion) {
     ];
     
     for &input in &mut inputs.iter() {
-        let mut fen = Fen::new(input);
+        let mut fen = Tokenizer::new(input);
         let pos = Position::try_from(&mut fen).unwrap();
         c.bench_with_input(
             BenchmarkId::new("knight::move_iter::check_none", input), &pos, |b, pos| {
             b.iter(|| {
                 <Knight as FoldMoves<NoCheck>>::fold_moves(
-                    black_box(&pos),
+                    black_box(pos),
                     black_box(0),
                     black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),
                 )
@@ -56,13 +56,13 @@ pub fn move_iter_check_single(c: &mut Criterion) {
     ];
     
     for &input in &mut inputs.iter() {
-        let mut fen = Fen::new(input);
+        let mut fen = Tokenizer::new(input);
         let pos = Position::try_from(&mut fen).unwrap();
         c.bench_with_input(
             BenchmarkId::new("knight::move_iter::check_single", input), &pos, |b, pos| {
             b.iter(|| {
                 <Knight as FoldMoves<SingleCheck>>::fold_moves(
-                    black_box(&pos),
+                    black_box(pos),
                     black_box(0),
                     black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),
                 )

@@ -1,9 +1,7 @@
 use core::fmt;
 use std::ops;
 
-use crate::{impl_variants_with_assertion, misc::ParseError};
-
-use super::fen::Fen;
+use crate::{impl_variants_with_assertion, misc::ParseError, uci::tokens::Tokenizer};
 
 #[derive(PartialEq, Eq, Copy, Clone, Default)]
 pub struct Color { v: TColor }
@@ -31,11 +29,11 @@ impl TryFrom<char> for Color {
     }
 }
 
-impl TryFrom<&mut Fen<'_>> for Color {
+impl TryFrom<&mut Tokenizer<'_>> for Color {
     type Error = ParseError;
 
-    fn try_from(fen: &mut Fen<'_>) -> Result<Self, Self::Error> {
-        match fen.iter_token().next() {
+    fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
+        match fen.skip_ws().next_char() {
             Some(c) => Color::try_from(c),
             None => Err(ParseError::MissingValue),
         }

@@ -1,8 +1,6 @@
 use core::fmt;
 
-use crate::{
-    core::{color::Color, fen::Fen}, impl_variants, misc::ParseError
-};
+use crate::{core::color::Color, impl_variants, misc::ParseError, uci::tokens::Tokenizer};
 
 use super::{coordinates::File, piece::PieceType};
 
@@ -10,7 +8,7 @@ pub type TCastlingSide = u8;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct CastlingSide {
-    v: TCastlingSide
+    v: TCastlingSide,
 }
 
 impl_variants! {
@@ -18,8 +16,8 @@ impl_variants! {
         KING_SIDE = PieceType::KING.v(),
         QUEEN_SIDE = PieceType::QUEEN.v(),
     }
-} 
-    
+}
+
 impl TryFrom<File> for CastlingSide {
     type Error = ParseError;
 
@@ -27,7 +25,7 @@ impl TryFrom<File> for CastlingSide {
         match value {
             File::G => Ok(CastlingSide::KING_SIDE),
             File::C => Ok(CastlingSide::QUEEN_SIDE),
-            x => Err(ParseError::InputOutOfRange(x.to_string()))
+            x => Err(ParseError::InputOutOfRange(x.to_string())),
         }
     }
 }
@@ -37,12 +35,12 @@ pub struct CastlingRights {
     v: u8,
 }
 
-impl TryFrom<&mut Fen<'_>> for CastlingRights {
+impl TryFrom<&mut Tokenizer<'_>> for CastlingRights {
     type Error = ParseError;
 
-    fn try_from(value: &mut Fen<'_>) -> Result<Self, Self::Error> {
+    fn try_from(value: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let mut result = CastlingRights::empty();
-        for c in value.iter_token() {
+        for c in value.skip_ws().chars() {
             match c {
                 'K' => result.set_true(CastlingSide::KING_SIDE, Color::WHITE),
                 'Q' => result.set_true(CastlingSide::QUEEN_SIDE, Color::WHITE),
@@ -58,12 +56,32 @@ impl TryFrom<&mut Fen<'_>> for CastlingRights {
 
 impl fmt::Display for CastlingRights {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.is_empty() { return write!(f, "-"); }
-        write!(f, "{}{}{}{}",
-            if self.is_true(CastlingSide::KING_SIDE, Color::WHITE) { "K" } else { "" },
-            if self.is_true(CastlingSide::QUEEN_SIDE, Color::WHITE) { "Q" } else { "" },
-            if self.is_true(CastlingSide::KING_SIDE, Color::BLACK) { "k" } else { "" },
-            if self.is_true(CastlingSide::QUEEN_SIDE, Color::BLACK) { "q" } else { "" },
+        if self.is_empty() {
+            return write!(f, "-");
+        }
+        write!(
+            f,
+            "{}{}{}{}",
+            if self.is_true(CastlingSide::KING_SIDE, Color::WHITE) {
+                "K"
+            } else {
+                ""
+            },
+            if self.is_true(CastlingSide::QUEEN_SIDE, Color::WHITE) {
+                "Q"
+            } else {
+                ""
+            },
+            if self.is_true(CastlingSide::KING_SIDE, Color::BLACK) {
+                "k"
+            } else {
+                ""
+            },
+            if self.is_true(CastlingSide::QUEEN_SIDE, Color::BLACK) {
+                "q"
+            } else {
+                ""
+            },
         )
     }
 }
@@ -78,7 +96,7 @@ impl CastlingRights {
     pub const fn set_true(&mut self, side: CastlingSide, color: Color) {
         self.v |= 1 << CastlingRights::to_index(side, color);
     }
-    
+
     #[inline]
     pub const fn is_true(&self, side: CastlingSide, color: Color) -> bool {
         self.v & (1 << CastlingRights::to_index(side, color)) != 0
@@ -86,21 +104,21 @@ impl CastlingRights {
 
     #[inline]
     const fn to_index(side: CastlingSide, color: Color) -> u8 {
-        // Note: King and queen side need to have specific 
+        // Note: King and queen side need to have specific
         // values for this indexing scheme to work.
         color.v() | (side.v & 0b10)
     }
-    
+
     #[inline]
     pub const fn is_empty(&self) -> bool {
         self.v == 0
     }
-    
+
     #[inline]
-    pub const fn empty() -> Self {    
+    pub const fn empty() -> Self {
         CastlingRights { v: 0 }
     }
-    
+
     #[inline]
     pub const fn v(&self) -> u8 {
         self.v

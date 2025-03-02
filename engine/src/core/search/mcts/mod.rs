@@ -231,7 +231,7 @@ impl Node {
                 acc
             })
         });
-        assert!(children.len() > 0, "A root node cannot be a terminal node.");
+        assert!(!children.is_empty(), "A root node cannot be a terminal node.");
 
         Self {
             score: Score::default(),
