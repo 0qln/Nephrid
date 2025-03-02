@@ -1,11 +1,11 @@
 use std::ops::ControlFlow;
 
-use crate::core::{color::Color, fen::Fen, move_iter::{fold_legal_moves, sliding_piece::magics}, position::Position, search::mcts::PlayoutResult};
+use crate::{core::{color::Color, move_iter::{fold_legal_moves, sliding_piece::magics}, position::Position, search::mcts::PlayoutResult}, uci::tokens::Tokenizer};
 
 fn test(fen: &str, expected_result: Option<PlayoutResult>) {
     magics::init();
 
-    let mut fen = Fen::new(fen);
+    let mut fen = Tokenizer::new(fen);
     let pos = Position::try_from(&mut fen).unwrap();
     let mut moves = Vec::new();
     fold_legal_moves(&pos, &mut moves, |acc, m| {

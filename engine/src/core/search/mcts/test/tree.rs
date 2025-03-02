@@ -1,22 +1,15 @@
 use crate::{
     core::{
-        color::Color,
-        coordinates::Square,
-        fen::Fen,
-        move_iter::sliding_piece::magics,
-        piece::{Piece, PieceType},
-        position::Position,
-        r#move::MoveFlag,
-        search::mcts::{NodeState, Tree},
+        color::Color, coordinates::Square, r#move::MoveFlag, move_iter::sliding_piece::magics, piece::{Piece, PieceType}, position::Position, search::mcts::{NodeState, Tree}
     },
-    misc::ConstFrom,
+    misc::ConstFrom, uci::tokens::Tokenizer,
 };
 
 #[test]
 fn initialization() {
     magics::init();
 
-    let mut fen = Fen::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    let mut fen = Tokenizer::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
     let tree = Tree::new(&pos);
 
@@ -31,7 +24,7 @@ fn initialization() {
 
 #[test]
 fn growth() {
-    let mut fen = Fen::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    let mut fen = Tokenizer::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let mut pos = Position::try_from(&mut fen).unwrap();
     let mut tree = Tree::new(&pos);
 
@@ -51,7 +44,7 @@ fn selects_unexpanded_leaf() {
     magics::init();
 
     // Setup position with one legal move
-    let mut fen = Fen::new("K7/8/1k6/8/8/8/8/8 w - - 0 1");
+    let mut fen = Tokenizer::new("K7/8/1k6/8/8/8/8/8 w - - 0 1");
     let mut pos = Position::try_from(&mut fen).unwrap();
     let mut tree = Tree::new(&pos);
 
@@ -74,7 +67,7 @@ fn expands_leaf_and_selects_child() {
     magics::init();
 
     // Position with known follow-up moves
-    let mut fen = Fen::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    let mut fen = Tokenizer::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let mut pos = Position::try_from(&mut fen).unwrap();
     let mut tree = Tree::new(&pos);
 
@@ -102,7 +95,7 @@ fn handles_terminal_nodes_through_expansion() {
     magics::init();
 
     let fen = "7k/P7/6K1/5nn1/6n1/5nn1/8/8 w - - 0 1";
-    let mut fen = Fen::new(fen);
+    let mut fen = Tokenizer::new(fen);
     let pos = Position::try_from(&mut fen).unwrap();
     let mut tree = Tree::new(&pos);
 
@@ -127,7 +120,7 @@ fn traverses_multiple_branch_nodes() {
     magics::init();
 
     // Setup deep tree with known structure
-    let mut fen = Fen::new("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+    let mut fen = Tokenizer::new("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
     let mut pos = Position::try_from(&mut fen).unwrap();
     let mut tree = Tree::new(&pos);
 

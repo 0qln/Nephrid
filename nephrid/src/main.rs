@@ -16,7 +16,7 @@ fn main() {
 
     execute_uci(
         &mut engine, 
-        &mut Tokenizer::new("ucinewgame"), 
+        "ucinewgame".to_string(), 
         cmd_cancellation.clone())
     .unwrap();
 
@@ -36,7 +36,7 @@ fn main() {
             Ok(_) => {
                 if let Err(e) = execute_uci(
                     &mut engine,
-                    &mut Tokenizer::new(input.as_str()),
+                    input,
                     cmd_cancellation.clone(),
                 ) {
                     sync::out(&format!("{e}"));

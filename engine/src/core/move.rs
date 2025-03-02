@@ -221,7 +221,7 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                 flag = match abs_dist {
                     16 => MoveFlag::DOUBLE_PAWN_PUSH,
                     7 | 9 if !captures => MoveFlag::EN_PASSANT,
-                    _ => move_notation.tokens.next().map_or(Ok(flag),
+                    _ => move_notation.tokens.next_char().map_or(Ok(flag),
                         |c| Ok(MoveFlag::from((PromoPieceType::try_from(c)?, captures)))
                     )?
                 }

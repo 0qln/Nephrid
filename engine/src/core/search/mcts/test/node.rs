@@ -1,16 +1,12 @@
-use crate::core::{
-    fen::Fen,
-    move_iter::sliding_piece::magics,
-    position::Position,
-    r#move::Move,
-    search::mcts::{Node, NodeState},
-};
+use crate::{core::{
+    r#move::Move, move_iter::sliding_piece::magics, position::Position, search::mcts::{Node, NodeState}
+}, uci::tokens::Tokenizer};
 
 #[test]
 fn ucb_selection() {
     magics::init();
 
-    let mut fen = Fen::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    let mut fen = Tokenizer::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
 
     let mut root = Node::root(&pos);
@@ -36,7 +32,7 @@ fn test_terminal_expansion() {
     magics::init();
 
     // Checkmate position
-    let mut fen = Fen::new("2k2R2/4R3/K7/8/8/8/8/8 b - - 0 1");
+    let mut fen = Tokenizer::new("2k2R2/4R3/K7/8/8/8/8/8 b - - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
 
     let mut node = Node::leaf(Move::null());
