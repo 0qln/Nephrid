@@ -11,6 +11,11 @@ path = "src/zobrist_seed.rs"
 name = "magic-seeds"
 path = "src/magic_seeds.rs"
 
+[[bin]]
+name = "nn"
+path = "src/nn.rs"
+
 [dependencies]
 engine = { version = "0.1.0", path = "../engine" }
 rand = "0.9.0"
+tensorflow = { version = "0.21.0", features = ["tensorflow_gpu"] }
