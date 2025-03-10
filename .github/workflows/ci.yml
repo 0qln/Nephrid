@@ -30,7 +30,9 @@ jobs:
         run: echo "Running CI/CD with Version ${{ env.VERSION }}"
 
       - name: cd into engine
-        run: cd ./engine
+        run: |
+          cd ./engine
+          ls | echo
       
       - name: Bump engine crate version
         uses: thomaseizinger/set-crate-version@master
