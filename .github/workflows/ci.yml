@@ -1,0 +1,56 @@
+
+name: "Nephrid $(version)"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+
+jobs:
+
+  versioning:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate version number
+        run: |
+          DATE=$(date +'%Y.%m.%d')
+          REVISION=${{ github.run_attempt }}
+          VERSION="$DATE.$REVISION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Announce CI/CD
+        run: echo "Running CI/CD with Version ${{ env.VERSION }}"
+      
+      - name: Bump engine crate version
+        uses: thomaseizinger/set-crate-version@master
+        with:
+          version: ${{ env.VERSION }}
+        
+  test:
+    name: Tests    
+    runs-on: ubuntu-latest
+    steps:      
+      - uses: actions/checkout@v4    
+      - name: Install Cuda-toolkit
+        uses: Jimver/cuda-toolkit@v0.2.22
+        with:
+          cuda: 12.8.61
+          linux-local-args: "--toolkit"
+          use-github-cache: true
+          use-local-cache: true
+      - name: Rustup Nightly
+        run: rustup toolchain update nightly
+      - name: Run Unit Tests
+        run: cargo test --workspace --verbose
+      - name: Dry Run Benchmarks 
+        run: cargo test --benches --workspace --verbose
+            
+      # todo: clippy
