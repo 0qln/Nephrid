@@ -12,8 +12,8 @@ name = "magic-seeds"
 path = "src/magic_seeds.rs"
 
 [[bin]]
-name = "nn"
-path = "src/nn.rs"
+name = "eval-model"
+path = "src/eval_model.rs"
 
 [dependencies]
 engine = { version = "0.1.0", path = "../engine" }

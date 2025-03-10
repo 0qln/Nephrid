@@ -22,3 +22,7 @@ Cargo.lock
 # Editors
 /.vscode
 /.idea
+
+
+# Python
+.venv
