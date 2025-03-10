@@ -16,7 +16,6 @@ jobs:
   versioning:
     runs-on: ubuntu-latest
     steps:
-      - working-directory: "./engine"
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -29,6 +28,9 @@ jobs:
 
       - name: Announce CI/CD
         run: echo "Running CI/CD with Version ${{ env.VERSION }}"
+
+      - name: cd into engine
+        run: cd ./engine
       
       - name: Bump engine crate version
         uses: thomaseizinger/set-crate-version@master
