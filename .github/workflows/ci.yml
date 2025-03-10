@@ -32,7 +32,7 @@ jobs:
       - name: cd into engine
         run: |
           cd ./engine
-          ls | echo
+          ls
       
       - name: Bump engine crate version
         uses: thomaseizinger/set-crate-version@master
