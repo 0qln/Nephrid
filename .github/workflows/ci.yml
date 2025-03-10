@@ -16,6 +16,7 @@ jobs:
   versioning:
     runs-on: ubuntu-latest
     steps:
+      - working-directory: "./engine"
       - name: Checkout repository
         uses: actions/checkout@v4
 
