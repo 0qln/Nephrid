@@ -57,7 +57,7 @@ impl SlidingAttacks for Rook {
     #[inline]
     fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         // Safety: The caller has to assert, that the table is initialized.
-        unsafe { sliding_piece::magics::ROOK_MAGICS.get(sq).get(occupancy) }
+        sliding_piece::magics::rook_magics().get(sq).get(occupancy)
     }
 }
 

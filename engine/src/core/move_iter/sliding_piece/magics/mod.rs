@@ -97,9 +97,9 @@ impl<'a> MagicTable<'a> {
 
 pub struct AttackTable([Bitboard; 0x1A480]);
 
-pub static mut ATTACK_TABLE: AttackTable = unsafe { mem::zeroed() };
+static mut ATTACK_TABLE: AttackTable = unsafe { mem::zeroed() };
 
-pub static mut ROOK_MAGICS: MagicTable = MagicTable(
+static mut ROOK_MAGICS: MagicTable = MagicTable(
     [Magic {
         ptr: &[],
         mask: Bitboard::empty(),
@@ -108,7 +108,14 @@ pub static mut ROOK_MAGICS: MagicTable = MagicTable(
     }; 64],
 );
 
-pub static mut BISHOP_MAGICS: MagicTable = MagicTable(
+#[inline]
+#[allow(static_mut_refs)]
+pub fn rook_magics() -> &'static MagicTable<'static> {
+    debug_assert!(INIT.is_completed(), "Magics not initialized!");
+    unsafe { &ROOK_MAGICS }
+}
+
+static mut BISHOP_MAGICS: MagicTable = MagicTable(
     [Magic {
         ptr: &[],
         mask: Bitboard::empty(),
@@ -116,6 +123,13 @@ pub static mut BISHOP_MAGICS: MagicTable = MagicTable(
         shift: 0,
     }; 64],
 );
+
+#[inline]
+#[allow(static_mut_refs)]
+pub fn bishop_magics() -> &'static MagicTable<'static> {
+    debug_assert!(INIT.is_completed(), "Magics not initialized!");
+    unsafe { &BISHOP_MAGICS }
+}
 
 static INIT: Once = Once::new();
 

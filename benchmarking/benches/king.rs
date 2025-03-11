@@ -36,7 +36,7 @@ pub fn king_move_iter_check_none(c: &mut Criterion) {
             <King as FoldMoves<NoCheck>>::fold_moves(
                 black_box(&pos),
                 black_box(0),
-                black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),
+                black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
             )
         })
     });
@@ -54,7 +54,7 @@ pub fn king_move_iter_check_some(c: &mut Criterion) {
             <King as FoldMoves<SingleCheck>>::fold_moves(
                 black_box(&pos),
                 black_box(0),
-                black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),
+                black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
             )
         })
     });
@@ -82,7 +82,7 @@ pub fn king_move_iter_castling(c: &mut Criterion) {
                         black_box(pos),
                         black_box(0),
                         black_box(|acc, m: Move| {
-                            ControlFlow::Continue::<(), _>(acc + m.get_to().v())
+                            ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())
                         }),
                     )
                 })

@@ -18,6 +18,9 @@ pub enum CheckState {
 }
 
 pub mod repetitions;
+    
+#[cfg(test)]
+mod test;
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct StateInfo {
@@ -84,7 +87,7 @@ impl StateInfo {
     }
 }
 
-#[derive(Debug, Clone, Eq)]
+#[derive(Clone, Debug, Eq)]
 pub struct StateStack {
     states: Vec::<StateInfo>,
     current: usize,
