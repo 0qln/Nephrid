@@ -7,6 +7,7 @@ use engine::core::move_iter::king::{King, compute_attacks, lookup_attacks};
 use engine::core::move_iter::sliding_piece::magics;
 use engine::core::move_iter::{FoldMoves, NoCheck, SingleCheck, king};
 use engine::core::position::Position;
+use engine::core::zobrist;
 use engine::uci::tokens::Tokenizer;
 
 pub fn king_attacks(c: &mut Criterion) {
@@ -25,6 +26,7 @@ pub fn king_attacks(c: &mut Criterion) {
 
 pub fn king_move_iter_check_none(c: &mut Criterion) {
     magics::init();
+    zobrist::init();
 
     let mut fen = Tokenizer::new("7k/8/8/8/8/7b/5n2/4K3 w - - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
@@ -42,6 +44,7 @@ pub fn king_move_iter_check_none(c: &mut Criterion) {
 
 pub fn king_move_iter_check_some(c: &mut Criterion) {
     magics::init();
+    zobrist::init();
 
     let mut fen = Tokenizer::new("4r2k/8/8/8/8/5b2/4K3/8 w - - 0 1");
     let pos = Position::try_from(&mut fen).unwrap();
@@ -59,6 +62,7 @@ pub fn king_move_iter_check_some(c: &mut Criterion) {
 
 pub fn king_move_iter_castling(c: &mut Criterion) {
     magics::init();
+    zobrist::init();
 
     let inputs = [
         "4r2k/8/8/8/8/5b2/4K3/8 w KQ - 0 1",
