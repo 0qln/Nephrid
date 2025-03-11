@@ -28,16 +28,12 @@ jobs:
 
       - name: Announce CI/CD
         run: echo "Running CI/CD with Version ${{ env.VERSION }}"
-
-      - name: cd into engine
-        run: |
-          cd ./engine
-          ls
       
       - name: Bump engine crate version
         uses: thomaseizinger/set-crate-version@master
         with:
           version: ${{ env.VERSION }}
+          manifest: ./engine/Cargo.toml
         
   test:
     name: Tests    
