@@ -22,11 +22,9 @@ fn bench_pos(c: &mut Criterion, name: &str, mut fen: Tokenizer, depth: Depth) {
     magics::init();
     zobrist::init();
     
-    let pos = Position::try_from(&mut fen).unwrap();
-
     c.bench_function(name, |b| {
         b.iter_batched(
-            || pos.clone(),
+            || Position::try_from(&mut fen).unwrap(),
             |pos| bench_perft(pos, depth),
             criterion::BatchSize::PerIteration,
         )
