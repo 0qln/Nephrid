@@ -45,8 +45,12 @@ jobs:
         with:
           cuda: 12.8.0
           linux-local-args: '[ "--toolkit" ]'
-          use-github-cache: true
-          use-local-cache: true
+      - name: CUDA Version
+        run: |
+          echo "Installed cuda version is: ${{steps.cuda-toolkit.outputs.cuda}}"
+          echo "Cuda install location: ${{steps.cuda-toolkit.outputs.CUDA_PATH}}"
+          nvcc -V
+      
       - name: Rustup Nightly
         run: rustup toolchain update nightly
       - name: Run Unit Tests
