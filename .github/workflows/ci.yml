@@ -53,9 +53,9 @@ jobs:
 
       - name: Generate version number
         run: |
-          DATE=$(date +'%Y.%-m.%-d')
+          DATE=$(date +'%Y.%-m.%-d')          
           COMMIT_SHA=${{ github.sha }}
-          VERSION="${$DATE#20}+$COMMIT_SHA"
+          VERSION="${DATE#20}+$COMMIT_SHA"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Announce CI/CD
