@@ -38,6 +38,7 @@ jobs:
             
 
   versioning:
+    needs: [test]
     name: Versioning
     runs-on: ubuntu-latest
     permissions:
