@@ -15,6 +15,7 @@ jobs:
         
   test:
     name: Tests    
+    needs: [versioning]
     runs-on: ubuntu-latest
     steps:      
       - uses: actions/checkout@v4    
@@ -38,7 +39,6 @@ jobs:
             
 
   versioning:
-    needs: [test]
     name: Versioning
     runs-on: ubuntu-latest
     permissions:
@@ -51,9 +51,9 @@ jobs:
 
       - name: Generate version number
         run: |
-          DATE=$(date +'%Y.%m.%d')
+          DATE=$(date +'%Y.%-m.%-d')
           REVISION=${{ github.run_attempt }}
-          VERSION="$DATE.$REVISION"
+          VERSION="$DATE+$REVISION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Announce CI/CD
