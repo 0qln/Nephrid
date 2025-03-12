@@ -48,12 +48,6 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
 
-      - name: Git Fetch
-        run: |
-          git fetch
-          git pull
-          git status
-
       - name: Generate version number
         run: |
           DATE=$(date +'%Y.%m.%d')
