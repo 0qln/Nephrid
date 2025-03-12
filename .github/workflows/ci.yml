@@ -46,6 +46,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Git Fetch
+        run: |
+          git fetch
+          git pull
+          git status
+
       - name: Generate version number
         run: |
           DATE=$(date +'%Y.%m.%d')
