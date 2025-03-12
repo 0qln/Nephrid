@@ -66,6 +66,12 @@ jobs:
         with:
           version: ${{ env.VERSION }}
           manifest: ./engine/Cargo.toml
+          
+      - name: Bump nephrid crate version 
+        uses: thomaseizinger/set-crate-version@master
+        with:
+          version: ${{ env.VERSION }}
+          manifest: ./nephrid/Cargo.toml
 
       - name: Commit Changes
         uses: stefanzweifel/git-auto-commit-action@v5
