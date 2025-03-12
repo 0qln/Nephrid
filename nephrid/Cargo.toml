@@ -1,6 +1,6 @@
 [package]
 name = "nephrid"
-version = "25.3.12+33c3b0fad9f1fb467dd23502de05dc75c5cb20b4"
+version = "25.3.12+9315cba"
 edition = "2024"
 
 [dependencies]
