@@ -54,7 +54,7 @@ jobs:
       - name: Generate version number
         run: |
           DATE=$(date +'%Y.%-m.%-d')          
-          COMMIT_SHA=${{ github.sha }}
+          COMMIT_SHA=$(git rev-parse --short HEAD)
           VERSION="${DATE#20}+$COMMIT_SHA"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
