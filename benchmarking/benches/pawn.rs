@@ -5,7 +5,7 @@ use engine::{core::{
     color::Color, coordinates::Square, r#move::Move, move_iter::{
         pawn::{lookup_attacks, Pawn},
         sliding_piece::magics, FoldMoves, NoCheck,
-    }, position::Position
+    }, position::Position, zobrist
 }, uci::tokens::Tokenizer};
 
 pub fn pawn_attacks(c: &mut Criterion) {
@@ -21,6 +21,7 @@ pub fn pawn_attacks(c: &mut Criterion) {
 
 pub fn move_iter_check_none(c: &mut Criterion) {
     magics::init();
+    zobrist::init();
 
     let inputs = [
         "K4n1n/6P1/k7/1p1pP3/2P5/8/5P2/8 w - d6 0 1",
@@ -38,7 +39,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
                         black_box(pos),
                         black_box(0),
                         black_box(|acc, m: Move| {
-                            ControlFlow::Continue::<(), _>(acc + m.get_to().v())
+                            ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())
                         }),
                     )
                 })

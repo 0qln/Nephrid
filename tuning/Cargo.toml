@@ -1,6 +1,5 @@
 [package]
 name = "tuning"
-version = "0.1.0"
 edition = "2024"
 
 [[bin]]
@@ -12,5 +11,5 @@ name = "magic-seeds"
 path = "src/magic_seeds.rs"
 
 [dependencies]
-engine = { version = "0.1.0", path = "../engine" }
+engine = { version = "*", path = "../engine" }
 rand = "0.9.0"
