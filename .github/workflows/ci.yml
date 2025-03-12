@@ -15,7 +15,6 @@ jobs:
         
   test:
     name: Tests    
-    needs: [versioning]
     runs-on: ubuntu-latest
     steps:      
       - uses: actions/checkout@v4    
@@ -40,6 +39,9 @@ jobs:
 
   versioning:
     name: Versioning
+    # This job needs to wait for important jobs like (e.g. testing) to complete. 
+    # Otherwise the versioning commit will the commits in the PR to 
+    needs: [test] 
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -52,8 +54,8 @@ jobs:
       - name: Generate version number
         run: |
           DATE=$(date +'%Y.%-m.%-d')
-          REVISION=${{ github.run_attempt }}
-          VERSION="$DATE+$REVISION"
+          COMMIT_SHA=${{ github.sha }}
+          VERSION="${$DATE#20}+$COMMIT_SHA"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Announce CI/CD
