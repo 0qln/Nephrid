@@ -62,7 +62,7 @@ pub fn ray(c: &mut Criterion) {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct Pair<T>(T, T);
+struct Pair<T>(T, T);
 
 impl<T: Display> fmt::Display for Pair<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
