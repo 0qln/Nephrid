@@ -56,9 +56,11 @@ impl Search {
         unsafe {
             fold_legal_moves::<_, _, _>(&*pos.get(), 0, |acc, m| {
                 pos.get_mut().make_move(m);
+                // println!("make {m:?}");
                 let c = Self::perft(pos, depth - 1, cancellation_token.clone(), |_, _| {});
                 f(m, c);
                 pos.get_mut().unmake_move(m);
+                // println!("unmake {m:?}");
                 ControlFlow::Continue::<(), _>(acc + c)
             }).continue_value().unwrap()
         }

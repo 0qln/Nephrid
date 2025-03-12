@@ -87,10 +87,20 @@ impl StateInfo {
     }
 }
 
-#[derive(Clone, Debug, Eq)]
+#[derive(Debug, Eq)]
 pub struct StateStack {
     states: Vec::<StateInfo>,
     current: usize,
+}
+
+impl Clone for StateStack {
+    fn clone(&self) -> Self {
+        let mut states = self.states.clone();
+        states.reserve(self.states.capacity() - self.states.len());
+        debug_assert_eq!(states.capacity(), self.states.capacity());
+        debug_assert_eq!(states.len(), self.states.len());
+        Self { states, current: self.current.clone() }
+    }
 }
 
 impl PartialEq for StateStack {
