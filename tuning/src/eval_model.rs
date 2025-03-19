@@ -1,26 +1,29 @@
+use engine::{core::{execute_uci, Engine}, uci::sync::CancellationToken};
+use tensorflow::{Code, Graph, SavedModelBundle, SessionOptions, Status};
+
 extern crate tensorflow;
 
-use std::path::Path;
-
-use tensorflow::{Code, Status};
-
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let file_name = "nephrid/model.pb";
+    println!("Tensorflow version = {}", tensorflow::version().unwrap());
+    println!("{}", tensorflow::Device)
 
-    if !Path::new(file_name).exists() {
-        return Err(Box::new(
-            Status::new_set(
-                Code::NotFound,
-                &format!(
-                    "Run 'python addition.py' to generate {} \
-                     and try again.",
-                    file_name
-                ),
-            )
-            .unwrap(),
-        ));
-    }
+    // Load the model
+    let mut graph = Graph::new();
+    let file_name = "engine/src/core/search/mcts/eval/model.pb";
+    let bundle = SavedModelBundle::load(
+        &SessionOptions::new(), 
+        &["serve"], 
+        &mut graph, 
+        file_name
+    )?;
+    let session = &bundle.session;
+    let train = &bundle.meta_graph_def().get_signature("train")?;
+    let evalutate = &bundle.meta_graph_def().get_signature("evaluate")?;
     
+    let cmd_cancellation = CancellationToken::new();
+    let mut engine = Engine::default();
+    
+    execute_uci(&mut engine, "ucinewgame".to_string(), cmd_cancellation.clone())?;
+
     Ok(())
 }

@@ -1,12 +1,14 @@
-import keras as k
-from keras import layers as l
 import tensorflow as tf
+import tensorflow.keras as k
+import tensorflow.keras.layers as l
+
+print(f'\nTensorflow version = {tf.__version__}\n')
+print(f'\n{tf.config.list_physical_devices("GPU")}\n')
 
 # Helper function to inspect the partial model
 def inspect_partial(inputs, outputs):
     model = k.Model(inputs=inputs, outputs=outputs)
     model.summary()
-
 
 # Inputs
 
@@ -151,13 +153,63 @@ model = k.Model(
 
 model.summary()
 
-## Input specs
+## Function definitions
 
 board_input_spec = tf.TensorSpec(shape=[None, num_files, num_ranks, board_input_len], dtype=tf.float32)
 state_input_spec = tf.TensorSpec(shape=[None, state_input_len], dtype=tf.float32)
+value_output_spec = tf.TensorSpec(shape=[None, 1], dtype=tf.float32)
+policy_output_spec = tf.TensorSpec(shape=[None, num_moves], dtype=tf.float32)
 
-## Training
-
-optimizer = k.optimizers.Adam()
+optimizer = model.optimizer = k.optimizers.Adam()
 policy_loss_fn = k.losses.CategoricalCrossentropy()
 value_loss_fn = k.losses.MeanSquaredError()
+
+@tf.function
+def evaluate(board_input, state_input):
+    """Returns both value output (position evaluation) and policy output (move probabilities)"""
+    value_pred, policy_pred = model([board_input, state_input], training=False)
+    return {
+        "value_output": value_pred,
+        "policy_output": policy_pred
+    }
+
+@tf.function
+def train(board_input, state_input, value_target, policy_target):
+    """Executes one training step with gradient update"""
+    with tf.GradientTape() as tape:
+        value_pred, policy_pred = model([board_input, state_input], training=True)
+        value_loss = value_loss_fn(value_target, value_pred)
+        policy_loss = policy_loss_fn(policy_target, policy_pred)
+        loss = value_loss + policy_loss
+    gradients = tape.gradient(loss, model.trainable_variables)
+    optimizer.apply_gradients(zip(gradients, model.trainable_variables))
+    return {
+        "value_loss": value_loss,
+        "policy_loss": policy_loss,
+        "loss": loss
+    }
+
+## Save model
+# b_input = tf.random.uniform((1, num_files, num_ranks, board_input_len))
+# s_input = tf.random.uniform((1, state_input_len))
+#
+# print(evaluate(b_input, s_input))
+
+# In case this fails, try running it like this: 
+# https://github.com/GrahamDumpleton/wrapt/issues/231#issuecomment-1456979294
+tf.saved_model.save(
+    model,
+    'engine/src/core/search/mcts/eval/model.pb',
+    signatures={
+        'train': train.get_concrete_function(
+            board_input_spec,
+            state_input_spec,
+            value_output_spec,
+            policy_output_spec,
+        ),
+        'evaluate': evaluate.get_concrete_function(
+            board_input_spec,
+            state_input_spec,
+        )
+    }
+)
