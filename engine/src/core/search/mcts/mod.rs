@@ -14,6 +14,8 @@ use crate::core::{color::Color, move_iter::fold_legal_moves, position::Position,
 #[cfg(test)]
 mod test;
 
+pub mod eval;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PlayoutResult {
     Win { relative_to: Color },

@@ -34,6 +34,11 @@ macro_rules! impl_variants_with_assertion {
                     pub const $name: $type = $type { v: ${index()} };
                     pub const [<$name _C>]: $inner_type = Self::$name.v();
                 )*
+        
+                /// The number of variants.
+                pub const N_VARIANTS: usize = { 
+                    0 $(+ { let _ = $type::$name; 1 })*
+                };
 
                 /// Get the value of the variant.
                 #[inline]
@@ -74,6 +79,11 @@ macro_rules! impl_variants {
                     pub const $name: $type = $type { v: $value };
                     pub const [<$name _C>]: $inner_type = Self::$name.v();
                 )*
+        
+                /// The number of variants.
+                pub const N_VARIANTS: usize = { 
+                    0 $(+ { let _ = $type::$name; 1 })*
+                };
 
                 /// Get the value of the variant.
                 #[inline]
@@ -101,6 +111,11 @@ macro_rules! impl_variants {
                     pub const $name: $type = $type { v: ${index()} };
                     pub const [<$name _C>]: $inner_type = Self::$name.v();
                 )*
+        
+                /// The number of variants.
+                pub const N_VARIANTS: usize = { 
+                    0 $(+ { let _ = $type::$name; 1 })*
+                };
 
                 /// Get the value of the variant.
                 #[inline]
