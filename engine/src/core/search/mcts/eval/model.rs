@@ -1,4 +1,4 @@
-use burn::{config::Config, module::Module, nn::{conv::{Conv2d, Conv2dConfig}, pool::{MaxPool2d, MaxPool2dConfig}, BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, Relu, Tanh}, prelude::Backend, tensor::{activation::softmax, Tensor}};
+use burn::{config::Config, module::Module, nn::{conv::{Conv2d, Conv2dConfig}, pool::{MaxPool2d, MaxPool2dConfig}, BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, PaddingConfig2d, Relu, Tanh}, prelude::Backend, tensor::{activation::softmax, Tensor}};
 
 use crate::core::{color::Color, coordinates::{File, Rank, Square}, piece::{PieceType, PromoPieceType}};
 
@@ -67,7 +67,7 @@ pub struct ConvBlockConfig {
 impl ConvBlockConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> ConvBlock<B> {
         ConvBlock {
-            conv: Conv2dConfig::new(self.channels, self.kernel_size).init(device),
+            conv: Conv2dConfig::new(self.channels, self.kernel_size).with_padding(PaddingConfig2d::Same).init(device),
             activation: Default::default(),
             b_norm: BatchNormConfig::new(self.channels[1]).init(device)
         }
@@ -131,7 +131,7 @@ pub struct Model<B: Backend> {
 
     policy_dense: Linear<B>,
     policy_out: Linear<B>,
-    // todo: softmax
+    // (softmax)
 }
 
 impl<B: Backend> Model<B> {
@@ -182,10 +182,18 @@ impl<B: Backend> Model<B> {
         
         let x = self.dropout.forward(x);
         
-        let value_out = self.value_out.forward(x.clone());
+        let x = self.dense0.forward(x);
+        let x = self.dense1.forward(x);
+        let x = self.dense2.forward(x);
+        let x = self.dense3.forward(x);
+        
+        let value_out = self.value_dense.forward(x.clone());
+        let value_out = self.value_out.forward(value_out);
         let value_out = self.value_activ.forward(value_out);
 
-        let policy_out = self.policy_out.forward(x);
+        let policy_out = self.policy_dense.forward(x.clone());
+        let policy_out = self.policy_out.forward(policy_out);
+        let policy_out = softmax(policy_out, 1);
         
         (value_out, policy_out)
     }    
@@ -194,8 +202,6 @@ impl<B: Backend> Model<B> {
 
 #[derive(Config, Debug)]
 pub struct ModelConfig {
-    num_classes: usize,
-    hidden_size: usize,
     #[config(default = 0.5)] 
     dropout: f64,
 }
@@ -225,7 +231,7 @@ impl ModelConfig {
             b4_conv_0: ConvBlockConfig::new([B4_ADAPTER_CHANNELS, B4_CHANNELS], B4_KERNELS[0]).init(device),
             b4_pool: MaxPool2dConfig::new([2, 2]).init(),
             
-            dropout: DropoutConfig::new(0.5).init(),
+            dropout: DropoutConfig::new(self.dropout).init(),
             
             dense0: LinearConfig::new(B4_CHANNELS * B4_HEADS, 64 << 1).init(device),
             dense1: LinearConfig::new(64 << 1, 64 << 2).init(device),

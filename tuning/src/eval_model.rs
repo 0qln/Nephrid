@@ -1,12 +1,11 @@
-use burn::tensor::{Float, Tensor, TensorKind};
 use burn_cuda::{Cuda, CudaDevice};
+use engine::core::search::mcts::eval::model::ModelConfig;
 
 fn main() {
     let device = CudaDevice::default();
+    println!("Device: {:?}", device);
     
-    let t = Tensor::<Cuda, 2, Float>::zeros([10, 10], &device);
-    
-    println!("Tensor: {:?}", t);
-
-    println!("Running on {:?}", device);
+    type Backend = Cuda<f32>;
+    let model = ModelConfig::new().init::<Backend>(&device);
+    println!("Model: {:#?}", model);
 }
