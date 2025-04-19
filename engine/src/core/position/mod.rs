@@ -295,6 +295,16 @@ impl Position {
     }
     
     #[inline]
+    pub fn get_ep_capture_bitboard(&self, c: Color) -> Bitboard {
+        if let Some(sq) = self.get_ep_capture_square().v() && self.get_turn() == c {
+            Bitboard::from_c(sq)
+        }
+        else {
+            Default::default()
+        }
+    }
+    
+    #[inline]
     pub fn get_castling(&self) -> CastlingRights {
         self.state.get_current().castling
     }

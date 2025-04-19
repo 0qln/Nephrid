@@ -1,9 +1,9 @@
 use burn::{config::Config, module::Module, nn::{conv::{Conv2d, Conv2dConfig}, pool::{MaxPool2d, MaxPool2dConfig}, BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, PaddingConfig2d, Relu, Tanh}, prelude::Backend, tensor::{activation::softmax, Tensor}};
 
-use crate::core::{color::Color, coordinates::{File, Rank, Square}, piece::{PieceType, PromoPieceType}};
+use crate::core::{bitboard::{self, Bitboard}, color::Color, coordinates::{File, Rank, Square}, piece::{PieceType, PromoPieceType}, position::Position, turn::Turn};
 
 // +1 for the possible ep capture square.
-const BOARD_INPUT_CHANNELS: usize = Color::N_VARIANTS * (PieceType::N_VARIANTS + 1);
+const BOARD_INPUT_CHANNELS: usize = Color::N_VARIANTS * (PieceType::N_VARIANTS);
 
 const BOARD_INPUT_TENSOR_DIM: usize = {
     // Batch
@@ -31,6 +31,37 @@ const STATE_INPUT_TENSOR_DIM: usize = {
     // Values
     1
 };
+
+type BoardInputFloats = [bitboard::Floats; BOARD_INPUT_CHANNELS];
+
+pub fn board_input(pos: &Position) -> BoardInputFloats {
+    [
+        pos.get_bitboard(PieceType::PAWN, Color::WHITE).into_floats(), 
+        pos.get_bitboard(PieceType::PAWN, Color::BLACK).into_floats(), 
+        pos.get_bitboard(PieceType::KNIGHT, Color::WHITE).into_floats(), 
+        pos.get_bitboard(PieceType::KNIGHT, Color::BLACK).into_floats(), 
+        pos.get_bitboard(PieceType::BISHOP, Color::WHITE).into_floats(), 
+        pos.get_bitboard(PieceType::BISHOP, Color::BLACK).into_floats(), 
+        pos.get_bitboard(PieceType::ROOK, Color::WHITE).into_floats(), 
+        pos.get_bitboard(PieceType::ROOK, Color::BLACK).into_floats(), 
+        pos.get_bitboard(PieceType::QUEEN, Color::WHITE).into_floats(), 
+        pos.get_bitboard(PieceType::QUEEN, Color::BLACK).into_floats(), 
+        pos.get_bitboard(PieceType::KING, Color::WHITE).into_floats(), 
+        pos.get_bitboard(PieceType::KING, Color::BLACK).into_floats(), 
+        pos.get_ep_capture_bitboard(Color::WHITE).into_floats(), 
+        pos.get_ep_capture_bitboard(Color::BLACK).into_floats(), 
+    ]   
+}
+
+type StateInputFloats = [f32; STATE_INPUT_LEN];
+
+pub fn state_input(pos: &Position) -> StateInputFloats {
+    
+}
+
+pub fn input_batched<const N: usize, B: Backend>(inputs: [BoardInputFloats; N], device: &B::Device) -> Tensor<B, BOARD_INPUT_TENSOR_DIM> {
+    Tensor::from_floats(inputs, device)    
+}
 
 const VALUE_OUTPUTS: usize = 1;
 

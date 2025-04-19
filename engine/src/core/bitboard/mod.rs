@@ -7,6 +7,7 @@ use crate::{
 };
 use std::{fmt::Debug, ops::{self, ControlFlow, FromResidual, Try}};
 
+use burn::{prelude::Backend, tensor::Tensor};
 use const_for::const_for;
 
 use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose};
@@ -18,6 +19,8 @@ pub mod tests;
 pub struct Bitboard {
     pub v: u64,
 }
+
+pub type Floats = [[f32; 8]; 8];
 
 impl Try for Bitboard {
     type Output = Self;
@@ -54,7 +57,7 @@ impl Debug for Bitboard {
                         let file = File::try_from(file as u8).unwrap();
                         let rank = Rank::try_from(rank as u8).unwrap();
                         let sq = Square::from_c((file, rank));
-                        let bit = if self.get_bit(sq) { "x " } else { ". " };
+                        let bit = if self.is_bit_set(sq) { "x " } else { ". " };
                         f.write_str(bit)?;
                     }
                     Ok(())
@@ -145,7 +148,12 @@ impl Bitboard {
     }
 
     #[inline]
-    pub const fn get_bit(&self, sq: Square) -> bool {
+    pub const fn get_bit(&self, sq: Square) -> u64 {
+        (self.v & Self::from_c(sq).v) >> sq.v() as u32 
+    }
+    
+    #[inline]
+    pub const fn is_bit_set(&self, sq: Square) -> bool {
         self.v & Self::from_c(sq).v != 0
     }
 
@@ -298,6 +306,18 @@ impl Bitboard {
     
     pub const fn edges() -> Self {
         Self { v: !0x007E7E7E7E7E7E00_u64 }
+    }
+    
+    pub fn into_floats(self) -> Floats {
+        let mut data: Floats = Default::default();
+        for sq in Square::A1_C..Square::H8_C {
+            let sq = unsafe { Square::from_v(sq) };
+            let bit = self.get_bit(sq);
+            let rank = Rank::from_c(sq).v() as usize;
+            let file = File::from_c(sq).v() as usize;
+            data[file][rank] = bit as f32;
+        }
+        data
     }
 }
 

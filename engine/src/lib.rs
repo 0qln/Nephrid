@@ -13,6 +13,7 @@
 #![feature(try_blocks)]
 #![feature(assert_matches)]
 #![feature(generic_const_exprs)]
+#![feature(let_chains)]
 
 #[macro_use]
 extern crate impl_ops;

@@ -119,7 +119,7 @@ impl const ConstFrom<CastlingSide> for MoveFlag {
     }
 }
 
-#[derive(Default, Copy, Clone, Eq, PartialEq)]
+#[derive(Default, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Move { v: u16 }
 
 impl Move {
