@@ -258,7 +258,7 @@ impl Node {
         let exploitation = self.quality;
 
         let c = f32::sqrt(2.0);
-        let exploration = c * policy * (cap_n_i as f32 / (1 + n_i) as f32).sqrt();
+        let exploration = c * policy * (cap_n_i as f32).sqrt() / (1 + n_i) as f32;
 
         exploitation + exploration
     }
