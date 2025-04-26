@@ -8,9 +8,7 @@ use std::fmt;
 use std::ops::{AddAssign, ControlFlow};
 use std::ptr::NonNull;
 
-use crate::core::r#move::MoveList;
 use crate::core::move_iter::king::King;
-use crate::core::piece::IPieceType;
 use crate::core::{color::Color, move_iter::fold_legal_moves, position::Position, r#move::Move};
 
 #[cfg(test)]
@@ -18,19 +16,20 @@ mod test;
 
 pub mod eval;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum PlayoutResult {
     Win { relative_to: Color },
+    Score { relative_to: Color, quality: f32 },
     Draw,
 }
 
 impl PlayoutResult {
-    pub fn maybe_new(pos: &Position, move_cnt: u8) -> Option<Self> {
+    pub fn maybe_new(pos: &Position, state: NodeState) -> Option<Self> {
         if pos.has_threefold_repetition() || pos.fifty_move_rule() {
             return Some(Self::Draw);
         }
 
-        if move_cnt == 0 {
+        if state == NodeState::Terminal {
             return Some({
                 let us = pos.get_turn();
                 let king = pos.get_bitboard(King::ID, us);
@@ -56,11 +55,6 @@ pub struct Tree {
     
     /// Stack of nodes that were selected during the selection phase.
     selection_buffer: Vec<NonNull<Node>>,
-    
-    /// Buffers used during simulation.
-    /// todo: remove these, we aren't doing simulations anymore
-    simulation_stack_buffer: Vec<Move>,
-    simulation_moves_buffer: MoveList,
 }
 
 impl Tree {
@@ -76,7 +70,7 @@ impl Tree {
         self.root
             .children
             .iter()
-            .max_by(|a, b| a.playouts.partial_cmp(&b.playouts).expect("not all root nodes have been searched yet"))
+            .max_by(|a, b| a.score.playouts.partial_cmp(&b.score.playouts).expect("not all root nodes have been searched yet"))
             .expect("Root need's to have children.")
             .mov
     }
@@ -89,8 +83,8 @@ impl Tree {
     pub fn grow<B: Backend>(&mut self, pos: &mut Position, model: &mut Model<B>) {
         self.select_leaf_mut(pos);
         let leaf = unsafe { self.selected_leaf().as_mut() };
-        leaf.eval(pos, model);
-        self.backpropagate(pos);
+        let result = leaf.eval(pos, model);
+        self.backpropagate(pos, result);
     }
     
     pub fn selected_leaf(&mut self) -> NonNull<Node> {
@@ -109,14 +103,14 @@ impl Tree {
             .clone();
     }
 
-    fn backpropagate(&mut self, pos: &mut Position) {
+    fn backpropagate(&mut self, pos: &mut Position, result: PlayoutResult) {
         unsafe {
             for node in self.selection_buffer.iter_mut().rev().map(|n| n.as_mut()) {
                 pos.unmake_move(node.mov);
-                node.playouts += 1;
+                node.score += (result, pos.get_turn());
             }
         }
-        self.root.playouts += 1;
+        self.root.score += (result, pos.get_turn());
     }
 
     pub fn select_leaf_mut(&mut self, pos: &mut Position) {
@@ -129,7 +123,7 @@ impl Tree {
                     pos.make_move(current.mov);
                     self.selection_buffer.push(NonNull::from_ref(current));
                 }
-                NodeState::Leaf if current.playouts != 0 => {
+                NodeState::Leaf if current.score.playouts != 0 => {
                     current.expand(pos);
                 }
                 NodeState::Leaf | NodeState::Terminal => {
@@ -140,30 +134,33 @@ impl Tree {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Copy)]
 struct Score {
     playouts: u32,
-    wins: f32,
-}
-
-impl Score {
-    pub fn v(&self) -> Option<f32> {
-        match self.playouts {
-            0 => None,
-            _ => Some(self.wins / self.playouts as f32),
-        }
-    }
+    quality: f32,
 }
 
 impl AddAssign<(PlayoutResult, Color)> for Score {
     #[inline(always)]
     fn add_assign(&mut self, rhs: (PlayoutResult, Color)) {
         self.playouts += 1;
-        self.wins += match rhs.0 {
+        self.quality += match rhs.0 {
             PlayoutResult::Win { relative_to } if relative_to == rhs.1 => 1.0,
             PlayoutResult::Win { relative_to: _ } => 0.0,
             PlayoutResult::Draw => 0.5,
+            PlayoutResult::Score { quality, relative_to } => {
+                if relative_to == rhs.1 { quality } else { 1.0 - quality }
+            },
         };
+    }
+}
+
+impl Score {
+    pub fn v(&self) -> Option<f32> {
+        match self.playouts {
+            0 => None,
+            _ => Some(self.quality / self.playouts as f32),
+        }
     }
 }
 
@@ -189,8 +186,7 @@ enum NodeState {
 
 #[derive(Clone, Default)]
 pub struct Node {
-    playouts: u32,
-    quality: f32,
+    score: Score,
     policy: HashMap<Move, f32>, //todo: better implementation
     mov: Move,
     state: NodeState,
@@ -200,17 +196,16 @@ pub struct Node {
 impl fmt::Debug for Node {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Node")
-            .field("playouts", &self.playouts)
-            .field("quality", &self.quality)
+            .field("score", &self.score)
             .field("mov", &self.mov)
             .field("state", &self.state)
-            // todo: policy
+            .field("policy", &self.policy)
             .field(
                 "children",
                 &self
                     .children
                     .iter()
-                   .filter(|c| c.playouts != 0)
+                    .filter(|c| c.score.playouts != 0)
                     .collect_vec(),
             )
             .finish()
@@ -226,60 +221,72 @@ impl Node {
                 acc
             })
         });
+
         assert!(!children.is_empty(), "A root node cannot be a terminal node.");
         
-        // todo: set quality and policy lazily
         Self {
             mov: Move::null(),
             state: NodeState::Branch,
             children,
-            playouts: 0,
-            quality: todo!(),
-            policy: todo!(),
+            score: Score::default(),
+            policy: HashMap::new(),
         }
     }
 
     pub fn leaf(mov: Move) -> Self {
-        // todo: set quality and policy lazily
         Self {
             mov,
             state: NodeState::Leaf,
             children: Vec::new(),
-            playouts: 0,
-            quality: todo!(),
-            policy: todo!(),
+            score: Score::default(),
+            policy: HashMap::new(),
         }
     }
     
     // note: we take the policy as an argument, because if we later convert this 
     // tree structure to a graph, we have to consider different policies from different parents.
     fn puct(&self, cap_n_i: u32, policy: f32) -> f32 {
-        let n_i = self.playouts;
-        let exploitation = self.quality;
+        let n_i = self.score.playouts as f32;
+        
+        // The quality is updated incrementally as the tree is explored.
+        // Because of this, we have to divide by the number of playouts 
+        // to get the average quality of this node.
+        let exploitation = self.score.quality / n_i;
 
+        // todo: fine tune c.
         let c = f32::sqrt(2.0);
-        let exploration = c * policy * (cap_n_i as f32).sqrt() / (1 + n_i) as f32;
+        let exploration = c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);
 
         exploitation + exploration
     }
 
     pub fn select_mut(&mut self) -> &mut Self {
         assert_matches!(self.state, NodeState::Branch);
+        assert_ne!(self.policy.len(), 0, "Policy has not been initialized yet!");
 
         self.children
             .iter_mut()
             .max_by(|a, b| {
-                let a_ucb = a.puct(self.playouts, self.policy[&a.mov]);
-                let b_ucb = b.puct(self.playouts, self.policy[&b.mov]);
-                a_ucb.partial_cmp(&b_ucb).expect("UCB comparison failed!")
+                let a_ucb = a.puct(self.score.playouts, *self.policy.get(&a.mov).expect("Child node was not present in policy map!"));
+                let b_ucb = b.puct(self.score.playouts, *self.policy.get(&b.mov).expect("Child node was not present in policy map!"));
+                a_ucb.partial_cmp(&b_ucb).expect("Node comparison failed!")
             })
             .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
     }
     
-    pub fn eval<B: Backend>(&self, pos: &Position, model: &mut Model<B>) {
+    pub fn eval<B: Backend>(&self, pos: &Position, model: &mut Model<B>) -> PlayoutResult {
         assert_matches!(self.state, NodeState::Leaf | NodeState::Terminal);
-
-        // todo: trigger the lazy evaluation of quality and policy
+        
+        PlayoutResult::maybe_new(pos, self.state).unwrap_or_else(|| {
+            // todo: evaluation of quality and policy using the model.
+            // todo: the quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
+            // todo: return the score of this node, relative to the current player of this node.
+            
+            PlayoutResult::Score {
+                relative_to: pos.get_turn(),
+                quality: todo!(),
+            }
+        })
     }
 
     fn expand(&mut self, pos: &Position) {
@@ -291,10 +298,7 @@ impl Node {
                 acc
             })
         });
-        self.state = if self.children.is_empty() {
-            NodeState::Terminal
-        } else {
-            NodeState::Branch
-        };
+
+        self.state = if self.children.is_empty() { NodeState::Terminal } else { NodeState::Branch };
     }
 }
