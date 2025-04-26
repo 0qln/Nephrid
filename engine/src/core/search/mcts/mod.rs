@@ -59,8 +59,8 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn new(pos: &Position) -> Self {
-        let root = Node::root(pos);
+    pub fn new<B: Backend>(pos: &Position, model: &Model<B>) -> Self {
+        let root = Node::root(pos, model);
         Self {
             root,
             ..Default::default()
@@ -81,7 +81,7 @@ impl Tree {
         println!("\r\n");
     }
 
-    pub fn grow<B: Backend>(&mut self, pos: &mut Position, model: &mut Model<B>) {
+    pub fn grow<B: Backend>(&mut self, pos: &mut Position, model: &Model<B>) {
         self.select_leaf_mut(pos);
         let leaf = unsafe { self.selected_leaf().as_mut() };
         let result = leaf.eval(pos, model);
@@ -163,6 +163,10 @@ impl Score {
             _ => Some(self.quality / self.playouts as f32),
         }
     }
+    
+    fn new(quality: f32) -> Self {
+        Self { playouts: 1, quality }
+    }
 }
 
 impl PartialEq for Score {
@@ -214,7 +218,7 @@ impl fmt::Debug for Node {
 }
 
 impl Node {
-    pub fn root(pos: &Position) -> Self {
+    pub fn root<B: Backend>(pos: &Position, model: &Model<B>) -> Self {
         let mut children = Vec::new();
         _ = fold_legal_moves(pos, &mut children, |acc, m| {
             ControlFlow::Continue::<(), _>({
@@ -224,13 +228,23 @@ impl Node {
         });
 
         assert!(!children.is_empty(), "A root node cannot be a terminal node.");
+
+        let b_in = [board_input(pos)].into();
+        let s_in = [state_input(pos)].into();
+        let (quality, policy) = model.forward(b_in, s_in);
+        
+        let policy = policy.to_data().to_vec::<f32>().expect("Policy could not be converted to vec.");
+        let quality = quality.to_data().to_vec::<f32>().expect("Quality could not be converted to vec.");
+        
+        let mut map = HashMap::<Move, f32>::with_capacity(children.len());
+        children.iter().map(|c| (c.mov, policy[usize::from(c.mov)])).collect_into(&mut map);
         
         Self {
             mov: Move::null(),
             state: NodeState::Branch,
             children,
-            score: Score::default(),
-            policy: None,
+            score: Score::new(quality[0]),
+            policy: Some(map),
         }
     }
 
@@ -275,7 +289,7 @@ impl Node {
             .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
     }
     
-    pub fn eval<B: Backend>(&mut self, pos: &Position, model: &mut Model<B>) -> PlayoutResult {
+    pub fn eval<B: Backend>(&mut self, pos: &Position, model: &Model<B>) -> PlayoutResult {
         assert_matches!(self.state, NodeState::Leaf | NodeState::Terminal);
         
         PlayoutResult::maybe_new(pos, self.state).unwrap_or_else(|| {
@@ -283,8 +297,8 @@ impl Node {
             // todo: the quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
             // todo: return the score of this node, relative to the current player of this node.
             
-            let b_in = board_input(pos).into();
-            let s_in = state_input(pos).into();
+            let b_in = [board_input(pos)].into();
+            let s_in = [state_input(pos)].into();
             let (quality, policy) = model.forward(b_in, s_in);
             
             let policy = policy.to_data();

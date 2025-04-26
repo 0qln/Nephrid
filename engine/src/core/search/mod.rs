@@ -71,21 +71,21 @@ impl Search {
         mut pos: Position,
         cancellation_token: CancellationToken
     ) -> Move {
-        let mut tree = mcts::Tree::new(&pos);
+        let device = CudaDevice::new(0);
+        let model: Model<_> = ModelConfig::new().init::<Cuda>(&device);
+        
+        let mut tree = mcts::Tree::new(&pos, &model);
         let mut last_best_move = None;
         
         let time_per_move = self.limit.time_per_move(&pos);
         let time_limit = Instant::now() + time_per_move;
-        
-        let device = CudaDevice::new(0);
-        let mut model: Model<_> = ModelConfig::new().init::<Cuda>(&device);
 
         while {
             !cancellation_token.is_cancelled() &&
             (!self.limit.is_active || Instant::now() < time_limit)
         } {
 
-            tree.grow(&mut pos, &mut model);
+            tree.grow(&mut pos, &model);
 
             let curr_best_move = tree.best_move();
             if last_best_move != Some(curr_best_move) {
