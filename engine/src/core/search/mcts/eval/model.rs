@@ -73,7 +73,7 @@ pub fn input_batched<const N: usize, B: Backend>(inputs: [BoardInputFloats; N], 
 
 const VALUE_OUTPUTS: usize = 1;
 
-const POLICY_OUTPUTS: usize = {
+pub const POLICY_OUTPUTS: usize = {
     // from * to
     Square::N_VARIANTS * Square::N_VARIANTS +
     // Possible promotions
@@ -116,7 +116,7 @@ impl ConvBlockConfig {
 
 const B1_HEADS: usize = 6;
 const B1_CHANNELS: usize = 16;
-const B1_KERNELS: [[usize; 2]; B1_HEADS] = [[3, 3], [5, 5], [9, 9], [15, 15], [1,8], [8,1]];
+const B1_KERNELS: [[usize; 2]; B1_HEADS] = [[3, 3], [5, 5], [9, 9], [15, 15], [1,7], [7,1]];
 
 const B2_HEADS: usize = 2;
 const B2_CHANNELS: usize = 32;
@@ -272,17 +272,19 @@ impl ModelConfig {
             
             dropout: DropoutConfig::new(self.dropout).init(),
             
-            dense0: LinearConfig::new(B4_CHANNELS * B4_HEADS, 64 << 1).init(device),
-            dense1: LinearConfig::new(64 << 1, 64 << 2).init(device),
-            dense2: LinearConfig::new(64 << 2, 64 << 3).init(device),
-            dense3: LinearConfig::new(64 << 3, 64 << 4).init(device),
+            // todo: i got no clue where the 5x5 comes from 
+            // (probably from b4 filter >>> pool >>> ..., but that should be 4x4?)
+            dense0: LinearConfig::new(B4_CHANNELS * B4_HEADS * 5 * 5, 64 << 4).init(device),
+            dense1: LinearConfig::new(64 << 4, 64 << 3).init(device),
+            dense2: LinearConfig::new(64 << 3, 64 << 2).init(device),
+            dense3: LinearConfig::new(64 << 2, 64 << 2).init(device),
             
-            value_dense: LinearConfig::new(64 << 4, 64).init(device),
-            value_out: LinearConfig::new(64, VALUE_OUTPUTS).init(device),
+            value_dense: LinearConfig::new(64 << 2, 64 << 1).init(device),
+            value_out: LinearConfig::new(64 << 1, VALUE_OUTPUTS).init(device),
             value_activ: Tanh::new(),
             
-            policy_dense: LinearConfig::new(64 << 4, 64 << 5).init(device),
-            policy_out: LinearConfig::new(64 << 5, POLICY_OUTPUTS).init(device),
+            policy_dense: LinearConfig::new(64 << 2, 64 << 4).init(device),
+            policy_out: LinearConfig::new(64 << 4, POLICY_OUTPUTS).init(device),
         }
     }
 }
