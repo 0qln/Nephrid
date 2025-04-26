@@ -1,6 +1,6 @@
 use std::ops::ControlFlow;
 
-use crate::{core::{color::Color, move_iter::{fold_legal_moves, sliding_piece::magics}, position::Position, search::mcts::PlayoutResult, zobrist}, uci::tokens::Tokenizer};
+use crate::{core::{color::Color, move_iter::{fold_legal_moves, sliding_piece::magics}, position::Position, search::mcts::{NodeState, PlayoutResult}, zobrist}, uci::tokens::Tokenizer};
 
 fn test(fen: &str, expected_result: Option<PlayoutResult>) {
     magics::init();
@@ -9,14 +9,14 @@ fn test(fen: &str, expected_result: Option<PlayoutResult>) {
     let mut fen = Tokenizer::new(fen);
     let pos = Position::try_from(&mut fen).unwrap();
     let mut moves = Vec::new();
-    fold_legal_moves(&pos, &mut moves, |acc, m| {
+    _ = fold_legal_moves(&pos, &mut moves, |acc, m| {
         ControlFlow::Continue::<(), _>({
             acc.push(m);
             acc
         })
     });
-    // let result = PlayoutResult::maybe_new(&pos, moves.len() as u8);
-    // assert_eq!(result, expected_result);
+    let result = PlayoutResult::maybe_new(&pos, if moves.is_empty() { NodeState::Terminal } else { NodeState::Branch });
+    assert_eq!(result, expected_result);
 }
 
 #[test]
