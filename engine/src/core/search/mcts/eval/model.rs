@@ -1,6 +1,6 @@
 use burn::{config::Config, module::Module, nn::{conv::{Conv2d, Conv2dConfig}, pool::{MaxPool2d, MaxPool2dConfig}, BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, PaddingConfig2d, Relu, Tanh}, prelude::Backend, tensor::{activation::softmax, Tensor}};
 
-use crate::core::{bitboard::{self, Bitboard}, color::Color, coordinates::{File, Rank, Square}, piece::{PieceType, PromoPieceType}, position::Position, turn::Turn};
+use crate::core::{bitboard::{self, Bitboard}, castling::CastlingSide, color::Color, coordinates::{File, Rank, Square}, piece::{PieceType, PromoPieceType}, position::Position, turn::Turn};
 
 // +1 for the possible ep capture square.
 const BOARD_INPUT_CHANNELS: usize = Color::N_VARIANTS * (PieceType::N_VARIANTS);
@@ -56,7 +56,15 @@ pub fn board_input(pos: &Position) -> BoardInputFloats {
 type StateInputFloats = [f32; STATE_INPUT_LEN];
 
 pub fn state_input(pos: &Position) -> StateInputFloats {
-    
+    let castling = pos.get_castling();
+    [
+        castling.get_float(CastlingSide::KING_SIDE, Color::WHITE),
+        castling.get_float(CastlingSide::QUEEN_SIDE, Color::WHITE),
+        castling.get_float(CastlingSide::KING_SIDE, Color::BLACK),
+        castling.get_float(CastlingSide::QUEEN_SIDE, Color::BLACK),
+        pos.get_turn().v() as f32,
+        pos.plys_50().v as f32 / 50.0,
+    ]
 }
 
 pub fn input_batched<const N: usize, B: Backend>(inputs: [BoardInputFloats; N], device: &B::Device) -> Tensor<B, BOARD_INPUT_TENSOR_DIM> {

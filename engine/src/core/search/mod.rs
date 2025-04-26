@@ -5,7 +5,9 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::uci::sync::{self, CancellationToken};
+use burn_cuda::{Cuda, CudaDevice};
 use limit::Limit;
+use mcts::eval::model::{Model, ModelConfig};
 use mode::Mode;
 use target::Target;
 
@@ -74,20 +76,21 @@ impl Search {
         
         let time_per_move = self.limit.time_per_move(&pos);
         let time_limit = Instant::now() + time_per_move;
+        
+        let device = CudaDevice::new(0);
+        let mut model: Model<_> = ModelConfig::new().init::<Cuda>(&device);
 
         while {
             !cancellation_token.is_cancelled() &&
             (!self.limit.is_active || Instant::now() < time_limit)
         } {
 
-            tree.grow(&mut pos);
+            tree.grow(&mut pos, &mut model);
 
             let curr_best_move = tree.best_move();
-            if last_best_move != curr_best_move {
-                if let Some(best_move) = curr_best_move {
-                    sync::out(&format!("currmove {best_move}"));
-                }
-                last_best_move = curr_best_move;
+            if last_best_move != Some(curr_best_move) {
+                sync::out(&format!("currmove {curr_best_move}"));
+                last_best_move = Some(curr_best_move);
             }
 
         }

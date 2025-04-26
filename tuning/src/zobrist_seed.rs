@@ -5,7 +5,7 @@ use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use engine::core::{
     move_iter::{fold_legal_moves, sliding_piece::magics},
     position::Position,
-    search::mcts,
+    search::mcts::{self, NodeState},
     zobrist,
 };
 
@@ -43,14 +43,14 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
             // simulate a random game...
             loop {
                 buffer.clear();
-                fold_legal_moves(pos, &mut *buffer, |acc, m| {
+                _ = fold_legal_moves(pos, &mut *buffer, |acc, m| {
                     ControlFlow::Continue::<(), _>({
                         acc.push(m);
                         acc
                     })
                 });
 
-                if mcts::PlayoutResult::maybe_new(pos, buffer.len() as u8).is_some() {
+                if mcts::PlayoutResult::maybe_new(pos, if buffer.is_empty() { NodeState::Terminal } else { NodeState::Branch }).is_some() {
                     break;
                 }
 

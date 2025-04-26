@@ -1,5 +1,5 @@
 use burn::prelude::Backend;
-use eval::model::Model;
+use eval::model::{board_input, state_input, Model};
 use itertools::Itertools;
 use std::assert_matches::assert_matches;
 use std::cmp::Ordering;
@@ -9,6 +9,7 @@ use std::ops::{AddAssign, ControlFlow};
 use std::ptr::NonNull;
 
 use crate::core::move_iter::king::King;
+use crate::core::piece::IPieceType;
 use crate::core::{color::Color, move_iter::fold_legal_moves, position::Position, r#move::Move};
 
 #[cfg(test)]
@@ -177,7 +178,7 @@ impl PartialOrd for Score {
 }
 
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
-enum NodeState {
+pub enum NodeState {
     Leaf,
     Branch,
     #[default]
@@ -187,7 +188,7 @@ enum NodeState {
 #[derive(Clone, Default)]
 pub struct Node {
     score: Score,
-    policy: HashMap<Move, f32>, //todo: better implementation
+    policy: Option<HashMap<Move, f32>>, //todo: better implementation
     mov: Move,
     state: NodeState,
     children: Vec<Node>,
@@ -215,7 +216,7 @@ impl fmt::Debug for Node {
 impl Node {
     pub fn root(pos: &Position) -> Self {
         let mut children = Vec::new();
-        fold_legal_moves(pos, &mut children, |acc, m| {
+        _ = fold_legal_moves(pos, &mut children, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Node::leaf(m));
                 acc
@@ -229,7 +230,7 @@ impl Node {
             state: NodeState::Branch,
             children,
             score: Score::default(),
-            policy: HashMap::new(),
+            policy: None,
         }
     }
 
@@ -239,7 +240,7 @@ impl Node {
             state: NodeState::Leaf,
             children: Vec::new(),
             score: Score::default(),
-            policy: HashMap::new(),
+            policy: None,
         }
     }
     
@@ -262,19 +263,19 @@ impl Node {
 
     pub fn select_mut(&mut self) -> &mut Self {
         assert_matches!(self.state, NodeState::Branch);
-        assert_ne!(self.policy.len(), 0, "Policy has not been initialized yet!");
+        let policy = self.policy.as_ref().expect("Policy has not been initialized yet!");
 
         self.children
             .iter_mut()
             .max_by(|a, b| {
-                let a_ucb = a.puct(self.score.playouts, *self.policy.get(&a.mov).expect("Child node was not present in policy map!"));
-                let b_ucb = b.puct(self.score.playouts, *self.policy.get(&b.mov).expect("Child node was not present in policy map!"));
+                let a_ucb = a.puct(self.score.playouts, *policy.get(&a.mov).expect("Child node was not present in policy map!"));
+                let b_ucb = b.puct(self.score.playouts, *policy.get(&b.mov).expect("Child node was not present in policy map!"));
                 a_ucb.partial_cmp(&b_ucb).expect("Node comparison failed!")
             })
             .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
     }
     
-    pub fn eval<B: Backend>(&self, pos: &Position, model: &mut Model<B>) -> PlayoutResult {
+    pub fn eval<B: Backend>(&mut self, pos: &Position, model: &mut Model<B>) -> PlayoutResult {
         assert_matches!(self.state, NodeState::Leaf | NodeState::Terminal);
         
         PlayoutResult::maybe_new(pos, self.state).unwrap_or_else(|| {
@@ -282,6 +283,16 @@ impl Node {
             // todo: the quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
             // todo: return the score of this node, relative to the current player of this node.
             
+            let b_in = board_input(pos).into();
+            let s_in = state_input(pos).into();
+            let (quality, policy) = model.forward(b_in, s_in);
+            
+            let policy = policy.to_data();
+            println!("{policy:#?}");
+            todo!();
+            
+            self.policy = Some(self.children.iter().map(|c| (c.mov, 0f32)).collect_into(&mut HashMap::<Move, f32>::new()).to_owned());
+
             PlayoutResult::Score {
                 relative_to: pos.get_turn(),
                 quality: todo!(),
@@ -292,7 +303,7 @@ impl Node {
     fn expand(&mut self, pos: &Position) {
         assert_matches!(self.state, NodeState::Leaf);
 
-        fold_legal_moves(pos, &mut self.children, |acc, m| {
+        _ = fold_legal_moves(pos, &mut self.children, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Node::leaf(m));
                 acc

@@ -14,6 +14,7 @@
 #![feature(assert_matches)]
 #![feature(generic_const_exprs)]
 #![feature(let_chains)]
+#![feature(iter_collect_into)]
 
 #[macro_use]
 extern crate impl_ops;
