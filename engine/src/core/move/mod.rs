@@ -10,6 +10,9 @@ use crate::{
 
 use super::{castling::CastlingSide, piece::PromoPieceType};
 
+#[cfg(test)]
+mod test;
+
 pub struct LongAlgebraicNotation;
 
 pub struct LongAlgebraicUciNotation<'a, 'b, 'c> {
@@ -130,6 +133,7 @@ impl Move {
     const MASK_FROM: u16 = 0b111111 << Move::SHIFT_FROM;
     const MASK_TO: u16 = 0b111111 << Move::SHIFT_TO;
     const MASK_FLAG: u16 = 0b1111 << Move::SHIFT_FLAG;
+    const MASK_SQ: u16 = Move::MASK_FROM | Move::MASK_TO;
     
     #[inline]
     pub const fn null() -> Self {
@@ -235,6 +239,23 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
         };
 
         Ok(Move::new(from, to, flag))
+    }
+}
+
+impl From<Move> for usize {
+    /// Converts a move to a index, such that in any given position, no two moves will have the same index and there are no gaps. 
+    fn from(mov: Move) -> Self {
+        let from_file = File::from_c(mov.get_from());
+        let promo_bias = Move::MASK_SQ + 1 + from_file.v() as u16;
+        (match mov.get_flag() {
+            // Promotions are special cases: 
+            // 1. Since promotions have multiple moves for the same from-to combination, we add a variance for different promotions.
+            // 2. We need to bias, such that we don't collide with valid from-to indeces. (SQ_MASK)
+            // 3. We also need to bias by the file of the from square, such that we don't collide with other promotions.
+            f if f.is_promo() => promo_bias + f.v() as u16 - 2,
+            // For most moves, we can just use the from and to squares.
+            _ => mov.v & Move::MASK_SQ
+        }) as usize
     }
 }
 
