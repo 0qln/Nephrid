@@ -262,6 +262,9 @@ impl Node {
     // tree structure to a graph, we have to consider different policies from different parents.
     fn puct(&self, cap_n_i: u32, policy: f32) -> f32 {
         let n_i = self.score.playouts as f32;
+
+        // If this node has not been visited yet, we want to explore it first.
+        if n_i == 0.0 { return f32::INFINITY; }
         
         // The quality is updated incrementally as the tree is explored.
         // Because of this, we have to divide by the number of playouts 

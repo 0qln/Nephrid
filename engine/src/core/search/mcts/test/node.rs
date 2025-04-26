@@ -1,31 +1,34 @@
+use burn_cuda::CudaDevice;
+
 use crate::{core::{
-    r#move::Move, move_iter::sliding_piece::magics, position::Position, search::mcts::{Node, NodeState}
+    r#move::Move, move_iter::sliding_piece::magics, position::Position, search::mcts::{eval::{self, model::ModelConfig}, Node, NodeState}, zobrist
 }, uci::tokens::Tokenizer};
 
-// #[test]
-// fn ucb_selection() {
-//     magics::init();
-//
-//     let mut fen = Tokenizer::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-//     let pos = Position::try_from(&mut fen).unwrap();
-//
-//     let mut root = Node::root(&pos);
-//     root.score.playouts = 1;
-//     root.score.wins = 0.0;
-//
-//     let mut child1 = Node::leaf(Move::null());
-//     child1.score.playouts = 1;
-//     child1.score.wins = 1.0;
-//
-//     let child2 = Node::leaf(Move::null()); // 0 playouts
-//
-//     root.children = vec![child1, child2];
-//     root.state = NodeState::Branch;
-//
-//     // Should select child2 due to infinite UCB
-//     let selected = root.select_mut();
-//     assert_eq!(selected.score.playouts, 0);
-// }
+#[test]
+fn puct_selection() {
+    magics::init();
+    zobrist::init();
+    
+    let device = CudaDevice::new(0);
+    let model = ModelConfig::new().init::<eval::Backend>(&device);
+
+    let mut fen = Tokenizer::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    let pos = Position::try_from(&mut fen).unwrap();
+
+    let mut root = Node::root(&pos, &model);
+    _ = root.children.split_off(2);
+
+    root.score.playouts = 1;
+    root.score.quality = 0.0;
+
+    let child1 = &mut root.children[0];
+    child1.score.playouts = 1;
+    child1.score.quality = 1.0;
+
+    // Should select child2 due to infinite PUCT
+    let selected = root.select_mut();
+    assert_eq!(selected.score.playouts, 0);
+}
 
 #[test]
 fn test_terminal_expansion() {
