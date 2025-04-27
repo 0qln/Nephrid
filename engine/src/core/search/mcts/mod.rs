@@ -271,6 +271,7 @@ impl Node {
         }
     }
 
+    /// Update the node with the result of an evaluation.
     pub fn update(&mut self, eval: Evaluation, turn: Turn) {
         self.visits += 1;
         self.value += eval.to_value(turn);
