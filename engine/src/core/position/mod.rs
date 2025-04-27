@@ -362,6 +362,11 @@ impl Position {
     }
     
     #[inline]
+    pub fn is_insufficient_material(&self) -> bool {
+        self.piece_counts.iter().sum::<i8>() <= 2
+    }
+    
+    #[inline]
     pub fn repetition_table_capacity(&self) -> usize {
         Repetitions::capacity()
     }
