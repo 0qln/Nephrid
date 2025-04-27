@@ -50,9 +50,9 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
                     })
                 });
 
-                if mcts::PlayoutResult::maybe_new(pos, if buffer.is_empty() { NodeState::Terminal } else { NodeState::Branch }).is_some() {
-                    break;
-                }
+                // if mcts::PlayoutResult::maybe_new(pos, if buffer.is_empty() { NodeState::Terminal } else { NodeState::Branch }).is_some() {
+                //     break;
+                // }
 
                 let mov = buffer[rng.random_range(0..buffer.len())];
                 pos.make_move(mov);
