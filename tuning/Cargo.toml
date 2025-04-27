@@ -1,6 +1,5 @@
 [package]
 name = "tuning"
-version = "0.1.0"
 edition = "2024"
 
 [[bin]]
@@ -16,7 +15,7 @@ name = "eval-model"
 path = "src/eval_model.rs"
 
 [dependencies]
-engine = { version = "0.1.0", path = "../engine" }
+engine = { version = "*", path = "../engine" }
 itertools = "0.14.0"
 rand = "0.9.0"
 burn = "0.16.0"

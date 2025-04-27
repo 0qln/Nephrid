@@ -1,9 +1,15 @@
-use std::ops;
+use std::{fmt, ops};
 use std::{num::ParseIntError, str::FromStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Depth {
     v: u8,
+}
+
+impl fmt::Display for Depth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.v)
+    }
 }
 
 impl_op!(-|a: Depth, b: u8| -> Depth { Depth { v: a.v - b } });

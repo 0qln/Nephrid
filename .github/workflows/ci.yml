@@ -1,0 +1,72 @@
+
+name: "Nephrid $(version)"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: full
+
+jobs:
+        
+  test:
+    name: Tests    
+    runs-on: ubuntu-latest
+    steps:      
+      - uses: actions/checkout@v4          
+      - name: Rustup Nightly
+        run: rustup toolchain update nightly
+      - name: Run Unit Tests
+        run: cargo test --workspace --verbose
+      - name: Dry Run Benchmarks 
+        run: cargo test --benches --workspace --verbose
+            
+
+  versioning:
+    name: Versioning
+    # This job needs to wait for important jobs like (e.g. testing) to complete. 
+    # Otherwise the versioning commit will the commits in the PR to 
+    needs: [test] 
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      - name: Generate version number
+        run: |
+          DATE=$(date +'%Y.%-m.%-d')          
+          COMMIT_SHA=$(git rev-parse --short HEAD)
+          VERSION="${DATE#20}+$COMMIT_SHA"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Announce CI/CD
+        run: echo "Running CI/CD for Nephrid Version ${{ env.VERSION }}"
+      
+      - name: Bump engine crate version
+        uses: thomaseizinger/set-crate-version@master
+        with:
+          version: ${{ env.VERSION }}
+          manifest: ./engine/Cargo.toml
+          
+      - name: Bump nephrid crate version 
+        uses: thomaseizinger/set-crate-version@master
+        with:
+          version: ${{ env.VERSION }}
+          manifest: ./nephrid/Cargo.toml
+
+      - name: Commit Changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with: 
+          commit_message: Bump up crate version to ${{ env.VERSION }}
+          tagging_message: ${{ env.VERSION }}
+
+          
+      # todo: clippy

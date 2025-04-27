@@ -7,6 +7,7 @@ use engine::core::move_iter::knight::{compute_attacks, lookup_attacks, Knight};
 use engine::core::move_iter::sliding_piece::magics;
 use engine::core::move_iter::{FoldMoves, NoCheck, SingleCheck};
 use engine::core::position::Position;
+use engine::core::zobrist;
 use engine::uci::tokens::Tokenizer;
 
 pub fn knight_attacks(c: &mut Criterion) {
@@ -25,6 +26,7 @@ pub fn knight_attacks(c: &mut Criterion) {
 
 pub fn move_iter_check_none(c: &mut Criterion) {
     magics::init();
+    zobrist::init();
 
     let inputs = [
         "N3N3/6p1/1pp2p2/8/3N4/7k/8/7K w - - 0 1",
@@ -40,7 +42,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
                 <Knight as FoldMoves<NoCheck>>::fold_moves(
                     black_box(pos),
                     black_box(0),
-                    black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),
+                    black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
                 )
             })
         });
@@ -50,6 +52,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
 
 pub fn move_iter_check_single(c: &mut Criterion) {
     magics::init();
+    zobrist::init();
 
     let inputs = [
         "N7/6p1/1pp2p2/5r2/8/3b1N1k/8/2N2K2 w - - 0 1",
@@ -64,7 +67,7 @@ pub fn move_iter_check_single(c: &mut Criterion) {
                 <Knight as FoldMoves<SingleCheck>>::fold_moves(
                     black_box(pos),
                     black_box(0),
-                    black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc + m.get_to().v())),
+                    black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
                 )
             })
         });

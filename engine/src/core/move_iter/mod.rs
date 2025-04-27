@@ -135,19 +135,12 @@ impl FoldMoves<Self> for DoubleCheck {
     }
 }
 
-#[inline(never)]
-fn test(pos: &Position) -> std::ops::ControlFlow::<(), usize> {
-    <NoCheck as FoldMoves<_>>::fold_moves(pos, 0, |acc, m| std::ops::ControlFlow::Continue::<(), usize>(acc + m.get_to().v() as usize))
-}
-
 #[inline]
 pub fn fold_legal_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    test(pos);
-
     match pos.get_check_state() {
         CheckState::None => <NoCheck as FoldMoves<_>>::fold_moves(pos, init, f),
         CheckState::Single => <SingleCheck as FoldMoves<_>>::fold_moves(pos, init, f),
