@@ -10,7 +10,7 @@ use std::{fmt::Debug, ops::{self, ControlFlow, FromResidual, Try}};
 use burn::{prelude::Backend, tensor::Tensor};
 use const_for::const_for;
 
-use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose};
+use super::{color::Color, coordinates::{DiagA1H8, DiagA8H1, TCompassRose}};
 
 #[cfg(test)]
 pub mod tests;
@@ -308,11 +308,11 @@ impl Bitboard {
         Self { v: !0x007E7E7E7E7E7E00_u64 }
     }
     
-    pub fn into_floats(self) -> Floats {
+    pub fn into_floats(self, upside_down: bool) -> Floats {
         let mut data: Floats = Default::default();
         for sq in Square::A1_C..Square::H8_C {
             let sq = unsafe { Square::from_v(sq) };
-            let bit = self.get_bit(sq);
+            let bit = self.get_bit(if upside_down { sq.flip_v() } else { sq });
             let rank = Rank::from_c(sq).v() as usize;
             let file = File::from_c(sq).v() as usize;
             data[file][rank] = bit as f32;

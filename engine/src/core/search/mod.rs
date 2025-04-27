@@ -7,6 +7,7 @@ use std::time::Instant;
 use crate::uci::sync::{self, CancellationToken};
 use burn_cuda::{Cuda, CudaDevice};
 use limit::Limit;
+use mcts::eval;
 use mcts::eval::model::{Model, ModelConfig};
 use mode::Mode;
 use target::Target;
@@ -72,7 +73,7 @@ impl Search {
         cancellation_token: CancellationToken
     ) -> Move {
         let device = CudaDevice::new(0);
-        let model: Model<_> = ModelConfig::new().init::<Cuda>(&device);
+        let model: Model<_> = ModelConfig::new().init::<eval::Backend>(&device);
         
         let mut tree = mcts::Tree::new(&pos, &model);
         let mut last_best_move = None;

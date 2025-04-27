@@ -19,8 +19,6 @@ const BOARD_INPUT_TENSOR_DIM: usize = {
 const STATE_INPUT_LEN: usize = {
     // Castling rights 
     4 + 
-    // Turn, 
-    1 + 
     // Plys after last capture or pawn move (should be normalized / devided by 50)
     1
 };
@@ -35,34 +33,38 @@ const STATE_INPUT_TENSOR_DIM: usize = {
 type BoardInputFloats = [bitboard::Floats; BOARD_INPUT_CHANNELS];
 
 pub fn board_input(pos: &Position) -> BoardInputFloats {
+    let us = pos.get_turn();
+    let flip = us == Color::BLACK;
+    let them = !us;
     [
-        pos.get_bitboard(PieceType::PAWN, Color::WHITE).into_floats(), 
-        pos.get_bitboard(PieceType::PAWN, Color::BLACK).into_floats(), 
-        pos.get_bitboard(PieceType::KNIGHT, Color::WHITE).into_floats(), 
-        pos.get_bitboard(PieceType::KNIGHT, Color::BLACK).into_floats(), 
-        pos.get_bitboard(PieceType::BISHOP, Color::WHITE).into_floats(), 
-        pos.get_bitboard(PieceType::BISHOP, Color::BLACK).into_floats(), 
-        pos.get_bitboard(PieceType::ROOK, Color::WHITE).into_floats(), 
-        pos.get_bitboard(PieceType::ROOK, Color::BLACK).into_floats(), 
-        pos.get_bitboard(PieceType::QUEEN, Color::WHITE).into_floats(), 
-        pos.get_bitboard(PieceType::QUEEN, Color::BLACK).into_floats(), 
-        pos.get_bitboard(PieceType::KING, Color::WHITE).into_floats(), 
-        pos.get_bitboard(PieceType::KING, Color::BLACK).into_floats(), 
-        pos.get_ep_capture_bitboard(Color::WHITE).into_floats(), 
-        pos.get_ep_capture_bitboard(Color::BLACK).into_floats(), 
+        pos.get_bitboard(PieceType::PAWN, us).into_floats(flip), 
+        pos.get_bitboard(PieceType::PAWN, them).into_floats(flip), 
+        pos.get_bitboard(PieceType::KNIGHT, us).into_floats(flip), 
+        pos.get_bitboard(PieceType::KNIGHT, them).into_floats(flip), 
+        pos.get_bitboard(PieceType::BISHOP, us).into_floats(flip), 
+        pos.get_bitboard(PieceType::BISHOP, them).into_floats(flip), 
+        pos.get_bitboard(PieceType::ROOK, us).into_floats(flip), 
+        pos.get_bitboard(PieceType::ROOK, them).into_floats(flip), 
+        pos.get_bitboard(PieceType::QUEEN, us).into_floats(flip), 
+        pos.get_bitboard(PieceType::QUEEN, them).into_floats(flip), 
+        pos.get_bitboard(PieceType::KING, us).into_floats(flip), 
+        pos.get_bitboard(PieceType::KING, them).into_floats(flip), 
+        pos.get_ep_capture_bitboard(us).into_floats(flip), 
+        pos.get_ep_capture_bitboard(them).into_floats(flip), 
     ]   
 }
 
 type StateInputFloats = [f32; STATE_INPUT_LEN];
 
 pub fn state_input(pos: &Position) -> StateInputFloats {
+    let us = pos.get_turn();
+    let them = !us;
     let castling = pos.get_castling();
     [
-        castling.get_float(CastlingSide::KING_SIDE, Color::WHITE),
-        castling.get_float(CastlingSide::QUEEN_SIDE, Color::WHITE),
-        castling.get_float(CastlingSide::KING_SIDE, Color::BLACK),
-        castling.get_float(CastlingSide::QUEEN_SIDE, Color::BLACK),
-        pos.get_turn().v() as f32,
+        castling.get_float(CastlingSide::KING_SIDE, us),
+        castling.get_float(CastlingSide::QUEEN_SIDE, us),
+        castling.get_float(CastlingSide::KING_SIDE, them),
+        castling.get_float(CastlingSide::QUEEN_SIDE, them),
         pos.plys_50().v as f32 / 50.0,
     ]
 }

@@ -2,14 +2,13 @@ use burn::prelude::Backend;
 use eval::model::{board_input, state_input, Model};
 use itertools::Itertools;
 use std::assert_matches::assert_matches;
-use std::cmp::Ordering;
-use std::collections::HashMap;
 use std::fmt;
-use std::ops::{AddAssign, ControlFlow};
+use std::ops::ControlFlow;
 use std::ptr::NonNull;
 
 use crate::core::move_iter::king::King;
 use crate::core::piece::IPieceType;
+use crate::core::turn::Turn;
 use crate::core::{color::Color, move_iter::fold_legal_moves, position::Position, r#move::Move};
 
 #[cfg(test)]
@@ -18,34 +17,25 @@ mod test;
 pub mod eval;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub enum PlayoutResult {
+pub enum Evaluation {
     Win { relative_to: Color },
-    Score { relative_to: Color, quality: f32 },
+    Ongoing { relative_to: Color, quality: f32 },
     Draw,
 }
 
-impl PlayoutResult {
-    pub fn maybe_new(pos: &Position, state: NodeState) -> Option<Self> {
-        if pos.has_threefold_repetition() || pos.fifty_move_rule() {
-            return Some(Self::Draw);
+impl Evaluation {
+    /// Returns a number between 0 and 1, where 0 is a loss and 1 is a win.
+    fn to_value(&self, turn: Color) -> f32 {
+        match *self {
+            Evaluation::Win { relative_to } if relative_to == turn => 1.0,
+            Evaluation::Win { relative_to: _ } => 0.0,
+            Evaluation::Draw => 0.5,
+            Evaluation::Ongoing { quality, relative_to } => {
+                // The quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
+                let quality = (quality + 1.0) / 2.0;
+                if relative_to == turn { quality } else { 1.0 - quality }
+            },
         }
-
-        if state == NodeState::Terminal {
-            return Some({
-                let us = pos.get_turn();
-                let king = pos.get_bitboard(King::ID, us);
-                let nstm_attacks = pos.get_nstm_attacks();
-                let in_check = !(king & nstm_attacks).is_empty();
-                if in_check {
-                    // If in check and no moves, it's a loss for the current player
-                    Self::Win { relative_to: !us }
-                } else {
-                    Self::Draw
-                }
-            });
-        }
-
-        None
     }
 }
 
@@ -55,213 +45,87 @@ pub struct Tree {
     root: Node,
     
     /// Stack of nodes that were selected during the selection phase.
-    selection_buffer: Vec<NonNull<Node>>,
+    selection_buffer: Vec<NonNull<Branch>>,
 }
 
 impl Tree {
     pub fn new<B: Backend>(pos: &Position, model: &Model<B>) -> Self {
-        let root = Node::root(pos, model);
-        Self {
-            root,
-            ..Default::default()
-        }
+        Self { root: Node::root(pos, model), ..Default::default() }
     }
 
     pub fn best_move(&self) -> Move {
         self.root
-            .children
+            .branches
             .iter()
-            .max_by(|a, b| a.score.playouts.partial_cmp(&b.score.playouts).expect("not all root nodes have been searched yet"))
+            .max_by(|a, b| a.visits().cmp(&b.visits()))
             .expect("Root need's to have children.")
-            .mov
-    }
-
-    pub fn dbg(&self) {
-        println!("root: {:#?}", self.root);
-        println!("\r\n");
+            .mov()
     }
 
     pub fn grow<B: Backend>(&mut self, pos: &mut Position, model: &Model<B>) {
-        self.select_leaf_mut(pos);
-        let leaf = unsafe { self.selected_leaf().as_mut() };
-        let result = leaf.eval(pos, model);
+        let result = self.select_leaf_mut(pos, model);
+        println!("{:#?}", self);
         self.backpropagate(pos, result);
     }
     
-    pub fn selected_leaf(&mut self) -> NonNull<Node> {
+    pub fn selected_leaf(&mut self) -> NonNull<Branch> {
         *self.selection_buffer
                 .last_mut()
                 .expect("This is only None, if root.state == Leaf, which is not the case.")
     }
 
-    pub fn advance(&mut self, mov: Move) {
-        self.root = self
-            .root
-            .children
-            .iter()
-            .find(|n| n.mov == mov)
-            .unwrap()
-            .clone();
-    }
-
-    fn backpropagate(&mut self, pos: &mut Position, result: PlayoutResult) {
+    fn backpropagate(&mut self, pos: &mut Position, result: Evaluation) {
         unsafe {
-            for node in self.selection_buffer.iter_mut().rev().map(|n| n.as_mut()) {
-                pos.unmake_move(node.mov);
-                node.score += (result, pos.get_turn());
+            for branch in self.selection_buffer.iter_mut().rev().map(|n| n.as_mut()) {
+                pos.unmake_move(branch.mov());
+                branch.update(result, pos.get_turn());
             }
         }
-        self.root.score += (result, pos.get_turn());
+        self.root.update(result, pos.get_turn());
     }
 
-    pub fn select_leaf_mut(&mut self, pos: &mut Position) {
+    pub fn select_leaf_mut<B: Backend>(&mut self, pos: &mut Position, model: &Model<B>) -> Evaluation {
         self.selection_buffer.clear();
         let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
         loop {
-            match current.state {
-                NodeState::Branch => {
-                    current = current.select_mut();
-                    pos.make_move(current.mov);
-                    self.selection_buffer.push(NonNull::from_ref(current));
+            match current.state() {
+                NodeState::Expanded => {
+                    let branch = current.select_mut();
+                    pos.make_move(branch.mov());
+                    self.selection_buffer.push(NonNull::from_ref(branch));
+                    current = branch.traverse_mut();
                 }
-                NodeState::Leaf if current.score.playouts != 0 => {
-                    current.expand(pos);
-                }
-                NodeState::Leaf | NodeState::Terminal => {
-                    break;
+                NodeState::Leaf => {
+                    return current.expand_and_eval(pos, model);
                 }
             }
         }
-    }
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-struct Score {
-    playouts: u32,
-    quality: f32,
-}
-
-impl AddAssign<(PlayoutResult, Color)> for Score {
-    #[inline(always)]
-    fn add_assign(&mut self, rhs: (PlayoutResult, Color)) {
-        self.playouts += 1;
-        self.quality += match rhs.0 {
-            PlayoutResult::Win { relative_to } if relative_to == rhs.1 => 1.0,
-            PlayoutResult::Win { relative_to: _ } => 0.0,
-            PlayoutResult::Draw => 0.5,
-            PlayoutResult::Score { quality, relative_to } => {
-                if relative_to == rhs.1 { quality } else { 1.0 - quality }
-            },
-        };
-    }
-}
-
-impl Score {
-    pub fn v(&self) -> Option<f32> {
-        match self.playouts {
-            0 => None,
-            _ => Some(self.quality / self.playouts as f32),
-        }
-    }
-    
-    fn new(quality: f32) -> Self {
-        Self { playouts: 1, quality }
-    }
-}
-
-impl PartialEq for Score {
-    fn eq(&self, other: &Self) -> bool {
-        self.v().eq(&other.v())
-    }
-}
-
-impl PartialOrd for Score {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.v()?.partial_cmp(&other.v()?)
     }
 }
 
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NodeState {
-    Leaf,
-    Branch,
     #[default]
-    Terminal,
+    Leaf,
+    Expanded,
 }
 
-#[derive(Clone, Default)]
-pub struct Node {
-    score: Score,
-    policy: Option<HashMap<Move, f32>>, //todo: better implementation
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct ChildNode {
+    node: Node,
     mov: Move,
-    state: NodeState,
-    children: Vec<Node>,
 }
 
-impl fmt::Debug for Node {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Node")
-            .field("score", &self.score)
-            .field("mov", &self.mov)
-            .field("state", &self.state)
-            .field("policy", &self.policy)
-            .field(
-                "children",
-                &self
-                    .children
-                    .iter()
-                    .filter(|c| c.score.playouts != 0)
-                    .collect_vec(),
-            )
-            .finish()
-    }
-}
-
-impl Node {
-    pub fn root<B: Backend>(pos: &Position, model: &Model<B>) -> Self {
-        let mut children = Vec::new();
-        _ = fold_legal_moves(pos, &mut children, |acc, m| {
-            ControlFlow::Continue::<(), _>({
-                acc.push(Node::leaf(m));
-                acc
-            })
-        });
-
-        assert!(!children.is_empty(), "A root node cannot be a terminal node.");
-
-        let b_in = [board_input(pos)].into();
-        let s_in = [state_input(pos)].into();
-        let (quality, policy) = model.forward(b_in, s_in);
-        
-        let policy = policy.to_data().to_vec::<f32>().expect("Policy could not be converted to vec.");
-        let quality = quality.to_data().to_vec::<f32>().expect("Quality could not be converted to vec.");
-        
-        let mut map = HashMap::<Move, f32>::with_capacity(children.len());
-        children.iter().map(|c| (c.mov, policy[usize::from(c.mov)])).collect_into(&mut map);
-        
-        Self {
-            mov: Move::null(),
-            state: NodeState::Branch,
-            children,
-            score: Score::new(quality[0]),
-            policy: Some(map),
-        }
-    }
-
-    pub fn leaf(mov: Move) -> Self {
-        Self {
-            mov,
-            state: NodeState::Leaf,
-            children: Vec::new(),
-            score: Score::default(),
-            policy: None,
-        }
+impl ChildNode {
+    /// Create a new leaf node.
+    pub fn leaf(m: Move) -> Self {
+        Self { node: Node::leaf(), mov: m }
     }
     
     // note: we take the policy as an argument, because if we later convert this 
     // tree structure to a graph, we have to consider different policies from different parents.
     fn puct(&self, cap_n_i: u32, policy: f32) -> f32 {
-        let n_i = self.score.playouts as f32;
+        let n_i = self.node.visits() as f32;
 
         // If this node has not been visited yet, we want to explore it first.
         if n_i == 0.0 { return f32::INFINITY; }
@@ -269,7 +133,7 @@ impl Node {
         // The quality is updated incrementally as the tree is explored.
         // Because of this, we have to divide by the number of playouts 
         // to get the average quality of this node.
-        let exploitation = self.score.quality / n_i;
+        let exploitation = self.node.value() / n_i;
 
         // todo: fine tune c.
         let c = f32::sqrt(2.0);
@@ -277,56 +141,189 @@ impl Node {
 
         exploitation + exploration
     }
+    
+    fn mov(&self) -> Move {
+        self.mov
+    }
+    
+    fn visits(&self) -> u32 {
+        self.node.visits()
+    }
+    
+    fn update(&mut self, result: Evaluation, get_turn: Color) {
+        self.node.update(result, get_turn)
+    }
+}
 
-    pub fn select_mut(&mut self) -> &mut Self {
-        assert_matches!(self.state, NodeState::Branch);
-        let policy = self.policy.as_ref().expect("Policy has not been initialized yet!");
+#[derive(Clone, Default, Debug, PartialEq)]
+pub struct Branch {
+    node: ChildNode,
+    policy: f32,
+}
 
-        self.children
+impl Branch {
+    fn puct(&self, cap_n_i: u32) -> f32 { 
+        self.node.puct(cap_n_i, self.policy) 
+    }
+    
+    fn new(m: Move, policy: f32) -> Self {
+        Self { node: ChildNode::leaf(m), policy }
+    }
+    
+    fn visits(&self) -> u32 {
+        self.node.visits()
+    }
+    
+    fn mov(&self) -> Move {
+        self.node.mov()
+    }
+    
+    fn update(&mut self, result: Evaluation, get_turn: Color) {
+        self.node.update(result, get_turn)
+    }
+    
+    fn traverse(&self) -> &Node {
+        &self.node.node
+    }
+    
+    fn traverse_mut(&mut self) -> &mut Node {
+        &mut self.node.node
+    }
+    
+    fn node_state(&self) -> NodeState {
+        self.traverse().state()
+    }
+}
+
+#[derive(Clone, Default, PartialEq)]
+pub struct Node {
+    visits: u32,
+    value: f32,
+    state: NodeState,
+    branches: Vec<Branch>,
+}
+
+impl fmt::Debug for Node {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Node")
+            .field("value", &self.value())
+            .field("visits", &self.visits())
+            .field("state", &self.state())
+            .field(
+                "branches",
+                &self
+                    .branches
+                    .iter()
+                    .filter(|c| c.visits() != 0)
+                    .collect_vec(),
+            )
+            .finish()
+    }
+}
+
+impl Node {
+    /// Create a new root node.
+    pub fn root<B: Backend>(pos: &Position, model: &Model<B>) -> Self {
+        let mut result = Self::leaf();
+        result.expand_and_eval(pos, model);
+        result
+    }
+
+    /// Create a new leaf node.
+    pub fn leaf() -> Self {
+        debug_assert_eq!(Self::default(), Self {
+            state: NodeState::Leaf,
+            branches: Vec::new(),
+            visits: 0,
+            value: 0.0
+        });
+
+        Self {
+            state: NodeState::Leaf,
+            branches: Vec::new(),
+            visits: 0,
+            value: 0.0
+        }
+    }
+    
+    pub fn update(&mut self, eval: Evaluation, turn: Turn) {
+        self.visits += 1;
+        self.value += eval.to_value(turn);
+    }
+
+    /// Select the branch with the highest PUCT score.
+    pub fn select_mut(&mut self) -> &mut Branch {
+        assert_matches!(self.state(), NodeState::Expanded);
+
+        self.branches
             .iter_mut()
             .max_by(|a, b| {
-                let a_ucb = a.puct(self.score.playouts, *policy.get(&a.mov).expect("Child node was not present in policy map!"));
-                let b_ucb = b.puct(self.score.playouts, *policy.get(&b.mov).expect("Child node was not present in policy map!"));
+                let a_ucb = a.puct(self.visits);
+                let b_ucb = b.puct(self.visits);
                 a_ucb.partial_cmp(&b_ucb).expect("Node comparison failed!")
             })
             .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
     }
     
-    pub fn eval<B: Backend>(&mut self, pos: &Position, model: &Model<B>) -> PlayoutResult {
-        assert_matches!(self.state, NodeState::Leaf | NodeState::Terminal);
-        
-        PlayoutResult::maybe_new(pos, self.state).unwrap_or_else(|| {
-            // todo: evaluation of quality and policy using the model.
-            // todo: the quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
-            // todo: return the score of this node, relative to the current player of this node.
-            
-            let b_in = [board_input(pos)].into();
-            let s_in = [state_input(pos)].into();
-            let (quality, policy) = model.forward(b_in, s_in);
-            
-            let policy = policy.to_data();
-            println!("{policy:#?}");
-            todo!();
-            
-            self.policy = Some(self.children.iter().map(|c| (c.mov, 0f32)).collect_into(&mut HashMap::<Move, f32>::new()).to_owned());
-
-            PlayoutResult::Score {
-                relative_to: pos.get_turn(),
-                quality: todo!(),
-            }
-        })
+    /// Returns true if the node is a terminal node.
+    fn is_terminal(&self) -> bool { 
+        self.state() == NodeState::Expanded && self.branches.is_empty() 
     }
 
-    fn expand(&mut self, pos: &Position) {
-        assert_matches!(self.state, NodeState::Leaf);
+    /// Expand the node and return an evaluation of the position.
+    fn expand_and_eval<B: Backend>(&mut self, pos: &Position, model: &Model<B>) -> Evaluation {
+        assert_matches!(self.state(), NodeState::Leaf);
 
-        _ = fold_legal_moves(pos, &mut self.children, |acc, m| {
+        _ = fold_legal_moves(pos, &mut self.branches, |acc, m| {
             ControlFlow::Continue::<(), _>({
-                acc.push(Node::leaf(m));
+                acc.push(Branch::new(m, 0.0));
                 acc
             })
         });
 
-        self.state = if self.children.is_empty() { NodeState::Terminal } else { NodeState::Branch };
+        self.state = NodeState::Expanded;
+        
+        if self.is_terminal() {
+            if pos.has_threefold_repetition() || pos.fifty_move_rule() {
+                return Evaluation::Draw;
+            }
+
+            let us = pos.get_turn();
+            let king = pos.get_bitboard(King::ID, us);
+            let nstm_attacks = pos.get_nstm_attacks();
+            let in_check = !(king & nstm_attacks).is_empty();
+            if in_check {
+                // If in check and no moves, it's a loss for the current player
+                Evaluation::Win { relative_to: !us }
+            } else {
+                Evaluation::Draw
+            }
+        }
+        else {
+            let b_in = [board_input(pos)].into();
+            let s_in = [state_input(pos)].into();
+            let (quality, policy) = model.forward(b_in, s_in);
+        
+            let policy = policy.to_data().to_vec::<f32>().expect("Policy could not be converted to vec.");
+            let quality = quality.to_data().to_vec::<f32>().expect("Quality could not be converted to vec.");
+            
+            for branch in &mut self.branches {
+                branch.policy = policy[usize::from(branch.node.mov)];
+            }
+
+            Evaluation::Ongoing { relative_to: pos.get_turn(), quality: quality[0] }
+        }
+    }
+    
+    fn visits(&self) -> u32 {
+        self.visits
+    }
+    
+    fn value(&self) -> f32 {
+        self.value
+    }
+    
+    fn state(&self) -> NodeState {
+        self.state
     }
 }
