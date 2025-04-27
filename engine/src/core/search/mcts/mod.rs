@@ -64,7 +64,6 @@ impl Tree {
 
     pub fn grow<B: Backend>(&mut self, pos: &mut Position, model: &Model<B>) {
         let result = self.select_leaf_mut(pos, model);
-        println!("{:#?}", self);
         self.backpropagate(pos, result);
     }
     
