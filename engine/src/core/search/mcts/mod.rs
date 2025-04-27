@@ -11,9 +11,6 @@ use crate::core::piece::IPieceType;
 use crate::core::turn::Turn;
 use crate::core::{color::Color, r#move::Move, move_iter::fold_legal_moves, position::Position};
 
-#[cfg(test)]
-mod test;
-
 pub mod eval;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
