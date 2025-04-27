@@ -24,8 +24,13 @@ impl Evaluation {
     /// Returns a number between 0 and 1, where 0 is a loss and 1 is a win.
     fn to_value(&self, turn: Color) -> f32 {
         match *self {
-            Evaluation::Win { relative_to } if relative_to == turn => 1.0,
-            Evaluation::Win { relative_to: _ } => 0.0,
+            Evaluation::Win { relative_to } => {
+                if relative_to == turn {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
             Evaluation::Draw => 0.5,
             Evaluation::Ongoing {
                 quality,

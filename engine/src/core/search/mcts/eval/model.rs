@@ -221,6 +221,7 @@ impl<B: Backend> Model<B> {
         
         let x = x.flatten(1, 3);        
         
+        // todo: should we always use a dropout layer?
         let x = self.dropout.forward(x);
         
         let x = self.dense0.forward(x);
@@ -238,6 +239,14 @@ impl<B: Backend> Model<B> {
         
         (value_out, policy_out)
     }    
+    
+    pub fn forward_with_loss(
+        &self, 
+        board_input: Tensor<B, 4>, state_input: Tensor<B, 2>, 
+        target_value: Tensor<B, 2>, target_policy: Tensor<B, 2>
+    ) ->  {
+        
+    }
 }
 
 

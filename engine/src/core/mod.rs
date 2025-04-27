@@ -50,6 +50,7 @@ pub fn execute_uci(
     engine: &mut Engine,
     mut command: String,
     cancellation_token: CancellationToken,
+    blocking: bool,
 ) -> Result<(), Box<dyn Error>> {
     trim_newline(&mut command);
     let mut tokenizer = Tokenizer::new(command.as_str());

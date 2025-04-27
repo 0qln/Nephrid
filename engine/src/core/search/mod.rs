@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::uci::sync::{self, CancellationToken};
+use burn::prelude::Backend;
 use burn_cuda::{Cuda, CudaDevice};
 use limit::Limit;
 use mcts::eval;
@@ -24,10 +25,11 @@ pub mod mcts;
 pub mod target;
 
 #[derive(Default, Debug, Clone)]
-pub struct Search {
+pub struct Search<B: Backend> {
     pub limit: Limit,
     pub target: Target,
     pub mode: Mode,
+    pub model: Model<B>,
     pub debug: Arc<AtomicBool>,
 }
 
@@ -67,14 +69,12 @@ impl Search {
         }
     }
     
-    pub fn mcts(
+    pub fn mcts<B: Backend>(
         &self,
         mut pos: Position,
-        cancellation_token: CancellationToken
+        model: &Model<B>,
+        ct: CancellationToken,
     ) -> Move {
-        let device = CudaDevice::new(0);
-        let model: Model<_> = ModelConfig::new().init::<eval::Backend>(&device);
-        
         let mut tree = mcts::Tree::new(&pos, &model);
         let mut last_best_move = None;
         
@@ -82,7 +82,7 @@ impl Search {
         let time_limit = Instant::now() + time_per_move;
 
         while {
-            !cancellation_token.is_cancelled() &&
+            !ct.is_cancelled() &&
             (!self.limit.is_active || Instant::now() < time_limit)
         } {
 
@@ -99,19 +99,16 @@ impl Search {
         last_best_move.expect("search did not complete")
     }
 
-    pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {
+    pub fn go(&self, position: &mut Position, ct: CancellationToken) {
         match self.mode {
             Mode::Perft => {
-                let nodes = Self::perft(&mut UnsafeCell::new(position.clone()), self.target.depth, cancellation_token, |m, c| {
+                let nodes = Self::perft(&mut UnsafeCell::new(position.clone()), self.target.depth, ct, |m, c| {
                     sync::out(&format!("{m}: {c}"));
                 });
                 sync::out(&format!("\nNodes searched: {nodes}"));
             }
             Mode::Normal => {
-                let result = self.mcts(
-                    position.clone(),
-                    cancellation_token
-                );
+                let result = self.mcts(position.clone(), &self.model, ct);
                 sync::out(&format!("bestmove {result}"));
             }
             _ => unimplemented!(),
