@@ -1,4 +1,4 @@
-use burn::{config::Config, module::Module, nn::{conv::{Conv2d, Conv2dConfig}, loss::MseLoss, pool::{MaxPool2d, MaxPool2dConfig}, BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, PaddingConfig2d, Relu, Tanh}, prelude::Backend, tensor::{activation::softmax, Tensor}};
+use burn::{config::Config, module::Module, nn::{conv::{Conv2d, Conv2dConfig}, loss::{CrossEntropyLossConfig, MseLoss, Reduction}, pool::{MaxPool2d, MaxPool2dConfig}, BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, PaddingConfig2d, Relu, Tanh}, prelude::Backend, tensor::{activation::softmax, Int, Tensor}, train::{ClassificationOutput, RegressionOutput}};
 
 use crate::core::{bitboard::{self, Bitboard}, castling::CastlingSide, color::Color, coordinates::{File, Rank, Square}, piece::{PieceType, PromoPieceType}, position::Position, turn::Turn};
 
@@ -181,7 +181,7 @@ impl<B: Backend> Model<B> {
     /// - `state_input`: (batch_size, see: `STATE_INPUT_LEN`)
     /// - `value_out`: (batch_size, 1)
     /// - `policy_out`: (batch_size, num_moves)
-    pub fn forward(&self, board_input: Tensor<B, 4>, state_input: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
+    pub fn forward<const TRAIN: bool>(&self, board_input: Tensor<B, 4>, state_input: Tensor<B, 2>) -> (Tensor<B, 2>, Tensor<B, 2>) {
         let [bi_batch_size, bil, rs, fs] = board_input.dims();
         assert_eq!(bil, BOARD_INPUT_CHANNELS);
         assert_eq!(rs, Rank::N_VARIANTS);
@@ -219,10 +219,11 @@ impl<B: Backend> Model<B> {
         let x = x.clone() + self.b4_conv_0.forward(x);
         let x = self.b4_pool.forward(x);
         
-        let x = x.flatten(1, 3);        
+        let mut x = x.flatten(1, 3);        
         
-        // todo: should we always use a dropout layer?
-        let x = self.dropout.forward(x);
+        if TRAIN {
+            x = self.dropout.forward(x);
+        }
         
         let x = self.dense0.forward(x);
         let x = self.dense1.forward(x);
@@ -240,67 +241,18 @@ impl<B: Backend> Model<B> {
         (value_out, policy_out)
     }    
     
+    /// todo: I believe the policy_target should be a 1D tensor that contains the indeces of the correct targets, but I could be mistaken.
     pub fn forward_with_loss(
         &self, 
         board_input: Tensor<B, 4>, state_input: Tensor<B, 2>, 
-        target_value: Tensor<B, 2>, target_policy: Tensor<B, 2>
-    ) -> (ClassificationOutput<B>, RegressionOutput<B>) {
-        let [bi_batch_size, bil, rs, fs] = board_input.dims();
-        assert_eq!(bil, BOARD_INPUT_CHANNELS);
-        assert_eq!(rs, Rank::N_VARIANTS);
-        assert_eq!(fs, File::N_VARIANTS);
+        value_target: Tensor<B, 2>, policy_target: Tensor<B, 1, Int>
+    ) -> (RegressionOutput<B>, ClassificationOutput<B>) {
+        let (value_out, policy_out) = self.forward::<true>(board_input, state_input);
         
-        let [si_batch_size, sil] = state_input.dims();
-        assert_eq!(si_batch_size, bi_batch_size);
-        assert_eq!(sil, STATE_INPUT_LEN);
+        let value_loss = MseLoss::new().forward(value_out.clone(), value_target.clone(), Reduction::Mean);
+        let policy_loss = CrossEntropyLossConfig::new().init(&policy_out.device()).forward(policy_out.clone(), policy_target.clone());
         
-        let x = board_input;
-        let x = Tensor::cat(vec![
-            self.b1_conv_0.forward(x.clone()),
-            self.b1_conv_1.forward(x.clone()),
-            self.b1_conv_2.forward(x.clone()),
-            self.b1_conv_3.forward(x.clone()),
-            self.b1_conv_4.forward(x.clone()),
-            self.b1_conv_5.forward(x),
-        ], 1);
-        
-        let x = self.b2_adaper.forward(x);
-        let x = x.clone() + Tensor::cat(vec![
-            self.b2_conv_0.forward(x.clone()),
-            self.b2_conv_1.forward(x),
-        ], 1);
-        let x = self.b2_pool.forward(x);
-        
-        let x = self.b3_adaper.forward(x);
-        let x = x.clone() + Tensor::cat(vec![
-            self.b3_conv_0.forward(x.clone()),
-            self.b3_conv_1.forward(x),
-        ], 1);
-        let x = self.b3_pool.forward(x);
-        
-        let x = self.b4_adaper.forward(x);
-        let x = x.clone() + self.b4_conv_0.forward(x);
-        let x = self.b4_pool.forward(x);
-        
-        let x = x.flatten(1, 3);        
-        
-        // todo: should we always use a dropout layer?
-        let x = self.dropout.forward(x);
-        
-        let x = self.dense0.forward(x);
-        let x = self.dense1.forward(x);
-        let x = self.dense2.forward(x);
-        let x = self.dense3.forward(x);
-        
-        let value_out = self.value_dense.forward(x.clone());
-        let value_out = self.value_out.forward(value_out);
-        let value_out = self.value_activ.forward(value_out);
-
-        let policy_out = self.policy_dense.forward(x.clone());
-        let policy_out = self.policy_out.forward(policy_out);
-        let policy_out = softmax(policy_out, 1);
-        
-        (value_out, policy_out)
+        (RegressionOutput::new(value_loss, value_out, value_target), ClassificationOutput::new(policy_loss, policy_out, policy_target))
     }    
 }
 
