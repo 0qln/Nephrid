@@ -24,12 +24,11 @@ pub mod mode;
 pub mod mcts;
 pub mod target;
 
-#[derive(Default, Debug, Clone)]
-pub struct Search<B: Backend> {
+#[derive(Debug, Clone)]
+pub struct Search {
     pub limit: Limit,
     pub target: Target,
     pub mode: Mode,
-    pub model: Model<B>,
     pub debug: Arc<AtomicBool>,
 }
 
@@ -72,10 +71,10 @@ impl Search {
     pub fn mcts<B: Backend>(
         &self,
         mut pos: Position,
+        tree: &mut mcts::Tree,
         model: &Model<B>,
         ct: CancellationToken,
     ) -> Move {
-        let mut tree = mcts::Tree::new(&pos, &model);
         let mut last_best_move = None;
         
         let time_per_move = self.limit.time_per_move(&pos);
@@ -99,7 +98,7 @@ impl Search {
         last_best_move.expect("search did not complete")
     }
 
-    pub fn go(&self, position: &mut Position, ct: CancellationToken) {
+    pub fn go<B: Backend>(&self, position: &mut Position, tree: &mut mcts::Tree, model: &Model<B>, ct: CancellationToken) {
         match self.mode {
             Mode::Perft => {
                 let nodes = Self::perft(&mut UnsafeCell::new(position.clone()), self.target.depth, ct, |m, c| {
@@ -108,7 +107,7 @@ impl Search {
                 sync::out(&format!("\nNodes searched: {nodes}"));
             }
             Mode::Normal => {
-                let result = self.mcts(position.clone(), &self.model, ct);
+                let result = self.mcts(position.clone(), tree, model, ct);
                 sync::out(&format!("bestmove {result}"));
             }
             _ => unimplemented!(),

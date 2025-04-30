@@ -1,4 +1,6 @@
 use engine::core::move_iter::sliding_piece::magics;
+use engine::core::search::mcts::eval;
+use engine::core::search::mcts::eval::model::ModelConfig;
 use engine::core::{execute_uci, zobrist, Engine};
 use engine::uci::sync::{self, CancellationToken};
 use std::io::stdin;
@@ -10,6 +12,9 @@ fn main() {
     let input_stream = stdin();
     let mut engine = Engine::default();
     let mut cmd_cancellation = CancellationToken::new();
+
+    let device = CudaDevice::new(0);
+    let model = ModelConfig::new().init::<eval::Backend>(&device);
 
     execute_uci(
         &mut engine, 

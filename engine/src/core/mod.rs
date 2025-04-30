@@ -1,4 +1,6 @@
-use search::{Search, limit::Limit, mode::Mode, target::Target};
+use burn::prelude::Backend;
+use burn_cuda::CudaDevice;
+use search::{limit::Limit, mcts::{self, eval::{self, model::{Model, ModelConfig}}}, mode::Mode, target::Target, Search};
 
 use self::r#move::LongAlgebraicUciNotation;
 use crate::uci::{
@@ -43,14 +45,15 @@ pub struct Engine {
     config: Configuration,
     debug: Arc<AtomicBool>,
     position: Position,
+    tree: Option<mcts::Tree>,
     pos_src: String,
 }
 
-pub fn execute_uci(
+pub fn execute_uci<B: Backend>(
     engine: &mut Engine,
     mut command: String,
     cancellation_token: CancellationToken,
-    blocking: bool,
+    model: &Model<B>,
 ) -> Result<(), Box<dyn Error>> {
     trim_newline(&mut command);
     let mut tokenizer = Tokenizer::new(command.as_str());
@@ -115,7 +118,7 @@ pub fn execute_uci(
 
             thread::spawn(move || {
                 let search = Search::new(limit, target, mode, debug);
-                search.go(&mut position, token);
+                search.go(&mut position, engine.tree, model, token);
             });
             Ok(())
         }

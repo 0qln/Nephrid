@@ -15,14 +15,11 @@ fn main() {
     println!("Model: {:#?}", model);
 }
 
-fn self_play(pos: &str, w: &mut Engine, b: &mut Engine) -> Score {
+fn self_play(pos: &str, engine: &mut Engine) -> Score {
     let ct = CancellationToken::new();
 
-    execute_uci(w, "ucinewgame".to_string(), ct);
-    execute_uci(w, format!("position fen {pos}"), ct);
-
-    execute_uci(b, "ucinewgame".to_string(), ct);
-    execute_uci(b, format!("position fen {pos}"), ct);
+    execute_uci(engine, "ucinewgame".to_string(), ct);
+    execute_uci(engine, format!("position fen {pos}"), ct);
 
     let position: Position = pos
         .try_into()

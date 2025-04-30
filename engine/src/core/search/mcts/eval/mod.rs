@@ -1,7 +1,4 @@
-use std::sync::Once;
-
 use burn_cuda::Cuda;
-use model::Model;
 
 pub mod model;
 
