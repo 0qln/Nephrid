@@ -1,4 +1,4 @@
-use burn::{config::Config, module::Module, nn::{conv::{Conv2d, Conv2dConfig}, loss::{CrossEntropyLossConfig, MseLoss, Reduction}, pool::{MaxPool2d, MaxPool2dConfig}, BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, PaddingConfig2d, Relu, Tanh}, prelude::Backend, tensor::{activation::softmax, Int, Tensor}, train::{ClassificationOutput, RegressionOutput}};
+use burn::{config::Config, module::Module, nn::{conv::{Conv2d, Conv2dConfig}, loss::{CrossEntropyLossConfig, MseLoss, Reduction}, pool::{MaxPool2d, MaxPool2dConfig}, BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, PaddingConfig2d, Relu, Tanh}, optim::AdamConfig, prelude::Backend, tensor::{activation::softmax, backend::AutodiffBackend, Int, Tensor}, train::{ClassificationOutput, RegressionOutput, TrainOutput, TrainStep, ValidStep}};
 
 use crate::core::{bitboard::{self, Bitboard}, castling::CastlingSide, color::Color, coordinates::{File, Rank, Square}, piece::{PieceType, PromoPieceType}, position::Position, turn::Turn};
 
@@ -244,16 +244,65 @@ impl<B: Backend> Model<B> {
     /// todo: I believe the policy_target should be a 1D tensor that contains the indeces of the correct targets, but I could be mistaken.
     pub fn forward_with_loss(
         &self, 
-        board_input: Tensor<B, 4>, state_input: Tensor<B, 2>, 
-        value_target: Tensor<B, 2>, policy_target: Tensor<B, 1, Int>
+        board_input: BoardInput<B>, state_input: StateInput<B>, 
+        value_target: ValueTarget<B>, policy_target: PolicyTarget<B>
     ) -> (RegressionOutput<B>, ClassificationOutput<B>) {
         let (value_out, policy_out) = self.forward::<true>(board_input, state_input);
         
         let value_loss = MseLoss::new().forward(value_out.clone(), value_target.clone(), Reduction::Mean);
         let policy_loss = CrossEntropyLossConfig::new().init(&policy_out.device()).forward(policy_out.clone(), policy_target.clone());
+        let weight_loss = 0; //todo
         
+        let total_loss = value_loss.clone() + policy_loss.clone() + weight_loss;
+        //??????????????????????????????????????????????????????????????????????
+
         (RegressionOutput::new(value_loss, value_out, value_target), ClassificationOutput::new(policy_loss, policy_out, policy_target))
     }    
+}
+
+pub type PolicyTarget<B: Backend> = Tensor<B, 1, Int>;
+pub type ValueTarget<B: Backend> = Tensor<B, 2>;
+pub type BoardInput<B: Backend> = Tensor<B, BOARD_INPUT_TENSOR_DIM>;
+pub type StateInput<B: Backend> = Tensor<B, STATE_INPUT_TENSOR_DIM>;
+
+pub struct Batcher {
+
+}
+
+pub struct Batch<B: Backend> {
+    pub board_input: BoardInput<B>, pub state_input: StateInput<B>, 
+    pub value_target: ValueTarget<B>, pub policy_target: PolicyTarget<B>
+}
+
+impl<B: AutodiffBackend> TrainStep<Batch<B>, (RegressionOutput<B>, TrainOutput<ClassificationOutput<B>>)> for Model<B> {
+    fn step(&self, batch: Batch<B>) -> TrainOutput<(RegressionOutput<B>, TrainOutput<ClassificationOutput<B>>)> {
+        let (value_loss, policy_loss) = self.forward_with_loss(batch.board_input, batch.state_input, batch.value_target, batch.policy_target);
+        
+        let value_train = TrainOutput::new(self, value_loss.loss.backward(), value_loss);
+        let policy_loss = TrainOutput::new(self, policy_loss.loss.backward(), policy_loss);
+
+        (value_train, policy_loss)
+    }
+}
+
+impl<B: Backend> ValidStep<Batch<B>, (RegressionOutput<B>, ClassificationOutput<B>)> for Model<B> {
+    fn step(&self, batch: Batch<B>) -> (RegressionOutput<B>, ClassificationOutput<B>) {
+        self.forward_with_loss(batch.board_input, batch.state_input, batch.value_target, batch.policy_target)
+    }
+}
+
+#[derive(Config)]
+pub struct TrainingConfig {
+    pub model: ModelConfig,
+    pub optimizer: AdamConfig,
+    #[config(default = 800)]
+    pub num_epochs: usize,
+    #[config(default = 1)]
+    pub num_workers: usize,
+    #[config(default = 42)]
+    pub seed: u64,
+    #[config(default = 1.0e-4)]
+    pub learning_rate: f64,
 }
 
 
