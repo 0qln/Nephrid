@@ -1,6 +1,15 @@
 use burn_cuda::{Cuda, CudaDevice};
-use engine::core::{
-    color::Color, execute_uci, move_iter::sliding_piece::magics, position::{self, Position}, search::mcts::eval::model::ModelConfig, zobrist, Engine
+use engine::{
+    core::{
+        Engine,
+        color::Color,
+        execute_uci,
+        move_iter::sliding_piece::magics,
+        position::{self, Position},
+        search::mcts::eval::model::ModelConfig,
+        zobrist,
+    },
+    uci::sync::CancellationToken,
 };
 
 fn main() {
@@ -24,11 +33,11 @@ fn self_play(pos: &str, engine: &mut Engine) -> Score {
     let position: Position = pos
         .try_into()
         .expect(format!("Invalid FEN: {pos}").as_str());
-    
+
     loop {
         match position.get_turn() {
             Color::WHITE => execute_uci(w, "go wtime 1000".to_string(), ct),
-            Color::BLACK => execute_uci(b, "go btime 1000".to_string(), ct)
+            Color::BLACK => execute_uci(b, "go btime 1000".to_string(), ct),
         }
     }
 }
