@@ -1,5 +1,5 @@
 let
-  pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/d2ed99647a4b195f0bcc440f76edfa10aeb3b743.tar.gz") {};
+  pkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/f4b140d5b253f5e2a1ff4e5506edbf8267724bde.tar.gz") {};
   overrides = builtins.fromTOML (builtins.readFile ./rust-toolchain.toml);
   libPath = with pkgs;
     lib.makeLibraryPath [
@@ -9,6 +9,7 @@ in
   pkgs.mkShell rec {
     packages = with pkgs; [
       cutechess
+      rust-analyzer
     ];
 
     buildInputs = with pkgs; [
