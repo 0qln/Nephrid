@@ -4,17 +4,17 @@ use crate::{
     core::{
         bitboard::Bitboard,
         coordinates::{CompassRose, Square, TCompassRose},
+        r#move::Move,
         move_iter::{map_captures, map_quiets},
         piece::PieceType,
         position::Position,
-        r#move::Move,
     },
     misc::ConstFrom,
 };
 
 use const_for::const_for;
 
-use super::{is_blocker, FoldMoves, NoDoubleCheck};
+use super::{FoldMoves, NoDoubleCheck, is_blocker};
 
 pub struct Knight;
 
@@ -23,12 +23,12 @@ impl<C: NoDoubleCheck> FoldMoves<C> for Knight {
     fn fold_moves<B, F, R>(pos: &Position, init: B, mut f: F) -> R
     where
         F: FnMut(B, Move) -> R,
-        R: Try<Output = B> 
+        R: Try<Output = B>,
     {
         let color = pos.get_turn();
 
         pos.get_bitboard(PieceType::KNIGHT, color)
-            .filter(|&piece| (!is_blocker(pos, piece)))
+            .filter(|&piece| !is_blocker(pos, piece))
             .map(|piece| {
                 let legal_attacks = lookup_attacks(piece);
                 let legal_quiets = legal_attacks & C::quiets_mask(pos, color);

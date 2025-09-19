@@ -1,5 +1,5 @@
 use itertools::Itertools;
-use rand::{rng, Rng};
+use rand::{Rng, rng};
 use std::assert_matches::assert_matches;
 use std::cmp::Ordering;
 use std::fmt;
@@ -9,7 +9,7 @@ use std::ptr::NonNull;
 use crate::core::r#move::MoveList;
 use crate::core::move_iter::king::King;
 use crate::core::piece::IPieceType;
-use crate::core::{color::Color, move_iter::fold_legal_moves, position::Position, r#move::Move};
+use crate::core::{color::Color, r#move::Move, move_iter::fold_legal_moves, position::Position};
 
 #[cfg(test)]
 mod test;
@@ -49,10 +49,10 @@ impl PlayoutResult {
 pub struct Tree {
     /// Root of the tree.
     root: Node,
-    
+
     /// Stack of nodes that were selected during the selection phase.
     selection_buffer: Vec<NonNull<Node>>,
-    
+
     /// Buffers used during simulation.
     simulation_stack_buffer: Vec<Move>,
     simulation_moves_buffer: MoveList,
@@ -101,11 +101,12 @@ impl Tree {
         );
         self.backpropagate(pos, result);
     }
-    
+
     pub fn selected_leaf(&mut self) -> NonNull<Node> {
-        *self.selection_buffer
-                .last_mut()
-                .expect("This is only None, if root.state == Leaf, which is not the case.")
+        *self
+            .selection_buffer
+            .last_mut()
+            .expect("This is only None, if root.state == Leaf, which is not the case.")
     }
 
     pub fn advance(&mut self, mov: Move) {
@@ -225,13 +226,16 @@ impl fmt::Debug for Node {
 impl Node {
     pub fn root(pos: &Position) -> Self {
         let mut children = Vec::new();
-        fold_legal_moves(pos, &mut children, |acc, m| {
+        let _ = fold_legal_moves(pos, &mut children, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Node::leaf(m));
                 acc
             })
         });
-        assert!(!children.is_empty(), "A root node cannot be a terminal node.");
+        assert!(
+            !children.is_empty(),
+            "A root node cannot be a terminal node."
+        );
 
         Self {
             score: Score::default(),
@@ -292,7 +296,7 @@ impl Node {
 
         loop {
             let mut move_cnt = 0;
-            fold_legal_moves(pos, &mut *moves, |acc, m| {
+            let _ = fold_legal_moves(pos, &mut *moves, |acc, m| {
                 ControlFlow::Continue::<(), _>({
                     acc[move_cnt] = m;
                     move_cnt += 1;
@@ -316,7 +320,7 @@ impl Node {
     fn expand(&mut self, pos: &Position) {
         assert_matches!(self.state, NodeState::Leaf);
 
-        fold_legal_moves(pos, &mut self.children, |acc, m| {
+        let _ = fold_legal_moves(pos, &mut self.children, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Node::leaf(m));
                 acc

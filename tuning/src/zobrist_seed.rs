@@ -43,7 +43,7 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
             // simulate a random game...
             loop {
                 buffer.clear();
-                fold_legal_moves(pos, &mut *buffer, |acc, m| {
+                let _ = fold_legal_moves(pos, &mut *buffer, |acc, m| {
                     ControlFlow::Continue::<(), _>({
                         acc.push(m);
                         acc
