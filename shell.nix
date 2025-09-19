@@ -9,7 +9,6 @@ in
   pkgs.mkShell rec {
     packages = with pkgs; [
       cutechess
-      rust-analyzer
     ];
 
     buildInputs = with pkgs; [
