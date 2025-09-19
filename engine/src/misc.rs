@@ -1,5 +1,6 @@
-use std::{fmt::Debug, num::ParseIntError};
+use std::{fmt::Debug, num::ParseIntError, range::Range};
 
+use terrors::OneOf;
 use thiserror::Error;
 
 #[const_trait]
@@ -7,22 +8,19 @@ pub trait ConstFrom<T> {
     fn from_c(value: T) -> Self;
 }
 
-#[derive(Error, Debug)]
-pub enum ParseError {
-    #[error("Invalid value: {0}")]
-    InputOutOfRange(String),
-
-    #[error("Missing value")]
-    MissingValue,
-
-    #[error("ParseIntError: {0:?}")]
-    ParseIntError(ParseIntError),
+pub struct ValueOutOfRangeError<T> {
+    pub actual_value: T,
+    pub expected_range: Range<T>,
 }
 
-#[derive(Error, Debug)]
-pub enum TokenizationError {
-    #[error("Tokenizer exhaused")]
-    TokenizerExhaused,
+pub struct MissingTokenError {
+    pub token_name: &'static str,
+}
+
+impl MissingTokenError {
+    pub fn new(token_name: &'static str) -> Self {
+        Self { token_name }
+    }
 }
 
 #[macro_export]
