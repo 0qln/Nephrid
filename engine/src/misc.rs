@@ -1,7 +1,4 @@
-use std::{fmt::Debug, num::ParseIntError, range::Range};
-
-use terrors::OneOf;
-use thiserror::Error;
+use std::ops::{Bound, IntoBounds};
 
 #[const_trait]
 pub trait ConstFrom<T> {
@@ -9,8 +6,22 @@ pub trait ConstFrom<T> {
 }
 
 pub struct ValueOutOfRangeError<T> {
-    pub actual_value: T,
-    pub expected_range: Range<T>,
+    pub value: T,
+    pub range: (Bound<T>, Bound<T>),
+}
+
+impl<T> ValueOutOfRangeError<T> {
+    pub fn new<B: IntoBounds<T>>(value: T, range: B) -> Self {
+        Self {
+            value,
+            range: range.into_bounds(),
+        }
+    }
+}
+
+pub struct ValueOutOfSetError<T: 'static> {
+    pub value: T,
+    pub expected: &'static [T],
 }
 
 pub struct MissingTokenError {
