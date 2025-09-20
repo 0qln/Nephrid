@@ -1,11 +1,14 @@
 use crate::{
     core::{
-        bitboard::Bitboard, coordinates::{CompassRose, DiagA1H8, DiagA8H1, Square}, move_iter::bishop, piece::{IPieceType, PieceType}
+        bitboard::Bitboard,
+        coordinates::{CompassRose, DiagA1H8, DiagA8H1, Square},
+        move_iter::bishop,
+        piece::{IPieceType, PieceType},
     },
     misc::ConstFrom,
 };
 
-use super::sliding_piece::{self, magics::MagicGen, SlidingAttacks, SlidingPieceType};
+use super::sliding_piece::{self, SlidingAttacks, SlidingPieceType, magics::MagicGen};
 
 #[cfg(test)]
 mod tests;
@@ -42,7 +45,9 @@ impl SlidingAttacks for Bishop {
     #[allow(static_mut_refs)]
     fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         // Safety: The caller has to assert, that the table is initialized.
-        sliding_piece::magics::bishop_magics().get(sq).get(occupancy)
+        sliding_piece::magics::bishop_magics()
+            .get(sq)
+            .get(occupancy)
     }
 }
 

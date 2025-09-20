@@ -4,7 +4,11 @@ use crate::core::{
     piece::{IPieceType, PieceType},
 };
 
-use super::{bishop::Bishop, rook::Rook, sliding_piece::{SlidingAttacks, SlidingPieceType}};
+use super::{
+    bishop::Bishop,
+    rook::Rook,
+    sliding_piece::{SlidingAttacks, SlidingPieceType},
+};
 
 pub struct Queen;
 

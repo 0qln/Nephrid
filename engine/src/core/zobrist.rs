@@ -1,7 +1,7 @@
 use std::sync::Once;
 use std::{mem, ops};
 
-use rand::{rngs::SmallRng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng, rngs::SmallRng};
 
 use crate::misc::ConstFrom;
 

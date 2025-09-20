@@ -1,7 +1,9 @@
 use std::cell::UnsafeCell;
 
 use crate::{
-    core::{depth::Depth, move_iter::sliding_piece::magics, position::Position, search::Search, zobrist},
+    core::{
+        depth::Depth, move_iter::sliding_piece::magics, position::Position, search::Search, zobrist,
+    },
     uci::{sync::CancellationToken, tokens::Tokenizer},
 };
 fn test_pos(mut fen: Tokenizer, depth: Depth, expected: u64) {

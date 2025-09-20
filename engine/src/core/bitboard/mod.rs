@@ -1,15 +1,18 @@
 use crate::{
     core::{
-        coordinates::{CompassRose, File, Rank, Square},
+        coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks},
         move_iter::{bishop, rook},
     },
     misc::ConstFrom,
 };
-use std::{fmt::Debug, ops::{self, ControlFlow, FromResidual, Try}};
+use std::{
+    fmt::Debug,
+    ops::{self, ControlFlow, FromResidual, Try},
+};
 
 use const_for::const_for;
 
-use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose};
+use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose, squares::*};
 
 #[cfg(test)]
 pub mod tests;
@@ -30,7 +33,11 @@ impl Try for Bitboard {
 
     #[inline(always)]
     fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
-        if self.is_empty() { ControlFlow::Break(self) } else { ControlFlow::Continue(self) }
+        if self.is_empty() {
+            ControlFlow::Break(self)
+        } else {
+            ControlFlow::Continue(self)
+        }
     }
 }
 
@@ -67,16 +74,16 @@ impl Debug for Bitboard {
 }
 
 impl_op!(+ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v + r.v } });
-impl_op!(- |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v - r.v } });
-impl_op!(- |l: Bitboard, r: u64| -> Bitboard { Bitboard { v: l.v - r } });
+impl_op!(-|l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v - r.v } });
+impl_op!(-|l: Bitboard, r: u64| -> Bitboard { Bitboard { v: l.v - r } });
 impl_op!(^ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v ^ r.v } } );
 impl_op!(| |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v | r.v } } );
 impl_op!(| |l: Bitboard, r: usize| -> Bitboard { Bitboard { v: l.v | r as u64 } } );
-impl_op!(& |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v & r.v } });
+impl_op!(&|l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v & r.v } });
 impl_op!(^= |l: &mut Bitboard, r: Bitboard| { l.v ^= r.v } );
 impl_op!(|= |l: &mut Bitboard, r: Bitboard| { l.v |= r.v } );
 impl_op!(&= |l: &mut Bitboard, r: Bitboard| { l.v &= r.v } );
-impl_op!(! |x: Bitboard| -> Bitboard { Bitboard { v: !x.v } });
+impl_op!(!|x: Bitboard| -> Bitboard { Bitboard { v: !x.v } });
 
 impl Iterator for Bitboard {
     type Item = Square;
@@ -180,19 +187,19 @@ impl Bitboard {
             v: self.v & other.v,
         }
     }
-    
+
     pub const fn and_not_c(&self, other: Self) -> Self {
         Self {
             v: self.v & !other.v,
         }
     }
-    
+
     #[inline]
-    const fn rays() -> [[Bitboard; 64]; 64] { 
+    const fn rays() -> [[Bitboard; 64]; 64] {
         static RAYS: [[Bitboard; 64]; 64] = {
             let mut rays = [[Bitboard::empty(); 64]; 64];
-            const_for!(sq1 in Square::A1_C..(Square::H8_C+1) => {
-                const_for!(sq2 in Square::A1_C..(Square::H8_C+1) => {
+            const_for!(sq1 in A1_C..(H8_C+1) => {
+                const_for!(sq2 in A1_C..(H8_C+1) => {
                     // Safety: we are only iterating over valid squares.
                     let sq1 = unsafe { Square::from_v(sq1) };
                     let sq2 = unsafe { Square::from_v(sq2) };
@@ -219,8 +226,8 @@ impl Bitboard {
                     } {
                         rays[sq1.v() as usize][sq2.v() as usize] = Bitboard {
                             v: (
-                                Bitboard::from_c(sq1).v | 
-                                Bitboard::from_c(sq2).v | 
+                                Bitboard::from_c(sq1).v |
+                                Bitboard::from_c(sq2).v |
                                 (sq1_bb.v & sq2_bb.v)
                             )
                         };
@@ -228,7 +235,7 @@ impl Bitboard {
                 });
             });
             rays
-        }; 
+        };
         RAYS
     }
 
@@ -241,20 +248,18 @@ impl Bitboard {
                 .get_unchecked(sq2.v() as usize)
         }
     }
-    
+
     #[inline]
     pub const fn ray_c(sq1: Square, sq2: Square) -> Self {
-        Self::rays()
-            [sq1.v() as usize]
-            [sq2.v() as usize]
+        Self::rays()[sq1.v() as usize][sq2.v() as usize]
     }
 
     #[inline]
     pub fn between(sq1: Square, sq2: Square) -> Self {
         static BETWEEN: [[Bitboard; 64]; 64] = {
             let mut between = [[Bitboard::empty(); 64]; 64];
-            const_for!(sq1 in Square::A1_C..(Square::H8_C+1) => {
-                const_for!(sq2 in Square::A1_C..(Square::H8_C+1) => {
+            const_for!(sq1 in A1_C..(H8_C+1) => {
+                const_for!(sq2 in A1_C..(H8_C+1) => {
                     // Safety: we are only iterating over valid squares.
                     let sq1 = unsafe { Square::from_v(sq1) };
                     let sq2 = unsafe { Square::from_v(sq2) };
@@ -275,8 +280,8 @@ impl Bitboard {
         // Safety: sq1 and sq2 are in range 0..64
         unsafe {
             *BETWEEN
-            .get_unchecked(sq1.v() as usize)
-            .get_unchecked(sq2.v() as usize)
+                .get_unchecked(sq1.v() as usize)
+                .get_unchecked(sq2.v() as usize)
         }
     }
 
@@ -284,20 +289,22 @@ impl Bitboard {
     pub fn pop_cnt(&self) -> u32 {
         self.v.count_ones()
     }
-    
+
     #[inline]
     pub fn pop_cnt_eq_1(&self) -> bool {
         !self.is_empty() && !self.pop_cnt_gt_1()
     }
-    
+
     #[inline]
     pub fn pop_cnt_gt_1(&self) -> bool {
         let this = self.to_owned();
         !(this & (this - 1_u64)).is_empty()
     }
-    
+
     pub const fn edges() -> Self {
-        Self { v: !0x007E7E7E7E7E7E00_u64 }
+        Self {
+            v: !0x007E7E7E7E7E7E00_u64,
+        }
     }
 }
 
@@ -340,29 +347,29 @@ impl const ConstFrom<CompassRose> for Bitboard {
     #[inline]
     fn from_c(dir: CompassRose) -> Self {
         match dir {
-            CompassRose::NORT => Self::full().and_not_c(Self::from_c(Rank::_1)),
-            CompassRose::EAST => Self::full().and_not_c(Self::from_c(File::A)),
-            CompassRose::SOUT => Self::full().and_not_c(Self::from_c(Rank::_8)),
-            CompassRose::WEST => Self::full().and_not_c(Self::from_c(File::H)),
+            NORT => Self::full().and_not_c(Self::from_c(ranks::_1)),
+            EAST => Self::full().and_not_c(Self::from_c(files::A)),
+            SOUT => Self::full().and_not_c(Self::from_c(ranks::_8)),
+            WEST => Self::full().and_not_c(Self::from_c(files::H)),
 
-            CompassRose::NONO => Self::from_c(CompassRose::NORT).and_not_c(Self::from_c(Rank::_2)),
-            CompassRose::EAEA => Self::from_c(CompassRose::EAST).and_not_c(Self::from_c(File::B)),
-            CompassRose::SOSO => Self::from_c(CompassRose::SOUT).and_not_c(Self::from_c(Rank::_7)),
-            CompassRose::WEWE => Self::from_c(CompassRose::WEST).and_not_c(Self::from_c(File::G)),
+            NONO => Self::from_c(NORT).and_not_c(Self::from_c(ranks::_2)),
+            EAEA => Self::from_c(EAST).and_not_c(Self::from_c(files::B)),
+            SOSO => Self::from_c(SOUT).and_not_c(Self::from_c(ranks::_7)),
+            WEWE => Self::from_c(WEST).and_not_c(Self::from_c(files::G)),
 
-            CompassRose::SOWE => Self::from_c(CompassRose::SOUT).and_c(Self::from_c(CompassRose::WEST)),
-            CompassRose::NOWE => Self::from_c(CompassRose::NORT).and_c(Self::from_c(CompassRose::WEST)),
-            CompassRose::SOEA => Self::from_c(CompassRose::SOUT).and_c(Self::from_c(CompassRose::EAST)),
-            CompassRose::NOEA => Self::from_c(CompassRose::NORT).and_c(Self::from_c(CompassRose::EAST)),
+            SOWE => Self::from_c(SOUT).and_c(Self::from_c(WEST)),
+            NOWE => Self::from_c(NORT).and_c(Self::from_c(WEST)),
+            SOEA => Self::from_c(SOUT).and_c(Self::from_c(EAST)),
+            NOEA => Self::from_c(NORT).and_c(Self::from_c(EAST)),
 
-            CompassRose::NONOWE => Self::from_c(CompassRose::NONO).and_c(Self::from_c(CompassRose::WEST)),
-            CompassRose::NONOEA => Self::from_c(CompassRose::NONO).and_c(Self::from_c(CompassRose::EAST)),
-            CompassRose::NOWEWE => Self::from_c(CompassRose::NORT).and_c(Self::from_c(CompassRose::WEWE)),
-            CompassRose::NOEAEA => Self::from_c(CompassRose::NORT).and_c(Self::from_c(CompassRose::EAEA)),
-            CompassRose::SOSOWE => Self::from_c(CompassRose::SOSO).and_c(Self::from_c(CompassRose::WEST)),
-            CompassRose::SOSOEA => Self::from_c(CompassRose::SOSO).and_c(Self::from_c(CompassRose::EAST)),
-            CompassRose::SOWEWE => Self::from_c(CompassRose::SOUT).and_c(Self::from_c(CompassRose::WEWE)),
-            CompassRose::SOEAEA => Self::from_c(CompassRose::SOUT).and_c(Self::from_c(CompassRose::EAEA)),
+            NONOWE => Self::from_c(NONO).and_c(Self::from_c(WEST)),
+            NONOEA => Self::from_c(NONO).and_c(Self::from_c(EAST)),
+            NOWEWE => Self::from_c(NORT).and_c(Self::from_c(WEWE)),
+            NOEAEA => Self::from_c(NORT).and_c(Self::from_c(EAEA)),
+            SOSOWE => Self::from_c(SOSO).and_c(Self::from_c(WEST)),
+            SOSOEA => Self::from_c(SOSO).and_c(Self::from_c(EAST)),
+            SOWEWE => Self::from_c(SOUT).and_c(Self::from_c(WEWE)),
+            SOEAEA => Self::from_c(SOUT).and_c(Self::from_c(EAEA)),
 
             _ => panic!("Invalid compass rose"),
         }

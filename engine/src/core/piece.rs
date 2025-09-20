@@ -1,7 +1,11 @@
 use core::fmt;
 use std::fmt::{Debug, Display};
 
-use crate::{core::color::Color, impl_variants, misc::{ConstFrom, ParseError}};
+use crate::{
+    core::color::Color,
+    impl_variants,
+    misc::{ConstFrom, ParseError},
+};
 
 use super::r#move::MoveFlag;
 
@@ -13,21 +17,21 @@ pub type TPieceType = u8;
 
 #[derive(Copy, Clone, Default, PartialEq, PartialOrd)]
 pub struct PieceType {
-    v: TPieceType
+    v: TPieceType,
 }
 
 impl_variants! {
-    TPieceType as PieceType {
+    TPieceType as PieceType in piece_type {
         NONE,
         PAWN,
         KNIGHT,
         BISHOP,
         ROOK,
         QUEEN,
-        KING,    
+        KING,
     }
 }
-    
+
 impl fmt::Debug for PieceType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PieceType")
@@ -45,14 +49,13 @@ impl fmt::Display for PieceType {
 impl PieceType {
     #[inline]
     pub const fn is_promo(&self) -> bool {
-        self.v >= Self::KNIGHT.v && 
-        self.v <= Self::QUEEN.v
+        self.v >= Self::KNIGHT.v && self.v <= Self::QUEEN.v
     }
 }
 
 impl TryFrom<char> for PieceType {
     type Error = ParseError;
-    
+
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'p' => Ok(PieceType::PAWN),
@@ -77,26 +80,25 @@ impl From<PieceType> for char {
             PieceType::QUEEN => 'q',
             PieceType::KING => 'k',
             PieceType::NONE => '.',
-            _ => unreachable!("Invalid program state.")
+            _ => unreachable!("Invalid program state."),
         }
     }
 }
 
-
 #[derive(Copy, Clone, Default, Debug, PartialEq)]
 pub struct PromoPieceType {
-    v: PieceType
+    v: PieceType,
 }
 
 impl_variants! {
-    PieceType as PromoPieceType {
+    PieceType as PromoPieceType in promo_piece_type {
         KNIGHT = PieceType::KNIGHT,
         BISHOP = PieceType::BISHOP,
         ROOK = PieceType::ROOK,
         QUEEN = PieceType::QUEEN,
     }
 }
-    
+
 impl fmt::Display for PromoPieceType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.v, f)
@@ -105,7 +107,7 @@ impl fmt::Display for PromoPieceType {
 
 impl TryFrom<char> for PromoPieceType {
     type Error = ParseError;
-    
+
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'n' => Ok(PromoPieceType::KNIGHT),
@@ -123,37 +125,35 @@ impl TryFrom<MoveFlag> for PromoPieceType {
     fn try_from(flag: MoveFlag) -> Result<Self, Self::Error> {
         if !flag.is_promo() {
             Err(ParseError::InputOutOfRange(format!("{flag:?}")))?
-        }
-        else {
-            let pt = PieceType { v: (flag.v() - 2) % 4 + 2 };
+        } else {
+            let pt = PieceType {
+                v: (flag.v() - 2) % 4 + 2,
+            };
             Ok(PromoPieceType { v: pt })
         }
     }
 }
 
-
 pub type TPiece = u8;
-      
+
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
-pub struct Piece { v: TPiece }
+pub struct Piece {
+    v: TPiece,
+}
 
 impl Piece {
     #[inline]
     pub const fn piece_type(&self) -> PieceType {
         // Safety: Piece cannot be constructed from unchecked value.
-        unsafe {
-            PieceType::from_v(self.v >> 1)
-        }
+        unsafe { PieceType::from_v(self.v >> 1) }
     }
-    
+
     #[inline]
     pub const fn color(&self) -> Color {
         // Safety: One bit can only ever contain Color::WHITE or Color::BLACK
-        unsafe {
-            Color::from_v(self.v & 1)
-        }
+        unsafe { Color::from_v(self.v & 1) }
     }
-    
+
     pub const fn v(&self) -> TPiece {
         self.v
     }
@@ -162,14 +162,18 @@ impl Piece {
 impl const ConstFrom<(Color, PieceType)> for Piece {
     #[inline]
     fn from_c((color, piece_type): (Color, PieceType)) -> Self {
-        Piece { v: color.v() | (piece_type.v() << 1) }
+        Piece {
+            v: color.v() | (piece_type.v() << 1),
+        }
     }
 }
 
 impl const ConstFrom<(Color, PromoPieceType)> for Piece {
     #[inline]
     fn from_c((color, piece_type): (Color, PromoPieceType)) -> Self {
-        Piece { v: color.v() | (piece_type.v().v() << 1) }
+        Piece {
+            v: color.v() | (piece_type.v().v() << 1),
+        }
     }
 }
 
@@ -178,7 +182,11 @@ impl TryFrom<char> for Piece {
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         let piece_type = PieceType::try_from(value.to_lowercase().next().unwrap())?;
-        let color = if value.is_uppercase() { Color::WHITE } else { Color::BLACK };
+        let color = if value.is_uppercase() {
+            Color::WHITE
+        } else {
+            Color::BLACK
+        };
         Ok(Self::from_c((color, piece_type)))
     }
 }
@@ -192,7 +200,7 @@ impl From<Piece> for char {
         result
     }
 }
-    
+
 impl fmt::Debug for Piece {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Piece")

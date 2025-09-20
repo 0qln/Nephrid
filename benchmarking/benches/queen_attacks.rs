@@ -1,9 +1,9 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use engine::core::bitboard::Bitboard;
 use engine::core::coordinates::Square;
 use engine::core::move_iter::queen::Queen;
-use engine::core::move_iter::sliding_piece::magics;
 use engine::core::move_iter::sliding_piece::SlidingAttacks;
+use engine::core::move_iter::sliding_piece::magics;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let queen = Square::E4;

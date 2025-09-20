@@ -1,12 +1,21 @@
 use std::ops::ControlFlow;
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use engine::{core::{
-    color::Color, coordinates::Square, r#move::Move, move_iter::{
-        pawn::{lookup_attacks, Pawn},
-        sliding_piece::magics, FoldMoves, NoCheck,
-    }, position::Position, zobrist
-}, uci::tokens::Tokenizer};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use engine::{
+    core::{
+        color::Color,
+        coordinates::Square,
+        r#move::Move,
+        move_iter::{
+            FoldMoves, NoCheck,
+            pawn::{Pawn, lookup_attacks},
+            sliding_piece::magics,
+        },
+        position::Position,
+        zobrist,
+    },
+    uci::tokens::Tokenizer,
+};
 
 pub fn pawn_attacks(c: &mut Criterion) {
     let pawn = Square::E4;
@@ -23,9 +32,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
     magics::init();
     zobrist::init();
 
-    let inputs = [
-        "K4n1n/6P1/k7/1p1pP3/2P5/8/5P2/8 w - d6 0 1",
-    ];
+    let inputs = ["K4n1n/6P1/k7/1p1pP3/2P5/8/5P2/8 w - d6 0 1"];
 
     for &input in &mut inputs.iter() {
         let mut fen = Tokenizer::new(input);

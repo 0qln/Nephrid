@@ -1,6 +1,8 @@
 use std::iter::{Enumerate, Peekable};
 use std::str::Chars;
 
+use thiserror::Error;
+
 pub struct Tokenizer<'a> {
     src: &'a str,
     seq: Peekable<Enumerate<Chars<'a>>>,
@@ -36,11 +38,11 @@ impl<'a> Tokenizer<'a> {
     pub fn chars(&mut self) -> CharIterator<'_, 'a> {
         CharIterator(self)
     }
-    
+
     pub fn next_char_with_index(&mut self) -> Option<(usize, char)> {
         self.seq.next_if(|&c| !c.1.is_whitespace())
     }
-    
+
     pub fn chars_with_index(&mut self) -> CharsWithIndexIterator<'_, 'a> {
         CharsWithIndexIterator(self)
     }

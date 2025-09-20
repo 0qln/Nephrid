@@ -1,6 +1,14 @@
+use castling_side::*;
 use core::fmt;
 
-use crate::{core::color::Color, impl_variants, misc::ParseError, uci::tokens::Tokenizer};
+use terrors::OneOf;
+
+use crate::{
+    core::color::Color,
+    impl_variants,
+    misc::{ValueOutOfRangeError, ValueOutOfSetError},
+    uci::tokens::Tokenizer,
+};
 
 use super::{coordinates::File, piece::PieceType};
 
@@ -11,21 +19,27 @@ pub struct CastlingSide {
     v: TCastlingSide,
 }
 
-impl_variants! {
-    TCastlingSide as CastlingSide {
-        KING_SIDE = PieceType::KING.v(),
-        QUEEN_SIDE = PieceType::QUEEN.v(),
+pub mod castling_side {
+    use super::*;
+    impl_variants! {
+        TCastlingSide as CastlingSide {
+            KING_SIDE = PieceType::KING.v(),
+            QUEEN_SIDE = PieceType::QUEEN.v(),
+        }
     }
 }
 
 impl TryFrom<File> for CastlingSide {
-    type Error = ParseError;
+    type Error = OneOf<(ValueOutOfSetError<File>,)>;
 
     fn try_from(value: File) -> Result<Self, Self::Error> {
         match value {
-            File::G => Ok(CastlingSide::KING_SIDE),
-            File::C => Ok(CastlingSide::QUEEN_SIDE),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
+            File::G => Ok(KING_SIDE),
+            File::C => Ok(QUEEN_SIDE),
+            x => Err(OneOf::new(ValueOutOfSetError {
+                actual_value: x,
+                expected_values: &[File::G, File::C],
+            })),
         }
     }
 }
@@ -36,18 +50,23 @@ pub struct CastlingRights {
 }
 
 impl TryFrom<&mut Tokenizer<'_>> for CastlingRights {
-    type Error = ParseError;
+    type Error = OneOf<(ValueOutOfSetError<char>,)>;
 
     fn try_from(value: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let mut result = CastlingRights::empty();
         for c in value.skip_ws().chars() {
             match c {
-                'K' => result.set_true(CastlingSide::KING_SIDE, Color::WHITE),
-                'Q' => result.set_true(CastlingSide::QUEEN_SIDE, Color::WHITE),
-                'k' => result.set_true(CastlingSide::KING_SIDE, Color::BLACK),
-                'q' => result.set_true(CastlingSide::QUEEN_SIDE, Color::BLACK),
+                'K' => result.set_true(KING_SIDE, Color::WHITE),
+                'Q' => result.set_true(QUEEN_SIDE, Color::WHITE),
+                'k' => result.set_true(KING_SIDE, Color::BLACK),
+                'q' => result.set_true(QUEEN_SIDE, Color::BLACK),
                 '-' => return Ok(result),
-                x => return Err(ParseError::InputOutOfRange(x.to_string())),
+                x => {
+                    return Err(OneOf::new(ValueOutOfSetError {
+                        actual_value: x,
+                        expected_values: &['K', 'Q', 'k', 'q', '-'],
+                    }));
+                }
             }
         }
         Ok(result)
@@ -62,22 +81,22 @@ impl fmt::Display for CastlingRights {
         write!(
             f,
             "{}{}{}{}",
-            if self.is_true(CastlingSide::KING_SIDE, Color::WHITE) {
+            if self.is_true(KING_SIDE, Color::WHITE) {
                 "K"
             } else {
                 ""
             },
-            if self.is_true(CastlingSide::QUEEN_SIDE, Color::WHITE) {
+            if self.is_true(QUEEN_SIDE, Color::WHITE) {
                 "Q"
             } else {
                 ""
             },
-            if self.is_true(CastlingSide::KING_SIDE, Color::BLACK) {
+            if self.is_true(KING_SIDE, Color::BLACK) {
                 "k"
             } else {
                 ""
             },
-            if self.is_true(CastlingSide::QUEEN_SIDE, Color::BLACK) {
+            if self.is_true(QUEEN_SIDE, Color::BLACK) {
                 "q"
             } else {
                 ""

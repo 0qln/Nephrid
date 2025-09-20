@@ -1,8 +1,15 @@
 use crate::{
     core::{
-        color::Color, coordinates::Square, r#move::MoveFlag, move_iter::sliding_piece::magics, piece::{Piece, PieceType}, position::Position, search::mcts::{NodeState, Tree}
+        color::Color,
+        coordinates::Square,
+        r#move::MoveFlag,
+        move_iter::sliding_piece::magics,
+        piece::{Piece, PieceType},
+        position::Position,
+        search::mcts::{NodeState, Tree},
     },
-    misc::ConstFrom, uci::tokens::Tokenizer,
+    misc::ConstFrom,
+    uci::tokens::Tokenizer,
 };
 
 #[test]
@@ -15,11 +22,12 @@ fn initialization() {
 
     assert_eq!(tree.root.state, NodeState::Branch);
     assert!(!tree.root.children.is_empty());
-    assert!(tree
-        .root
-        .children
-        .iter()
-        .all(|c| c.state == NodeState::Leaf));
+    assert!(
+        tree.root
+            .children
+            .iter()
+            .all(|c| c.state == NodeState::Leaf)
+    );
 }
 
 #[test]
@@ -120,7 +128,8 @@ fn traverses_multiple_branch_nodes() {
     magics::init();
 
     // Setup deep tree with known structure
-    let mut fen = Tokenizer::new("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+    let mut fen =
+        Tokenizer::new("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
     let mut pos = Position::try_from(&mut fen).unwrap();
     let mut tree = Tree::new(&pos);
 

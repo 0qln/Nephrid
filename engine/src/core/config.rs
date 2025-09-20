@@ -14,7 +14,7 @@ pub enum ConfigOptionType {
     Combo {
         default: String,
         options: ComboOptions,
-        value: String
+        value: String,
     },
     Button {
         callback: Box<fn()>,
@@ -33,7 +33,7 @@ impl Default for StringType {
 
 impl From<&str> for StringType {
     fn from(value: &str) -> Self {
-        StringType(value.to_string())    
+        StringType(value.to_string())
     }
 }
 
@@ -54,19 +54,23 @@ impl fmt::Display for ConfigOptionType {
         match self {
             ConfigOptionType::Check { default, .. } => {
                 write!(f, "check default {default}")
-            },
-            ConfigOptionType::Spin { default, min, max, .. } => {
+            }
+            ConfigOptionType::Spin {
+                default, min, max, ..
+            } => {
                 write!(f, "spin default {default} min {min} max {max}")
-            },
-            ConfigOptionType::Combo { default, options, .. } => {
+            }
+            ConfigOptionType::Combo {
+                default, options, ..
+            } => {
                 write!(f, "combo default {default} {options}")
-            },
+            }
             ConfigOptionType::Button { callback: _ } => {
                 write!(f, "button")
-            },
+            }
             ConfigOptionType::String(string_type) => {
                 write!(f, "string default {}", string_type.0)
-            },
+            }
         }
     }
 }
@@ -88,7 +92,7 @@ impl Configuration {
     pub fn find(&self, name: &str) -> Option<&ConfigOption> {
         self.0.iter().find(|opt| opt.cfg_name == name)
     }
-    
+
     pub fn find_mut(&mut self, name: &str) -> Option<&mut ConfigOption> {
         self.0.iter_mut().find(|opt| opt.cfg_name == name)
     }
@@ -125,9 +129,6 @@ impl Default for Configuration {
     }
 }
 
-
 pub fn clear_hash() {
     todo!("clear hash");
 }
-
-

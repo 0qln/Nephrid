@@ -27,17 +27,17 @@ impl Limit {
             movetime: u64::MAX,
         }
     }
-    
+
     pub fn time_per_move(&self, pos: &Position) -> Duration {
         let time = match pos.get_turn() {
             Color::WHITE => self.wtime,
             Color::BLACK => self.btime,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
         let inc = match pos.get_turn() {
             Color::WHITE => self.winc,
             Color::BLACK => self.binc,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         Duration::from_millis(time / 50 + inc)

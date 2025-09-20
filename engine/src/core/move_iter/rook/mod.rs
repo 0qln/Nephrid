@@ -1,11 +1,14 @@
 use crate::{
     core::{
-        bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}, move_iter::rook, piece::{IPieceType, PieceType}
+        bitboard::Bitboard,
+        coordinates::{CompassRose, File, Rank, Square},
+        move_iter::rook,
+        piece::{IPieceType, PieceType},
     },
     misc::ConstFrom,
 };
 
-use super::sliding_piece::{self, magics::MagicGen, SlidingAttacks, SlidingPieceType};
+use super::sliding_piece::{self, SlidingAttacks, SlidingPieceType, magics::MagicGen};
 
 #[cfg(test)]
 mod tests;

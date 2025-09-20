@@ -1,25 +1,40 @@
 use core::fmt;
 use std::ops;
 
-use crate::{impl_variants_with_assertion, misc::ParseError, uci::tokens::Tokenizer};
+use crate::{mk_variant_assert, mk_variant_utils, mk_variants, uci::tokens::Tokenizer};
 
 #[derive(PartialEq, Eq, Copy, Clone, Default)]
-pub struct Color { v: TColor }
+pub struct Color {
+    v: TColor,
+}
 
 pub type TColor = u8;
 
-impl_variants_with_assertion! { 
-    TColor as Color {
-        WHITE,
-        BLACK,
-    } 
+pub mod colors {
+    use super::*;
+    mk_variants! {
+        TColor as Color {
+            WHITE,
+            BLACK,
+        }
+    }
+
+    /// Assert that `v` is a valid variant.
+    pub const fn debug_assert_variant(v: TColor) {
+        debug_assert!(
+            false || v == WHITE.v || v == BLACK.v,
+            "v is not a valid variant."
+        );
+    }
 }
 
-impl_op!(! | c: Color | -> Color { Color { v: c.v ^ 1 } });
+mk_variant_utils! {TColor as Color}
+
+impl_op!(!|c: Color| -> Color { Color { v: c.v ^ 1 } });
 
 impl TryFrom<char> for Color {
     type Error = ParseError;
-    
+
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'w' => Ok(Color::WHITE),
@@ -45,11 +60,11 @@ impl From<Color> for char {
         match val {
             Color::WHITE => 'w',
             Color::BLACK => 'b',
-            _ => unreachable!("Invalid program state.")
+            _ => unreachable!("Invalid program state."),
         }
     }
 }
-    
+
 impl fmt::Debug for Color {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Color")

@@ -1,7 +1,7 @@
 use core::fmt;
 use std::fmt::Display;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::core::{bitboard::Bitboard, coordinates::Square};
 
 pub fn pop_cnt(c: &mut Criterion) {
@@ -70,9 +70,5 @@ impl<T: Display> fmt::Display for Pair<T> {
     }
 }
 
-criterion_group!(benches, 
-    pop_cnt,
-    between,
-    ray,
-);
+criterion_group!(benches, pop_cnt, between, ray,);
 criterion_main!(benches);

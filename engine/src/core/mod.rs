@@ -15,7 +15,8 @@ use crate::{
     misc::trim_newline,
 };
 use std::{
-    error::Error, process,
+    error::Error,
+    process,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -120,8 +121,9 @@ pub fn execute_uci(
         }
         Some("position") => {
             if command.len() > engine.pos_src.len()
-            && !engine.pos_src.is_empty()
-            && command[..engine.pos_src.len()] == engine.pos_src {
+                && !engine.pos_src.is_empty()
+                && command[..engine.pos_src.len()] == engine.pos_src
+            {
                 let new_moves = &command[engine.pos_src.len()..];
                 for tok in Tokenizer::new(new_moves).tokens() {
                     if tok == "moves" {
@@ -132,19 +134,17 @@ pub fn execute_uci(
                     engine.position.make_move(Move::try_from(mov)?);
                 }
                 engine.pos_src = command;
-                return {
-                    Ok(())
-                };
+                return { Ok(()) };
             }
             match tokenizer.next_token() {
                 Some("fen") => engine.position = Position::try_from(&mut tokenizer)?,
                 Some("startpos") => engine.position = Position::start_position(),
                 None => return Err(UciError::MissingArgument("value").into()),
                 Some(x) => {
-                    return Err(UciError::InvalidValue(x.to_string(), vec![
-                        "fen".to_string(),
-                        "startpos".to_string(),
-                    ])
+                    return Err(UciError::InvalidValue(
+                        x.to_string(),
+                        vec!["fen".to_string(), "startpos".to_string()],
+                    )
                     .into());
                 }
             };
@@ -245,16 +245,16 @@ pub fn execute_uci(
         Some("ucinewgame") => {
             engine.pos_src = "".to_string();
             Ok(())
-        },
+        }
         Some("debug") => {
             let debug = match tokenizer.next_token() {
                 Some("on") => true,
                 Some("off") => false,
                 Some(x) => {
-                    return Err(UciError::InvalidValue(x.to_string(), vec![
-                        "on".to_string(),
-                        "off".to_string(),
-                    ])
+                    return Err(UciError::InvalidValue(
+                        x.to_string(),
+                        vec!["on".to_string(), "off".to_string()],
+                    )
                     .into());
                 }
                 None => return Err(UciError::MissingArgument("value").into()),
@@ -265,7 +265,7 @@ pub fn execute_uci(
         Some("isready") => {
             sync::out("readyok");
             Ok(())
-        },
+        }
         Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
         None => Ok(()),
     }

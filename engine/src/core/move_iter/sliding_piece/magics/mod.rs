@@ -1,7 +1,7 @@
 use std::{iter::once, mem, sync::Once};
 
 use itertools::Itertools;
-use rand::{rngs::SmallRng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng, rngs::SmallRng};
 
 use crate::core::{
     bitboard::Bitboard,
@@ -72,7 +72,7 @@ impl MagicInfo {
         let key = relevant_occ.v.wrapping_mul(self.magic) >> self.shift;
         key as usize
     }
-    
+
     pub fn cost(&self) -> u32 {
         self.init_cost
     }
