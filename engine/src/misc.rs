@@ -24,6 +24,12 @@ pub struct ValueOutOfSetError<T: 'static> {
     pub expected: &'static [T],
 }
 
+impl<T: 'static> ValueOutOfSetError<T> {
+    pub fn new(value: T, set: &'static [T]) -> Self {
+        Self { value, expected: set }
+    }
+}
+
 pub struct MissingTokenError {
     pub token_name: &'static str,
 }
@@ -36,14 +42,17 @@ impl MissingTokenError {
 
 #[macro_export]
 macro_rules! impl_variants_with_assertion {
-    ($inner_type:ident as $type:ident { $($name:ident),* $(,)? }) => {
+    ($inner_type:ident as $type:ident in $mod:ident { $($name:ident),* $(,)? }) => {
         paste::paste! {
-            impl $type {
+            pub mod $mod {
+                use super::*;
                 $(
                     pub const $name: $type = $type { v: ${index()} };
-                    pub const [<$name _C>]: $inner_type = Self::$name.v();
+                    pub const [<$name _C>]: $inner_type = self::$name.v();
                 )*
+            }
 
+            impl $type {
                 /// Get the value of the variant.
                 #[inline]
                 pub const fn v(&self) -> $inner_type {
@@ -76,14 +85,17 @@ macro_rules! impl_variants_with_assertion {
 #[macro_export]
 macro_rules! impl_variants {
     // Case where values are specified
-    ($inner_type:ident as $type:ident { $($name:ident = $value:expr),* $(,)? }) => {
+    ($inner_type:ident as $type:ident in $mod:ident { $($name:ident = $value:expr),* $(,)? }) => {
         paste::paste! {
-            impl $type {
+            pub mod $mod {
+                use super::*;
                 $(
                     pub const $name: $type = $type { v: $value };
-                    pub const [<$name _C>]: $inner_type = Self::$name.v();
+                    pub const [<$name _C>]: $inner_type = self::$name.v();
                 )*
+            }
 
+            impl $type {
                 /// Get the value of the variant.
                 #[inline]
                 pub const fn v(&self) -> $inner_type {
@@ -103,14 +115,17 @@ macro_rules! impl_variants {
         }
     };
     // Case where values are not specified
-    ($inner_type:ident as $type:ident { $($name:ident),* $(,)? }) => {
+    ($inner_type:ident as $type:ident in $mod:ident { $($name:ident),* $(,)? }) => {
         paste::paste! {
-            impl $type {
+             pub mod $mod {
+                use super::*;
                 $(
                     pub const $name: $type = $type { v: ${index()} };
-                    pub const [<$name _C>]: $inner_type = Self::$name.v();
+                    pub const [<$name _C>]: $inner_type = self::$name.v();
                 )*
+            }
 
+            impl $type {
                 /// Get the value of the variant.
                 #[inline]
                 pub const fn v(&self) -> $inner_type {
