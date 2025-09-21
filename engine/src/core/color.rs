@@ -33,7 +33,7 @@ impl TryFrom<char> for Color {
         match value {
             'w' => Ok(WHITE),
             'b' => Ok(BLACK),
-            x => Err(OneOf::new(ValueOutOfSetError::new(x, &['w', 'b']))),
+            x => Err(ValueOutOfSetError::new(x, &['w', 'b']).into()),
         }
     }
 }
@@ -44,7 +44,7 @@ impl TryFrom<&mut Tokenizer<'_>> for Color {
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         match fen.skip_ws().next_char() {
             Some(c) => Color::try_from(c).map_err(OneOf::broaden),
-            None => Err(OneOf::new(MissingTokenError::new("Color"))),
+            None => Err(MissingTokenError::new("Color").into()),
         }
     }
 }

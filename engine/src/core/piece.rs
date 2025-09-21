@@ -1,10 +1,12 @@
 use core::fmt;
 use std::fmt::{Debug, Display};
 
+use terrors::OneOf;
+
 use crate::{
     core::color::Color,
     impl_variants,
-    misc::{ConstFrom, ParseError},
+    misc::{ConstFrom, InvalidValueError, ValueOutOfSetError},
 };
 
 use super::r#move::MoveFlag;
@@ -49,37 +51,39 @@ impl fmt::Display for PieceType {
 impl PieceType {
     #[inline]
     pub const fn is_promo(&self) -> bool {
-        self.v >= Self::KNIGHT.v && self.v <= Self::QUEEN.v
+        self.v >= piece_type::KNIGHT.v && self.v <= piece_type::QUEEN.v
     }
 }
 
 impl TryFrom<char> for PieceType {
-    type Error = ParseError;
+    type Error = OneOf<(ValueOutOfSetError<char>,)>;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
+        use piece_type::*;
         match value {
-            'p' => Ok(PieceType::PAWN),
-            'n' => Ok(PieceType::KNIGHT),
-            'b' => Ok(PieceType::BISHOP),
-            'r' => Ok(PieceType::ROOK),
-            'q' => Ok(PieceType::QUEEN),
-            'k' => Ok(PieceType::KING),
-            '.' => Ok(PieceType::NONE),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
+            'p' => Ok(PAWN),
+            'n' => Ok(KNIGHT),
+            'b' => Ok(BISHOP),
+            'r' => Ok(ROOK),
+            'q' => Ok(QUEEN),
+            'k' => Ok(KING),
+            '.' => Ok(NONE),
+            x => Err(ValueOutOfSetError::new(x, &['p', 'n', 'n', 'r', 'q', '.']).into()),
         }
     }
 }
 
 impl From<PieceType> for char {
     fn from(val: PieceType) -> Self {
+        use piece_type::*;
         match val {
-            PieceType::PAWN => 'p',
-            PieceType::KNIGHT => 'n',
-            PieceType::BISHOP => 'b',
-            PieceType::ROOK => 'r',
-            PieceType::QUEEN => 'q',
-            PieceType::KING => 'k',
-            PieceType::NONE => '.',
+            PAWN => 'p',
+            KNIGHT => 'n',
+            BISHOP => 'b',
+            ROOK => 'r',
+            QUEEN => 'q',
+            KING => 'k',
+            NONE => '.',
             _ => unreachable!("Invalid program state."),
         }
     }
@@ -92,10 +96,10 @@ pub struct PromoPieceType {
 
 impl_variants! {
     PieceType as PromoPieceType in promo_piece_type {
-        KNIGHT = PieceType::KNIGHT,
-        BISHOP = PieceType::BISHOP,
-        ROOK = PieceType::ROOK,
-        QUEEN = PieceType::QUEEN,
+        KNIGHT = piece_type::KNIGHT,
+        BISHOP = piece_type::BISHOP,
+        ROOK = piece_type::ROOK,
+        QUEEN = piece_type::QUEEN,
     }
 }
 
@@ -106,29 +110,28 @@ impl fmt::Display for PromoPieceType {
 }
 
 impl TryFrom<char> for PromoPieceType {
-    type Error = ParseError;
+    type Error = OneOf<(ValueOutOfSetError<char>,)>;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
+        use promo_piece_type::*;
         match value {
-            'n' => Ok(PromoPieceType::KNIGHT),
-            'b' => Ok(PromoPieceType::BISHOP),
-            'r' => Ok(PromoPieceType::ROOK),
-            'q' => Ok(PromoPieceType::QUEEN),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
+            'n' => Ok(KNIGHT),
+            'b' => Ok(BISHOP),
+            'r' => Ok(ROOK),
+            'q' => Ok(QUEEN),
+            x => Err(ValueOutOfSetError::new(x, &['n', 'b', 'r', 'q']).into()),
         }
     }
 }
 
 impl TryFrom<MoveFlag> for PromoPieceType {
-    type Error = ParseError;
+    type Error = OneOf<(InvalidValueError<MoveFlag>,)>;
 
     fn try_from(flag: MoveFlag) -> Result<Self, Self::Error> {
         if !flag.is_promo() {
-            Err(ParseError::InputOutOfRange(format!("{flag:?}")))?
+            Err(InvalidValueError::new(flag).into())
         } else {
-            let pt = PieceType {
-                v: (flag.v() - 2) % 4 + 2,
-            };
+            let pt = PieceType { v: (flag.v() - 2) % 4 + 2 };
             Ok(PromoPieceType { v: pt })
         }
     }

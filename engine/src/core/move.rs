@@ -1,14 +1,17 @@
 use core::fmt;
+use move_flags as f;
 use std::ops::{Index, IndexMut};
+use terrors::OneOf;
 
 use crate::{
     core::{
+        castling::castling_side,
         coordinates::{File, Square},
-        piece::PieceType,
+        piece::{piece_type, PieceType},
         position::Position,
     },
     impl_variants,
-    misc::{ConstFrom, ParseError},
+    misc::{ConstFrom, MissingTokenError, ValueOutOfRangeError},
     uci::tokens::Tokenizer,
 };
 
@@ -61,20 +64,20 @@ impl_variants! {
 impl fmt::Debug for MoveFlag {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let variant = match *self {
-            MoveFlag::QUIET => "QUIET",
-            MoveFlag::DOUBLE_PAWN_PUSH => "DOUBLE_PAWN_PUSH",
-            MoveFlag::PROMOTION_KNIGHT => "PROMOTION_KNIGHT",
-            MoveFlag::PROMOTION_BISHOP => "PROMOTION_BISHOP",
-            MoveFlag::PROMOTION_ROOK => "PROMOTION_ROOK",
-            MoveFlag::PROMOTION_QUEEN => "PROMOTION_QUEEN",
-            MoveFlag::CAPTURE_PROMOTION_KNIGHT => "CAPTURE_PROMOTION_KNIGHT",
-            MoveFlag::CAPTURE_PROMOTION_BISHOP => "CAPTURE_PROMOTION_BISHOP",
-            MoveFlag::CAPTURE_PROMOTION_ROOK => "CAPTURE_PROMOTION_ROOK",
-            MoveFlag::CAPTURE_PROMOTION_QUEEN => "CAPTURE_PROMOTION_QUEEN",
-            MoveFlag::KING_CASTLE => "KING_CASTLE",
-            MoveFlag::QUEEN_CASTLE => "QUEEN_CASTLE",
-            MoveFlag::CAPTURE => "CAPTURE",
-            MoveFlag::EN_PASSANT => "EN_PASSANT",
+            f::QUIET => "QUIET",
+            f::DOUBLE_PAWN_PUSH => "DOUBLE_PAWN_PUSH",
+            f::PROMOTION_KNIGHT => "PROMOTION_KNIGHT",
+            f::PROMOTION_BISHOP => "PROMOTION_BISHOP",
+            f::PROMOTION_ROOK => "PROMOTION_ROOK",
+            f::PROMOTION_QUEEN => "PROMOTION_QUEEN",
+            f::CAPTURE_PROMOTION_KNIGHT => "CAPTURE_PROMOTION_KNIGHT",
+            f::CAPTURE_PROMOTION_BISHOP => "CAPTURE_PROMOTION_BISHOP",
+            f::CAPTURE_PROMOTION_ROOK => "CAPTURE_PROMOTION_ROOK",
+            f::CAPTURE_PROMOTION_QUEEN => "CAPTURE_PROMOTION_QUEEN",
+            f::KING_CASTLE => "KING_CASTLE",
+            f::QUEEN_CASTLE => "QUEEN_CASTLE",
+            f::CAPTURE => "CAPTURE",
+            f::EN_PASSANT => "EN_PASSANT",
             _ => unreachable!(),
         };
         f.debug_struct("MoveFlag").field("v", &variant).finish()
@@ -84,15 +87,14 @@ impl fmt::Debug for MoveFlag {
 impl MoveFlag {
     #[inline]
     pub const fn is_capture(&self) -> bool {
-        self.v == Self::CAPTURE.v
-            || self.v == Self::EN_PASSANT.v
-            || self.v >= Self::CAPTURE_PROMOTION_KNIGHT.v
-                && self.v <= Self::CAPTURE_PROMOTION_QUEEN.v
+        self.v == f::CAPTURE.v
+            || self.v == f::EN_PASSANT.v
+            || (self.v >= f::CAPTURE_PROMOTION_KNIGHT.v && self.v <= f::CAPTURE_PROMOTION_QUEEN.v)
     }
 
     #[inline]
     pub const fn is_promo(&self) -> bool {
-        self.v >= Self::PROMOTION_KNIGHT.v && self.v <= Self::CAPTURE_PROMOTION_QUEEN.v
+        self.v >= f::PROMOTION_KNIGHT.v && self.v <= f::CAPTURE_PROMOTION_QUEEN.v
     }
 }
 
@@ -107,13 +109,13 @@ impl From<(PromoPieceType, bool)> for MoveFlag {
 }
 
 impl TryFrom<TMoveFlag> for MoveFlag {
-    type Error = ParseError;
+    type Error = OneOf<(ValueOutOfRangeError<TMoveFlag>,)>;
 
     #[inline]
     fn try_from(value: TMoveFlag) -> Result<Self, Self::Error> {
         match value {
             0..=13 => Ok(MoveFlag { v: value }),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
+            x => Err(ValueOutOfRangeError::new(x, 0..=13).into()),
         }
     }
 }
@@ -121,8 +123,8 @@ impl TryFrom<TMoveFlag> for MoveFlag {
 impl const ConstFrom<CastlingSide> for MoveFlag {
     fn from_c(value: CastlingSide) -> Self {
         match value {
-            CastlingSide::KING_SIDE => MoveFlag::KING_CASTLE,
-            CastlingSide::QUEEN_SIDE => MoveFlag::QUEEN_CASTLE,
+            castling_side::KING_SIDE => f::KING_CASTLE,
+            castling_side::QUEEN_SIDE => f::QUEEN_CASTLE,
             _ => unreachable!(),
         }
     }
@@ -214,7 +216,7 @@ impl fmt::Debug for Move {
 }
 
 impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
-    type Error = ParseError;
+    type Error = OneOf<(ValueOutOfRangeError<char>, MissingTokenError)>;
 
     fn try_from(move_notation: LongAlgebraicUciNotation<'_, '_, '_>) -> Result<Self, Self::Error> {
         let from = Square::try_from(&mut *move_notation.tokens)?;
@@ -222,18 +224,14 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
         let moving_p = move_notation.context.get_piece(from);
         let captured_p = move_notation.context.get_piece(to);
         let abs_dist = from.v().abs_diff(to.v());
-        let captures = captured_p.piece_type() != PieceType::NONE;
-        let mut flag = if captures {
-            MoveFlag::CAPTURE
-        } else {
-            MoveFlag::QUIET
-        };
+        let captures = captured_p.piece_type() != piece_type::NONE;
+        let mut flag = if captures { f::CAPTURE } else { f::QUIET };
 
         match moving_p.piece_type() {
-            PieceType::PAWN => {
+            piece_type::PAWN => {
                 flag = match abs_dist {
-                    16 => MoveFlag::DOUBLE_PAWN_PUSH,
-                    7 | 9 if !captures => MoveFlag::EN_PASSANT,
+                    16 => f::DOUBLE_PAWN_PUSH,
+                    7 | 9 if !captures => f::EN_PASSANT,
                     _ => move_notation.tokens.next_char().map_or(Ok(flag), |c| {
                         Ok(MoveFlag::from((PromoPieceType::try_from(c)?, captures)))
                     })?,
