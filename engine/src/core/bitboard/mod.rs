@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks, squares},
+        coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks},
         move_iter::{bishop, rook},
     },
     misc::ConstFrom,
