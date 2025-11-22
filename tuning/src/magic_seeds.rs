@@ -1,5 +1,3 @@
-#![feature(new_zeroed_alloc)]
-
 use std::mem::MaybeUninit;
 
 use rand::{RngCore, SeedableRng, rngs::SmallRng};

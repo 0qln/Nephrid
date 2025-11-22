@@ -113,7 +113,7 @@ impl fmt::Debug for Square {
     }
 }
 
-pub type SquareParseError<T: Debug> = ValueOutOfRangeError<T>;
+pub type SquareParseError<T> = ValueOutOfRangeError<T>;
 
 impl TryFrom<TSquare> for Square {
     type Error = ValueOutOfRangeError<TSquare>;
@@ -367,7 +367,7 @@ impl From<Rank> for i8 {
     }
 }
 
-pub type RankParseError<T: Debug> = ValueOutOfRangeError<T>;
+pub type RankParseError<T> = ValueOutOfRangeError<T>;
 
 impl TryFrom<TRank> for Rank {
     type Error = RankParseError<TRank>;
@@ -441,7 +441,7 @@ impl const ConstFrom<Square> for File {
     }
 }
 
-pub type FileParseError<T: Debug> = ValueOutOfRangeError<T>;
+pub type FileParseError<T> = ValueOutOfRangeError<T>;
 
 impl TryFrom<TFile> for File {
     type Error = FileParseError<TFile>;

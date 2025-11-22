@@ -14,8 +14,7 @@ use super::SlidingAttacks;
 #[cfg(test)]
 mod test;
 
-#[const_trait]
-pub trait MagicGen {
+pub const trait MagicGen {
     fn relevant_occupancy(sq: Square) -> Bitboard;
     fn relevant_occupancy_num_combinations() -> usize;
 }

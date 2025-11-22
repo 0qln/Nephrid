@@ -1,6 +1,5 @@
 use std::{
     any::type_name,
-    error::Error,
     fmt::{self, Debug},
     marker::PhantomData,
     ops::{Bound, IntoBounds},
@@ -8,8 +7,7 @@ use std::{
 
 use thiserror::Error;
 
-#[const_trait]
-pub trait ConstFrom<T> {
+pub const trait ConstFrom<T> {
     fn from_c(value: T) -> Self;
 }
 
@@ -24,10 +22,10 @@ impl<T, D> Bounds<T, D> {
 }
 
 #[derive(Debug)]
-struct DisplayFmt;
+pub struct DisplayFmt;
 
 #[derive(Debug)]
-struct DisplayDebug;
+pub struct DisplayDebug;
 
 impl<T: fmt::Display> fmt::Display for Bounds<T, DisplayFmt> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -36,7 +34,7 @@ impl<T: fmt::Display> fmt::Display for Bounds<T, DisplayFmt> {
             Bound::Excluded(x) => write!(f, "{x}")?,
             Bound::Unbounded => {}
         };
-        write!(f, "..");
+        write!(f, "..")?;
         match &self.1 {
             Bound::Included(x) => write!(f, "={x}")?,
             Bound::Excluded(x) => write!(f, "{x}")?,
@@ -53,7 +51,7 @@ impl<T: Debug> fmt::Display for Bounds<T, DisplayDebug> {
             Bound::Excluded(x) => write!(f, "{x:?}")?,
             Bound::Unbounded => {}
         };
-        write!(f, "..");
+        write!(f, "..")?;
         match &self.1 {
             Bound::Included(x) => write!(f, "={x:?}")?,
             Bound::Excluded(x) => write!(f, "{x:?}")?,

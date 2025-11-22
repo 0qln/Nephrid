@@ -3,9 +3,9 @@ use std::ops::Try;
 use crate::{
     core::{
         bitboard::Bitboard,
-        castling::{CastlingSide, castling_sides},
+        castling::castling_sides,
         coordinates::{File, Rank, Square, files, ranks, squares},
-        r#move::{Move, MoveFlag, move_flags},
+        r#move::{Move, move_flags},
         piece::{IPieceType, PieceType, piece_type},
         position::Position,
     },
