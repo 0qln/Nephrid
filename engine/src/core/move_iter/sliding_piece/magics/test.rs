@@ -1,7 +1,7 @@
 use std::iter::once;
 
 use crate::core::{
-    coordinates::Square,
+    coordinates::squares,
     move_iter::{bishop::Bishop, map_bits, rook::Rook, sliding_piece::SlidingAttacks},
 };
 
