@@ -61,10 +61,7 @@ pub struct Tree {
 impl Tree {
     pub fn new(pos: &Position) -> Self {
         let root = Node::root(pos);
-        Self {
-            root,
-            ..Default::default()
-        }
+        Self { root, ..Default::default() }
     }
 
     pub fn best_move(&self) -> Option<Move> {
