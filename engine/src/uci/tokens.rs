@@ -34,7 +34,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     pub fn peek_next_char(&mut self) -> Option<char> {
-        self.next_char_with_index().map(|c| c.1)
+        self.peek_next_char_with_index().map(|c| c.1)
     }
 
     pub fn chars(&mut self) -> CharIterator<'_, 'a> {
