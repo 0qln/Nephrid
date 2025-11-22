@@ -1,12 +1,9 @@
 use colors::*;
 use core::fmt;
 use std::ops;
+use thiserror::Error;
 
-use crate::{
-    impl_variants_with_assertion,
-    misc::{MissingTokenError, ValueOutOfSetError},
-    uci::tokens::Tokenizer,
-};
+use crate::{impl_variants_with_assertion, misc::ValueOutOfSetError, uci::tokens::Tokenizer};
 
 #[derive(PartialEq, Eq, Copy, Clone, Default)]
 pub struct Color {
@@ -24,25 +21,35 @@ impl_variants_with_assertion! {
 
 impl_op!(!|c: Color| -> Color { Color { v: c.v ^ 1 } });
 
+pub type ColorParseError = ValueOutOfSetError<char>;
+
 impl TryFrom<char> for Color {
-    type Error = OneOf<(ValueOutOfSetError<char>,)>;
+    type Error = ColorParseError;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'w' => Ok(WHITE),
             'b' => Ok(BLACK),
-            x => Err(ValueOutOfSetError::new(x, &['w', 'b']).into()),
+            x => Err(Self::Error::new(x, &['w', 'b'])),
         }
     }
 }
 
+#[derive(Debug, Error)]
+pub enum ColorTokenizationError {
+    #[error("Invalid color: {0}")]
+    InvalidColor(ColorParseError),
+    #[error("Missing color char.")]
+    MissingChar,
+}
+
 impl TryFrom<&mut Tokenizer<'_>> for Color {
-    type Error = OneOf<(ValueOutOfSetError<char>, MissingTokenError)>;
+    type Error = ColorTokenizationError;
 
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         match fen.skip_ws().next_char() {
-            Some(c) => Color::try_from(c).map_err(OneOf::broaden),
-            None => Err(MissingTokenError::new("Color").into()),
+            Some(c) => Color::try_from(c).map_err(|e| Self::Error::InvalidColor(e)),
+            None => Err(Self::Error::MissingChar),
         }
     }
 }
