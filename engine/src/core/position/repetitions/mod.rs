@@ -55,10 +55,23 @@ where
     buckets: Box<[TableBucket; 1 << N]>,
 }
 
-impl<const N: usize> Clone for RepetitionTable<N>
-where
-    [(); 1 << N]:,
-{
+// impl<const N: usize> Clone for RepetitionTable<N>
+// where
+//     [(); 1 << N]:,
+// {
+//     fn clone(&self) -> Self {
+//         Self::new(
+//             self.buckets
+//                 .iter()
+//                 .cloned()
+//                 .collect_vec()
+//                 .into_boxed_slice()
+//                 .try_into()
+//                 .expect("Failed to convert vec to array."),
+//         )
+//     }
+// }
+impl Clone for RepetitionTable<16> {
     fn clone(&self) -> Self {
         Self::new(
             self.buckets
@@ -71,7 +84,6 @@ where
         )
     }
 }
-
 impl<const N: usize> Default for RepetitionTable<N>
 where
     [(); 1 << N]:,
@@ -117,10 +129,7 @@ where
         let bucket = self.bucket_mut(hash);
         match bucket.entry_mut(hash) {
             Some(e) => e.occurances += 1,
-            None => bucket.entries.push(TableEntry {
-                occurances: 1,
-                key: hash,
-            }),
+            None => bucket.entries.push(TableEntry { occurances: 1, key: hash }),
         };
     }
 
