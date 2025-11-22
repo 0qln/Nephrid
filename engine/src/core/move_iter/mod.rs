@@ -7,12 +7,13 @@ use pawn::Pawn;
 use queen::Queen;
 use rook::Rook;
 
+use crate::core::r#move::move_flags;
 use crate::misc::ConstFrom;
 
 use super::bitboard::Bitboard;
 use super::color::Color;
 use super::coordinates::Square;
-use super::r#move::{Move, MoveFlag};
+use super::r#move::Move;
 use super::piece::IPieceType;
 use super::position::{CheckState, Position};
 
