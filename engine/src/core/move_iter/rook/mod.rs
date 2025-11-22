@@ -1,6 +1,11 @@
+use crate::core::coordinates::{files, ranks, squares};
+use crate::core::piece::piece_type;
 use crate::{
     core::{
-        bitboard::Bitboard, coordinates::{CompassRose, File, Rank, Square}, move_iter::rook, piece::{IPieceType, PieceType}
+        bitboard::Bitboard,
+        coordinates::{compass_rose, File, Rank, Square},
+        move_iter::rook,
+        piece::{IPieceType, PieceType},
     },
     misc::ConstFrom,
 };
@@ -13,22 +18,22 @@ mod tests;
 pub struct Rook;
 
 impl IPieceType for Rook {
-    const ID: PieceType = PieceType::ROOK;
+    const ID: PieceType = piece_type::ROOK;
 }
 
 impl Rook {
     #[inline]
     const fn relevant_file(file: File) -> Bitboard {
         Bitboard::from_c(file)
-            .and_not_c(Bitboard::from_c(Rank::_1))
-            .and_not_c(Bitboard::from_c(Rank::_8))
+            .and_not_c(Bitboard::from_c(ranks::_1))
+            .and_not_c(Bitboard::from_c(ranks::_8))
     }
 
     #[inline]
     const fn relevant_rank(rank: Rank) -> Bitboard {
         Bitboard::from_c(rank)
-            .and_not_c(Bitboard::from_c(File::A))
-            .and_not_c(Bitboard::from_c(File::H))
+            .and_not_c(Bitboard::from_c(files::A))
+            .and_not_c(Bitboard::from_c(files::H))
     }
 }
 
@@ -42,7 +47,7 @@ impl MagicGen for Rook {
     fn relevant_occupancy_num_combinations() -> usize {
         // its the same for each corner, but the corners are generally max,
         // because the square itself is not excluded additionally.
-        let max = Self::relevant_occupancy(Square::A1);
+        let max = Self::relevant_occupancy(squares::A1);
         (1 << max.pop_cnt()) as usize
     }
 }
@@ -72,7 +77,8 @@ pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
     }
 }
 
-/// Computes the attacks of the rook on the square `sq` with the given `occupancy`.
+/// Computes the attacks of the rook on the square `sq` with the given
+/// `occupancy`.
 fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let file = File::from_c(sq);
     let rank = Rank::from_c(sq);
@@ -87,7 +93,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
-    let moves = range.shift_c::<{ CompassRose::SOUT.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::SOUT.v() }>() & ray;
     result |= moves;
 
     // north
@@ -95,7 +101,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
-    let moves = range.shift_c::<{ CompassRose::NORT.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::NORT.v() }>() & ray;
     result |= moves;
 
     // west
@@ -103,7 +109,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
-    let moves = range.shift_c::<{ CompassRose::WEST.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::WEST.v() }>() & ray;
     result |= moves;
 
     // east
@@ -111,7 +117,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
-    let moves = range.shift_c::<{ CompassRose::EAST.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::EAST.v() }>() & ray;
     result |= moves;
 
     result

@@ -1,27 +1,23 @@
-use search::{Search, limit::Limit, mode::Mode, target::Target};
+use search::{limit::Limit, mode::Mode, target::Target, Search};
 
 use self::r#move::LongAlgebraicUciNotation;
-use crate::uci::{
-    sync::{self, CancellationToken, UciError},
-    tokens::Tokenizer,
-};
 use crate::{
     core::{
         config::{ConfigOptionType, Configuration},
         depth::Depth,
-        r#move::Move,
         position::Position,
+        r#move::Move,
     },
     misc::trim_newline,
 };
-use std::{
-    error::Error, process,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
+use crate::{
+    misc::DebugMode,
+    uci::{
+        sync::{self, CancellationToken, UciError},
+        tokens::Tokenizer,
     },
-    thread,
 };
+use std::{error::Error, process, thread};
 
 pub mod bitboard;
 pub mod castling;
@@ -41,7 +37,7 @@ pub mod zobrist;
 #[derive(Default)]
 pub struct Engine {
     config: Configuration,
-    debug: Arc<AtomicBool>,
+    debug: DebugMode,
     position: Position,
     pos_src: String,
 }
@@ -55,8 +51,16 @@ pub fn execute_uci(
     let mut tokenizer = Tokenizer::new(command.as_str());
     match tokenizer.next_token() {
         Some("d") => {
-            let pos: String = (&engine.position).into();
-            sync::out(&pos);
+            let pos = &engine.position;
+            let str = if engine.debug.get() {
+                format!("{pos:?}")
+            }
+            else {
+                format!("{pos}")
+            };
+
+            sync::out(&str);
+
             Ok(())
         }
         Some("quit") => {
@@ -100,7 +104,7 @@ pub fn execute_uci(
                     depth if Depth::try_from(depth).is_ok() => {
                         target.depth = depth.try_into().unwrap()
                     }
-                    /*searchmoves*/
+                    /* searchmoves */
                     _ => {
                         let move_notation =
                             LongAlgebraicUciNotation::new(&mut tokenizer, &position);
@@ -120,8 +124,9 @@ pub fn execute_uci(
         }
         Some("position") => {
             if command.len() > engine.pos_src.len()
-            && !engine.pos_src.is_empty()
-            && command[..engine.pos_src.len()] == engine.pos_src {
+                && !engine.pos_src.is_empty()
+                && command[..engine.pos_src.len()] == engine.pos_src
+            {
                 let new_moves = &command[engine.pos_src.len()..];
                 for tok in Tokenizer::new(new_moves).tokens() {
                     if tok == "moves" {
@@ -132,19 +137,17 @@ pub fn execute_uci(
                     engine.position.make_move(Move::try_from(mov)?);
                 }
                 engine.pos_src = command;
-                return {
-                    Ok(())
-                };
+                return Ok(());
             }
             match tokenizer.next_token() {
                 Some("fen") => engine.position = Position::try_from(&mut tokenizer)?,
                 Some("startpos") => engine.position = Position::start_position(),
                 None => return Err(UciError::MissingArgument("value").into()),
                 Some(x) => {
-                    return Err(UciError::InvalidValue(x.to_string(), vec![
-                        "fen".to_string(),
-                        "startpos".to_string(),
-                    ])
+                    return Err(UciError::InvalidValue(
+                        x.to_string(),
+                        vec!["fen".to_string(), "startpos".to_string()],
+                    )
                     .into());
                 }
             };
@@ -212,9 +215,7 @@ pub fn execute_uci(
                         }
                         *value = new_value.parse()?;
                     }
-                    ConfigOptionType::Spin {
-                        min, max, value, ..
-                    } => {
+                    ConfigOptionType::Spin { min, max, value, .. } => {
                         if new_value.is_empty() {
                             return Err(UciError::MissingArgument("value").into());
                         }
@@ -245,27 +246,27 @@ pub fn execute_uci(
         Some("ucinewgame") => {
             engine.pos_src = "".to_string();
             Ok(())
-        },
+        }
         Some("debug") => {
             let debug = match tokenizer.next_token() {
                 Some("on") => true,
                 Some("off") => false,
                 Some(x) => {
-                    return Err(UciError::InvalidValue(x.to_string(), vec![
-                        "on".to_string(),
-                        "off".to_string(),
-                    ])
+                    return Err(UciError::InvalidValue(
+                        x.to_string(),
+                        vec!["on".to_string(), "off".to_string()],
+                    )
                     .into());
                 }
                 None => return Err(UciError::MissingArgument("value").into()),
             };
-            engine.debug.store(debug, Ordering::Relaxed);
+            engine.debug.set(debug);
             Ok(())
         }
         Some("isready") => {
             sync::out("readyok");
             Ok(())
-        },
+        }
         Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
         None => Ok(()),
     }

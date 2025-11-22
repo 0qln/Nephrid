@@ -1,41 +1,55 @@
+use colors::*;
 use core::fmt;
 use std::ops;
+use thiserror::Error;
 
-use crate::{impl_variants_with_assertion, misc::ParseError, uci::tokens::Tokenizer};
+use crate::{impl_variants_with_assertion, misc::ValueOutOfSetError, uci::tokens::Tokenizer};
 
 #[derive(PartialEq, Eq, Copy, Clone, Default)]
-pub struct Color { v: TColor }
+pub struct Color {
+    v: TColor,
+}
 
 pub type TColor = u8;
 
-impl_variants_with_assertion! { 
-    TColor as Color {
+impl_variants_with_assertion! {
+    TColor as Color in colors {
         WHITE,
         BLACK,
-    } 
+    }
 }
 
-impl_op!(! | c: Color | -> Color { Color { v: c.v ^ 1 } });
+impl_op!(!|c: Color| -> Color { Color { v: c.v ^ 1 } });
+
+pub type ColorParseError = ValueOutOfSetError<char>;
 
 impl TryFrom<char> for Color {
-    type Error = ParseError;
-    
+    type Error = ColorParseError;
+
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
-            'w' => Ok(Color::WHITE),
-            'b' => Ok(Color::BLACK),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
+            'w' => Ok(WHITE),
+            'b' => Ok(BLACK),
+            x => Err(Self::Error::new(x, &['w', 'b'])),
         }
     }
 }
 
+#[derive(Debug, Error)]
+pub enum ColorTokenizationError {
+    #[error("Invalid color: {0}")]
+    InvalidColor(ColorParseError),
+    #[error("Missing color char.")]
+    MissingChar,
+}
+
 impl TryFrom<&mut Tokenizer<'_>> for Color {
-    type Error = ParseError;
+    type Error = ColorTokenizationError;
 
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         match fen.skip_ws().next_char() {
-            Some(c) => Color::try_from(c),
-            None => Err(ParseError::MissingValue),
+            Some(c) => Self::try_from(c).map_err(Self::Error::InvalidColor),
+            None => Err(Self::Error::MissingChar),
         }
     }
 }
@@ -43,13 +57,13 @@ impl TryFrom<&mut Tokenizer<'_>> for Color {
 impl From<Color> for char {
     fn from(val: Color) -> Self {
         match val {
-            Color::WHITE => 'w',
-            Color::BLACK => 'b',
-            _ => unreachable!("Invalid program state.")
+            WHITE => 'w',
+            BLACK => 'b',
+            _ => unreachable!("Invalid program state."),
         }
     }
 }
-    
+
 impl fmt::Debug for Color {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Color")

@@ -7,6 +7,7 @@ use pawn::Pawn;
 use queen::Queen;
 use rook::Rook;
 
+use crate::core::r#move::move_flags;
 use crate::misc::ConstFrom;
 
 use super::bitboard::Bitboard;
@@ -14,7 +15,7 @@ use super::color::Color;
 use super::coordinates::Square;
 use super::piece::IPieceType;
 use super::position::{CheckState, Position};
-use super::r#move::{Move, MoveFlag};
+use super::r#move::Move;
 
 pub mod bishop;
 pub mod king;
@@ -67,9 +68,9 @@ impl NoDoubleCheck for SingleCheck {
         let king_bb = pos.get_bitboard(King::ID, color);
         Bitboard::between(
             // Safety: there is a check, so there has to be a king.
-            unsafe { king_bb.lsb().unwrap_unchecked() }, 
+            unsafe { king_bb.lsb().unwrap_unchecked() },
             // Safety: there is a single checker.
-            unsafe { pos.get_checkers().lsb().unwrap_unchecked() }
+            unsafe { pos.get_checkers().lsb().unwrap_unchecked() },
         )
     }
 
@@ -173,12 +174,12 @@ pub fn pin_mask(pos: &Position, piece: Square) -> Bitboard {
 
 #[inline]
 pub fn map_captures(targets: Bitboard, piece: Square) -> impl Iterator<Item = Move> {
-    targets.map(move |target| Move::new(piece, target, MoveFlag::CAPTURE))
+    targets.map(move |target| Move::new(piece, target, move_flags::CAPTURE))
 }
 
 #[inline]
 pub fn map_quiets(targets: Bitboard, piece: Square) -> impl Iterator<Item = Move> {
-    targets.map(move |target| Move::new(piece, target, MoveFlag::QUIET))
+    targets.map(move |target| Move::new(piece, target, move_flags::QUIET))
 }
 
 // todo:

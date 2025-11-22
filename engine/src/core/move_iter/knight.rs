@@ -3,9 +3,9 @@ use std::ops::Try;
 use crate::{
     core::{
         bitboard::Bitboard,
-        coordinates::{CompassRose, Square, TCompassRose},
+        coordinates::{compass_rose, squares, CompassRose, Square, TCompassRose},
         move_iter::{map_captures, map_quiets},
-        piece::PieceType,
+        piece::piece_type,
         position::Position,
         r#move::Move,
     },
@@ -23,12 +23,12 @@ impl<C: NoDoubleCheck> FoldMoves<C> for Knight {
     fn fold_moves<B, F, R>(pos: &Position, init: B, mut f: F) -> R
     where
         F: FnMut(B, Move) -> R,
-        R: Try<Output = B> 
+        R: Try<Output = B>,
     {
         let color = pos.get_turn();
 
-        pos.get_bitboard(PieceType::KNIGHT, color)
-            .filter(|&piece| (!is_blocker(pos, piece)))
+        pos.get_bitboard(piece_type::KNIGHT, color)
+            .filter(|&piece| !is_blocker(pos, piece))
             .map(|piece| {
                 let legal_attacks = lookup_attacks(piece);
                 let legal_quiets = legal_attacks & C::quiets_mask(pos, color);
@@ -46,7 +46,7 @@ impl<C: NoDoubleCheck> FoldMoves<C> for Knight {
 pub fn lookup_attacks(sq: Square) -> Bitboard {
     static ATTACKS: [Bitboard; 64] = {
         let mut attacks = [Bitboard::empty(); 64];
-        const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
+        const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             // Safety: we are only iterating over valid squares.
             let sq = unsafe { Square::from_v(sq) };
             attacks[sq.v() as usize] = compute_attacks(sq);
@@ -65,14 +65,14 @@ pub const fn compute_attacks(sq: Square) -> Bitboard {
 
 const fn compute_attacks_multiple(knights: Bitboard) -> Bitboard {
     let mut result = Bitboard::empty();
-    compute_atttack::<{ CompassRose::NONOWE_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::NONOEA_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::NOWEWE_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::NOEAEA_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::SOSOWE_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::SOSOEA_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::SOWEWE_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::SOEAEA_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::NONOWE_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::NONOEA_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::NOWEWE_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::NOEAEA_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::SOSOWE_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::SOSOEA_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::SOWEWE_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::SOEAEA_C }>(knights, &mut result);
     result
 }
 

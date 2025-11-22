@@ -1,14 +1,8 @@
 use std::ops::Try;
 
-use crate::
-    core::{
-        bitboard::Bitboard,
-        coordinates::Square,
-        piece::IPieceType,
-        position::Position,
-        r#move::Move,
-    }
-;
+use crate::core::{
+    bitboard::Bitboard, coordinates::Square, piece::IPieceType, position::Position, r#move::Move,
+};
 
 use super::{map_captures, map_quiets, pin_mask, FoldMoves, NoDoubleCheck};
 
@@ -37,7 +31,6 @@ where
         // Safety: there is a single checker.
         pos.get_bitboard(T::ID, color)
             .try_fold(init, move |mut acc, piece| {
-
                 let occupancy = pos.get_occupancy();
                 let attacks = T::lookup_attacks(piece, occupancy);
                 let legal_attacks = attacks & pin_mask(pos, piece);

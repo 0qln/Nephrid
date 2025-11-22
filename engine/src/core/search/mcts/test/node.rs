@@ -1,6 +1,12 @@
-use crate::{core::{
-    r#move::Move, move_iter::sliding_piece::magics, position::Position, search::mcts::{Node, NodeState}
-}, uci::tokens::Tokenizer};
+use crate::{
+    core::{
+        move_iter::sliding_piece::magics,
+        position::Position,
+        r#move::Move,
+        search::mcts::{Node, NodeState},
+    },
+    uci::tokens::Tokenizer,
+};
 
 #[test]
 fn ucb_selection() {

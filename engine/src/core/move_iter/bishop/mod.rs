@@ -1,6 +1,9 @@
 use crate::{
     core::{
-        bitboard::Bitboard, coordinates::{CompassRose, DiagA1H8, DiagA8H1, Square}, move_iter::bishop, piece::{IPieceType, PieceType}
+        bitboard::Bitboard,
+        coordinates::{compass_rose, squares, DiagA1H8, DiagA8H1, Square},
+        move_iter::bishop,
+        piece::{piece_type, IPieceType, PieceType},
     },
     misc::ConstFrom,
 };
@@ -19,7 +22,7 @@ impl Bishop {
 }
 
 impl IPieceType for Bishop {
-    const ID: PieceType = PieceType::BISHOP;
+    const ID: PieceType = piece_type::BISHOP;
 }
 
 impl MagicGen for Bishop {
@@ -29,7 +32,7 @@ impl MagicGen for Bishop {
 
     fn relevant_occupancy_num_combinations() -> usize {
         // center is generally max
-        let max = Self::relevant_occupancy(Square::E4);
+        let max = Self::relevant_occupancy(squares::E4);
         (1 << max.pop_cnt()) as usize
     }
 }
@@ -42,7 +45,9 @@ impl SlidingAttacks for Bishop {
     #[allow(static_mut_refs)]
     fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         // Safety: The caller has to assert, that the table is initialized.
-        sliding_piece::magics::bishop_magics().get(sq).get(occupancy)
+        sliding_piece::magics::bishop_magics()
+            .get(sq)
+            .get(occupancy)
     }
 }
 
@@ -57,7 +62,8 @@ pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
     }
 }
 
-/// Computes the attacks of the bishop on the square `sq` with the given `occupancy`.
+/// Computes the attacks of the bishop on the square `sq` with the given
+/// `occupancy`.
 fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let a1h8 = Bitboard::from_c(DiagA1H8::from_c(sq));
     let a8h1 = Bitboard::from_c(DiagA8H1::from_c(sq));
@@ -71,7 +77,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
-    let moves = range.shift_c::<{ CompassRose::SOEA.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::SOEA.v() }>() & ray;
     result |= moves;
 
     // south west
@@ -79,7 +85,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
-    let moves = range.shift_c::<{ CompassRose::SOWE.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::SOWE.v() }>() & ray;
     result |= moves;
 
     // north west
@@ -87,7 +93,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
-    let moves = range.shift_c::<{ CompassRose::NOWE.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::NOWE.v() }>() & ray;
     result |= moves;
 
     // north east
@@ -95,7 +101,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
-    let moves = range.shift_c::<{ CompassRose::NOEA.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::NOEA.v() }>() & ray;
     result |= moves;
 
     result

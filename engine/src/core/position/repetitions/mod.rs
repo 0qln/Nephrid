@@ -29,10 +29,7 @@ impl TableBucket {
     }
 
     #[inline]
-    fn entry_with_index_mut(
-        &mut self,
-        hash: zobrist::Hash,
-    ) -> Option<(&mut TableEntry, usize)> {
+    fn entry_with_index_mut(&mut self, hash: zobrist::Hash) -> Option<(&mut TableEntry, usize)> {
         self.entries
             .iter_mut()
             .enumerate()
@@ -53,25 +50,56 @@ impl TableBucket {
 #[derive(Debug, PartialEq, Eq)]
 pub struct RepetitionTable<const N: usize>
 where
-    [(); 1 << N]: {
+    [(); 1 << N]:,
+{
     buckets: Box<[TableBucket; 1 << N]>,
 }
 
-impl<const N: usize> Clone for RepetitionTable<N> where [(); 1 << N]: {
-    fn clone(&self) -> Self {
-        Self::new(
-            self.buckets
-                .iter()
-                .cloned()
-                .collect_vec()
-                .into_boxed_slice()
-                .try_into()
-                .expect("Failed to convert vec to array."),
-        )
-    }
+// this is just a workaround.
+// todo: use the blanket impl, when it works again
+macro_rules! impl_clone {
+    ($n:expr) => {
+        impl Clone for RepetitionTable<$n> {
+            fn clone(&self) -> Self {
+                Self::new(
+                    self.buckets
+                        .iter()
+                        .cloned()
+                        .collect_vec()
+                        .into_boxed_slice()
+                        .try_into()
+                        .expect("Failed to convert vec to array."),
+                )
+            }
+        }
+    };
 }
+//
+impl_clone!(16);
+impl_clone!(20);
+//
+// impl<const N: usize> Clone for RepetitionTable<N>
+// where
+//     [(); 1 << N]:,
+// {
+//     fn clone(&self) -> Self {
+//         Self::new(
+//             self.buckets
+//                 .iter()
+//                 .cloned()
+//                 .collect_vec()
+//                 .into_boxed_slice()
+//                 .try_into()
+//                 .expect("Failed to convert vec to array."),
+//         )
+//     }
+// }
+//
 
-impl<const N: usize> Default for RepetitionTable<N> where [(); 1 << N]: {
+impl<const N: usize> Default for RepetitionTable<N>
+where
+    [(); 1 << N]:,
+{
     fn default() -> Self {
         Self::new(
             (0..Self::capacity())
@@ -84,7 +112,10 @@ impl<const N: usize> Default for RepetitionTable<N> where [(); 1 << N]: {
     }
 }
 
-impl<const N: usize> RepetitionTable<N> where [(); 1 << N]: {
+impl<const N: usize> RepetitionTable<N>
+where
+    [(); 1 << N]:,
+{
     #[inline]
     fn new(buckets: Box<[TableBucket; 1 << N]>) -> Self {
         Self { buckets }
@@ -94,7 +125,7 @@ impl<const N: usize> RepetitionTable<N> where [(); 1 << N]: {
     fn bucket(&self, hash: zobrist::Hash) -> &TableBucket {
         &self.buckets[Self::index(hash)]
     }
-    
+
     #[inline]
     const fn index(hash: zobrist::Hash) -> usize {
         hash.v() as usize & (Self::capacity() - 1)
@@ -110,10 +141,7 @@ impl<const N: usize> RepetitionTable<N> where [(); 1 << N]: {
         let bucket = self.bucket_mut(hash);
         match bucket.entry_mut(hash) {
             Some(e) => e.occurances += 1,
-            None => bucket.entries.push(TableEntry {
-                occurances: 1,
-                key: hash,
-            }),
+            None => bucket.entries.push(TableEntry { occurances: 1, key: hash }),
         };
     }
 
@@ -149,7 +177,7 @@ impl<const N: usize> RepetitionTable<N> where [(); 1 << N]: {
     pub fn len(&self) -> usize {
         Self::capacity() - self.free()
     }
-    
+
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.len() == 0

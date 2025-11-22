@@ -1,6 +1,6 @@
 use std::ops::ControlFlow;
 
-use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
+use rand::{rngs::SmallRng, Rng, RngCore, SeedableRng};
 
 use engine::core::{
     move_iter::{fold_legal_moves, sliding_piece::magics},
@@ -43,7 +43,7 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
             // simulate a random game...
             loop {
                 buffer.clear();
-                fold_legal_moves(pos, &mut *buffer, |acc, m| {
+                let _ = fold_legal_moves(pos, &mut *buffer, |acc, m| {
                     ControlFlow::Continue::<(), _>({
                         acc.push(m);
                         acc
@@ -67,9 +67,7 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
         })
         .continue_value()
         .unwrap_or(usize::MAX);
-    SeedTestResult {
-        total_collisions: collisions,
-    }
+    SeedTestResult { total_collisions: collisions }
 }
 
 fn main() {

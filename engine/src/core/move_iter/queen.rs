@@ -1,15 +1,19 @@
 use crate::core::{
     bitboard::Bitboard,
     coordinates::Square,
-    piece::{IPieceType, PieceType},
+    piece::{piece_type, IPieceType, PieceType},
 };
 
-use super::{bishop::Bishop, rook::Rook, sliding_piece::{SlidingAttacks, SlidingPieceType}};
+use super::{
+    bishop::Bishop,
+    rook::Rook,
+    sliding_piece::{SlidingAttacks, SlidingPieceType},
+};
 
 pub struct Queen;
 
 impl IPieceType for Queen {
-    const ID: PieceType = PieceType::QUEEN;
+    const ID: PieceType = piece_type::QUEEN;
 }
 
 impl SlidingAttacks for Queen {

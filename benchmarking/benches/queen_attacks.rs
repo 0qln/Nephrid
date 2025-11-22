@@ -1,15 +1,13 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use engine::core::bitboard::Bitboard;
-use engine::core::coordinates::Square;
+use engine::core::coordinates::squares;
 use engine::core::move_iter::queen::Queen;
 use engine::core::move_iter::sliding_piece::magics;
 use engine::core::move_iter::sliding_piece::SlidingAttacks;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    let queen = Square::E4;
-    let occupancy = Bitboard {
-        v: 0x24814c6240174d0_u64,
-    };
+    let queen = squares::E4;
+    let occupancy = Bitboard { v: 0x24814c6240174d0_u64 };
     magics::init();
 
     let mut group = c.benchmark_group("queen::attacks");

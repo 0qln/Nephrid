@@ -1,8 +1,15 @@
 use crate::{
     core::{
-        color::Color, coordinates::Square, r#move::MoveFlag, move_iter::sliding_piece::magics, piece::{Piece, PieceType}, position::Position, search::mcts::{NodeState, Tree}
+        color::colors,
+        coordinates::squares,
+        move_iter::sliding_piece::magics,
+        piece::{piece_type, Piece},
+        position::Position,
+        r#move::move_flags,
+        search::mcts::{NodeState, Tree},
     },
-    misc::ConstFrom, uci::tokens::Tokenizer,
+    misc::ConstFrom,
+    uci::tokens::Tokenizer,
 };
 
 #[test]
@@ -59,7 +66,7 @@ fn selects_unexpanded_leaf() {
         assert_eq!(node.score.playouts, 0);
     }
     // Verify move was made
-    assert!(pos.get_piece(Square::B8) == Piece::from_c((Color::WHITE, PieceType::KING)));
+    assert!(pos.get_piece(squares::B8) == Piece::from_c((colors::WHITE, piece_type::KING)));
 }
 
 #[test]
@@ -109,7 +116,7 @@ fn handles_terminal_nodes_through_expansion() {
         .root
         .children
         .iter()
-        .find(|n| n.mov.get_flag() == MoveFlag::PROMOTION_ROOK)
+        .find(|n| n.mov.get_flag() == move_flags::PROMOTION_ROOK)
         .unwrap();
     assert_eq!(node.state, NodeState::Terminal);
     assert!(node.children.is_empty());
@@ -120,7 +127,8 @@ fn traverses_multiple_branch_nodes() {
     magics::init();
 
     // Setup deep tree with known structure
-    let mut fen = Tokenizer::new("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+    let mut fen =
+        Tokenizer::new("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
     let mut pos = Position::try_from(&mut fen).unwrap();
     let mut tree = Tree::new(&pos);
 

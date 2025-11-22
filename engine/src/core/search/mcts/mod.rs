@@ -6,9 +6,9 @@ use std::fmt;
 use std::ops::{AddAssign, ControlFlow};
 use std::ptr::NonNull;
 
-use crate::core::r#move::MoveList;
 use crate::core::move_iter::king::King;
 use crate::core::piece::IPieceType;
+use crate::core::r#move::MoveList;
 use crate::core::{color::Color, move_iter::fold_legal_moves, position::Position, r#move::Move};
 
 #[cfg(test)]
@@ -35,7 +35,8 @@ impl PlayoutResult {
                 if in_check {
                     // If in check and no moves, it's a loss for the current player
                     Self::Win { relative_to: !us }
-                } else {
+                }
+                else {
                     Self::Draw
                 }
             });
@@ -49,10 +50,10 @@ impl PlayoutResult {
 pub struct Tree {
     /// Root of the tree.
     root: Node,
-    
+
     /// Stack of nodes that were selected during the selection phase.
     selection_buffer: Vec<NonNull<Node>>,
-    
+
     /// Buffers used during simulation.
     simulation_stack_buffer: Vec<Move>,
     simulation_moves_buffer: MoveList,
@@ -61,10 +62,7 @@ pub struct Tree {
 impl Tree {
     pub fn new(pos: &Position) -> Self {
         let root = Node::root(pos);
-        Self {
-            root,
-            ..Default::default()
-        }
+        Self { root, ..Default::default() }
     }
 
     pub fn best_move(&self) -> Option<Move> {
@@ -101,11 +99,12 @@ impl Tree {
         );
         self.backpropagate(pos, result);
     }
-    
+
     pub fn selected_leaf(&mut self) -> NonNull<Node> {
-        *self.selection_buffer
-                .last_mut()
-                .expect("This is only None, if root.state == Leaf, which is not the case.")
+        *self
+            .selection_buffer
+            .last_mut()
+            .expect("This is only None, if root.state == Leaf, which is not the case.")
     }
 
     pub fn advance(&mut self, mov: Move) {
@@ -225,13 +224,16 @@ impl fmt::Debug for Node {
 impl Node {
     pub fn root(pos: &Position) -> Self {
         let mut children = Vec::new();
-        fold_legal_moves(pos, &mut children, |acc, m| {
+        let _ = fold_legal_moves(pos, &mut children, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Node::leaf(m));
                 acc
             })
         });
-        assert!(!children.is_empty(), "A root node cannot be a terminal node.");
+        assert!(
+            !children.is_empty(),
+            "A root node cannot be a terminal node."
+        );
 
         Self {
             score: Score::default(),
@@ -276,7 +278,10 @@ impl Node {
                 let b_ucb = b.ucb(self.score.playouts);
                 a_ucb.partial_cmp(&b_ucb).expect("UCB comparison failed!")
             })
-            .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
+            .expect(
+                "This is either a branch or a root node, which implies that this is not a \
+                 terminal node, so there has to be atleast on child.",
+            )
     }
 
     pub fn simulate(
@@ -292,7 +297,7 @@ impl Node {
 
         loop {
             let mut move_cnt = 0;
-            fold_legal_moves(pos, &mut *moves, |acc, m| {
+            let _ = fold_legal_moves(pos, &mut *moves, |acc, m| {
                 ControlFlow::Continue::<(), _>({
                     acc[move_cnt] = m;
                     move_cnt += 1;
@@ -316,7 +321,7 @@ impl Node {
     fn expand(&mut self, pos: &Position) {
         assert_matches!(self.state, NodeState::Leaf);
 
-        fold_legal_moves(pos, &mut self.children, |acc, m| {
+        let _ = fold_legal_moves(pos, &mut self.children, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Node::leaf(m));
                 acc
@@ -324,7 +329,8 @@ impl Node {
         });
         self.state = if self.children.is_empty() {
             NodeState::Terminal
-        } else {
+        }
+        else {
             NodeState::Branch
         };
     }

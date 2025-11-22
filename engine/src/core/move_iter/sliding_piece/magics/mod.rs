@@ -5,7 +5,7 @@ use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
 use crate::core::{
     bitboard::Bitboard,
-    coordinates::Square,
+    coordinates::{squares, Square},
     move_iter::{bishop::Bishop, map_bits, rook::Rook},
 };
 
@@ -14,8 +14,7 @@ use super::SlidingAttacks;
 #[cfg(test)]
 mod test;
 
-#[const_trait]
-pub trait MagicGen {
+pub const trait MagicGen {
     fn relevant_occupancy(sq: Square) -> Bitboard;
     fn relevant_occupancy_num_combinations() -> usize;
 }
@@ -30,12 +29,7 @@ pub struct Magic<'a> {
 
 impl Magic<'_> {
     pub fn new(ptr: &[Bitboard], mask: Bitboard, magic: u64, shift: u8) -> Magic<'_> {
-        Magic {
-            ptr,
-            mask,
-            magic,
-            shift,
-        }
+        Magic { ptr, mask, magic, shift }
     }
 
     #[inline(always)]
@@ -72,7 +66,7 @@ impl MagicInfo {
         let key = relevant_occ.v.wrapping_mul(self.magic) >> self.shift;
         key as usize
     }
-    
+
     pub fn cost(&self) -> u32 {
         self.init_cost
     }
@@ -152,7 +146,7 @@ pub fn find_magics<T: MagicGen + SlidingAttacks>(
     prev: Option<&MagicInfo>,
 ) -> [MagicInfo; 64] {
     let mut result: [MagicInfo; 64] = unsafe { mem::zeroed() };
-    for sq in Square::A1..=Square::H8 {
+    for sq in squares::A1..=squares::H8 {
         let idx = sq.v() as usize;
         result[idx] = find_magic::<T>(
             table,

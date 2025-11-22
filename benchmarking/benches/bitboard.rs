@@ -2,7 +2,7 @@ use core::fmt;
 use std::fmt::Display;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use engine::core::{bitboard::Bitboard, coordinates::Square};
+use engine::core::{bitboard::Bitboard, coordinates::squares};
 
 pub fn pop_cnt(c: &mut Criterion) {
     let mut group = c.benchmark_group("bitboard::pop_cnt");
@@ -28,10 +28,10 @@ pub fn pop_cnt(c: &mut Criterion) {
 
 pub fn between(c: &mut Criterion) {
     let inputs = [
-        Pair(Square::B2, Square::G7),
-        Pair(Square::E1, Square::E8),
-        Pair(Square::G7, Square::B2),
-        Pair(Square::E8, Square::E1),
+        Pair(squares::B2, squares::G7),
+        Pair(squares::E1, squares::E8),
+        Pair(squares::G7, squares::B2),
+        Pair(squares::E8, squares::E1),
     ];
 
     for pair in inputs {
@@ -45,11 +45,11 @@ pub fn between(c: &mut Criterion) {
 
 pub fn ray(c: &mut Criterion) {
     let inputs = [
-        Pair(Square::B2, Square::G7),
-        Pair(Square::E1, Square::E8),
-        Pair(Square::G7, Square::B2),
-        Pair(Square::E8, Square::E1),
-        Pair(Square::A8, Square::E1),
+        Pair(squares::B2, squares::G7),
+        Pair(squares::E1, squares::E8),
+        Pair(squares::G7, squares::B2),
+        Pair(squares::E8, squares::E1),
+        Pair(squares::A8, squares::E1),
     ];
 
     for pair in inputs {
@@ -70,9 +70,5 @@ impl<T: Display> fmt::Display for Pair<T> {
     }
 }
 
-criterion_group!(benches, 
-    pop_cnt,
-    between,
-    ray,
-);
+criterion_group!(benches, pop_cnt, between, ray,);
 criterion_main!(benches);
