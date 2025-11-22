@@ -260,10 +260,14 @@ impl TryFrom<&mut Tokenizer<'_>> for EpTargetSquare {
 
         Ok(Self {
             v: match first {
-                '-' => None,
-                _file => Some(
-                    Square::try_from(&mut *tokens).map_err(Self::Error::InvalidSquare)?,
-                ),
+                '-' => {
+                    tokens.next_char();
+                    None
+                }
+                _file => {
+                    let sq = Square::try_from(&mut *tokens);
+                    Some(sq.map_err(Self::Error::InvalidSquare)?)
+                }
             },
         })
     }
