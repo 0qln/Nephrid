@@ -36,7 +36,9 @@ impl FoldMoves<NoCheck> for King {
         let nstm_attacks = pos.get_nstm_attacks();
 
         let king_bb = pos.get_bitboard(King::ID, color);
-        let king = king_bb.lsb().unwrap();
+        let king = king_bb
+            .lsb()
+            .expect("King bb has to contain atleast one king.");
 
         let attacks = lookup_attacks(king);
         let legal_attacks = attacks & !nstm_attacks;
