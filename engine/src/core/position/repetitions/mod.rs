@@ -55,6 +55,7 @@ where
     buckets: Box<[TableBucket; 1 << N]>,
 }
 
+// todo: uncomment when it works again 
 // impl<const N: usize> Clone for RepetitionTable<N>
 // where
 //     [(); 1 << N]:,

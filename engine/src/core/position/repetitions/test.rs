@@ -123,6 +123,7 @@ fn multiple_operations() {
 
 #[test]
 fn cloning_doesnt_allocate_on_stack() {
+    // todo: uncomment when it works again
     // let original = RepetitionTable::<20>::default();
     // // this should crash if it allocates on the stack.
     // let cloned = original.clone();
