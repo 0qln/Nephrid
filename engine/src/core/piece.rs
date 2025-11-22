@@ -1,11 +1,10 @@
 use core::fmt;
 use std::fmt::{Debug, Display};
 
-use terrors::OneOf;
 use thiserror::Error;
 
 use crate::{
-    core::color::Color,
+    core::color::{Color, colors},
     impl_variants,
     misc::{ConstFrom, InvalidValueError, ValueOutOfSetError},
     uci::tokens::Tokenizer,
@@ -57,8 +56,10 @@ impl PieceType {
     }
 }
 
+pub type PieceTypeParseError = ValueOutOfSetError<char>;
+
 impl TryFrom<char> for PieceType {
-    type Error = OneOf<(ValueOutOfSetError<char>,)>;
+    type Error = PieceTypeParseError;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         use piece_type::*;
@@ -70,7 +71,7 @@ impl TryFrom<char> for PieceType {
             'q' => Ok(QUEEN),
             'k' => Ok(KING),
             '.' => Ok(NONE),
-            x => Err(ValueOutOfSetError::new(x, &['p', 'n', 'n', 'r', 'q', '.']).into()),
+            x => Err(Self::Error::new(x, &['p', 'n', 'n', 'r', 'q', '.'])),
         }
     }
 }
@@ -148,14 +149,17 @@ impl TryFrom<&mut Tokenizer<'_>> for PromoPieceType {
     }
 }
 
+pub type PromoPieceConvertError = InvalidValueError<MoveFlag>;
+
 impl TryFrom<MoveFlag> for PromoPieceType {
-    type Error = OneOf<(InvalidValueError<MoveFlag>,)>;
+    type Error = PromoPieceConvertError;
 
     fn try_from(flag: MoveFlag) -> Result<Self, Self::Error> {
         if !flag.is_promo() {
-            Err(InvalidValueError::new(flag).into())
+            Err(Self::Error::new(flag))
         } else {
-            let pt = PieceType { v: (flag.v() - 2) % 4 + 2 };
+            let v = (flag.v() - 2) % 4 + 2;
+            let pt = PieceType { v };
             Ok(PromoPieceType { v: pt })
         }
     }
@@ -204,24 +208,40 @@ impl const ConstFrom<(Color, PromoPieceType)> for Piece {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum PieceParseError {
+    #[error("Invalid piece type: {0}")]
+    InvalidType(PieceTypeParseError),
+
+    #[error("Invalid char.")]
+    InvalidChar,
+}
+
 impl TryFrom<char> for Piece {
-    type Error = ParseError;
+    type Error = PieceParseError;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
-        let piece_type = PieceType::try_from(value.to_lowercase().next().unwrap())?;
-        let color = if value.is_uppercase() {
-            Color::WHITE
-        } else {
-            Color::BLACK
-        };
-        Ok(Self::from_c((color, piece_type)))
+        match value {
+            'a'..'z' => {
+                let color = colors::WHITE;
+                let p_type = PieceType::try_from(value).map_err(|e| Self::Error::InvalidType(e))?;
+                Ok(Self::from_c((color, p_type)))
+            }
+            'A'..'Z' => {
+                let color = colors::BLACK;
+                let value = (value as u8 - b'a') as char;
+                let p_type = PieceType::try_from(value).map_err(|e| Self::Error::InvalidType(e))?;
+                Ok(Self::from_c((color, p_type)))
+            }
+            _ => Err(Self::Error::InvalidChar),
+        }
     }
 }
 
 impl From<Piece> for char {
     fn from(val: Piece) -> Self {
         let mut result: char = val.piece_type().into();
-        if val.color() == Color::WHITE {
+        if val.color() == colors::WHITE {
             result = result.to_uppercase().next().unwrap();
         }
         result
