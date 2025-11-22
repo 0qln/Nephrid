@@ -2,7 +2,7 @@ use std::{
     any::type_name,
     fmt::{self, Debug},
     marker::PhantomData,
-    ops::{Bound, IntoBounds},
+    ops::{Bound, IntoBounds}, sync::{Arc, atomic::{AtomicBool, Ordering}},
 };
 
 use thiserror::Error;
@@ -248,5 +248,18 @@ pub fn trim_newline(s: &mut String) {
         if s.ends_with('\r') {
             s.pop();
         }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct DebugMode(Arc<AtomicBool>);
+
+impl DebugMode {
+    pub fn get(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+
+    pub fn set(&self, val: bool) {
+        self.0.store(val, Ordering::Relaxed);
     }
 }

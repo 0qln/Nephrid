@@ -1,5 +1,7 @@
 use crate::{
-    core::{move_iter::sliding_piece::magics, position::Position, zobrist},
+    core::{
+        color::colors, move_iter::sliding_piece::magics, ply::Ply, position::Position, zobrist,
+    },
     uci::tokens::Tokenizer,
 };
 
@@ -15,4 +17,17 @@ fn cloning() {
         let cloned = pos.clone();
         assert_eq!(pos, cloned);
     }
+}
+
+#[test]
+fn fen_decoding() {
+    zobrist::init();
+    magics::init();
+
+    let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    let pos = Position::try_from(&mut Tokenizer::new(fen)).expect("Should not fail.");
+
+    assert_eq!(pos.get_turn(), colors::WHITE);
+    assert_eq!(pos.plys_50(), Ply { v: 0 });
+    assert_eq!(pos.ply(), Ply { v: 2 });
 }

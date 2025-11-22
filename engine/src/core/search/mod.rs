@@ -1,9 +1,8 @@
 use std::cell::UnsafeCell;
 use std::ops::ControlFlow;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
+use crate::misc::DebugMode;
 use crate::uci::sync::{self, CancellationToken};
 use limit::Limit;
 use mode::Mode;
@@ -25,17 +24,12 @@ pub struct Search {
     pub limit: Limit,
     pub target: Target,
     pub mode: Mode,
-    pub debug: Arc<AtomicBool>,
+    pub debug: DebugMode,
 }
 
 impl Search {
-    pub fn new(limit: Limit, target: Target, mode: Mode, debug: Arc<AtomicBool>) -> Self {
-        Self {
-            limit,
-            target,
-            mode,
-            debug,
-        }
+    pub fn new(limit: Limit, target: Target, mode: Mode, debug: DebugMode) -> Self {
+        Self { limit, target, mode, debug }
     }
 
     pub fn reset() {
@@ -43,10 +37,11 @@ impl Search {
     }
 
     pub fn perft(
+        &self,
         pos: &mut UnsafeCell<Position>,
         depth: Depth,
         cancellation_token: CancellationToken,
-        f: fn(Move, u64) -> (),
+        f: fn(Move, u64, Depth, bool) -> (),
     ) -> u64 {
         if cancellation_token.is_cancelled() {
             return 0;
@@ -61,8 +56,13 @@ impl Search {
         unsafe {
             fold_legal_moves::<_, _, _>(&*pos.get(), 0, |acc, m| {
                 pos.get_mut().make_move(m);
-                let c = Self::perft(pos, depth - 1, cancellation_token.clone(), |_, _| {});
-                f(m, c);
+                let c = self.perft(
+                    pos,
+                    depth - 1,
+                    cancellation_token.clone(),
+                    if self.debug.get() { f } else { |_, _, _, _| {} },
+                );
+                f(m, c, self.target.depth - depth, self.debug.get());
                 pos.get_mut().unmake_move(m);
                 ControlFlow::Continue::<(), _>(acc + c)
             })
@@ -99,12 +99,18 @@ impl Search {
     pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {
         match self.mode {
             Mode::Perft => {
-                let nodes = Self::perft(
+                let nodes = self.perft(
                     &mut UnsafeCell::new(position.clone()),
                     self.target.depth,
                     cancellation_token,
-                    |m, c| {
-                        sync::out(&format!("{m}: {c}"));
+                    |mov, count, depth, debug| {
+                        if debug {
+                            let indent =
+                                itertools::repeat_n(' ', depth.v().into()).collect::<String>();
+                            sync::out(&format!("{}{mov:?}: {count}", indent));
+                        } else {
+                            sync::out(&format!("{mov}: {count}"));
+                        }
                     },
                 );
                 sync::out(&format!("\nNodes searched: {nodes}"));

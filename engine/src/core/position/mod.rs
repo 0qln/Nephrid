@@ -680,11 +680,18 @@ impl Position {
 
 impl fmt::Debug for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let str: String = self.into();
-        f.write_str(&str)
+        f.write_str(&format!("board:\n{}\n", String::from(self)))?;
+        f.write_str(&format!("turn: {:?}\n", self.get_turn()))?;
+        f.write_str(&format!("ply: {:?}\n", self.ply()))?;
+        Ok(())
     }
 }
 
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&String::from(self))
+    }
+}
 impl From<&Position> for String {
     fn from(val: &Position) -> Self {
         let mut result = String::new();

@@ -11,11 +11,12 @@ fn test_pos(mut fen: Tokenizer, depth: Depth, expected: u64) {
     zobrist::init();
 
     let pos = Position::try_from(&mut fen).unwrap();
-    let result = Search::perft(
+    let search = Search::default();
+    let result = search.perft(
         &mut UnsafeCell::new(pos),
         depth,
         CancellationToken::new(),
-        |_, _| {},
+        |_, _, _, _| {},
     );
     assert_eq!(expected, result);
 }

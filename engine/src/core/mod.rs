@@ -1,10 +1,6 @@
 use search::{Search, limit::Limit, mode::Mode, target::Target};
 
 use self::r#move::LongAlgebraicUciNotation;
-use crate::uci::{
-    sync::{self, CancellationToken, UciError},
-    tokens::Tokenizer,
-};
 use crate::{
     core::{
         config::{ConfigOptionType, Configuration},
@@ -14,15 +10,14 @@ use crate::{
     },
     misc::trim_newline,
 };
-use std::{
-    error::Error,
-    process,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
+use crate::{
+    misc::DebugMode,
+    uci::{
+        sync::{self, CancellationToken, UciError},
+        tokens::Tokenizer,
     },
-    thread,
 };
+use std::{error::Error, process, thread};
 
 pub mod bitboard;
 pub mod castling;
@@ -42,7 +37,7 @@ pub mod zobrist;
 #[derive(Default)]
 pub struct Engine {
     config: Configuration,
-    debug: Arc<AtomicBool>,
+    debug: DebugMode,
     position: Position,
     pos_src: String,
 }
@@ -56,8 +51,15 @@ pub fn execute_uci(
     let mut tokenizer = Tokenizer::new(command.as_str());
     match tokenizer.next_token() {
         Some("d") => {
-            let pos: String = (&engine.position).into();
-            sync::out(&pos);
+            let pos = &engine.position;
+            let str = if engine.debug.get() {
+                format!("{pos:?}")
+            } else {
+                format!("{pos}")
+            };
+
+            sync::out(&str);
+
             Ok(())
         }
         Some("quit") => {
@@ -257,7 +259,7 @@ pub fn execute_uci(
                 }
                 None => return Err(UciError::MissingArgument("value").into()),
             };
-            engine.debug.store(debug, Ordering::Relaxed);
+            engine.debug.set(debug);
             Ok(())
         }
         Some("isready") => {

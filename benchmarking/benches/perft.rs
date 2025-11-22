@@ -12,11 +12,12 @@ use engine::uci::tokens::Tokenizer;
 
 fn bench_perft(pos: Position, depth: Depth) {
     println!("{pos:?}");
-    _ = Search::perft(
+    let search = Search::default();
+    _ = search.perft(
         &mut UnsafeCell::new(pos),
         depth,
         CancellationToken::new(),
-        |m, _| println!("{m:?}"),
+        |m, _, _, _| println!("{m:?}"),
     );
 }
 
