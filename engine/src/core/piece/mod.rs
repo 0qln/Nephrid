@@ -226,12 +226,12 @@ impl TryFrom<char> for Piece {
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
             'a'..'z' => {
-                let color = colors::WHITE;
+                let color = colors::BLACK;
                 let p_type = PieceType::try_from(value).map_err(Self::Error::InvalidType)?;
                 Ok(Self::from_c((color, p_type)))
             }
             'A'..'Z' => {
-                let color = colors::BLACK;
+                let color = colors::WHITE;
                 let value = (value as u8 + (b'a' - b'A')) as char;
                 let p_type = PieceType::try_from(value).map_err(Self::Error::InvalidType)?;
                 Ok(Self::from_c((color, p_type)))
