@@ -3,6 +3,7 @@ use std::{mem, ops};
 
 use rand::{RngCore, SeedableRng, rngs::SmallRng};
 
+use crate::core::color::colors;
 use crate::misc::ConstFrom;
 
 use super::{
@@ -38,7 +39,7 @@ impl Hash {
 
     #[inline]
     pub fn set_turn(&mut self, turn: Turn) -> Self {
-        (turn == Turn::BLACK).then(|| self.toggle_turn());
+        (turn == colors::BLACK).then(|| self.toggle_turn());
         *self
     }
 
