@@ -1,14 +1,14 @@
 use crate::core::{
     bitboard::Bitboard,
-    color::Color,
-    coordinates::{CompassRose, Rank},
+    color::{Color, colors},
+    coordinates::{CompassRose, Rank, compass_rose, ranks},
 };
 
 #[inline]
 pub(super) const fn promo_rank(c: Color) -> Rank {
     match c {
-        colors::WHITE => Rank::_7,
-        colors::BLACK => Rank::_2,
+        colors::WHITE => ranks::_7,
+        colors::BLACK => ranks::_2,
         _ => unreachable!(),
     }
 }
@@ -16,8 +16,8 @@ pub(super) const fn promo_rank(c: Color) -> Rank {
 #[inline]
 pub(super) const fn start_rank(c: Color) -> Rank {
     match c {
-        colors::WHITE => Rank::_2,
-        colors::BLACK => Rank::_7,
+        colors::WHITE => ranks::_2,
+        colors::BLACK => ranks::_7,
         _ => unreachable!(),
     }
 }
@@ -48,5 +48,5 @@ pub(super) const fn backward(bb: Bitboard, dir: CompassRose) -> Bitboard {
 
 #[inline]
 pub(super) const fn capture(c: Color, dir: CompassRose) -> CompassRose {
-    compass_rose::new(dir.v() + single_step(c).v())
+    CompassRose::new(dir.v() + single_step(c).v())
 }
