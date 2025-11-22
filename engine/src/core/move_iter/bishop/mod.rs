@@ -1,9 +1,9 @@
 use crate::{
     core::{
         bitboard::Bitboard,
-        coordinates::{CompassRose, DiagA1H8, DiagA8H1, Square},
+        coordinates::{DiagA1H8, DiagA8H1, Square, compass_rose, squares},
         move_iter::bishop,
-        piece::{IPieceType, PieceType},
+        piece::{IPieceType, PieceType, piece_type},
     },
     misc::ConstFrom,
 };
@@ -22,7 +22,7 @@ impl Bishop {
 }
 
 impl IPieceType for Bishop {
-    const ID: PieceType = PieceType::BISHOP;
+    const ID: PieceType = piece_type::BISHOP;
 }
 
 impl MagicGen for Bishop {
@@ -32,7 +32,7 @@ impl MagicGen for Bishop {
 
     fn relevant_occupancy_num_combinations() -> usize {
         // center is generally max
-        let max = Self::relevant_occupancy(Square::E4);
+        let max = Self::relevant_occupancy(squares::E4);
         (1 << max.pop_cnt()) as usize
     }
 }
@@ -76,7 +76,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
-    let moves = range.shift_c::<{ CompassRose::SOEA.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::SOEA.v() }>() & ray;
     result |= moves;
 
     // south west
@@ -84,7 +84,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
-    let moves = range.shift_c::<{ CompassRose::SOWE.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::SOWE.v() }>() & ray;
     result |= moves;
 
     // north west
@@ -92,7 +92,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
-    let moves = range.shift_c::<{ CompassRose::NOWE.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::NOWE.v() }>() & ray;
     result |= moves;
 
     // north east
@@ -100,7 +100,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
-    let moves = range.shift_c::<{ CompassRose::NOEA.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::NOEA.v() }>() & ray;
     result |= moves;
 
     result
