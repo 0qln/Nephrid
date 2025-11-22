@@ -48,7 +48,7 @@ impl TryFrom<&mut Tokenizer<'_>> for Color {
 
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         match fen.skip_ws().next_char() {
-            Some(c) => colors::try_from(c).map_err(|e| Self::Error::InvalidColor(e)),
+            Some(c) => Self::try_from(c).map_err(|e| Self::Error::InvalidColor(e)),
             None => Err(Self::Error::MissingChar),
         }
     }

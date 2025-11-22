@@ -173,12 +173,12 @@ pub fn pin_mask(pos: &Position, piece: Square) -> Bitboard {
 
 #[inline]
 pub fn map_captures(targets: Bitboard, piece: Square) -> impl Iterator<Item = Move> {
-    targets.map(move |target| Move::new(piece, target, MoveFlag::CAPTURE))
+    targets.map(move |target| Move::new(piece, target, move_flags::CAPTURE))
 }
 
 #[inline]
 pub fn map_quiets(targets: Bitboard, piece: Square) -> impl Iterator<Item = Move> {
-    targets.map(move |target| Move::new(piece, target, MoveFlag::QUIET))
+    targets.map(move |target| Move::new(piece, target, move_flags::QUIET))
 }
 
 // todo:

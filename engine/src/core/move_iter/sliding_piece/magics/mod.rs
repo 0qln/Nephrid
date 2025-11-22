@@ -5,7 +5,7 @@ use rand::{RngCore, SeedableRng, rngs::SmallRng};
 
 use crate::core::{
     bitboard::Bitboard,
-    coordinates::Square,
+    coordinates::{Square, squares},
     move_iter::{bishop::Bishop, map_bits, rook::Rook},
 };
 
@@ -30,12 +30,7 @@ pub struct Magic<'a> {
 
 impl Magic<'_> {
     pub fn new(ptr: &[Bitboard], mask: Bitboard, magic: u64, shift: u8) -> Magic<'_> {
-        Magic {
-            ptr,
-            mask,
-            magic,
-            shift,
-        }
+        Magic { ptr, mask, magic, shift }
     }
 
     #[inline(always)]
@@ -152,7 +147,7 @@ pub fn find_magics<T: MagicGen + SlidingAttacks>(
     prev: Option<&MagicInfo>,
 ) -> [MagicInfo; 64] {
     let mut result: [MagicInfo; 64] = unsafe { mem::zeroed() };
-    for sq in Square::A1..=Square::H8 {
+    for sq in squares::A1..=squares::H8 {
         let idx = sq.v() as usize;
         result[idx] = find_magic::<T>(
             table,

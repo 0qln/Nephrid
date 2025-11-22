@@ -3,7 +3,7 @@ use std::ops::ControlFlow;
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use engine::{
     core::{
-        color::Color,
+        color::{Color, colors},
         coordinates::Square,
         r#move::Move,
         move_iter::{
@@ -18,7 +18,7 @@ use engine::{
 };
 
 pub fn pawn_attacks(c: &mut Criterion) {
-    let pawn = Square::E4;
+    let pawn = squares::E4;
     let mut group = c.benchmark_group("pawn::attacks");
 
     group.bench_function("pawn::attacks::lookup", |b| {

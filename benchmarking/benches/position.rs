@@ -39,14 +39,20 @@ pub fn get_bitboard(c: &mut Criterion) {
 
 pub fn put_piece(c: &mut Criterion) {
     let inputs = [
-        Pair(Square::A3, Piece::from_c((colors::WHITE, piece_type::PAWN))),
         Pair(
-            Square::B4,
+            squares::A3,
+            Piece::from_c((colors::WHITE, piece_type::PAWN)),
+        ),
+        Pair(
+            squares::B4,
             Piece::from_c((colors::WHITE, piece_type::QUEEN)),
         ),
-        Pair(Square::E4, Piece::from_c((colors::BLACK, piece_type::PAWN))),
         Pair(
-            Square::H5,
+            squares::E4,
+            Piece::from_c((colors::BLACK, piece_type::PAWN)),
+        ),
+        Pair(
+            squares::H5,
             Piece::from_c((colors::BLACK, piece_type::QUEEN)),
         ),
     ];
@@ -71,7 +77,7 @@ pub fn put_piece(c: &mut Criterion) {
 }
 
 pub fn remove_piece(c: &mut Criterion) {
-    let inputs = [Square::A1, Square::E2, Square::H8];
+    let inputs = [squares::A1, squares::E2, squares::H8];
 
     magics::init();
     zobrist::init();
@@ -94,9 +100,9 @@ pub fn remove_piece(c: &mut Criterion) {
 
 pub fn move_piece(c: &mut Criterion) {
     let inputs = [
-        Pair(Square::A1, Square::A3),
-        Pair(Square::E2, Square::E4),
-        Pair(Square::H8, Square::H5),
+        Pair(squares::A1, squares::A3),
+        Pair(squares::E2, squares::E4),
+        Pair(squares::H8, squares::H5),
     ];
 
     magics::init();

@@ -6,10 +6,8 @@ use engine::core::move_iter::sliding_piece::SlidingAttacks;
 use engine::core::move_iter::sliding_piece::magics;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    let bishop = Square::E4;
-    let occupancy = Bitboard {
-        v: 0x2400482000044c0_u64,
-    };
+    let bishop = squares::E4;
+    let occupancy = Bitboard { v: 0x2400482000044c0_u64 };
     magics::init();
 
     let mut group = c.benchmark_group("bishop::attacks");

@@ -1,15 +1,20 @@
 use core::fmt;
 use std::ptr::NonNull;
 
+use thiserror::Error;
+
 use crate::{
     core::{
         bitboard::Bitboard,
-        castling::CastlingRights,
-        color::Color,
-        coordinates::{File, Rank, Square},
-        r#move::Move,
+        castling::{CastlingRights, CastlingSideTokenizationError, castling_sides},
+        color::{Color, ColorTokenizationError, colors},
+        coordinates::{
+            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, squares,
+        },
+        r#move::{Move, move_flags},
         move_iter::{bishop, king, knight, pawn, rook},
-        piece::{Piece, PieceType, piece_type},
+        piece::{Piece, PieceParseError, PieceType, PromoPieceType, piece_type},
+        ply::{FullMoveCountTokenizationError, PlyTokenizationError},
         turn::Turn,
         zobrist,
     },
@@ -18,11 +23,8 @@ use crate::{
 };
 
 use super::{
-    castling::CastlingSide,
     coordinates::{EpCaptureSquare, EpTargetSquare},
-    r#move::MoveFlag,
     move_iter::{bishop::Bishop, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks},
-    piece::PromoPieceType,
     ply::{FullMoveCount, Ply},
 };
 
@@ -267,7 +269,7 @@ impl Position {
 
     #[inline]
     pub fn get_occupancy(&self) -> Bitboard {
-        self.get_color_bb(colors::WHITE) | self.get_color_bb(Color::BLACK)
+        self.get_color_bb(colors::WHITE) | self.get_color_bb(colors::BLACK)
     }
 
     #[inline]
@@ -498,12 +500,12 @@ impl Position {
         // captures
         if flag.is_capture() {
             let captured_piece = match flag {
-                MoveFlag::EN_PASSANT => Piece::from_c((!us, piece_type::PAWN)),
+                move_flags::EN_PASSANT => Piece::from_c((!us, piece_type::PAWN)),
                 _ => target_piece,
             };
 
             let captured_sq = match flag {
-                MoveFlag::EN_PASSANT => {
+                move_flags::EN_PASSANT => {
                     // Safety:
                     // If the move is an en passant, the `to` square is on the 3rd or 6th rank.
                     unsafe {
@@ -532,21 +534,23 @@ impl Position {
         match moving_piece.piece_type() {
             // castling
             piece_type::KING => {
-                next_state.castling.set_false(CastlingSide::QUEEN_SIDE, us);
-                next_state.castling.set_false(CastlingSide::KING_SIDE, us);
+                next_state
+                    .castling
+                    .set_false(castling_sides::QUEEN_SIDE, us);
+                next_state.castling.set_false(castling_sides::KING_SIDE, us);
                 match flag {
-                    MoveFlag::KING_CASTLE => {
+                    move_flags::KING_CASTLE => {
                         let rank = Rank::from_c(to);
-                        let rook_from = Square::from_c((File::H, rank));
-                        let rook_to = Square::from_c((File::F, rank));
+                        let rook_from = Square::from_c((files::H, rank));
+                        let rook_to = Square::from_c((files::F, rank));
                         let rook = self.get_piece(rook_from);
                         self.move_piece(rook_from, rook_to);
                         next_state.key.move_piece_sq(rook_from, rook_to, rook);
                     }
-                    MoveFlag::QUEEN_CASTLE => {
+                    move_flags::QUEEN_CASTLE => {
                         let rank = Rank::from_c(to);
-                        let rook_from = Square::from_c((File::A, rank));
-                        let rook_to = Square::from_c((File::D, rank));
+                        let rook_from = Square::from_c((files::A, rank));
+                        let rook_to = Square::from_c((files::D, rank));
                         let rook = self.get_piece(rook_from);
                         self.move_piece(rook_from, rook_to);
                         next_state.key.move_piece_sq(rook_from, rook_to, rook);
@@ -560,7 +564,7 @@ impl Position {
             // pawns
             piece_type::PAWN => {
                 match flag.v() {
-                    MoveFlag::DOUBLE_PAWN_PUSH_C => {
+                    move_flags::DOUBLE_PAWN_PUSH_C => {
                         // Safety: A double pawn push destination square is the definition of
                         // an en passant square.
                         next_state.ep_capture_square =
@@ -569,9 +573,9 @@ impl Position {
                             .key
                             .toggle_ep_square(next_state.ep_capture_square);
                     }
-                    MoveFlag::PROMOTION_KNIGHT_C..=MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
+                    move_flags::PROMOTION_KNIGHT_C..=move_flags::CAPTURE_PROMOTION_QUEEN_C => {
                         // Safety: We just checked, that the flag is in a valid range.
-                        let promo_t = unsafe { Promopiece_type::try_from(flag).unwrap_unchecked() };
+                        let promo_t = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
                         let promo = Piece::from_c((us, promo_t));
                         self.remove_piece(to);
                         next_state.key.toggle_piece_sq(to, moving_piece);
@@ -600,11 +604,11 @@ impl Position {
 
         #[inline(always)]
         fn remove_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
-            let color_case = Square::A8_C * c.v();
-            if sq.v() == (Square::A1_C | color_case) {
-                cr.set_false(CastlingSide::QUEEN_SIDE, c)
-            } else if sq.v() == (Square::H1_C | color_case) {
-                cr.set_false(CastlingSide::KING_SIDE, c)
+            let color_case = squares::A8_C * c.v();
+            if sq.v() == (squares::A1_C | color_case) {
+                cr.set_false(castling_sides::QUEEN_SIDE, c)
+            } else if sq.v() == (squares::H1_C | color_case) {
+                cr.set_false(castling_sides::KING_SIDE, c)
             }
         }
     }
@@ -621,20 +625,20 @@ impl Position {
 
         match flag.v() {
             // castling
-            MoveFlag::KING_CASTLE_C => {
+            move_flags::KING_CASTLE_C => {
                 let rank = Rank::from_c(to);
-                let rook_from = Square::from_c((File::H, rank));
-                let rook_to = Square::from_c((File::F, rank));
+                let rook_from = Square::from_c((files::H, rank));
+                let rook_to = Square::from_c((files::F, rank));
                 self.move_piece(rook_to, rook_from);
             }
-            MoveFlag::QUEEN_CASTLE_C => {
+            move_flags::QUEEN_CASTLE_C => {
                 let rank = Rank::from_c(to);
-                let rook_from = Square::from_c((File::A, rank));
-                let rook_to = Square::from_c((File::D, rank));
+                let rook_from = Square::from_c((files::A, rank));
+                let rook_to = Square::from_c((files::D, rank));
                 self.move_piece(rook_to, rook_from);
             }
             // promotions
-            MoveFlag::PROMOTION_KNIGHT_C..=MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
+            move_flags::PROMOTION_KNIGHT_C..=move_flags::CAPTURE_PROMOTION_QUEEN_C => {
                 let pawn = Piece::from_c((us, piece_type::PAWN));
                 self.remove_piece(to);
                 self.put_piece(to, pawn);
@@ -649,7 +653,7 @@ impl Position {
         let captured_piece = popped_state.captured_piece;
         if captured_piece != Piece::default() {
             let captured_sq = match flag {
-                MoveFlag::EN_PASSANT => {
+                move_flags::EN_PASSANT => {
                     // Safety:
                     // If the move is an en passant, the `to` square is on the 3rd or 6th rank.
                     unsafe {
@@ -705,45 +709,89 @@ impl From<&Position> for String {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum PositionTokenizationError {
+    #[error("Invalid rank: {0}")]
+    InvalidRank(RankParseError<char>),
+
+    #[error("Invalid piece: {0}")]
+    InvalidPiece(PieceParseError),
+
+    #[error("Invalid square reached.")]
+    InvalidFenSquare,
+
+    #[error("Failed to parse turn part: {0}")]
+    TurnPart(ColorTokenizationError),
+
+    #[error("Failed to parse castling availability part: {0}")]
+    CastlingPart(CastlingSideTokenizationError),
+
+    #[error("Failed to parse en passant capture square part: {0}")]
+    EpSquarePart(EpTargetSquareTokenizationError),
+
+    #[error("Failed to parse half moves to 50 move rule: {0}")]
+    Plys50Part(PlyTokenizationError),
+
+    #[error("Failed to parse full move clock part: {0}")]
+    FullMoveCountPart(FullMoveCountTokenizationError),
+}
+
 impl TryFrom<&mut Tokenizer<'_>> for Position {
-    type Error = ParseError;
+    type Error = PositionTokenizationError;
 
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let mut position = Position::default();
-        let mut sq = Square::H8.v() as i8;
+        let mut sq = squares::H8.v() as i8;
 
         // 1. Piece placement
         for char in fen.skip_ws().chars() {
             match char {
                 '/' => continue,
-                '1'..='8' => sq -= Into::<i8>::into(Rank::try_from(char)?) + 1,
+                '1'..='8' => {
+                    let rank = Rank::try_from(char).map_err(|e| Self::Error::InvalidRank(e))?;
+                    let rank = i8::from(rank);
+                    sq -= rank + 1
+                }
                 _ => {
-                    let piece = Piece::try_from(char)?;
-                    let pos_sq = Square::try_from(sq as u8)?.flip_h();
+                    let piece = Piece::try_from(char).map_err(|e| Self::Error::InvalidPiece(e))?;
+                    let pos_sq = Square::try_from(sq as u8)
+                        .map_err(|_| Self::Error::InvalidFenSquare)?
+                        .flip_h();
+
                     position.put_piece(pos_sq, piece);
                     sq -= 1;
                 }
             }
-            if sq < Square::A1.v() as i8 {
+            if sq < squares::A1.v() as i8 {
                 break;
             }
         }
 
-        let turn = Turn::try_from(&mut *fen)?;
+        let turn = Turn::try_from(&mut *fen).map_err(|e| Self::Error::TurnPart(e))?;
         let mut state = StateInfo {
             // 2. Side to move
             turn,
+
             // 3. Castling ability
-            castling: CastlingRights::try_from(&mut *fen)?,
+            castling: CastlingRights::try_from(&mut *fen)
+                .map_err(|e| Self::Error::CastlingPart(e))?,
+
             // 4. En passant target square
             ep_capture_square: EpCaptureSquare::from((
-                EpTargetSquare::try_from(fen.skip_ws())?,
+                EpTargetSquare::try_from(fen.skip_ws())
+                    .map_err(|e| Self::Error::EpSquarePart(e))?,
                 !turn,
             )),
+
             // 5. Halfmove clock
-            plys50: Ply::try_from(fen.skip_ws())?,
+            plys50: Ply::try_from(fen.skip_ws()).map_err(|e| Self::Error::Plys50Part(e))?,
+
             // 6. Fullmove counter
-            ply: Ply::from((FullMoveCount::try_from(fen.skip_ws())?, turn)),
+            ply: Ply::from((
+                FullMoveCount::try_from(fen.skip_ws())
+                    .map_err(|e| Self::Error::FullMoveCountPart(e))?,
+                turn,
+            )),
 
             ..Default::default()
         };

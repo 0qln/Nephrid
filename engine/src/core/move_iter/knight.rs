@@ -46,9 +46,9 @@ impl<C: NoDoubleCheck> FoldMoves<C> for Knight {
 pub fn lookup_attacks(sq: Square) -> Bitboard {
     static ATTACKS: [Bitboard; 64] = {
         let mut attacks = [Bitboard::empty(); 64];
-        const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
+        const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             // Safety: we are only iterating over valid squares.
-            let sq = unsafe { Square::from_v(sq) };
+            let sq = unsafe { squares::from_v(sq) };
             attacks[sq.v() as usize] = compute_attacks(sq);
         });
         attacks

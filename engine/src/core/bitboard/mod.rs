@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks},
+        coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks, squares},
         move_iter::{bishop, rook},
     },
     misc::ConstFrom,
@@ -139,9 +139,7 @@ impl Bitboard {
 
     #[inline]
     pub const fn split_north(sq: Square) -> Self {
-        Self {
-            v: !0u64 << (sq.v() as u32) << 1,
-        }
+        Self { v: !0u64 << (sq.v() as u32) << 1 }
     }
 
     #[inline]
@@ -159,12 +157,8 @@ impl Bitboard {
     #[inline]
     pub const fn shift(&self, dir: CompassRose) -> Self {
         match dir.v() >= 0 {
-            true => Self {
-                v: self.v << dir.v(),
-            },
-            false => Self {
-                v: self.v >> -dir.v(),
-            },
+            true => Self { v: self.v << dir.v() },
+            false => Self { v: self.v >> -dir.v() },
         }
     }
 
@@ -183,15 +177,11 @@ impl Bitboard {
 
     #[inline]
     pub const fn and_c(&self, other: Self) -> Self {
-        Self {
-            v: self.v & other.v,
-        }
+        Self { v: self.v & other.v }
     }
 
     pub const fn and_not_c(&self, other: Self) -> Self {
-        Self {
-            v: self.v & !other.v,
-        }
+        Self { v: self.v & !other.v }
     }
 
     #[inline]
@@ -302,9 +292,7 @@ impl Bitboard {
     }
 
     pub const fn edges() -> Self {
-        Self {
-            v: !0x007E7E7E7E7E7E00_u64,
-        }
+        Self { v: !0x007E7E7E7E7E7E00_u64 }
     }
 }
 
@@ -337,9 +325,7 @@ impl const ConstFrom<File> for Bitboard {
 impl const ConstFrom<Rank> for Bitboard {
     #[inline]
     fn from_c(rank: Rank) -> Self {
-        Self {
-            v: 0xFFu64 << (rank.v() * 8),
-        }
+        Self { v: 0xFFu64 << (rank.v() * 8) }
     }
 }
 
@@ -396,9 +382,7 @@ impl const ConstFrom<DiagA1H8> for Bitboard {
             0x0000000000008040u64,
             0x0000000000000080u64,
         ];
-        Self {
-            v: A1H8[diag.v() as usize],
-        }
+        Self { v: A1H8[diag.v() as usize] }
     }
 }
 
@@ -422,8 +406,6 @@ impl const ConstFrom<DiagA8H1> for Bitboard {
             0x4080000000000000u64,
             0x8000000000000000u64,
         ];
-        Self {
-            v: A8H1[diag.v() as usize],
-        }
+        Self { v: A8H1[diag.v() as usize] }
     }
 }

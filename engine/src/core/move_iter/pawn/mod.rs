@@ -5,10 +5,10 @@ use super::{
 use crate::{
     core::{
         bitboard::Bitboard,
-        color::{Color, TColor},
+        color::{Color, TColor, colors},
         coordinates::{CompassRose, EpTargetSquare, File, Square, TCompassRose, compass_rose},
         r#move::{Move, MoveFlag},
-        piece::{IPieceType, PieceType},
+        piece::{IPieceType, PieceType, piece_type},
         position::Position,
     },
     misc::ConstFrom,
@@ -50,7 +50,7 @@ impl<'a> PawnMoves<'a> {
         let single_step_tabus = backward(tabu_squares, single_step(color));
         let from = non_promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
-        Self::new(from, to, MoveFlag::QUIET, pos)
+        Self::new(from, to, move_flags::QUIET, pos)
     }
 
     #[inline(always)]
@@ -65,14 +65,14 @@ impl<'a> PawnMoves<'a> {
         let double_step_pawns = pawns & Bitboard::from_c(start_rank(color));
         let from = double_step_pawns & !double_step_tabus;
         let to = forward(from, double_step(color));
-        Self::new(from, to, MoveFlag::DOUBLE_PAWN_PUSH, pos)
+        Self::new(from, to, move_flags::DOUBLE_PAWN_PUSH, pos)
     }
 
     #[inline(always)]
     fn capture<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
         pos: &'a Position,
     ) -> Self {
-        colors::assert_variant(C); // Safety
+        Color::assert_variant(C); // Safety
         let color = unsafe { colors::from_v(C) };
         let capture_dir = capture(color, compass_rose::new(DIR));
         let pawns = pos.get_bitboard(piece_type::PAWN, color);
@@ -80,27 +80,27 @@ impl<'a> PawnMoves<'a> {
         let capturing_pawns = non_promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
         let to = forward(capturing_pawns, capture_dir) & T::captures_mask(pos, color);
         let from = backward(to, capture_dir);
-        Self::new(from, to, MoveFlag::CAPTURE, pos)
+        Self::new(from, to, move_flags::CAPTURE, pos)
     }
 
     #[inline(always)]
     fn promo_knight<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<C, T>(pos, MoveFlag::PROMOTION_KNIGHT)
+        Self::promo::<C, T>(pos, move_flags::PROMOTION_KNIGHT)
     }
 
     #[inline(always)]
     fn promo_bishop<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<C, T>(pos, MoveFlag::PROMOTION_BISHOP)
+        Self::promo::<C, T>(pos, move_flags::PROMOTION_BISHOP)
     }
 
     #[inline(always)]
     fn promo_rook<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<C, T>(pos, MoveFlag::PROMOTION_ROOK)
+        Self::promo::<C, T>(pos, move_flags::PROMOTION_ROOK)
     }
 
     #[inline(always)]
     fn promo_queen<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<C, T>(pos, MoveFlag::PROMOTION_QUEEN)
+        Self::promo::<C, T>(pos, move_flags::PROMOTION_QUEEN)
     }
 
     #[inline(always)]
@@ -121,28 +121,28 @@ impl<'a> PawnMoves<'a> {
     fn promo_capture_knight<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
         pos: &'a Position,
     ) -> Self {
-        Self::pl_promo_capture::<C, DIR, T>(pos, MoveFlag::CAPTURE_PROMOTION_KNIGHT)
+        Self::pl_promo_capture::<C, DIR, T>(pos, move_flags::CAPTURE_PROMOTION_KNIGHT)
     }
 
     #[inline(always)]
     fn promo_capture_bishop<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
         pos: &'a Position,
     ) -> Self {
-        Self::pl_promo_capture::<C, DIR, T>(pos, MoveFlag::CAPTURE_PROMOTION_BISHOP)
+        Self::pl_promo_capture::<C, DIR, T>(pos, move_flags::CAPTURE_PROMOTION_BISHOP)
     }
 
     #[inline(always)]
     fn promo_capture_rook<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
         pos: &'a Position,
     ) -> Self {
-        Self::pl_promo_capture::<C, DIR, T>(pos, MoveFlag::CAPTURE_PROMOTION_ROOK)
+        Self::pl_promo_capture::<C, DIR, T>(pos, move_flags::CAPTURE_PROMOTION_ROOK)
     }
 
     #[inline(always)]
     fn promo_capture_queen<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
         pos: &'a Position,
     ) -> Self {
-        Self::pl_promo_capture::<C, DIR, T>(pos, MoveFlag::CAPTURE_PROMOTION_QUEEN)
+        Self::pl_promo_capture::<C, DIR, T>(pos, move_flags::CAPTURE_PROMOTION_QUEEN)
     }
 
     #[inline(always)]
@@ -166,7 +166,7 @@ impl<'a> PawnMoves<'a> {
         colors::assert_variant(C); // Safety
         let color = unsafe { colors::from_v(C) };
         let capture_sq = pos.get_ep_capture_square();
-        let target = EpTargetSquare::from((capture_sq, !color));
+        let target = EpTargetsquares::from((capture_sq, !color));
         let mut to = Bitboard::from_c(target.v());
         let from = if to.is_empty() {
             Bitboard::empty()
@@ -203,7 +203,7 @@ impl<'a> PawnMoves<'a> {
                 }
             }
         };
-        Self::new(from, to, MoveFlag::EN_PASSANT, pos)
+        Self::new(from, to, move_flags::EN_PASSANT, pos)
     }
 }
 
@@ -313,8 +313,8 @@ const fn compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
 pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
     static ATTACKS_W: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
-        const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
-            let sq = unsafe { Square::from_v(sq) };
+        const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
+            let sq = unsafe { squares::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
             result[sq.v() as usize] = compute_attacks::<{ colors::WHITE_C }>(pawn);
         });
@@ -322,8 +322,8 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
     };
     static ATTACKS_B: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
-        const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
-            let sq = unsafe { Square::from_v(sq) };
+        const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
+            let sq = unsafe { squares::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
             result[sq.v() as usize] = compute_attacks::<{ colors::BLACK_C }>(pawn);
         });

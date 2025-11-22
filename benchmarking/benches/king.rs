@@ -11,7 +11,7 @@ use engine::core::zobrist;
 use engine::uci::tokens::Tokenizer;
 
 pub fn king_attacks(c: &mut Criterion) {
-    let king = Square::E4;
+    let king = squares::E4;
     let mut group = c.benchmark_group("king::attacks");
 
     group.bench_function("king::attacks::lookup", |b| {

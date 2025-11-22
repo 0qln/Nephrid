@@ -20,7 +20,7 @@ fn bishop() {
 fn test<T: MagicGen + SlidingAttacks>() {
     super::init();
 
-    for sq in Square::A1..=Square::H8 {
+    for sq in squares::A1..=squares::H8 {
         let full_blockers = T::relevant_occupancy(sq);
         let max_size = T::relevant_occupancy_num_combinations();
         let blockers = (0..max_size)

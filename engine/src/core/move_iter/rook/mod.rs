@@ -45,7 +45,7 @@ impl MagicGen for Rook {
     fn relevant_occupancy_num_combinations() -> usize {
         // its the same for each corner, but the corners are generally max,
         // because the square itself is not excluded additionally.
-        let max = Self::relevant_occupancy(Square::A1);
+        let max = Self::relevant_occupancy(squares::A1);
         (1 << max.pop_cnt()) as usize
     }
 }

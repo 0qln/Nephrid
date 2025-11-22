@@ -67,7 +67,7 @@ fn selects_unexpanded_leaf() {
         assert_eq!(node.score.playouts, 0);
     }
     // Verify move was made
-    assert!(pos.get_piece(Square::B8) == Piece::from_c((colors::WHITE, piece_type::KING)));
+    assert!(pos.get_piece(squares::B8) == Piece::from_c((colors::WHITE, piece_type::KING)));
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn handles_terminal_nodes_through_expansion() {
         .root
         .children
         .iter()
-        .find(|n| n.mov.get_flag() == MoveFlag::PROMOTION_ROOK)
+        .find(|n| n.mov.get_flag() == move_flags::PROMOTION_ROOK)
         .unwrap();
     assert_eq!(node.state, NodeState::Terminal);
     assert!(node.children.is_empty());

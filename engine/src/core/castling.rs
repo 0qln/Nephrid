@@ -1,4 +1,4 @@
-use castling_side::*;
+use castling_sides::*;
 use core::fmt;
 
 use crate::{
@@ -22,7 +22,7 @@ pub struct CastlingSide {
 }
 
 impl_variants! {
-    TCastlingSide as CastlingSide in castling_side {
+    TCastlingSide as CastlingSide in castling_sides {
         KING_SIDE = piece_type::KING.v(),
         QUEEN_SIDE = piece_type::QUEEN.v(),
     }
@@ -34,7 +34,7 @@ impl TryFrom<File> for CastlingSide {
     type Error = CastlingSideParseError;
 
     fn try_from(value: File) -> Result<Self, Self::Error> {
-        use castling_side::*;
+        use castling_sides::*;
         match value {
             files::G => Ok(KING_SIDE),
             files::C => Ok(QUEEN_SIDE),
