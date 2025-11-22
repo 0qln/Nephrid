@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use engine::core::coordinates::Square;
+use engine::core::coordinates::squares;
 use engine::core::r#move::Move;
 use engine::core::move_iter::king::{King, compute_attacks, lookup_attacks};
 use engine::core::move_iter::sliding_piece::magics;

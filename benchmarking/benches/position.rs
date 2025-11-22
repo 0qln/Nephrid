@@ -4,10 +4,10 @@ use std::{fmt::Display, ops::ControlFlow};
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::{
     core::{
-        color::Color,
-        coordinates::Square,
+        color::colors,
+        coordinates::squares,
         move_iter::{fold_legal_moves, sliding_piece::magics},
-        piece::{Piece, PieceType},
+        piece::{Piece, piece_type},
         position::Position,
         zobrist,
     },

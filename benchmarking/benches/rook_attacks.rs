@@ -1,6 +1,6 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use engine::core::bitboard::Bitboard;
-use engine::core::coordinates::Square;
+use engine::core::coordinates::squares;
 use engine::core::move_iter::rook::Rook;
 use engine::core::move_iter::sliding_piece::SlidingAttacks;
 use engine::core::move_iter::sliding_piece::magics;

@@ -2,10 +2,7 @@ use core::fmt;
 use std::fmt::Display;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use engine::core::{
-    bitboard::Bitboard,
-    coordinates::{Square, squares},
-};
+use engine::core::{bitboard::Bitboard, coordinates::squares};
 
 pub fn pop_cnt(c: &mut Criterion) {
     let mut group = c.benchmark_group("bitboard::pop_cnt");

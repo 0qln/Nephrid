@@ -3,8 +3,8 @@ use std::ops::ControlFlow;
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use engine::{
     core::{
-        color::{Color, colors},
-        coordinates::Square,
+        color::colors,
+        coordinates::squares,
         r#move::Move,
         move_iter::{
             FoldMoves, NoCheck,
