@@ -3,10 +3,10 @@ use std::ops::Try;
 use crate::{
     core::{
         bitboard::Bitboard,
-        coordinates::{CompassRose, Square, TCompassRose},
+        coordinates::{CompassRose, Square, TCompassRose, compass_rose, squares},
         r#move::Move,
         move_iter::{map_captures, map_quiets},
-        piece::PieceType,
+        piece::piece_type,
         position::Position,
     },
     misc::ConstFrom,
@@ -48,7 +48,7 @@ pub fn lookup_attacks(sq: Square) -> Bitboard {
         let mut attacks = [Bitboard::empty(); 64];
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             // Safety: we are only iterating over valid squares.
-            let sq = unsafe { squares::from_v(sq) };
+            let sq = unsafe { Square::from_v(sq) };
             attacks[sq.v() as usize] = compute_attacks(sq);
         });
         attacks
@@ -78,6 +78,6 @@ const fn compute_attacks_multiple(knights: Bitboard) -> Bitboard {
 
 #[inline]
 const fn compute_atttack<const DIR: TCompassRose>(knight: Bitboard, attacks: &mut Bitboard) {
-    let attack_sqrs = Bitboard::from_c(compass_rose::new(-DIR));
-    attacks.v |= knight.and_c(attack_sqrs).shift(compass_rose::new(DIR)).v;
+    let attack_sqrs = Bitboard::from_c(CompassRose::new(-DIR));
+    attacks.v |= knight.and_c(attack_sqrs).shift(CompassRose::new(DIR)).v;
 }
