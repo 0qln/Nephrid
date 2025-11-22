@@ -122,7 +122,7 @@ impl Clone for StateStack {
         states.reserve(self.states.capacity() - self.states.len());
         Self {
             states,
-            current: self.current.clone(),
+            current: self.current,
         }
     }
 }
@@ -748,12 +748,12 @@ impl TryFrom<&mut Tokenizer<'_>> for Position {
             match char {
                 '/' => continue,
                 '1'..='8' => {
-                    let rank = Rank::try_from(char).map_err(|e| Self::Error::InvalidRank(e))?;
+                    let rank = Rank::try_from(char).map_err(Self::Error::InvalidRank)?;
                     let rank = i8::from(rank);
                     sq -= rank + 1
                 }
                 _ => {
-                    let piece = Piece::try_from(char).map_err(|e| Self::Error::InvalidPiece(e))?;
+                    let piece = Piece::try_from(char).map_err(Self::Error::InvalidPiece)?;
                     let pos_sq = Square::try_from(sq as u8)
                         .map_err(|_| Self::Error::InvalidFenSquare)?
                         .flip_h();
@@ -767,29 +767,29 @@ impl TryFrom<&mut Tokenizer<'_>> for Position {
             }
         }
 
-        let turn = Turn::try_from(&mut *fen).map_err(|e| Self::Error::TurnPart(e))?;
+        let turn = Turn::try_from(&mut *fen).map_err(Self::Error::TurnPart)?;
         let mut state = StateInfo {
             // 2. Side to move
             turn,
 
             // 3. Castling ability
             castling: CastlingRights::try_from(&mut *fen)
-                .map_err(|e| Self::Error::CastlingPart(e))?,
+                .map_err(Self::Error::CastlingPart)?,
 
             // 4. En passant target square
             ep_capture_square: EpCaptureSquare::from((
                 EpTargetSquare::try_from(fen.skip_ws())
-                    .map_err(|e| Self::Error::EpSquarePart(e))?,
+                    .map_err(Self::Error::EpSquarePart)?,
                 !turn,
             )),
 
             // 5. Halfmove clock
-            plys50: Ply::try_from(fen.skip_ws()).map_err(|e| Self::Error::Plys50Part(e))?,
+            plys50: Ply::try_from(fen.skip_ws()).map_err(Self::Error::Plys50Part)?,
 
             // 6. Fullmove counter
             ply: Ply::from((
                 FullMoveCount::try_from(fen.skip_ws())
-                    .map_err(|e| Self::Error::FullMoveCountPart(e))?,
+                    .map_err(Self::Error::FullMoveCountPart)?,
                 turn,
             )),
 

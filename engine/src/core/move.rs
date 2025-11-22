@@ -115,7 +115,7 @@ impl TryFrom<TMoveFlag> for MoveFlag {
     fn try_from(value: TMoveFlag) -> Result<Self, Self::Error> {
         match value {
             0..=13 => Ok(MoveFlag { v: value }),
-            x => Err(ValueOutOfRangeError::new(x, 0..=13).into()),
+            x => Err(ValueOutOfRangeError::new(x, 0..=13)),
         }
     }
 }
@@ -235,10 +235,10 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
 
     fn try_from(move_notation: LongAlgebraicUciNotation<'_, '_, '_>) -> Result<Self, Self::Error> {
         let from = Square::try_from(&mut *move_notation.tokens)
-            .map_err(|e| MoveParseError::InvalidFromSquare(e))?;
+            .map_err(MoveParseError::InvalidFromSquare)?;
 
         let to = Square::try_from(&mut *move_notation.tokens)
-            .map_err(|e| MoveParseError::InvalidToSquare(e))?;
+            .map_err(MoveParseError::InvalidToSquare)?;
 
         let moving_p = move_notation.context.get_piece(from);
         let captured_p = move_notation.context.get_piece(to);
@@ -253,10 +253,10 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                     7 | 9 if !captures => f::EN_PASSANT,
                     _ => {
                         let promo_piece = PromoPieceType::try_from(&mut *move_notation.tokens)
-                            .map_err(|e| MoveParseError::InvalidPromoPieceType(e))?;
+                            .map_err(MoveParseError::InvalidPromoPieceType)?;
 
-                        let flag = MoveFlag::from((promo_piece, captures));
-                        flag
+                        
+                        MoveFlag::from((promo_piece, captures))
                         // move_notation.tokens.next_char().map_or(Ok(flag), |c| { Ok() })?
                     }
                 }
@@ -264,7 +264,7 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
             piece_type::KING if abs_dist == 2 => {
                 let file = File::from_c(to);
                 let side =
-                    CastlingSide::try_from(file).map_err(|e| Self::Error::IllegalCastling(e))?;
+                    CastlingSide::try_from(file).map_err(Self::Error::IllegalCastling)?;
                 flag = MoveFlag::from_c(side);
             }
             _ => {}

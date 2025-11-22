@@ -188,11 +188,11 @@ impl TryFrom<&mut Tokenizer<'_>> for Square {
     #[inline]
     fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let file = match tokens.next_char() {
-            Some(c) => File::try_from(c).map_err(|e| Self::Error::InvalidFile(e))?,
+            Some(c) => File::try_from(c).map_err(Self::Error::InvalidFile)?,
             None => return Err(Self::Error::MissingFile),
         };
         let rank = match tokens.next_char() {
-            Some(c) => Rank::try_from(c).map_err(|e| Self::Error::InvalidRank(e))?,
+            Some(c) => Rank::try_from(c).map_err(Self::Error::InvalidRank)?,
             None => return Err(Self::Error::MissingRank),
         };
         Ok(Square::from_c((file, rank)))
@@ -262,7 +262,7 @@ impl TryFrom<&mut Tokenizer<'_>> for EpTargetSquare {
             v: match first {
                 '-' => None,
                 _file => Some(
-                    Square::try_from(&mut *tokens).map_err(|e| Self::Error::InvalidSquare(e))?,
+                    Square::try_from(&mut *tokens).map_err(Self::Error::InvalidSquare)?,
                 ),
             },
         })

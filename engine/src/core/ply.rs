@@ -37,7 +37,7 @@ impl TryFrom<&mut Tokenizer<'_>> for FullMoveCount {
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         match fen.next_token() {
             None => Err(Self::Error::MissingToken),
-            Some(tok) => Self::try_from(tok).map_err(|e| Self::Error::InvalidToken(e)),
+            Some(tok) => Self::try_from(tok).map_err(Self::Error::InvalidToken),
         }
     }
 }
@@ -91,7 +91,7 @@ impl TryFrom<&mut Tokenizer<'_>> for Ply {
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         match fen.next_token() {
             None => Err(Self::Error::MissingToken),
-            Some(tok) => Self::try_from(tok).map_err(|e| Self::Error::InvalidToken(e)),
+            Some(tok) => Self::try_from(tok).map_err(Self::Error::InvalidToken),
         }
     }
 }

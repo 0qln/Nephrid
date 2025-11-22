@@ -124,7 +124,7 @@ impl TryFrom<char> for PromoPieceType {
             'b' => Ok(BISHOP),
             'r' => Ok(ROOK),
             'q' => Ok(QUEEN),
-            x => Err(Self::Error::new(x, &['n', 'b', 'r', 'q']).into()),
+            x => Err(Self::Error::new(x, &['n', 'b', 'r', 'q'])),
         }
     }
 }
@@ -143,7 +143,7 @@ impl TryFrom<&mut Tokenizer<'_>> for PromoPieceType {
 
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         match fen.skip_ws().next_char() {
-            Some(c) => Self::try_from(c).map_err(|e| Self::Error::InvalidToken(e)),
+            Some(c) => Self::try_from(c).map_err(Self::Error::InvalidToken),
             None => Err(Self::Error::MissingToken),
         }
     }
@@ -224,13 +224,13 @@ impl TryFrom<char> for Piece {
         match value {
             'a'..'z' => {
                 let color = colors::WHITE;
-                let p_type = PieceType::try_from(value).map_err(|e| Self::Error::InvalidType(e))?;
+                let p_type = PieceType::try_from(value).map_err(Self::Error::InvalidType)?;
                 Ok(Self::from_c((color, p_type)))
             }
             'A'..'Z' => {
                 let color = colors::BLACK;
                 let value = (value as u8 - b'a') as char;
-                let p_type = PieceType::try_from(value).map_err(|e| Self::Error::InvalidType(e))?;
+                let p_type = PieceType::try_from(value).map_err(Self::Error::InvalidType)?;
                 Ok(Self::from_c((color, p_type)))
             }
             _ => Err(Self::Error::InvalidChar),
