@@ -1,6 +1,14 @@
+use crate::misc::ConstFrom;
 use crate::{
     core::{
-        color::colors, move_iter::sliding_piece::magics, ply::Ply, position::Position, zobrist,
+        bitboard::Bitboard,
+        color::colors,
+        coordinates::{Rank, ranks},
+        move_iter::sliding_piece::magics,
+        piece::piece_type,
+        ply::Ply,
+        position::Position,
+        zobrist,
     },
     uci::tokens::Tokenizer,
 };
@@ -30,4 +38,8 @@ fn fen_decoding() {
     assert_eq!(pos.get_turn(), colors::WHITE);
     assert_eq!(pos.plys_50(), Ply { v: 0 });
     assert_eq!(pos.ply(), Ply { v: 2 });
+    assert_eq!(
+        pos.get_bitboard(piece_type::PAWN, colors::WHITE),
+        Bitboard::from_c(ranks::_2)
+    );
 }
