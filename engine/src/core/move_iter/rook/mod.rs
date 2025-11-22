@@ -1,7 +1,9 @@
+use crate::core::coordinates::{files, ranks, squares};
+use crate::core::piece::piece_type;
 use crate::{
     core::{
         bitboard::Bitboard,
-        coordinates::{CompassRose, File, Rank, Square},
+        coordinates::{File, Rank, Square, compass_rose},
         move_iter::rook,
         piece::{IPieceType, PieceType},
     },
@@ -23,15 +25,15 @@ impl Rook {
     #[inline]
     const fn relevant_file(file: File) -> Bitboard {
         Bitboard::from_c(file)
-            .and_not_c(Bitboard::from_c(Rank::_1))
-            .and_not_c(Bitboard::from_c(Rank::_8))
+            .and_not_c(Bitboard::from_c(ranks::_1))
+            .and_not_c(Bitboard::from_c(ranks::_8))
     }
 
     #[inline]
     const fn relevant_rank(rank: Rank) -> Bitboard {
         Bitboard::from_c(rank)
-            .and_not_c(Bitboard::from_c(File::A))
-            .and_not_c(Bitboard::from_c(File::H))
+            .and_not_c(Bitboard::from_c(files::A))
+            .and_not_c(Bitboard::from_c(files::H))
     }
 }
 
