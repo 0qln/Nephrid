@@ -1,9 +1,9 @@
 use std::{
     fmt::Debug,
-    io::{Write, stdout},
+    io::{stdout, Write},
     sync::{
-        Arc,
         atomic::{AtomicBool, Ordering},
+        Arc,
     },
 };
 

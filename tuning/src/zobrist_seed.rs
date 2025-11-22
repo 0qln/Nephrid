@@ -1,6 +1,6 @@
 use std::ops::ControlFlow;
 
-use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
+use rand::{rngs::SmallRng, Rng, RngCore, SeedableRng};
 
 use engine::core::{
     move_iter::{fold_legal_moves, sliding_piece::magics},

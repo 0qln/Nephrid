@@ -55,14 +55,10 @@ impl fmt::Display for ConfigOptionType {
             ConfigOptionType::Check { default, .. } => {
                 write!(f, "check default {default}")
             }
-            ConfigOptionType::Spin {
-                default, min, max, ..
-            } => {
+            ConfigOptionType::Spin { default, min, max, .. } => {
                 write!(f, "spin default {default} min {min} max {max}")
             }
-            ConfigOptionType::Combo {
-                default, options, ..
-            } => {
+            ConfigOptionType::Combo { default, options, .. } => {
                 write!(f, "combo default {default} {options}")
             }
             ConfigOptionType::Button { callback: _ } => {

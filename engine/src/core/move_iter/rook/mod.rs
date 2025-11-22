@@ -3,14 +3,14 @@ use crate::core::piece::piece_type;
 use crate::{
     core::{
         bitboard::Bitboard,
-        coordinates::{File, Rank, Square, compass_rose},
+        coordinates::{compass_rose, File, Rank, Square},
         move_iter::rook,
         piece::{IPieceType, PieceType},
     },
     misc::ConstFrom,
 };
 
-use super::sliding_piece::{self, SlidingAttacks, SlidingPieceType, magics::MagicGen};
+use super::sliding_piece::{self, magics::MagicGen, SlidingAttacks, SlidingPieceType};
 
 #[cfg(test)]
 mod tests;
@@ -77,7 +77,8 @@ pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
     }
 }
 
-/// Computes the attacks of the rook on the square `sq` with the given `occupancy`.
+/// Computes the attacks of the rook on the square `sq` with the given
+/// `occupancy`.
 fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let file = File::from_c(sq);
     let rank = Rank::from_c(sq);

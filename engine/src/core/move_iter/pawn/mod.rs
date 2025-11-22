@@ -1,17 +1,17 @@
 use super::{
-    FoldMoves, NoDoubleCheck, bishop::Bishop, king::King, pin_mask, rook::Rook,
-    sliding_piece::SlidingAttacks,
+    bishop::Bishop, king::King, pin_mask, rook::Rook, sliding_piece::SlidingAttacks, FoldMoves,
+    NoDoubleCheck,
 };
 use crate::{
     core::{
         bitboard::Bitboard,
-        color::{Color, TColor, colors},
+        color::{colors, Color, TColor},
         coordinates::{
-            CompassRose, EpTargetSquare, File, Square, TCompassRose, compass_rose, files, squares,
+            compass_rose, files, squares, CompassRose, EpTargetSquare, File, Square, TCompassRose,
         },
-        r#move::{Move, MoveFlag, move_flags},
-        piece::{IPieceType, piece_type},
+        piece::{piece_type, IPieceType},
         position::Position,
+        r#move::{move_flags, Move, MoveFlag},
     },
     misc::ConstFrom,
 };
@@ -172,7 +172,8 @@ impl<'a> PawnMoves<'a> {
         let mut to = Bitboard::from_c(target.v());
         let from = if to.is_empty() {
             Bitboard::empty()
-        } else {
+        }
+        else {
             let capture_dir = capture(color, CompassRose::new(DIR));
             let pawns = pos.get_bitboard(piece_type::PAWN, color);
             let capturing_pawns = pawns & !Bitboard::from_c(File::edge::<DIR>());
@@ -180,7 +181,8 @@ impl<'a> PawnMoves<'a> {
             if from.is_empty() {
                 to = Bitboard::empty();
                 Bitboard::empty()
-            } else {
+            }
+            else {
                 // Safety: king the board has no king, but gen_legal is used,
                 // the context is broken anyway.
                 let king_bb = pos.get_bitboard(King::ID, color);
@@ -200,7 +202,8 @@ impl<'a> PawnMoves<'a> {
                 if check {
                     to = Bitboard::empty();
                     Bitboard::empty()
-                } else {
+                }
+                else {
                     from
                 }
             }

@@ -13,9 +13,9 @@ use crate::misc::ConstFrom;
 use super::bitboard::Bitboard;
 use super::color::Color;
 use super::coordinates::Square;
-use super::r#move::Move;
 use super::piece::IPieceType;
 use super::position::{CheckState, Position};
+use super::r#move::Move;
 
 pub mod bishop;
 pub mod king;

@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks},
+        coordinates::{compass_rose::*, files, ranks, CompassRose, File, Rank, Square},
         move_iter::{bishop, rook},
     },
     misc::ConstFrom,
@@ -12,7 +12,7 @@ use std::{
 
 use const_for::const_for;
 
-use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose, squares::*};
+use super::coordinates::{squares::*, DiagA1H8, DiagA8H1, TCompassRose};
 
 #[cfg(test)]
 pub mod tests;
@@ -35,7 +35,8 @@ impl Try for Bitboard {
     fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
         if self.is_empty() {
             ControlFlow::Break(self)
-        } else {
+        }
+        else {
             ControlFlow::Continue(self)
         }
     }

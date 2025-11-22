@@ -3,18 +3,18 @@ use std::ops::Try;
 use crate::{
     core::{
         bitboard::Bitboard,
-        coordinates::{CompassRose, Square, TCompassRose, compass_rose, squares},
-        r#move::Move,
+        coordinates::{compass_rose, squares, CompassRose, Square, TCompassRose},
         move_iter::{map_captures, map_quiets},
         piece::piece_type,
         position::Position,
+        r#move::Move,
     },
     misc::ConstFrom,
 };
 
 use const_for::const_for;
 
-use super::{FoldMoves, NoDoubleCheck, is_blocker};
+use super::{is_blocker, FoldMoves, NoDoubleCheck};
 
 pub struct Knight;
 

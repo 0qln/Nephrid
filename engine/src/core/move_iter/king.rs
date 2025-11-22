@@ -4,10 +4,10 @@ use crate::{
     core::{
         bitboard::Bitboard,
         castling::castling_sides,
-        coordinates::{File, Rank, Square, files, ranks, squares},
-        r#move::{Move, move_flags},
-        piece::{IPieceType, PieceType, piece_type},
+        coordinates::{files, ranks, squares, File, Rank, Square},
+        piece::{piece_type, IPieceType, PieceType},
         position::Position,
+        r#move::{move_flags, Move},
     },
     misc::ConstFrom,
 };
@@ -15,8 +15,8 @@ use crate::{
 use const_for::const_for;
 
 use super::{
-    FoldMoves, NoCheck, NoDoubleCheck, SomeCheck, bishop::Bishop, map_captures, map_quiets,
-    queen::Queen, rook::Rook, sliding_piece::SlidingAttacks,
+    bishop::Bishop, map_captures, map_quiets, queen::Queen, rook::Rook,
+    sliding_piece::SlidingAttacks, FoldMoves, NoCheck, NoDoubleCheck, SomeCheck,
 };
 
 pub struct King;
@@ -65,8 +65,8 @@ impl<C: SomeCheck> FoldMoves<C> for King {
         let rooks_queens = rooks | queens;
         let bishops_queens = bishops | queens;
 
-        // If the to square covers anything, it doesn't matter, because the king will be in check.
-        // (=> we don't need to add the to square to occupancy)
+        // If the to square covers anything, it doesn't matter, because the king will be
+        // in check. (=> we don't need to add the to square to occupancy)
         let king_bb = pos.get_bitboard(King::ID, color);
         let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
 
@@ -80,8 +80,9 @@ impl<C: SomeCheck> FoldMoves<C> for King {
                 // Note that, in no case does a king move cause an enemy attack to get covered
                 // without the king being in check after he moved, which is why we can just
                 // append the new attacks of the sliding piece to the existing attacks.
-                // The new 'nstm_attacks' are not really nstm_attacks, but only reflect nstm_attacks
-                // which are relevant to checking whether the our king is in check.
+                // The new 'nstm_attacks' are not really nstm_attacks, but only reflect
+                // nstm_attacks which are relevant to checking whether the our
+                // king is in check.
                 let rook_attacks = Rook::lookup_attacks(to_sq, occupancy_after_king_move);
                 let bishop_attacks = Bishop::lookup_attacks(to_sq, occupancy_after_king_move);
                 let q_or_r_check = !rook_attacks.and_c(rooks_queens).is_empty();
@@ -90,7 +91,12 @@ impl<C: SomeCheck> FoldMoves<C> for King {
                 !check_after_move
             };
 
-            if is_legal { f(acc, m) } else { try { acc } }
+            if is_legal {
+                f(acc, m)
+            }
+            else {
+                try { acc }
+            }
         })
     }
 }

@@ -3,7 +3,7 @@ use core::fmt;
 
 use crate::{
     core::{
-        color::{Color, colors::*},
+        color::{colors::*, Color},
         coordinates::files,
         piece::piece_type,
     },

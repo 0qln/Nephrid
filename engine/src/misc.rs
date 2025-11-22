@@ -2,7 +2,11 @@ use std::{
     any::type_name,
     fmt::{self, Debug},
     marker::PhantomData,
-    ops::{Bound, IntoBounds}, sync::{Arc, atomic::{AtomicBool, Ordering}},
+    ops::{Bound, IntoBounds},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
 };
 
 use thiserror::Error;

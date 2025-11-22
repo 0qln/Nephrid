@@ -1,9 +1,9 @@
-use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use engine::core::{
-    r#move::MoveList, move_iter::sliding_piece::magics, position::Position, search::mcts::Node,
+    move_iter::sliding_piece::magics, position::Position, r#move::MoveList, search::mcts::Node,
     zobrist,
 };
-use rand::{SeedableRng, rngs::SmallRng};
+use rand::{rngs::SmallRng, SeedableRng};
 
 pub fn node_simulate(c: &mut Criterion) {
     magics::init();

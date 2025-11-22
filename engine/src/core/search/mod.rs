@@ -11,8 +11,8 @@ use target::Target;
 use crate::core::position::Position;
 
 use super::depth::Depth;
-use super::r#move::Move;
 use super::move_iter::fold_legal_moves;
+use super::r#move::Move;
 
 pub mod limit;
 pub mod mcts;
@@ -52,7 +52,8 @@ impl Search {
         }
 
         // Safety:
-        // This is safe iff unmake_move perfectly reverses the muations made by make_move.
+        // This is safe iff unmake_move perfectly reverses the muations made by
+        // make_move.
         unsafe {
             fold_legal_moves::<_, _, _>(&*pos.get(), 0, |acc, m| {
                 pos.get_mut().make_move(m);
@@ -108,7 +109,8 @@ impl Search {
                             let indent =
                                 itertools::repeat_n(' ', depth.v().into()).collect::<String>();
                             sync::out(&format!("{}{mov:?}: {count}", indent));
-                        } else {
+                        }
+                        else {
                             sync::out(&format!("{mov}: {count}"));
                         }
                     },

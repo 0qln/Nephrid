@@ -1,8 +1,8 @@
 use crate::{
     core::{
-        r#move::Move,
         move_iter::sliding_piece::magics,
         position::Position,
+        r#move::Move,
         search::mcts::{Node, NodeState},
     },
     uci::tokens::Tokenizer,

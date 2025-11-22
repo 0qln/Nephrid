@@ -6,15 +6,15 @@ use thiserror::Error;
 use crate::{
     core::{
         bitboard::Bitboard,
-        castling::{CastlingRights, CastlingSideTokenizationError, castling_sides},
-        color::{Color, ColorTokenizationError, colors},
+        castling::{castling_sides, CastlingRights, CastlingSideTokenizationError},
+        color::{colors, Color, ColorTokenizationError},
         coordinates::{
-            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, squares,
+            files, squares, EpTargetSquareTokenizationError, File, Rank, RankParseError, Square,
         },
-        r#move::{Move, move_flags},
         move_iter::{bishop, king, knight, pawn, rook},
-        piece::{Piece, PieceParseError, PieceType, PromoPieceType, piece_type},
+        piece::{piece_type, Piece, PieceParseError, PieceType, PromoPieceType},
         ply::{FullMoveCountTokenizationError, PlyTokenizationError},
+        r#move::{move_flags, Move},
         turn::Turn,
         zobrist,
     },
@@ -77,14 +77,17 @@ impl StateInfo {
                     piece_type::ROOK => Rook::lookup_attacks(enemy_sq, occupancy),
                     piece_type::QUEEN => Queen::lookup_attacks(enemy_sq, occupancy),
                     piece_type::KING => king::lookup_attacks(enemy_sq),
-                    _ => unreachable!("We are iterating the squares which contain enemies. piece_type::NONE should not be here."),
+                    _ => unreachable!(
+                        "We are iterating the squares which contain enemies. piece_type::NONE \
+                         should not be here."
+                    ),
                 };
                 (
                     acc.0 | enemy_attacks,
                     match enemy_attacks & king {
                         Bitboard { v: 0 } => acc.1,
-                        _ => acc.1 | Bitboard::from_c(enemy_sq)
-                    }
+                        _ => acc.1 | Bitboard::from_c(enemy_sq),
+                    },
                 )
             })
         };
@@ -96,7 +99,8 @@ impl StateInfo {
                 let between_occupancy = occupancy & between_squares;
                 if between_occupancy.pop_cnt_eq_1() {
                     acc | between_squares
-                } else {
+                }
+                else {
                     acc
                 }
             });
@@ -604,7 +608,8 @@ impl Position {
             let color_case = squares::A8_C * c.v();
             if sq.v() == (squares::A1_C | color_case) {
                 cr.set_false(castling_sides::QUEEN_SIDE, c)
-            } else if sq.v() == (squares::H1_C | color_case) {
+            }
+            else if sq.v() == (squares::H1_C | color_case) {
                 cr.set_false(castling_sides::KING_SIDE, c)
             }
         }

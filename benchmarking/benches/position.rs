@@ -1,13 +1,13 @@
 use core::fmt;
 use std::{fmt::Display, ops::ControlFlow};
 
-use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
 use engine::{
     core::{
         color::colors,
         coordinates::squares,
         move_iter::{fold_legal_moves, sliding_piece::magics},
-        piece::{Piece, piece_type},
+        piece::{piece_type, Piece},
         position::Position,
         zobrist,
     },

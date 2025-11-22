@@ -1,7 +1,7 @@
 use core::fmt;
 use std::fmt::Display;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use engine::core::{bitboard::Bitboard, coordinates::squares};
 
 pub fn pop_cnt(c: &mut Criterion) {

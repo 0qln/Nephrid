@@ -1,12 +1,12 @@
 use std::ops::ControlFlow;
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use engine::core::coordinates::squares;
-use engine::core::r#move::Move;
-use engine::core::move_iter::king::{King, compute_attacks, lookup_attacks};
+use engine::core::move_iter::king::{compute_attacks, lookup_attacks, King};
 use engine::core::move_iter::sliding_piece::magics;
-use engine::core::move_iter::{FoldMoves, NoCheck, SingleCheck, king};
+use engine::core::move_iter::{king, FoldMoves, NoCheck, SingleCheck};
 use engine::core::position::Position;
+use engine::core::r#move::Move;
 use engine::core::zobrist;
 use engine::uci::tokens::Tokenizer;
 

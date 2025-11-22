@@ -5,9 +5,9 @@ use thiserror::Error;
 
 use crate::{
     core::{
-        castling::{CastlingSideParseError, castling_sides},
+        castling::{castling_sides, CastlingSideParseError},
         coordinates::{File, Square, SquareTokenizationError},
-        piece::{PromoPieceTokenizationError, piece_type},
+        piece::{piece_type, PromoPieceTokenizationError},
         position::Position,
     },
     impl_variants,
@@ -197,9 +197,11 @@ impl fmt::Display for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.v == 0 {
             write!(f, "0000")
-        } else if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
+        }
+        else if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
             write!(f, "{}{}{}", self.get_from(), self.get_to(), promo)
-        } else {
+        }
+        else {
             write!(f, "{}{}", self.get_from(), self.get_to())
         }
     }
@@ -255,16 +257,15 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                         let promo_piece = PromoPieceType::try_from(&mut *move_notation.tokens)
                             .map_err(MoveParseError::InvalidPromoPieceType)?;
 
-                        
                         MoveFlag::from((promo_piece, captures))
-                        // move_notation.tokens.next_char().map_or(Ok(flag), |c| { Ok() })?
+                        // move_notation.tokens.next_char().map_or(Ok(flag), |c|
+                        // { Ok() })?
                     }
                 }
             }
             piece_type::KING if abs_dist == 2 => {
                 let file = File::from_c(to);
-                let side =
-                    CastlingSide::try_from(file).map_err(Self::Error::IllegalCastling)?;
+                let side = CastlingSide::try_from(file).map_err(Self::Error::IllegalCastling)?;
                 flag = MoveFlag::from_c(side);
             }
             _ => {}

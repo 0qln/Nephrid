@@ -1,11 +1,11 @@
 use std::{iter::once, mem, sync::Once};
 
 use itertools::Itertools;
-use rand::{RngCore, SeedableRng, rngs::SmallRng};
+use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
 use crate::core::{
     bitboard::Bitboard,
-    coordinates::{Square, squares},
+    coordinates::{squares, Square},
     move_iter::{bishop::Bishop, map_bits, rook::Rook},
 };
 

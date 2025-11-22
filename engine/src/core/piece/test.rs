@@ -1,7 +1,7 @@
 use crate::{
     core::{
         color::colors,
-        piece::{Piece, piece_type},
+        piece::{piece_type, Piece},
     },
     misc::ConstFrom,
 };

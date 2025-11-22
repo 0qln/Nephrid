@@ -2,10 +2,10 @@ use crate::{
     core::{
         color::colors,
         coordinates::squares,
-        r#move::move_flags,
         move_iter::sliding_piece::magics,
-        piece::{Piece, piece_type},
+        piece::{piece_type, Piece},
         position::Position,
+        r#move::move_flags,
         search::mcts::{NodeState, Tree},
     },
     misc::ConstFrom,
@@ -22,12 +22,11 @@ fn initialization() {
 
     assert_eq!(tree.root.state, NodeState::Branch);
     assert!(!tree.root.children.is_empty());
-    assert!(
-        tree.root
-            .children
-            .iter()
-            .all(|c| c.state == NodeState::Leaf)
-    );
+    assert!(tree
+        .root
+        .children
+        .iter()
+        .all(|c| c.state == NodeState::Leaf));
 }
 
 #[test]

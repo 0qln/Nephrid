@@ -1,15 +1,15 @@
 use itertools::Itertools;
-use rand::{Rng, rng};
+use rand::{rng, Rng};
 use std::assert_matches::assert_matches;
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops::{AddAssign, ControlFlow};
 use std::ptr::NonNull;
 
-use crate::core::r#move::MoveList;
 use crate::core::move_iter::king::King;
 use crate::core::piece::IPieceType;
-use crate::core::{color::Color, r#move::Move, move_iter::fold_legal_moves, position::Position};
+use crate::core::r#move::MoveList;
+use crate::core::{color::Color, move_iter::fold_legal_moves, position::Position, r#move::Move};
 
 #[cfg(test)]
 mod test;
@@ -35,7 +35,8 @@ impl PlayoutResult {
                 if in_check {
                     // If in check and no moves, it's a loss for the current player
                     Self::Win { relative_to: !us }
-                } else {
+                }
+                else {
                     Self::Draw
                 }
             });
@@ -277,7 +278,10 @@ impl Node {
                 let b_ucb = b.ucb(self.score.playouts);
                 a_ucb.partial_cmp(&b_ucb).expect("UCB comparison failed!")
             })
-            .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
+            .expect(
+                "This is either a branch or a root node, which implies that this is not a \
+                 terminal node, so there has to be atleast on child.",
+            )
     }
 
     pub fn simulate(
@@ -325,7 +329,8 @@ impl Node {
         });
         self.state = if self.children.is_empty() {
             NodeState::Terminal
-        } else {
+        }
+        else {
             NodeState::Branch
         };
     }

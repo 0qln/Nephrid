@@ -1,12 +1,12 @@
-use search::{Search, limit::Limit, mode::Mode, target::Target};
+use search::{limit::Limit, mode::Mode, target::Target, Search};
 
 use self::r#move::LongAlgebraicUciNotation;
 use crate::{
     core::{
         config::{ConfigOptionType, Configuration},
         depth::Depth,
-        r#move::Move,
         position::Position,
+        r#move::Move,
     },
     misc::trim_newline,
 };
@@ -54,7 +54,8 @@ pub fn execute_uci(
             let pos = &engine.position;
             let str = if engine.debug.get() {
                 format!("{pos:?}")
-            } else {
+            }
+            else {
                 format!("{pos}")
             };
 
@@ -103,7 +104,7 @@ pub fn execute_uci(
                     depth if Depth::try_from(depth).is_ok() => {
                         target.depth = depth.try_into().unwrap()
                     }
-                    /*searchmoves*/
+                    /* searchmoves */
                     _ => {
                         let move_notation =
                             LongAlgebraicUciNotation::new(&mut tokenizer, &position);

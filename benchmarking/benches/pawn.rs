@@ -1,17 +1,17 @@
 use std::ops::ControlFlow;
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use engine::{
     core::{
         color::colors,
         coordinates::squares,
-        r#move::Move,
         move_iter::{
-            FoldMoves, NoCheck,
-            pawn::{Pawn, lookup_attacks},
+            pawn::{lookup_attacks, Pawn},
             sliding_piece::magics,
+            FoldMoves, NoCheck,
         },
         position::Position,
+        r#move::Move,
         zobrist,
     },
     uci::tokens::Tokenizer,

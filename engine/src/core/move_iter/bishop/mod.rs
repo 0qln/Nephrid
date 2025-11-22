@@ -1,14 +1,14 @@
 use crate::{
     core::{
         bitboard::Bitboard,
-        coordinates::{DiagA1H8, DiagA8H1, Square, compass_rose, squares},
+        coordinates::{compass_rose, squares, DiagA1H8, DiagA8H1, Square},
         move_iter::bishop,
-        piece::{IPieceType, PieceType, piece_type},
+        piece::{piece_type, IPieceType, PieceType},
     },
     misc::ConstFrom,
 };
 
-use super::sliding_piece::{self, SlidingAttacks, SlidingPieceType, magics::MagicGen};
+use super::sliding_piece::{self, magics::MagicGen, SlidingAttacks, SlidingPieceType};
 
 #[cfg(test)]
 mod tests;
@@ -62,7 +62,8 @@ pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
     }
 }
 
-/// Computes the attacks of the bishop on the square `sq` with the given `occupancy`.
+/// Computes the attacks of the bishop on the square `sq` with the given
+/// `occupancy`.
 fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let a1h8 = Bitboard::from_c(DiagA1H8::from_c(sq));
     let a8h1 = Bitboard::from_c(DiagA8H1::from_c(sq));

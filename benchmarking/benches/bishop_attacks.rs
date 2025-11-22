@@ -1,9 +1,9 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use engine::core::bitboard::Bitboard;
 use engine::core::coordinates::squares;
 use engine::core::move_iter::bishop::Bishop;
-use engine::core::move_iter::sliding_piece::SlidingAttacks;
 use engine::core::move_iter::sliding_piece::magics;
+use engine::core::move_iter::sliding_piece::SlidingAttacks;
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let bishop = squares::E4;

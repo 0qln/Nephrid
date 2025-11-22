@@ -1,7 +1,7 @@
 use std::cell::UnsafeCell;
 use std::fmt::{self, Display, Formatter};
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use engine::core::depth::Depth;
 use engine::core::move_iter::sliding_piece::magics;
 use engine::core::position::Position;

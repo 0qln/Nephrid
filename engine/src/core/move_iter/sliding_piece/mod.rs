@@ -1,10 +1,10 @@
 use std::ops::Try;
 
 use crate::core::{
-    bitboard::Bitboard, coordinates::Square, r#move::Move, piece::IPieceType, position::Position,
+    bitboard::Bitboard, coordinates::Square, piece::IPieceType, position::Position, r#move::Move,
 };
 
-use super::{FoldMoves, NoDoubleCheck, map_captures, map_quiets, pin_mask};
+use super::{map_captures, map_quiets, pin_mask, FoldMoves, NoDoubleCheck};
 
 pub mod magics;
 

@@ -26,27 +26,19 @@ fn lsb() {
 fn split_north() {
     assert_eq!(
         Bitboard::split_north(A1),
-        Bitboard {
-            v: 0xfffffffffffffffeu64
-        }
+        Bitboard { v: 0xfffffffffffffffeu64 }
     );
     assert_eq!(
         Bitboard::split_north(B1),
-        Bitboard {
-            v: 0xfffffffffffffffcu64
-        }
+        Bitboard { v: 0xfffffffffffffffcu64 }
     );
     assert_eq!(
         Bitboard::split_north(A5),
-        Bitboard {
-            v: 0xfffffffe00000000u64
-        }
+        Bitboard { v: 0xfffffffe00000000u64 }
     );
     assert_eq!(
         Bitboard::split_north(G8),
-        Bitboard {
-            v: 0x8000000000000000u64
-        }
+        Bitboard { v: 0x8000000000000000u64 }
     );
     assert_eq!(Bitboard::split_north(H8), Bitboard { v: 0 });
 }
@@ -58,14 +50,10 @@ fn split_south() {
     assert_eq!(Bitboard::split_south(A5), Bitboard { v: 0xffffffffu64 });
     assert_eq!(
         Bitboard::split_south(G8),
-        Bitboard {
-            v: 0x3fffffffffffffffu64
-        }
+        Bitboard { v: 0x3fffffffffffffffu64 }
     );
     assert_eq!(
         Bitboard::split_south(H8),
-        Bitboard {
-            v: 0x7fffffffffffffffu64
-        }
+        Bitboard { v: 0x7fffffffffffffffu64 }
     );
 }

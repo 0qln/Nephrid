@@ -1,7 +1,7 @@
 use std::sync::Once;
 use std::{mem, ops};
 
-use rand::{RngCore, SeedableRng, rngs::SmallRng};
+use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
 use crate::core::color::colors;
 use crate::misc::ConstFrom;
@@ -15,7 +15,8 @@ use super::{
     turn::Turn,
 };
 
-/// Note: the default hash is equivalent to the hash of the default (empty) position.
+/// Note: the default hash is equivalent to the hash of the default (empty)
+/// position.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
 pub struct Hash {
     v: u64,

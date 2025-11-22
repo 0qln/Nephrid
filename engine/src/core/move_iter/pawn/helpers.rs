@@ -1,7 +1,7 @@
 use crate::core::{
     bitboard::Bitboard,
-    color::{Color, colors},
-    coordinates::{CompassRose, Rank, compass_rose, ranks},
+    color::{colors, Color},
+    coordinates::{compass_rose, ranks, CompassRose, Rank},
 };
 
 #[inline]
