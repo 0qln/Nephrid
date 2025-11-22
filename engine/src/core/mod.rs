@@ -134,7 +134,7 @@ pub fn execute_uci(
                     engine.position.make_move(Move::try_from(mov)?);
                 }
                 engine.pos_src = command;
-                return { Ok(()) };
+                return Ok(());
             }
             match tokenizer.next_token() {
                 Some("fen") => engine.position = Position::try_from(&mut tokenizer)?,
@@ -212,9 +212,7 @@ pub fn execute_uci(
                         }
                         *value = new_value.parse()?;
                     }
-                    ConfigOptionType::Spin {
-                        min, max, value, ..
-                    } => {
+                    ConfigOptionType::Spin { min, max, value, .. } => {
                         if new_value.is_empty() {
                             return Err(UciError::MissingArgument("value").into());
                         }

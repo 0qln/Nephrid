@@ -2,11 +2,13 @@ use core::fmt;
 use std::fmt::{Debug, Display};
 
 use terrors::OneOf;
+use thiserror::Error;
 
 use crate::{
     core::color::Color,
     impl_variants,
     misc::{ConstFrom, InvalidValueError, ValueOutOfSetError},
+    uci::tokens::Tokenizer,
 };
 
 use super::r#move::MoveFlag;
@@ -109,8 +111,10 @@ impl fmt::Display for PromoPieceType {
     }
 }
 
+pub type PromoPieceParseError = ValueOutOfSetError<char>;
+
 impl TryFrom<char> for PromoPieceType {
-    type Error = OneOf<(ValueOutOfSetError<char>,)>;
+    type Error = PromoPieceParseError;
 
     fn try_from(value: char) -> Result<Self, Self::Error> {
         use promo_piece_type::*;
@@ -119,7 +123,27 @@ impl TryFrom<char> for PromoPieceType {
             'b' => Ok(BISHOP),
             'r' => Ok(ROOK),
             'q' => Ok(QUEEN),
-            x => Err(ValueOutOfSetError::new(x, &['n', 'b', 'r', 'q']).into()),
+            x => Err(Self::Error::new(x, &['n', 'b', 'r', 'q']).into()),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum PromoPieceTokenizationError {
+    #[error("Missing promotion piece type token.")]
+    MissingToken,
+
+    #[error("Invalid promotion piece type token: {0}")]
+    InvalidToken(PromoPieceParseError),
+}
+
+impl TryFrom<&mut Tokenizer<'_>> for PromoPieceType {
+    type Error = PromoPieceTokenizationError;
+
+    fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
+        match fen.skip_ws().next_char() {
+            Some(c) => Self::try_from(c).map_err(|e| Self::Error::InvalidToken(e)),
+            None => Err(Self::Error::MissingToken),
         }
     }
 }

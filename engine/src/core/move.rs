@@ -1,17 +1,17 @@
 use core::fmt;
 use move_flags as f;
 use std::ops::{Index, IndexMut};
-use terrors::OneOf;
+use thiserror::Error;
 
 use crate::{
     core::{
-        castling::castling_side,
-        coordinates::{File, Square},
-        piece::{piece_type, PieceType},
+        castling::{CastlingSideParseError, castling_side},
+        coordinates::{File, Square, SquareParseError},
+        piece::{PromoPieceTokenizationError, piece_type},
         position::Position,
     },
     impl_variants,
-    misc::{ConstFrom, MissingTokenError, ValueOutOfRangeError},
+    misc::{ConstFrom, ValueOutOfRangeError},
     uci::tokens::Tokenizer,
 };
 
@@ -109,7 +109,7 @@ impl From<(PromoPieceType, bool)> for MoveFlag {
 }
 
 impl TryFrom<TMoveFlag> for MoveFlag {
-    type Error = OneOf<(ValueOutOfRangeError<TMoveFlag>,)>;
+    type Error = ValueOutOfRangeError<TMoveFlag>;
 
     #[inline]
     fn try_from(value: TMoveFlag) -> Result<Self, Self::Error> {
@@ -215,12 +215,31 @@ impl fmt::Debug for Move {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum MoveParseError {
+    #[error("Invalid to-square: {0}")]
+    InvalidToSquare(SquareParseError),
+
+    #[error("Invalid from-square: {0}")]
+    InvalidFromSquare(SquareParseError),
+
+    #[error("Invalid promotion piece type: {0}")]
+    InvalidPromoPieceType(PromoPieceTokenizationError),
+
+    #[error("Expected a legal castling move, but destination file was unexpected: {0}")]
+    IllegalCastling(CastlingSideParseError),
+}
+
 impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
-    type Error = OneOf<(ValueOutOfRangeError<char>, MissingTokenError)>;
+    type Error = MoveParseError;
 
     fn try_from(move_notation: LongAlgebraicUciNotation<'_, '_, '_>) -> Result<Self, Self::Error> {
-        let from = Square::try_from(&mut *move_notation.tokens)?;
-        let to = Square::try_from(&mut *move_notation.tokens)?;
+        let from = Square::try_from(&mut *move_notation.tokens)
+            .map_err(|e| MoveParseError::InvalidFromSquare(e))?;
+
+        let to = Square::try_from(&mut *move_notation.tokens)
+            .map_err(|e| MoveParseError::InvalidToSquare(e))?;
+
         let moving_p = move_notation.context.get_piece(from);
         let captured_p = move_notation.context.get_piece(to);
         let abs_dist = from.v().abs_diff(to.v());
@@ -232,14 +251,20 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                 flag = match abs_dist {
                     16 => f::DOUBLE_PAWN_PUSH,
                     7 | 9 if !captures => f::EN_PASSANT,
-                    _ => move_notation.tokens.next_char().map_or(Ok(flag), |c| {
-                        Ok(MoveFlag::from((PromoPieceType::try_from(c)?, captures)))
-                    })?,
+                    _ => {
+                        let promo_piece = PromoPieceType::try_from(&mut *move_notation.tokens)
+                            .map_err(|e| MoveParseError::InvalidPromoPieceType(e))?;
+
+                        let flag = MoveFlag::from((promo_piece, captures));
+                        flag
+                        // move_notation.tokens.next_char().map_or(Ok(flag), |c| { Ok() })?
+                    }
                 }
             }
-            PieceType::KING if abs_dist == 2 => {
+            piece_type::KING if abs_dist == 2 => {
                 let file = File::from_c(to);
-                let side = CastlingSide::try_from(file)?;
+                let side =
+                    CastlingSide::try_from(file).map_err(|e| Self::Error::IllegalCastling(e))?;
                 flag = MoveFlag::from_c(side);
             }
             _ => {}

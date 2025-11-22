@@ -2,8 +2,6 @@ use colors::*;
 use core::fmt;
 use std::ops;
 
-use terrors::OneOf;
-
 use crate::{
     impl_variants_with_assertion,
     misc::{MissingTokenError, ValueOutOfSetError},

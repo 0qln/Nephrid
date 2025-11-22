@@ -11,7 +11,6 @@ use std::{any::type_name, error::Error, iter::Step, marker::PhantomData, num::Pa
 use super::color::Color;
 use compass_rose::*;
 use squares::*;
-use terrors::OneOf;
 use thiserror::Error;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
@@ -118,7 +117,7 @@ impl fmt::Debug for Square {
 pub type SquareConversionError<T> = ConversionError<T, Square, ValueOutOfRangeError<T>>;
 
 impl TryFrom<TSquare> for Square {
-    type Error = OneOf<(SquareConversionError<TSquare>,)>;
+    type Error = SquareConversionError<TSquare>;
 
     #[inline]
     fn try_from(value: TSquare) -> Result<Self, Self::Error> {
@@ -161,20 +160,6 @@ impl<T, E: Error> TokenizationError<T, E> {
     pub fn new(err: E) -> Self {
         Self { err, _t: PhantomData }
     }
-
-    pub fn wrap(err: OneOf<(E,)>) -> OneOf<(Self,)> 
-    where E: Default {
-        OneOf::source(Self::new(E::default()))
-    }
-}
-
-pub fn new_one_of<'a, 'b, E: Error + Default>(e: E) -> OneOf<(E,)>
-where 
-    E: 'b,
-    'a: 'b,
-    OneOf<(E,)>: 'a 
-{
-    OneOf::new(e)
 }
 
 impl<T: Default, E: Error + Default> Default for TokenizationError<T, E> {
@@ -186,23 +171,32 @@ impl<T: Default, E: Error + Default> Default for TokenizationError<T, E> {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum SquareParseError {
+    #[error("Failed to parse a square: {0}.")]
+    InvalidFile(TokenizationError<Square, ParseFileError>),
+    #[error("Failed to parse a square: {0}.")]
+    InvalidRank(TokenizationError<Square, ParseRankError>),
+    #[error("Failed to parse a square: Missing File.")]
+    MissingFile,
+    #[error("Failed to parse a square: Missing Rank.")]
+    MissingRank,
+}
+
 impl TryFrom<&mut Tokenizer<'_>> for Square {
-    type Error = OneOf<(
-        TokenizationError<Square, ParseFileError>,
-        TokenizationError<Square, ParseRankError>,
-        TokenizationError<Square, MissingTokenError<File>>,
-        TokenizationError<Square, MissingTokenError<Rank>>,
-    )>;
+    type Error = SquareParseError;
 
     #[inline]
     fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let file = match tokens.next_char() {
-            Some(c) => File::try_from(c).map_err(|e| OneOf::new(TokenizationError::new(e.take())))?,
-            None => return Err(OneOf::new(Default::default())),
+            Some(c) => {
+                File::try_from(c).map_err(|e| SquareParseError::InvalidFile(TokenizationError::new(e.take())))?
+            }
+            None => return Err(SquareParseError::MissingFile),
         };
         let rank = match tokens.next_char() {
-            Some(c) => Rank::try_from(c).map_err(OneOf::broaden)?,
-            None => return Err(OneOf::new(Default::default())),
+            Some(c) => Rank::try_from(c).map_err(|e| SquareParseError::InvalidRank(TokenizationError::new(e.take())))?,
+            None => return Err(SquareParseError::MissingRank),
         };
         Ok(Square::from_c((file, rank)))
     }

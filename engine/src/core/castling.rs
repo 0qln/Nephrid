@@ -1,8 +1,6 @@
 use castling_side::*;
 use core::fmt;
 
-use terrors::OneOf;
-
 use crate::{
     core::{
         color::{Color, colors::*},
@@ -30,18 +28,20 @@ impl_variants! {
     }
 }
 
+pub type CastlingSideParseError = ValueOutOfSetError<File>;
+
 impl TryFrom<File> for CastlingSide {
-    type Error = OneOf<(ValueOutOfSetError<File>,)>;
+    type Error = CastlingSideParseError;
 
     fn try_from(value: File) -> Result<Self, Self::Error> {
         use castling_side::*;
         match value {
             files::G => Ok(KING_SIDE),
             files::C => Ok(QUEEN_SIDE),
-            x => Err(OneOf::new(ValueOutOfSetError {
+            x => Err(Self::Error {
                 value: x,
                 expected: &[files::G, files::C],
-            })),
+            }),
         }
     }
 }
@@ -51,8 +51,10 @@ pub struct CastlingRights {
     v: u8,
 }
 
+pub type CastlingSideTokenizationError = ValueOutOfSetError<char>;
+
 impl TryFrom<&mut Tokenizer<'_>> for CastlingRights {
-    type Error = OneOf<(ValueOutOfSetError<char>,)>;
+    type Error = CastlingSideTokenizationError;
 
     fn try_from(value: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let mut result = CastlingRights::empty();
@@ -64,10 +66,10 @@ impl TryFrom<&mut Tokenizer<'_>> for CastlingRights {
                 'q' => result.set_true(QUEEN_SIDE, BLACK),
                 '-' => return Ok(result),
                 x => {
-                    return Err(OneOf::new(ValueOutOfSetError {
+                    return Err(Self::Error {
                         value: x,
                         expected: &['K', 'Q', 'k', 'q', '-'],
-                    }));
+                    });
                 }
             }
         }
