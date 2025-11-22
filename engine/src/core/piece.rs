@@ -176,13 +176,13 @@ impl Piece {
     #[inline]
     pub const fn piece_type(&self) -> PieceType {
         // Safety: Piece cannot be constructed from unchecked value.
-        unsafe { piece_type::from_v(self.v >> 1) }
+        unsafe { PieceType::from_v(self.v >> 1) }
     }
 
     #[inline]
     pub const fn color(&self) -> Color {
         // Safety: One bit can only ever contain colors::WHITE or Color::BLACK
-        unsafe { colors::from_v(self.v & 1) }
+        unsafe { Color::from_v(self.v & 1) }
     }
 
     pub const fn v(&self) -> TPiece {
@@ -224,15 +224,13 @@ impl TryFrom<char> for Piece {
         match value {
             'a'..'z' => {
                 let color = colors::WHITE;
-                let p_type =
-                    piece_type::try_from(value).map_err(|e| Self::Error::InvalidType(e))?;
+                let p_type = PieceType::try_from(value).map_err(|e| Self::Error::InvalidType(e))?;
                 Ok(Self::from_c((color, p_type)))
             }
             'A'..'Z' => {
                 let color = colors::BLACK;
                 let value = (value as u8 - b'a') as char;
-                let p_type =
-                    piece_type::try_from(value).map_err(|e| Self::Error::InvalidType(e))?;
+                let p_type = PieceType::try_from(value).map_err(|e| Self::Error::InvalidType(e))?;
                 Ok(Self::from_c((color, p_type)))
             }
             _ => Err(Self::Error::InvalidChar),
