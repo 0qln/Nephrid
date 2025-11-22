@@ -1,7 +1,7 @@
 use crate::core::{
     bitboard::Bitboard,
     coordinates::Square,
-    piece::{IPieceType, PieceType},
+    piece::{IPieceType, PieceType, piece_type},
 };
 
 use super::{
