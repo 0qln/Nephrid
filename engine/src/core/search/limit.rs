@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use crate::core::{color::Color, position::Position};
+use crate::core::{color::colors, position::Position};
 
 #[derive(Debug, Clone)]
 pub struct Limit {
