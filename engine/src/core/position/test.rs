@@ -1,14 +1,8 @@
 use crate::misc::ConstFrom;
 use crate::{
     core::{
-        bitboard::Bitboard,
-        color::colors,
-        coordinates::{Rank, ranks},
-        move_iter::sliding_piece::magics,
-        piece::piece_type,
-        ply::Ply,
-        position::Position,
-        zobrist,
+        bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics,
+        piece::piece_type, ply::Ply, position::Position, zobrist,
     },
     uci::tokens::Tokenizer,
 };

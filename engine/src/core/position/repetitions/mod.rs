@@ -55,7 +55,29 @@ where
     buckets: Box<[TableBucket; 1 << N]>,
 }
 
-// todo: uncomment when it works again 
+// this is just a workaround.
+// todo: use the blanket impl, when it works again
+macro_rules! impl_clone {
+    ($n:expr) => {
+        impl Clone for RepetitionTable<$n> {
+            fn clone(&self) -> Self {
+                Self::new(
+                    self.buckets
+                        .iter()
+                        .cloned()
+                        .collect_vec()
+                        .into_boxed_slice()
+                        .try_into()
+                        .expect("Failed to convert vec to array."),
+                )
+            }
+        }
+    };
+}
+//
+impl_clone!(16);
+impl_clone!(20);
+//
 // impl<const N: usize> Clone for RepetitionTable<N>
 // where
 //     [(); 1 << N]:,
@@ -72,19 +94,8 @@ where
 //         )
 //     }
 // }
-impl Clone for RepetitionTable<16> {
-    fn clone(&self) -> Self {
-        Self::new(
-            self.buckets
-                .iter()
-                .cloned()
-                .collect_vec()
-                .into_boxed_slice()
-                .try_into()
-                .expect("Failed to convert vec to array."),
-        )
-    }
-}
+//
+
 impl<const N: usize> Default for RepetitionTable<N>
 where
     [(); 1 << N]:,
