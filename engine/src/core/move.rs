@@ -234,10 +234,10 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
     type Error = MoveParseError;
 
     fn try_from(move_notation: LongAlgebraicUciNotation<'_, '_, '_>) -> Result<Self, Self::Error> {
-        let from = squares::try_from(&mut *move_notation.tokens)
+        let from = Square::try_from(&mut *move_notation.tokens)
             .map_err(|e| MoveParseError::InvalidFromSquare(e))?;
 
-        let to = squares::try_from(&mut *move_notation.tokens)
+        let to = Square::try_from(&mut *move_notation.tokens)
             .map_err(|e| MoveParseError::InvalidToSquare(e))?;
 
         let moving_p = move_notation.context.get_piece(from);
@@ -252,10 +252,10 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                     16 => f::DOUBLE_PAWN_PUSH,
                     7 | 9 if !captures => f::EN_PASSANT,
                     _ => {
-                        let promo_piece = Promopiece_type::try_from(&mut *move_notation.tokens)
+                        let promo_piece = PromoPieceType::try_from(&mut *move_notation.tokens)
                             .map_err(|e| MoveParseError::InvalidPromoPieceType(e))?;
 
-                        let flag = move_flags::from((promo_piece, captures));
+                        let flag = MoveFlag::from((promo_piece, captures));
                         flag
                         // move_notation.tokens.next_char().map_or(Ok(flag), |c| { Ok() })?
                     }
@@ -264,8 +264,8 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
             piece_type::KING if abs_dist == 2 => {
                 let file = File::from_c(to);
                 let side =
-                    castling_sides::try_from(file).map_err(|e| Self::Error::IllegalCastling(e))?;
-                flag = move_flags::from_c(side);
+                    CastlingSide::try_from(file).map_err(|e| Self::Error::IllegalCastling(e))?;
+                flag = MoveFlag::from_c(side);
             }
             _ => {}
         };
