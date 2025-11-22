@@ -1,10 +1,10 @@
 use crate::{
     core::{
-        color::Color,
-        coordinates::Square,
-        r#move::MoveFlag,
+        color::colors,
+        coordinates::squares,
+        r#move::move_flags,
         move_iter::sliding_piece::magics,
-        piece::{Piece, PieceType},
+        piece::{Piece, piece_type},
         position::Position,
         search::mcts::{NodeState, Tree},
     },
