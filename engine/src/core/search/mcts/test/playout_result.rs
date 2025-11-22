@@ -2,7 +2,7 @@ use std::ops::ControlFlow;
 
 use crate::{
     core::{
-        color::Color,
+        color::colors,
         move_iter::{fold_legal_moves, sliding_piece::magics},
         position::Position,
         search::mcts::PlayoutResult,
