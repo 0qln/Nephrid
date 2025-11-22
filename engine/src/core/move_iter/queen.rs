@@ -13,7 +13,7 @@ use super::{
 pub struct Queen;
 
 impl IPieceType for Queen {
-    const ID: PieceType = PieceType::QUEEN;
+    const ID: PieceType = piece_type::QUEEN;
 }
 
 impl SlidingAttacks for Queen {

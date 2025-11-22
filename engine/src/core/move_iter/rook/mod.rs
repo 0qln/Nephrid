@@ -16,7 +16,7 @@ mod tests;
 pub struct Rook;
 
 impl IPieceType for Rook {
-    const ID: PieceType = PieceType::ROOK;
+    const ID: PieceType = piece_type::ROOK;
 }
 
 impl Rook {
@@ -90,7 +90,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
-    let moves = range.shift_c::<{ CompassRose::SOUT.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::SOUT.v() }>() & ray;
     result |= moves;
 
     // north
@@ -98,7 +98,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
-    let moves = range.shift_c::<{ CompassRose::NORT.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::NORT.v() }>() & ray;
     result |= moves;
 
     // west
@@ -106,7 +106,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.msb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
-    let moves = range.shift_c::<{ CompassRose::WEST.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::WEST.v() }>() & ray;
     result |= moves;
 
     // east
@@ -114,7 +114,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let occupands = occupancy & ray;
     let nearest = occupands.lsb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
-    let moves = range.shift_c::<{ CompassRose::EAST.v() }>() & ray;
+    let moves = range.shift_c::<{ compass_rose::EAST.v() }>() & ray;
     result |= moves;
 
     result

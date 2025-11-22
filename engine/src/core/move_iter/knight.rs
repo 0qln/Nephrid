@@ -27,7 +27,7 @@ impl<C: NoDoubleCheck> FoldMoves<C> for Knight {
     {
         let color = pos.get_turn();
 
-        pos.get_bitboard(PieceType::KNIGHT, color)
+        pos.get_bitboard(piece_type::KNIGHT, color)
             .filter(|&piece| !is_blocker(pos, piece))
             .map(|piece| {
                 let legal_attacks = lookup_attacks(piece);
@@ -65,19 +65,19 @@ pub const fn compute_attacks(sq: Square) -> Bitboard {
 
 const fn compute_attacks_multiple(knights: Bitboard) -> Bitboard {
     let mut result = Bitboard::empty();
-    compute_atttack::<{ CompassRose::NONOWE_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::NONOEA_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::NOWEWE_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::NOEAEA_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::SOSOWE_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::SOSOEA_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::SOWEWE_C }>(knights, &mut result);
-    compute_atttack::<{ CompassRose::SOEAEA_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::NONOWE_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::NONOEA_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::NOWEWE_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::NOEAEA_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::SOSOWE_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::SOSOEA_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::SOWEWE_C }>(knights, &mut result);
+    compute_atttack::<{ compass_rose::SOEAEA_C }>(knights, &mut result);
     result
 }
 
 #[inline]
 const fn compute_atttack<const DIR: TCompassRose>(knight: Bitboard, attacks: &mut Bitboard) {
-    let attack_sqrs = Bitboard::from_c(CompassRose::new(-DIR));
-    attacks.v |= knight.and_c(attack_sqrs).shift(CompassRose::new(DIR)).v;
+    let attack_sqrs = Bitboard::from_c(compass_rose::new(-DIR));
+    attacks.v |= knight.and_c(attack_sqrs).shift(compass_rose::new(DIR)).v;
 }

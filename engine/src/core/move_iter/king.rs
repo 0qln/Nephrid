@@ -22,7 +22,7 @@ use super::{
 pub struct King;
 
 impl IPieceType for King {
-    const ID: PieceType = PieceType::KING;
+    const ID: PieceType = piece_type::KING;
 }
 
 impl FoldMoves<NoCheck> for King {

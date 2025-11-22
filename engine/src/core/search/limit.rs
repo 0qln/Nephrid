@@ -30,13 +30,13 @@ impl Limit {
 
     pub fn time_per_move(&self, pos: &Position) -> Duration {
         let time = match pos.get_turn() {
-            Color::WHITE => self.wtime,
-            Color::BLACK => self.btime,
+            colors::WHITE => self.wtime,
+            colors::BLACK => self.btime,
             _ => unreachable!(),
         };
         let inc = match pos.get_turn() {
-            Color::WHITE => self.winc,
-            Color::BLACK => self.binc,
+            colors::WHITE => self.winc,
+            colors::BLACK => self.binc,
             _ => unreachable!(),
         };
 

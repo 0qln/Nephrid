@@ -67,9 +67,7 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
         })
         .continue_value()
         .unwrap_or(usize::MAX);
-    SeedTestResult {
-        total_collisions: collisions,
-    }
+    SeedTestResult { total_collisions: collisions }
 }
 
 fn main() {

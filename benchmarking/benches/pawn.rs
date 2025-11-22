@@ -22,7 +22,7 @@ pub fn pawn_attacks(c: &mut Criterion) {
     let mut group = c.benchmark_group("pawn::attacks");
 
     group.bench_function("pawn::attacks::lookup", |b| {
-        b.iter(|| lookup_attacks(black_box(pawn), black_box(Color::WHITE)))
+        b.iter(|| lookup_attacks(black_box(pawn), black_box(colors::WHITE)))
     });
 
     group.finish();

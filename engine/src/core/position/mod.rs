@@ -9,11 +9,11 @@ use crate::{
         coordinates::{File, Rank, Square},
         r#move::Move,
         move_iter::{bishop, king, knight, pawn, rook},
-        piece::{Piece, PieceType},
+        piece::{Piece, PieceType, piece_type},
         turn::Turn,
         zobrist,
     },
-    misc::{ConstFrom, ParseError},
+    misc::ConstFrom,
     uci::tokens::Tokenizer,
 };
 
@@ -62,20 +62,20 @@ impl StateInfo {
     pub fn init(&mut self, pos: &Position) {
         let stm = self.turn;
         let nstm = !stm;
-        let king = pos.get_bitboard(PieceType::KING, stm);
+        let king = pos.get_bitboard(piece_type::KING, stm);
         let occupancy = pos.get_occupancy();
         let enemies = pos.get_color_bb(nstm);
         (self.nstm_attacks, self.checkers) = {
             enemies.fold((Bitboard::empty(), Bitboard::empty()), |acc, enemy_sq| {
-                let enemy = pos.get_piece(enemy_sq);     
+                let enemy = pos.get_piece(enemy_sq);
                 let enemy_attacks = match enemy.piece_type() {
-                    PieceType::PAWN => pawn::lookup_attacks(enemy_sq, nstm),
-                    PieceType::KNIGHT => knight::lookup_attacks(enemy_sq),
-                    PieceType::BISHOP => Bishop::lookup_attacks(enemy_sq, occupancy),
-                    PieceType::ROOK => Rook::lookup_attacks(enemy_sq, occupancy),
-                    PieceType::QUEEN => Queen::lookup_attacks(enemy_sq, occupancy),
-                    PieceType::KING => king::lookup_attacks(enemy_sq),
-                    _ => unreachable!("We are iterating the squares which contain enemies. PieceType::NONE should not be here."),
+                    piece_type::PAWN => pawn::lookup_attacks(enemy_sq, nstm),
+                    piece_type::KNIGHT => knight::lookup_attacks(enemy_sq),
+                    piece_type::BISHOP => Bishop::lookup_attacks(enemy_sq, occupancy),
+                    piece_type::ROOK => Rook::lookup_attacks(enemy_sq, occupancy),
+                    piece_type::QUEEN => Queen::lookup_attacks(enemy_sq, occupancy),
+                    piece_type::KING => king::lookup_attacks(enemy_sq),
+                    _ => unreachable!("We are iterating the squares which contain enemies. piece_type::NONE should not be here."),
                 };
                 (
                     acc.0 | enemy_attacks,
@@ -141,10 +141,7 @@ impl StateStack {
     pub fn new(initial_state: StateInfo) -> Self {
         let mut vec = Vec::with_capacity(16);
         vec.push(initial_state);
-        Self {
-            states: vec,
-            current: 0,
-        }
+        Self { states: vec, current: 0 }
     }
 
     /// Returns a reference to the current state.
@@ -270,7 +267,7 @@ impl Position {
 
     #[inline]
     pub fn get_occupancy(&self) -> Bitboard {
-        self.get_color_bb(Color::WHITE) | self.get_color_bb(Color::BLACK)
+        self.get_color_bb(colors::WHITE) | self.get_color_bb(Color::BLACK)
     }
 
     #[inline]
@@ -381,9 +378,9 @@ impl Position {
     /// through zero or more pieces.
     #[inline]
     pub fn get_x_ray_checkers(&self, king: Square, enemies: Bitboard) -> Bitboard {
-        let rooks = self.get_piece_bb(PieceType::ROOK);
-        let bishops = self.get_piece_bb(PieceType::BISHOP);
-        let queens = self.get_piece_bb(PieceType::QUEEN);
+        let rooks = self.get_piece_bb(piece_type::ROOK);
+        let bishops = self.get_piece_bb(piece_type::BISHOP);
+        let queens = self.get_piece_bb(piece_type::QUEEN);
         let rook_checkers = rook::compute_attacks_0_occ(king) & (rooks | queens);
         let bishop_checkers = bishop::compute_attacks_0_occ(king) & (bishops | queens);
         (rook_checkers | bishop_checkers) & enemies
@@ -501,7 +498,7 @@ impl Position {
         // captures
         if flag.is_capture() {
             let captured_piece = match flag {
-                MoveFlag::EN_PASSANT => Piece::from_c((!us, PieceType::PAWN)),
+                MoveFlag::EN_PASSANT => Piece::from_c((!us, piece_type::PAWN)),
                 _ => target_piece,
             };
 
@@ -534,7 +531,7 @@ impl Position {
 
         match moving_piece.piece_type() {
             // castling
-            PieceType::KING => {
+            piece_type::KING => {
                 next_state.castling.set_false(CastlingSide::QUEEN_SIDE, us);
                 next_state.castling.set_false(CastlingSide::KING_SIDE, us);
                 match flag {
@@ -557,11 +554,11 @@ impl Position {
                     _ => (),
                 }
             }
-            PieceType::ROOK => {
+            piece_type::ROOK => {
                 remove_castling(from, us, &mut next_state.castling);
             }
             // pawns
-            PieceType::PAWN => {
+            piece_type::PAWN => {
                 match flag.v() {
                     MoveFlag::DOUBLE_PAWN_PUSH_C => {
                         // Safety: A double pawn push destination square is the definition of
@@ -574,7 +571,7 @@ impl Position {
                     }
                     MoveFlag::PROMOTION_KNIGHT_C..=MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
                         // Safety: We just checked, that the flag is in a valid range.
-                        let promo_t = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
+                        let promo_t = unsafe { Promopiece_type::try_from(flag).unwrap_unchecked() };
                         let promo = Piece::from_c((us, promo_t));
                         self.remove_piece(to);
                         next_state.key.toggle_piece_sq(to, moving_piece);
@@ -638,7 +635,7 @@ impl Position {
             }
             // promotions
             MoveFlag::PROMOTION_KNIGHT_C..=MoveFlag::CAPTURE_PROMOTION_QUEEN_C => {
-                let pawn = Piece::from_c((us, PieceType::PAWN));
+                let pawn = Piece::from_c((us, piece_type::PAWN));
                 self.remove_piece(to);
                 self.put_piece(to, pawn);
             }

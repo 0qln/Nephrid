@@ -18,10 +18,10 @@ use itertools::Itertools;
 
 pub fn get_bitboard(c: &mut Criterion) {
     let inputs = [
-        Pair(PieceType::PAWN, Color::WHITE),
-        Pair(PieceType::QUEEN, Color::WHITE),
-        Pair(PieceType::PAWN, Color::BLACK),
-        Pair(PieceType::QUEEN, Color::BLACK),
+        Pair(piece_type::PAWN, colors::WHITE),
+        Pair(piece_type::QUEEN, colors::WHITE),
+        Pair(piece_type::PAWN, colors::BLACK),
+        Pair(piece_type::QUEEN, colors::BLACK),
     ];
 
     magics::init();
@@ -39,10 +39,16 @@ pub fn get_bitboard(c: &mut Criterion) {
 
 pub fn put_piece(c: &mut Criterion) {
     let inputs = [
-        Pair(Square::A3, Piece::from_c((Color::WHITE, PieceType::PAWN))),
-        Pair(Square::B4, Piece::from_c((Color::WHITE, PieceType::QUEEN))),
-        Pair(Square::E4, Piece::from_c((Color::BLACK, PieceType::PAWN))),
-        Pair(Square::H5, Piece::from_c((Color::BLACK, PieceType::QUEEN))),
+        Pair(Square::A3, Piece::from_c((colors::WHITE, piece_type::PAWN))),
+        Pair(
+            Square::B4,
+            Piece::from_c((colors::WHITE, piece_type::QUEEN)),
+        ),
+        Pair(Square::E4, Piece::from_c((colors::BLACK, piece_type::PAWN))),
+        Pair(
+            Square::H5,
+            Piece::from_c((colors::BLACK, piece_type::QUEEN)),
+        ),
     ];
 
     magics::init();

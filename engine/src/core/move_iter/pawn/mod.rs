@@ -6,7 +6,7 @@ use crate::{
     core::{
         bitboard::Bitboard,
         color::{Color, TColor},
-        coordinates::{CompassRose, EpTargetSquare, File, Square, TCompassRose},
+        coordinates::{CompassRose, EpTargetSquare, File, Square, TCompassRose, compass_rose},
         r#move::{Move, MoveFlag},
         piece::{IPieceType, PieceType},
         position::Position,
@@ -36,19 +36,14 @@ impl<'a> PawnMoves<'a> {
             from.pop_cnt() >= to.pop_cnt(),
             "From needs to have atleast as many squares as to."
         );
-        Self {
-            from,
-            to,
-            flag,
-            pos,
-        }
+        Self { from, to, flag, pos }
     }
 
     #[inline(always)]
     fn single_step<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Color::assert_variant(C); // Safety
-        let color = unsafe { Color::from_v(C) };
-        let pawns = pos.get_bitboard(PieceType::PAWN, color);
+        colors::assert_variant(C); // Safety
+        let color = unsafe { colors::from_v(C) };
+        let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let non_promo_pawns = pawns & !Bitboard::from_c(promo_rank(color));
         let pieces = pos.get_occupancy();
         let tabu_squares = !T::quiets_mask(pos, color) | pieces;
@@ -60,13 +55,13 @@ impl<'a> PawnMoves<'a> {
 
     #[inline(always)]
     fn double_step<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Color::assert_variant(C); // Safety
-        let color = unsafe { Color::from_v(C) };
+        colors::assert_variant(C); // Safety
+        let color = unsafe { colors::from_v(C) };
         let pieces = pos.get_occupancy();
         let tabu_squares = !T::quiets_mask(pos, color) | pieces;
         let single_step_tabus = backward(pieces, single_step(color));
         let double_step_tabus = backward(tabu_squares, double_step(color)) | single_step_tabus;
-        let pawns = pos.get_bitboard(PieceType::PAWN, color);
+        let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let double_step_pawns = pawns & Bitboard::from_c(start_rank(color));
         let from = double_step_pawns & !double_step_tabus;
         let to = forward(from, double_step(color));
@@ -77,10 +72,10 @@ impl<'a> PawnMoves<'a> {
     fn capture<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
         pos: &'a Position,
     ) -> Self {
-        Color::assert_variant(C); // Safety
-        let color = unsafe { Color::from_v(C) };
-        let capture_dir = capture(color, CompassRose::new(DIR));
-        let pawns = pos.get_bitboard(PieceType::PAWN, color);
+        colors::assert_variant(C); // Safety
+        let color = unsafe { colors::from_v(C) };
+        let capture_dir = capture(color, compass_rose::new(DIR));
+        let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let non_promo_pawns = pawns & !Bitboard::from_c(promo_rank(color));
         let capturing_pawns = non_promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
         let to = forward(capturing_pawns, capture_dir) & T::captures_mask(pos, color);
@@ -110,12 +105,12 @@ impl<'a> PawnMoves<'a> {
 
     #[inline(always)]
     fn promo<const C: TColor, T: NoDoubleCheck>(pos: &'a Position, flag: MoveFlag) -> Self {
-        Color::assert_variant(C); // Safety
-        let color = unsafe { Color::from_v(C) };
+        colors::assert_variant(C); // Safety
+        let color = unsafe { colors::from_v(C) };
         let pieces = pos.get_occupancy();
         let tabu_squares = !T::quiets_mask(pos, color) | pieces;
         let single_step_tabus = backward(tabu_squares, single_step(color));
-        let pawns = pos.get_bitboard(PieceType::PAWN, color);
+        let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let promo_pawns = pawns & Bitboard::from_c(promo_rank(color));
         let from = promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
@@ -155,10 +150,10 @@ impl<'a> PawnMoves<'a> {
         pos: &'a Position,
         flag: MoveFlag,
     ) -> Self {
-        Color::assert_variant(C); // Safety
-        let color = unsafe { Color::from_v(C) };
-        let capture_dir = capture(color, CompassRose::new(DIR));
-        let pawns = pos.get_bitboard(PieceType::PAWN, color);
+        colors::assert_variant(C); // Safety
+        let color = unsafe { colors::from_v(C) };
+        let capture_dir = capture(color, compass_rose::new(DIR));
+        let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let promo_pawns = pawns & Bitboard::from_c(promo_rank(color));
         let capture_west_pawns = promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
         let to = forward(capture_west_pawns, capture_dir) & T::captures_mask(pos, color);
@@ -168,16 +163,16 @@ impl<'a> PawnMoves<'a> {
 
     #[inline(always)]
     fn ep<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Color::assert_variant(C); // Safety
-        let color = unsafe { Color::from_v(C) };
+        colors::assert_variant(C); // Safety
+        let color = unsafe { colors::from_v(C) };
         let capture_sq = pos.get_ep_capture_square();
         let target = EpTargetSquare::from((capture_sq, !color));
         let mut to = Bitboard::from_c(target.v());
         let from = if to.is_empty() {
             Bitboard::empty()
         } else {
-            let capture_dir = capture(color, CompassRose::new(DIR));
-            let pawns = pos.get_bitboard(PieceType::PAWN, color);
+            let capture_dir = capture(color, compass_rose::new(DIR));
+            let pawns = pos.get_bitboard(piece_type::PAWN, color);
             let capturing_pawns = pawns & !Bitboard::from_c(File::edge::<DIR>());
             let from = backward(forward(capturing_pawns, capture_dir) & to, capture_dir);
             if from.is_empty() {
@@ -192,9 +187,9 @@ impl<'a> PawnMoves<'a> {
                 let occupancy = pos.get_occupancy();
                 let capt_bb = Bitboard::from_c(capture_sq.v());
                 let occupancy_after_capture = (occupancy ^ from ^ capt_bb) | to;
-                let rooks = pos.get_bitboard(PieceType::ROOK, !color);
-                let bishops = pos.get_bitboard(PieceType::BISHOP, !color);
-                let queens = pos.get_bitboard(PieceType::QUEEN, !color);
+                let rooks = pos.get_bitboard(piece_type::ROOK, !color);
+                let bishops = pos.get_bitboard(piece_type::BISHOP, !color);
+                let queens = pos.get_bitboard(piece_type::QUEEN, !color);
                 let rook_attacks = Rook::lookup_attacks(king_sq, occupancy_after_capture);
                 let bishop_attacks = Bishop::lookup_attacks(king_sq, occupancy_after_capture);
                 let q_or_r_check = !rook_attacks.and_c(rooks | queens).is_empty();
@@ -268,18 +263,18 @@ where
         P::promo_bishop::<C, T>,
         P::promo_rook::<C, T>,
         P::promo_queen::<C, T>,
-        P::capture::<C, { CompassRose::WEST_C }, T>,
-        P::capture::<C, { CompassRose::EAST_C }, T>,
-        P::ep::<C, { CompassRose::WEST_C }, T>,
-        P::ep::<C, { CompassRose::EAST_C }, T>,
-        P::promo_capture_knight::<C, { CompassRose::WEST_C }, T>,
-        P::promo_capture_knight::<C, { CompassRose::EAST_C }, T>,
-        P::promo_capture_bishop::<C, { CompassRose::WEST_C }, T>,
-        P::promo_capture_bishop::<C, { CompassRose::EAST_C }, T>,
-        P::promo_capture_rook::<C, { CompassRose::WEST_C }, T>,
-        P::promo_capture_rook::<C, { CompassRose::EAST_C }, T>,
-        P::promo_capture_queen::<C, { CompassRose::WEST_C }, T>,
-        P::promo_capture_queen::<C, { CompassRose::EAST_C }, T>
+        P::capture::<C, { compass_rose::WEST_C }, T>,
+        P::capture::<C, { compass_rose::EAST_C }, T>,
+        P::ep::<C, { compass_rose::WEST_C }, T>,
+        P::ep::<C, { compass_rose::EAST_C }, T>,
+        P::promo_capture_knight::<C, { compass_rose::WEST_C }, T>,
+        P::promo_capture_knight::<C, { compass_rose::EAST_C }, T>,
+        P::promo_capture_bishop::<C, { compass_rose::WEST_C }, T>,
+        P::promo_capture_bishop::<C, { compass_rose::EAST_C }, T>,
+        P::promo_capture_rook::<C, { compass_rose::WEST_C }, T>,
+        P::promo_capture_rook::<C, { compass_rose::EAST_C }, T>,
+        P::promo_capture_queen::<C, { compass_rose::WEST_C }, T>,
+        P::promo_capture_queen::<C, { compass_rose::EAST_C }, T>
     )
 }
 
@@ -291,24 +286,24 @@ impl<C: NoDoubleCheck> FoldMoves<C> for Pawn {
         R: Try<Output = B>,
     {
         match pos.get_turn() {
-            Color::WHITE => fold_moves::<{ Color::WHITE_C }, C, _, _, _>(pos, init, f),
-            Color::BLACK => fold_moves::<{ Color::BLACK_C }, C, _, _, _>(pos, init, f),
+            colors::WHITE => fold_moves::<{ Color::WHITE_C }, C, _, _, _>(pos, init, f),
+            colors::BLACK => fold_moves::<{ Color::BLACK_C }, C, _, _, _>(pos, init, f),
             _ => unreachable!(),
         }
     }
 }
 
 const fn compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
-    Color::assert_variant(C); // Safety
-    let color = unsafe { Color::from_v(C) };
+    colors::assert_variant(C); // Safety
+    let color = unsafe { colors::from_v(C) };
     Bitboard {
         v: {
             let attacks_west = pawns
                 .and_not_c(Bitboard::from_c(File::A))
-                .shift(capture(color, CompassRose::WEST));
+                .shift(capture(color, compass_rose::WEST));
             let attacks_east = pawns
                 .and_not_c(Bitboard::from_c(File::H))
-                .shift(capture(color, CompassRose::EAST));
+                .shift(capture(color, compass_rose::EAST));
             attacks_west.v | attacks_east.v
         },
     }
@@ -321,7 +316,7 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
         const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
-            result[sq.v() as usize] = compute_attacks::<{ Color::WHITE_C }>(pawn);
+            result[sq.v() as usize] = compute_attacks::<{ colors::WHITE_C }>(pawn);
         });
         result
     };
@@ -330,7 +325,7 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
         const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
-            result[sq.v() as usize] = compute_attacks::<{ Color::BLACK_C }>(pawn);
+            result[sq.v() as usize] = compute_attacks::<{ colors::BLACK_C }>(pawn);
         });
         result
     };

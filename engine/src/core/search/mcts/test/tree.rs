@@ -67,7 +67,7 @@ fn selects_unexpanded_leaf() {
         assert_eq!(node.score.playouts, 0);
     }
     // Verify move was made
-    assert!(pos.get_piece(Square::B8) == Piece::from_c((Color::WHITE, PieceType::KING)));
+    assert!(pos.get_piece(Square::B8) == Piece::from_c((colors::WHITE, piece_type::KING)));
 }
 
 #[test]

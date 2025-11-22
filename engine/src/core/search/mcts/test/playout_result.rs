@@ -54,9 +54,7 @@ fn fifty_move_rule() {
 fn checkmate_for_black() {
     test(
         "K2r4/2r5/2k5/8/8/8/8/8 w - - 0 1",
-        Some(PlayoutResult::Win {
-            relative_to: Color::BLACK,
-        }),
+        Some(PlayoutResult::Win { relative_to: colors::BLACK }),
     );
 }
 
@@ -64,9 +62,7 @@ fn checkmate_for_black() {
 fn checkmate_for_white() {
     test(
         "2k2R2/4R3/K7/8/8/8/8/8 b - - 0 1",
-        Some(PlayoutResult::Win {
-            relative_to: Color::WHITE,
-        }),
+        Some(PlayoutResult::Win { relative_to: colors::WHITE }),
     );
 }
 

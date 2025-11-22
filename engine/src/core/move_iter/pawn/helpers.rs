@@ -7,8 +7,8 @@ use crate::core::{
 #[inline]
 pub(super) const fn promo_rank(c: Color) -> Rank {
     match c {
-        Color::WHITE => Rank::_7,
-        Color::BLACK => Rank::_2,
+        colors::WHITE => Rank::_7,
+        colors::BLACK => Rank::_2,
         _ => unreachable!(),
     }
 }
@@ -16,8 +16,8 @@ pub(super) const fn promo_rank(c: Color) -> Rank {
 #[inline]
 pub(super) const fn start_rank(c: Color) -> Rank {
     match c {
-        Color::WHITE => Rank::_2,
-        Color::BLACK => Rank::_7,
+        colors::WHITE => Rank::_2,
+        colors::BLACK => Rank::_7,
         _ => unreachable!(),
     }
 }
@@ -25,8 +25,8 @@ pub(super) const fn start_rank(c: Color) -> Rank {
 #[inline]
 pub(super) const fn single_step(c: Color) -> CompassRose {
     match c {
-        Color::WHITE => CompassRose::NORT,
-        Color::BLACK => CompassRose::SOUT,
+        colors::WHITE => compass_rose::NORT,
+        colors::BLACK => compass_rose::SOUT,
         _ => unreachable!(),
     }
 }
@@ -48,5 +48,5 @@ pub(super) const fn backward(bb: Bitboard, dir: CompassRose) -> Bitboard {
 
 #[inline]
 pub(super) const fn capture(c: Color, dir: CompassRose) -> CompassRose {
-    CompassRose::new(dir.v() + single_step(c).v())
+    compass_rose::new(dir.v() + single_step(c).v())
 }

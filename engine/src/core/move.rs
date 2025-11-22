@@ -197,7 +197,7 @@ impl fmt::Display for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.v == 0 {
             write!(f, "0000")
-        } else if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
+        } else if let Ok(promo) = Promopiece_type::try_from(self.get_flag()) {
             write!(f, "{}{}{}", self.get_from(), self.get_to(), promo)
         } else {
             write!(f, "{}{}", self.get_from(), self.get_to())
@@ -252,7 +252,7 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                     16 => f::DOUBLE_PAWN_PUSH,
                     7 | 9 if !captures => f::EN_PASSANT,
                     _ => {
-                        let promo_piece = PromoPieceType::try_from(&mut *move_notation.tokens)
+                        let promo_piece = Promopiece_type::try_from(&mut *move_notation.tokens)
                             .map_err(|e| MoveParseError::InvalidPromoPieceType(e))?;
 
                         let flag = MoveFlag::from((promo_piece, captures));
