@@ -12,6 +12,9 @@ use crate::{
 
 use super::r#move::MoveFlag;
 
+#[cfg(test)]
+mod test;
+
 pub trait IPieceType {
     const ID: PieceType;
 }
@@ -208,7 +211,7 @@ impl const ConstFrom<(Color, PromoPieceType)> for Piece {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 pub enum PieceParseError {
     #[error("Invalid piece type: {0}")]
     InvalidType(PieceTypeParseError),
@@ -229,7 +232,7 @@ impl TryFrom<char> for Piece {
             }
             'A'..'Z' => {
                 let color = colors::BLACK;
-                let value = (value as u8 - b'a') as char;
+                let value = (value as u8 + (b'a' - b'A')) as char;
                 let p_type = PieceType::try_from(value).map_err(Self::Error::InvalidType)?;
                 Ok(Self::from_c((color, p_type)))
             }

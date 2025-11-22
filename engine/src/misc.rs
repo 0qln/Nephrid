@@ -74,7 +74,7 @@ impl<T: Debug> ValueOutOfRangeError<T> {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq, Eq)]
 #[error("{value} was not in the set of expected values {expected:?}")]
 pub struct ValueOutOfSetError<T: Debug + 'static> {
     pub value: T,
