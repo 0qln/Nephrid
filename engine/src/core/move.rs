@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::{
     core::{
         castling::{CastlingSideParseError, castling_side},
-        coordinates::{File, Square, SquareParseError},
+        coordinates::{File, Square, SquareTokenizationError},
         piece::{PromoPieceTokenizationError, piece_type},
         position::Position,
     },
@@ -218,10 +218,10 @@ impl fmt::Debug for Move {
 #[derive(Error, Debug)]
 pub enum MoveParseError {
     #[error("Invalid to-square: {0}")]
-    InvalidToSquare(SquareParseError),
+    InvalidToSquare(SquareTokenizationError),
 
     #[error("Invalid from-square: {0}")]
-    InvalidFromSquare(SquareParseError),
+    InvalidFromSquare(SquareTokenizationError),
 
     #[error("Invalid promotion piece type: {0}")]
     InvalidPromoPieceType(PromoPieceTokenizationError),
