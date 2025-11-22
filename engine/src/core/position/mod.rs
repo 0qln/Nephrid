@@ -120,10 +120,7 @@ impl Clone for StateStack {
     fn clone(&self) -> Self {
         let mut states = self.states.clone();
         states.reserve(self.states.capacity() - self.states.len());
-        Self {
-            states,
-            current: self.current,
-        }
+        Self { states, current: self.current }
     }
 }
 
@@ -773,13 +770,11 @@ impl TryFrom<&mut Tokenizer<'_>> for Position {
             turn,
 
             // 3. Castling ability
-            castling: CastlingRights::try_from(&mut *fen)
-                .map_err(Self::Error::CastlingPart)?,
+            castling: CastlingRights::try_from(&mut *fen).map_err(Self::Error::CastlingPart)?,
 
             // 4. En passant target square
             ep_capture_square: EpCaptureSquare::from((
-                EpTargetSquare::try_from(fen.skip_ws())
-                    .map_err(Self::Error::EpSquarePart)?,
+                EpTargetSquare::try_from(fen.skip_ws()).map_err(Self::Error::EpSquarePart)?,
                 !turn,
             )),
 
@@ -788,8 +783,7 @@ impl TryFrom<&mut Tokenizer<'_>> for Position {
 
             // 6. Fullmove counter
             ply: Ply::from((
-                FullMoveCount::try_from(fen.skip_ws())
-                    .map_err(Self::Error::FullMoveCountPart)?,
+                FullMoveCount::try_from(fen.skip_ws()).map_err(Self::Error::FullMoveCountPart)?,
                 turn,
             )),
 
