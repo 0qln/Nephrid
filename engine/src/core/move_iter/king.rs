@@ -3,11 +3,11 @@ use std::ops::Try;
 use crate::{
     core::{
         bitboard::Bitboard,
-        castling::CastlingSide,
-        coordinates::{File, Rank, Square},
-        piece::{IPieceType, PieceType},
+        castling::castling_sides,
+        coordinates::{files, ranks, squares, File, Rank, Square},
+        piece::{piece_type, IPieceType, PieceType},
         position::Position,
-        r#move::{Move, MoveFlag},
+        r#move::{move_flags, Move},
     },
     misc::ConstFrom,
 };
@@ -22,7 +22,7 @@ use super::{
 pub struct King;
 
 impl IPieceType for King {
-    const ID: PieceType = PieceType::KING;
+    const ID: PieceType = piece_type::KING;
 }
 
 impl FoldMoves<NoCheck> for King {
@@ -36,7 +36,9 @@ impl FoldMoves<NoCheck> for King {
         let nstm_attacks = pos.get_nstm_attacks();
 
         let king_bb = pos.get_bitboard(King::ID, color);
-        let king = king_bb.lsb().unwrap();
+        let king = king_bb
+            .lsb()
+            .expect("King bb has to contain atleast one king.");
 
         let attacks = lookup_attacks(king);
         let legal_attacks = attacks & !nstm_attacks;
@@ -63,8 +65,8 @@ impl<C: SomeCheck> FoldMoves<C> for King {
         let rooks_queens = rooks | queens;
         let bishops_queens = bishops | queens;
 
-        // If the to square covers anything, it doesn't matter, because the king will be in check.
-        // (=> we don't need to add the to square to occupancy)
+        // If the to square covers anything, it doesn't matter, because the king will be
+        // in check. (=> we don't need to add the to square to occupancy)
         let king_bb = pos.get_bitboard(King::ID, color);
         let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
 
@@ -78,8 +80,9 @@ impl<C: SomeCheck> FoldMoves<C> for King {
                 // Note that, in no case does a king move cause an enemy attack to get covered
                 // without the king being in check after he moved, which is why we can just
                 // append the new attacks of the sliding piece to the existing attacks.
-                // The new 'nstm_attacks' are not really nstm_attacks, but only reflect nstm_attacks
-                // which are relevant to checking whether the our king is in check.
+                // The new 'nstm_attacks' are not really nstm_attacks, but only reflect
+                // nstm_attacks which are relevant to checking whether the our
+                // king is in check.
                 let rook_attacks = Rook::lookup_attacks(to_sq, occupancy_after_king_move);
                 let bishop_attacks = Bishop::lookup_attacks(to_sq, occupancy_after_king_move);
                 let q_or_r_check = !rook_attacks.and_c(rooks_queens).is_empty();
@@ -90,7 +93,8 @@ impl<C: SomeCheck> FoldMoves<C> for King {
 
             if is_legal {
                 f(acc, m)
-            } else {
+            }
+            else {
                 try { acc }
             }
         })
@@ -104,12 +108,12 @@ where
 {
     let color = pos.get_turn();
     let color_v = color.v() as usize;
-    let rank = color * Rank::_8;
-    let from = Square::from_c((File::E, rank));
+    let rank = color * ranks::_8;
+    let from = Square::from_c((files::E, rank));
     let castling = pos.get_castling();
     let nstm_attacks = pos.get_nstm_attacks();
 
-    if castling.is_true(CastlingSide::KING_SIDE, color) {
+    if castling.is_true(castling_sides::KING_SIDE, color) {
         const TABU_MASK: [Bitboard; 2] = [Bitboard { v: 0x60_u64 }, Bitboard { v: 0x60_u64 << 56 }];
         let tabus = nstm_attacks | pos.get_occupancy();
         // Safety: Color is in range [0..2]
@@ -117,11 +121,11 @@ where
         if (tabus & *tabu_mask).is_empty() {
             // Safety: [e1|e8] + 2 < 63
             let to = unsafe { Square::from_v(from.v() + 2) };
-            init = f(init, Move::new(from, to, MoveFlag::KING_CASTLE))?;
+            init = f(init, Move::new(from, to, move_flags::KING_CASTLE))?;
         }
     }
 
-    if castling.is_true(CastlingSide::QUEEN_SIDE, color) {
+    if castling.is_true(castling_sides::QUEEN_SIDE, color) {
         const BLOCK_MASK: [Bitboard; 2] = [Bitboard { v: 0xE_u64 }, Bitboard { v: 0xE_u64 << 56 }];
         const CHECK_MASK: [Bitboard; 2] = [Bitboard { v: 0xC_u64 }, Bitboard { v: 0xC_u64 << 56 }];
         // Safety: Color is in range [0..2]
@@ -133,7 +137,7 @@ where
         if (blocked | checked).is_empty() {
             // Safety: [e1|e8] - 2 > 0
             let to = unsafe { Square::from_v(from.v() - 2) };
-            return f(init, Move::new(from, to, MoveFlag::QUEEN_CASTLE));
+            return f(init, Move::new(from, to, move_flags::QUEEN_CASTLE));
         }
     }
 
@@ -143,7 +147,7 @@ where
 pub fn lookup_attacks(sq: Square) -> Bitboard {
     static ATTACKS: [Bitboard; 64] = {
         let mut attacks = [Bitboard::empty(); 64];
-        const_for!(sq in Square::A1_C..(Square::H8_C+1) => {
+        const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             // Safety: we are only iterating over valid squares.
             let sq = unsafe { Square::from_v(sq) };
             attacks[sq.v() as usize] = compute_attacks(sq);
@@ -160,26 +164,26 @@ pub const fn compute_attacks(sq: Square) -> Bitboard {
     let king = Bitboard::from_c(sq);
 
     let mut files = Bitboard::from_c(file);
-    if file.v() > File::A_C {
+    if file.v() > files::A_C {
         // Safety: file is in range 1.., so file - 1 is still a valid file.
         let west = unsafe { File::from_v(file.v() - 1) };
         files.v |= Bitboard::from_c(west).v;
     }
 
-    if file.v() < File::H_C {
+    if file.v() < files::H_C {
         // Safety: file is in range 0..7, so file + 1 is still a valid file.
         let east = unsafe { File::from_v(file.v() + 1) };
         files.v |= Bitboard::from_c(east).v;
     }
 
     let mut ranks = Bitboard::from_c(rank);
-    if rank.v() > Rank::_1_C {
+    if rank.v() > ranks::_1_C {
         // Safety: rank is in range 1.., so rank - 1 is still a valid rank.
         let south = unsafe { Rank::from_v(rank.v() - 1) };
         ranks.v |= Bitboard::from_c(south).v;
     }
 
-    if rank.v() < Rank::_8_C {
+    if rank.v() < ranks::_8_C {
         // Safety: rank is in range 0..7, so rank + 1 is still a valid rank.
         let north = unsafe { Rank::from_v(rank.v() + 1) };
         ranks.v |= Bitboard::from_c(north).v;

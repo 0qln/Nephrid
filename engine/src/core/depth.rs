@@ -13,6 +13,7 @@ impl fmt::Display for Depth {
 }
 
 impl_op!(-|a: Depth, b: u8| -> Depth { Depth { v: a.v - b } });
+impl_op!(-|a: Depth, b: Depth| -> Depth { Depth { v: a.v - b.v } });
 
 impl TryFrom<&str> for Depth {
     type Error = ParseIntError;

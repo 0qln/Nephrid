@@ -33,14 +33,22 @@ impl<'a> Tokenizer<'a> {
         self.next_char_with_index().map(|c| c.1)
     }
 
+    pub fn peek_next_char(&mut self) -> Option<char> {
+        self.peek_next_char_with_index().map(|c| c.1)
+    }
+
     pub fn chars(&mut self) -> CharIterator<'_, 'a> {
         CharIterator(self)
     }
-    
+
     pub fn next_char_with_index(&mut self) -> Option<(usize, char)> {
         self.seq.next_if(|&c| !c.1.is_whitespace())
     }
-    
+
+    pub fn peek_next_char_with_index(&mut self) -> Option<&(usize, char)> {
+        self.seq.peek()
+    }
+
     pub fn chars_with_index(&mut self) -> CharsWithIndexIterator<'_, 'a> {
         CharsWithIndexIterator(self)
     }

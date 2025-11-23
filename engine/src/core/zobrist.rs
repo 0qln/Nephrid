@@ -3,6 +3,7 @@ use std::{mem, ops};
 
 use rand::{rngs::SmallRng, RngCore, SeedableRng};
 
+use crate::core::color::colors;
 use crate::misc::ConstFrom;
 
 use super::{
@@ -14,7 +15,8 @@ use super::{
     turn::Turn,
 };
 
-/// Note: the default hash is equivalent to the hash of the default (empty) position.
+/// Note: the default hash is equivalent to the hash of the default (empty)
+/// position.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
 pub struct Hash {
     v: u64,
@@ -38,7 +40,7 @@ impl Hash {
 
     #[inline]
     pub fn set_turn(&mut self, turn: Turn) -> Self {
-        (turn == Turn::BLACK).then(|| self.toggle_turn());
+        (turn == colors::BLACK).then(|| self.toggle_turn());
         *self
     }
 

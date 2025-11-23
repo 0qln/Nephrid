@@ -1,12 +1,16 @@
 use crate::{
     impl_variants,
-    misc::{ConstFrom, ParseError},
+    misc::{ConstFrom, ValueOutOfRangeError, ValueOutOfSetError},
     uci::tokens::Tokenizer,
 };
 use core::{fmt, panic};
-use std::{iter::Step, ops};
+use std::ops;
+use std::{any::type_name, error::Error, fmt::Debug, iter::Step, marker::PhantomData};
 
 use super::color::Color;
+use compass_rose::*;
+use squares::*;
+use thiserror::Error;
 
 #[derive(PartialEq, Copy, Clone, Debug)]
 pub struct CompassRose {
@@ -16,30 +20,30 @@ pub struct CompassRose {
 pub type TCompassRose = i8;
 
 impl_variants! {
-    TCompassRose as CompassRose {
+    TCompassRose as CompassRose in compass_rose {
         NORT = 8,
         EAST = 1,
         SOUT = -8,
         WEST = -1,
-        
-        NONO = 2 * CompassRose::NORT.v,
-        EAEA = 2 * CompassRose::EAST.v,
-        SOSO = 2 * CompassRose::SOUT.v,
-        WEWE = 2 * CompassRose::WEST.v,
 
-        SOWE = CompassRose::SOUT.v + CompassRose::WEST.v,
-        NOWE = CompassRose::NORT.v + CompassRose::WEST.v,
-        SOEA = CompassRose::SOUT.v + CompassRose::EAST.v,
-        NOEA = CompassRose::NORT.v + CompassRose::EAST.v,
+        NONO = 2 * NORT.v,
+        EAEA = 2 * EAST.v,
+        SOSO = 2 * SOUT.v,
+        WEWE = 2 * WEST.v,
 
-        NONOWE = CompassRose::NONO.v + CompassRose::WEST.v,
-        NONOEA = CompassRose::NONO.v + CompassRose::EAST.v,
-        NOWEWE = CompassRose::NORT.v + CompassRose::WEWE.v,
-        NOEAEA = CompassRose::NORT.v + CompassRose::EAEA.v,
-        SOSOWE = CompassRose::SOSO.v + CompassRose::WEST.v,
-        SOSOEA = CompassRose::SOSO.v + CompassRose::EAST.v,
-        SOWEWE = CompassRose::SOUT.v + CompassRose::WEWE.v,
-        SOEAEA = CompassRose::SOUT.v + CompassRose::EAEA.v,
+        SOWE = SOUT.v + WEST.v,
+        NOWE = NORT.v + WEST.v,
+        SOEA = SOUT.v + EAST.v,
+        NOEA = NORT.v + EAST.v,
+
+        NONOWE = NONO.v + WEST.v,
+        NONOEA = NONO.v + EAST.v,
+        NOWEWE = NORT.v + WEWE.v,
+        NOEAEA = NORT.v + EAEA.v,
+        SOSOWE = SOSO.v + WEST.v,
+        SOSOEA = SOSO.v + EAST.v,
+        SOWEWE = SOUT.v + WEWE.v,
+        SOEAEA = SOUT.v + EAEA.v,
     }
 }
 
@@ -68,7 +72,7 @@ pub struct Square {
 pub type TSquare = u8;
 
 impl_variants! {
-    TSquare as Square {
+    TSquare as Square in squares {
         A1, B1, C1, D1, E1, F1, G1, H1,
         A2, B2, C2, D2, E2, F2, G2, H2,
         A3, B3, C3, D3, E3, F3, G3, H3,
@@ -85,8 +89,8 @@ impl_op!(% |a: Square, b: u8| -> Square { Square { v: a.v % b } } );
 impl_op!(-|a: Square, b: Square| -> Square { Square { v: a.v - b.v } });
 
 impl Square {
-    pub const MIN: TSquare = Square::A1.v;
-    pub const MAX: TSquare = Square::H8.v;
+    pub const MAX: Square = H8;
+    pub const MIN: Square = A1;
 
     pub const fn flip_h(self) -> Self {
         Self { v: self.v ^ 7 }
@@ -109,53 +113,87 @@ impl fmt::Debug for Square {
     }
 }
 
+pub type SquareParseError<T> = ValueOutOfRangeError<T>;
+
 impl TryFrom<TSquare> for Square {
-    type Error = ParseError;
+    type Error = ValueOutOfRangeError<TSquare>;
 
     #[inline]
     fn try_from(value: TSquare) -> Result<Self, Self::Error> {
+        const MIN: TSquare = Square::MIN.v();
+        const MAX: TSquare = Square::MAX.v();
         match value {
-            Square::MIN..=Square::MAX => Ok(Square { v: value }),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
+            MIN..=MAX => Ok(Square { v: value }),
+            x => Err(Self::Error::new(x, MIN..=MAX)),
         }
     }
 }
 
-impl TryFrom<u16> for Square {
-    type Error = ParseError;
+// impl TryFrom<u16> for Square {
+//     type Error = OneOf<(ValueOutOfRangeError<u16>,)>;
 
-    #[inline]
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        const MIN: u16 = Square::MIN as u16;
-        const MAX: u16 = Square::MAX as u16;
-        match value {
-            MIN..=MAX => Ok(Square { v: value as u8 }),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
-        }
-    }
-}
+//     #[inline]
+//     fn try_from(value: u16) -> Result<Self, Self::Error> {
+//         match value {
+//             MIN_C..=MAX_C => Ok(Square { v: value as u8 }),
+//             x => Err(OneOf::new(ValueOutOfRangeError::new(x,
+// MIN_C..=MAX_C))),         }
+//     }
+// }
 
 impl const ConstFrom<(File, Rank)> for Square {
     #[inline]
     fn from_c(value: (File, Rank)) -> Self {
-        Square {
-            v: value.0.v + value.1.v * 8u8,
-        }
+        Square { v: value.0.v + value.1.v * 8u8 }
     }
 }
 
+// #[derive(Error, Debug)]
+// #[error("Failed to tokenize a {}: {err}", type_name::<T>())]
+// pub struct TokenizationError<T, E: Error> {
+//     _t: PhantomData<T>,
+//     err: E,
+// }
+
+// impl<T, E: Error> TokenizationError<T, E> {
+//     pub fn new(err: E) -> Self {
+//         Self { err, _t: PhantomData }
+//     }
+// }
+
+// impl<T: Default, E: Error + Default> Default for TokenizationError<T, E> {
+//     fn default() -> Self {
+//         Self {
+//             _t: Default::default(),
+//             err: Default::default(),
+//         }
+//     }
+// }
+
+#[derive(Error, Debug)]
+pub enum SquareTokenizationError {
+    #[error("Failed to parse a square: {0}.")]
+    InvalidFile(FileParseError<char>),
+    #[error("Failed to parse a square: {0}.")]
+    InvalidRank(RankParseError<char>),
+    #[error("Failed to parse a square: Missing File.")]
+    MissingFile,
+    #[error("Failed to parse a square: Missing Rank.")]
+    MissingRank,
+}
+
 impl TryFrom<&mut Tokenizer<'_>> for Square {
-    type Error = ParseError;
+    type Error = SquareTokenizationError;
 
     #[inline]
     fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let file = match tokens.next_char() {
-            Some(c) => File::try_from(c)?,
-            None => return Err(ParseError::MissingValue),
+            Some(c) => File::try_from(c).map_err(Self::Error::InvalidFile)?,
+            None => return Err(Self::Error::MissingFile),
         };
         let rank = match tokens.next_char() {
-            Some(c) => Rank::try_from(c)?,
-            None => return Err(ParseError::MissingValue),
+            Some(c) => Rank::try_from(c).map_err(Self::Error::InvalidRank)?,
+            None => return Err(Self::Error::MissingRank),
         };
         Ok(Square::from_c((file, rank)))
     }
@@ -186,35 +224,52 @@ impl EpTargetSquare {
     }
 }
 
+pub type EpTargetSquareParseError = ValueOutOfSetError<Rank>;
+
 impl TryFrom<Square> for EpTargetSquare {
-    type Error = ParseError;
+    type Error = EpTargetSquareParseError;
 
     #[inline]
     fn try_from(sq: Square) -> Result<Self, Self::Error> {
+        use ranks::*;
         let rank = Rank::from_c(sq);
         match rank {
-            Rank::_3 | Rank::_6 => Ok(Self { v: Some(sq) }),
-            _ => Err(ParseError::InputOutOfRange(sq.to_string())),
+            _3 | _6 => Ok(Self { v: Some(sq) }),
+            x => Err(Self::Error::new(x, &[_3, _6])),
         }
     }
 }
 
+#[derive(Debug, Error)]
+pub enum EpTargetSquareTokenizationError {
+    #[error("Expected either a '-' (None) or a square. Got nothing.")]
+    MissingToken,
+    #[error("Invalid square: {0}")]
+    InvalidSquare(SquareTokenizationError),
+}
+
 impl TryFrom<&mut Tokenizer<'_>> for EpTargetSquare {
-    type Error = ParseError;
+    type Error = EpTargetSquareTokenizationError;
 
     #[inline]
     fn try_from(tokens: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
-        let file = match tokens.next_char() {
-            Some('-') => return Ok(Self { v: None }),
-            Some(c) => File::try_from(c)?,
-            None => return Err(ParseError::MissingValue),
+        let first = match tokens.peek_next_char() {
+            Some(x) => x,
+            None => return Err(Self::Error::MissingToken),
         };
-        let rank = match tokens.next_char() {
-            Some(c) => Rank::try_from(c)?,
-            None => return Err(ParseError::MissingValue),
-        };
-        let sq = Square::from_c((file, rank));
-        Self::try_from(sq)
+
+        Ok(Self {
+            v: match first {
+                '-' => {
+                    tokens.next_char();
+                    None
+                }
+                _file => {
+                    let sq = Square::try_from(&mut *tokens);
+                    Some(sq.map_err(Self::Error::InvalidSquare)?)
+                }
+            },
+        })
     }
 }
 
@@ -241,15 +296,18 @@ impl EpCaptureSquare {
     }
 }
 
+pub type EpCaptureSquareParseError = ValueOutOfSetError<Rank>;
+
 impl TryFrom<Square> for EpCaptureSquare {
-    type Error = ParseError;
+    type Error = EpCaptureSquareParseError;
 
     #[inline]
     fn try_from(sq: Square) -> Result<Self, Self::Error> {
+        use ranks::*;
         let rank = Rank::from_c(sq);
         match rank {
-            Rank::_4 | Rank::_5 => Ok(Self { v: Some(sq) }),
-            _ => Err(ParseError::InputOutOfRange(sq.to_string())),
+            _4 | _5 => Ok(Self { v: Some(sq) }),
+            x => Err(Self::Error::new(x, &[_4, _5])),
         }
     }
 }
@@ -277,8 +335,14 @@ impl_op!(*|a: u8, b: Rank| -> Rank { Rank { v: a * b.v } });
 impl_op!(*|a: Color, b: Rank| -> Rank { Rank { v: a.v() * b.v } });
 
 impl_variants! {
-    TRank as Rank {
+    TRank as Rank in ranks {
         _1, _2, _3, _4, _5, _6, _7, _8
+    }
+}
+
+impl Default for Rank {
+    fn default() -> Self {
+        ranks::_1
     }
 }
 
@@ -307,28 +371,28 @@ impl From<Rank> for i8 {
     }
 }
 
-impl TryFrom<u8> for Rank {
-    type Error = ParseError;
+pub type RankParseError<T> = ValueOutOfRangeError<T>;
+
+impl TryFrom<TRank> for Rank {
+    type Error = RankParseError<TRank>;
 
     #[inline]
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    fn try_from(value: TRank) -> Result<Self, Self::Error> {
         match value {
             0..=7 => Ok(Rank { v: value }),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
+            x => Err(Self::Error::new(x, 0..=7)),
         }
     }
 }
 
 impl TryFrom<char> for Rank {
-    type Error = ParseError;
+    type Error = RankParseError<char>;
 
     #[inline]
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
-            '1'..='8' => Ok(Rank {
-                v: value as u8 - b'1',
-            }),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
+            '1'..='8' => Ok(Rank { v: value as u8 - b'1' }),
+            x => Err(Self::Error::new(x, '1'..='8')),
         }
     }
 }
@@ -341,7 +405,7 @@ pub struct File {
 pub type TFile = u8;
 
 impl_variants! {
-    TFile as File {
+    TFile as File in files {
         A, B, C, D, E, F, G, H
     }
 }
@@ -349,10 +413,16 @@ impl_variants! {
 impl File {
     pub const fn edge<const DIR: TCompassRose>() -> File {
         match CompassRose::new(DIR) {
-            CompassRose::WEST => File::A,
-            CompassRose::EAST => File::H,
+            WEST => files::A,
+            EAST => files::H,
             _ => panic!("The only two edge files are in the west and in the east."),
         }
+    }
+}
+
+impl Default for File {
+    fn default() -> Self {
+        files::A
     }
 }
 
@@ -375,28 +445,46 @@ impl const ConstFrom<Square> for File {
     }
 }
 
-impl TryFrom<u8> for File {
-    type Error = ParseError;
+pub type FileParseError<T> = ValueOutOfRangeError<T>;
+
+impl TryFrom<TFile> for File {
+    type Error = FileParseError<TFile>;
 
     #[inline]
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
+    fn try_from(value: TFile) -> Result<Self, Self::Error> {
         match value {
             0..=7 => Ok(File { v: value }),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
+            x => Err(Self::Error::new(x, 0..=7)),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("Cannot parse a {} from a {}: {err}", type_name::<TTo>(), type_name::<TFrom>())]
+pub struct ParseError<TFrom, TTo, E: Error> {
+    _from: PhantomData<TFrom>,
+    _to: PhantomData<TTo>,
+    err: E,
+}
+
+impl<TFrom, TTo, E: Error> ParseError<TFrom, TTo, E> {
+    pub fn new(err: E) -> Self {
+        Self {
+            err,
+            _from: PhantomData,
+            _to: PhantomData,
         }
     }
 }
 
 impl TryFrom<char> for File {
-    type Error = ParseError;
+    type Error = FileParseError<char>;
 
     #[inline]
     fn try_from(value: char) -> Result<Self, Self::Error> {
         match value {
-            'a'..='h' => Ok(File {
-                v: value as u8 - b'a',
-            }),
-            x => Err(ParseError::InputOutOfRange(x.to_string())),
+            'a'..='h' => Ok(File { v: value as u8 - b'a' }),
+            x => Err(Self::Error::new(x, 'a'..='h')),
         }
     }
 }
@@ -406,7 +494,6 @@ impl From<File> for char {
         (val.v + b'a') as char
     }
 }
-
 
 #[derive(PartialEq, Debug, Copy, Clone)]
 pub struct DiagA1H8 {
