@@ -4,7 +4,7 @@ use std::fmt::{Debug, Display};
 use thiserror::Error;
 
 use crate::{
-    core::color::{colors, Color},
+    core::color::{Color, colors},
     impl_variants,
     misc::{ConstFrom, InvalidValueError, ValueOutOfSetError},
     uci::tokens::Tokenizer,
@@ -160,8 +160,7 @@ impl TryFrom<MoveFlag> for PromoPieceType {
     fn try_from(flag: MoveFlag) -> Result<Self, Self::Error> {
         if !flag.is_promo() {
             Err(Self::Error::new(flag))
-        }
-        else {
+        } else {
             let v = (flag.v() - 2) % 4 + 2;
             let pt = PieceType { v };
             Ok(PromoPieceType { v: pt })

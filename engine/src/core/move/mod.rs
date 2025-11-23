@@ -5,9 +5,9 @@ use thiserror::Error;
 
 use crate::{
     core::{
-        castling::{castling_sides, CastlingSideParseError},
+        castling::{CastlingSideParseError, castling_sides},
         coordinates::{File, Square, SquareTokenizationError},
-        piece::{piece_type, PromoPieceTokenizationError},
+        piece::{PromoPieceTokenizationError, piece_type},
         position::Position,
     },
     impl_variants,
@@ -133,15 +133,10 @@ impl const ConstFrom<CastlingSide> for MoveFlag {
     }
 }
 
-<<<<<<< HEAD:engine/src/core/move/mod.rs
 #[derive(Default, Copy, Clone, Eq, PartialEq, Hash)]
-pub struct Move { v: u16 }
-=======
-#[derive(Default, Copy, Clone, Eq, PartialEq)]
 pub struct Move {
     v: u16,
 }
->>>>>>> main:engine/src/core/move.rs
 
 impl Move {
     const SHIFT_FROM: u16 = 0;
@@ -151,12 +146,8 @@ impl Move {
     const MASK_FROM: u16 = 0b111111 << Move::SHIFT_FROM;
     const MASK_TO: u16 = 0b111111 << Move::SHIFT_TO;
     const MASK_FLAG: u16 = 0b1111 << Move::SHIFT_FLAG;
-<<<<<<< HEAD:engine/src/core/move/mod.rs
     const MASK_SQ: u16 = Move::MASK_FROM | Move::MASK_TO;
-    
-=======
 
->>>>>>> main:engine/src/core/move.rs
     #[inline]
     pub const fn null() -> Self {
         Move { v: 0 }
@@ -210,11 +201,9 @@ impl fmt::Display for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.v == 0 {
             write!(f, "0000")
-        }
-        else if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
+        } else if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
             write!(f, "{}{}{}", self.get_from(), self.get_to(), promo)
-        }
-        else {
+        } else {
             write!(f, "{}{}", self.get_from(), self.get_to())
         }
     }
@@ -289,27 +278,26 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
 }
 
 impl From<Move> for usize {
-    /// Converts a move to a index, such that in any given position, no two moves will have the same index and there are no gaps. 
+    /// Converts a move to a index, such that in any given position, no two moves will have the same index and there are no gaps.
     fn from(mov: Move) -> Self {
         let from_file = File::from_c(mov.get_from());
         let promo_bias = Move::MASK_SQ + 1 + from_file.v() as u16;
         (match mov.get_flag() {
-            // Promotions are special cases: 
+            // Promotions are special cases:
             // 1. Since promotions have multiple moves for the same from-to combination, we add a variance for different promotions.
             // 2. We need to bias, such that we don't collide with valid from-to indeces. (SQ_MASK)
             // 3. We also need to bias by the file of the from square, such that we don't collide with other promotions.
             f if f.is_promo() => promo_bias + f.v() as u16 - 2,
             // For most moves, we can just use the from and to squares.
-            _ => mov.v & Move::MASK_SQ
+            _ => mov.v & Move::MASK_SQ,
         }) as usize
     }
 }
 
-
-/// A list of moves in a single position. 
-/// Since the 218 is the maximum number of moves in a single position, 
-/// we can use a fixed length array to store the moves and by using a 
-/// size of 256 we can safely index into the array with a u8. 
+/// A list of moves in a single position.
+/// Since the 218 is the maximum number of moves in a single position,
+/// we can use a fixed length array to store the moves and by using a
+/// size of 256 we can safely index into the array with a u8.
 #[derive(Debug, Clone)]
 pub struct MoveList([Move; 256]);
 

@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        coordinates::{compass_rose::*, files, ranks, CompassRose, File, Rank, Square},
+        coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks, squares},
         move_iter::{bishop, rook},
     },
     misc::ConstFrom,
@@ -13,7 +13,7 @@ use std::{
 use burn::{prelude::Backend, tensor::Tensor};
 use const_for::const_for;
 
-use super::coordinates::{squares::*, DiagA1H8, DiagA8H1, TCompassRose};
+use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose, squares::*};
 
 #[cfg(test)]
 pub mod tests;
@@ -38,8 +38,7 @@ impl Try for Bitboard {
     fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
         if self.is_empty() {
             ControlFlow::Break(self)
-        }
-        else {
+        } else {
             ControlFlow::Continue(self)
         }
     }
@@ -155,9 +154,9 @@ impl Bitboard {
 
     #[inline]
     pub const fn get_bit(&self, sq: Square) -> u64 {
-        (self.v & Self::from_c(sq).v) >> sq.v() as u32 
+        (self.v & Self::from_c(sq).v) >> sq.v() as u32
     }
-    
+
     #[inline]
     pub const fn is_bit_set(&self, sq: Square) -> bool {
         self.v & Self::from_c(sq).v != 0
@@ -303,10 +302,10 @@ impl Bitboard {
     pub const fn edges() -> Self {
         Self { v: !0x007E7E7E7E7E7E00_u64 }
     }
-    
+
     pub fn into_floats(self, upside_down: bool) -> Floats {
         let mut data: Floats = Default::default();
-        for sq in Square::A1_C..Square::H8_C {
+        for sq in squares::A1_C..squares::H8_C {
             let sq = unsafe { Square::from_v(sq) };
             let bit = self.get_bit(if upside_down { sq.flip_v() } else { sq });
             let rank = Rank::from_c(sq).v() as usize;

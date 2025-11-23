@@ -3,7 +3,10 @@ use core::fmt;
 
 use crate::{
     core::{
-        color::{colors::*, Color},
+        color::{
+            Color,
+            colors::{self, *},
+        },
         coordinates::files,
         piece::piece_type,
     },
@@ -130,17 +133,17 @@ impl CastlingRights {
     pub const fn v(&self) -> u8 {
         self.v
     }
-    
+
     #[inline]
     pub const fn get_float(&self, side: CastlingSide, color: Color) -> f32 {
         if self.is_true(side, color) { 1.0 } else { 0.0 }
     }
-    
+
     #[inline]
     pub fn fill_floats(&self, buf: &mut [f32; 6]) {
-        buf[0] = self.get_float(CastlingSide::KING_SIDE, Color::WHITE);
-        buf[1] = self.get_float(CastlingSide::QUEEN_SIDE, Color::WHITE);
-        buf[2] = self.get_float(CastlingSide::KING_SIDE, Color::BLACK);
-        buf[3] = self.get_float(CastlingSide::QUEEN_SIDE, Color::BLACK);
+        buf[0] = self.get_float(castling_sides::KING_SIDE, colors::WHITE);
+        buf[1] = self.get_float(castling_sides::QUEEN_SIDE, colors::WHITE);
+        buf[2] = self.get_float(castling_sides::KING_SIDE, colors::BLACK);
+        buf[3] = self.get_float(castling_sides::QUEEN_SIDE, colors::BLACK);
     }
 }
