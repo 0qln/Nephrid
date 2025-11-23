@@ -1,11 +1,19 @@
-use std::error::Error;
+use std::{error::Error, ops::ControlFlow};
 
+use burn::prelude::Backend;
 use burn_cuda::{Cuda, CudaDevice};
 use engine::{
     core::{
-        Engine, color::colors, execute_uci, move_iter::sliding_piece::magics, position::Position,
-        search::mcts::eval::model::ModelConfig, zobrist,
+        move_iter::{fold_legal_moves, sliding_piece::magics},
+        position::Position,
+        search::{
+            self,
+            limit::Limit,
+            mcts::eval::model::{Model, ModelConfig},
+        },
+        zobrist,
     },
+    misc::DebugMode,
     uci::{sync::CancellationToken, tokens::Tokenizer},
 };
 
@@ -19,34 +27,48 @@ fn main() {
     type Backend = Cuda<f32>;
     let model = ModelConfig::new().init::<Backend>(&device);
     println!("Model: {:#?}", model);
+
+    // let batch = generate_batch(&model);
+    let result = self_play(
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        &model,
+    );
+    println!("{result:?}");
 }
 
-fn self_play(pos: &str, e: &mut Engine) -> Result<(), Box<dyn Error>> {
+// #[derive(Clone, Debug)]
+// pub struct PlayoutBatch<B: Backend> {}
+
+fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<(), Box<dyn Error>> {
+    let limit = Limit {
+        is_active: true,
+        winc: 100,
+        binc: 100,
+        wtime: 0,
+        btime: 0,
+        ..Default::default()
+    };
+    let debug = DebugMode::default();
     let ct = CancellationToken::new();
 
-    execute_uci(e, "ucinewgame".to_string(), ct.clone())?;
-    execute_uci(e, format!("position fen {pos}"), ct.clone())?;
-
-    execute_uci(e, "ucinewgame".to_string(), ct.clone())?;
-    execute_uci(e, format!("position fen {pos}"), ct.clone())?;
-
     let tok = &mut Tokenizer::new(pos);
-
-    let position: Position = tok
+    let mut pos: Position = tok
         .try_into()
         .expect(format!("Invalid FEN: {pos}").as_str());
 
-    loop {
-        let command = match position.get_turn() {
-            colors::WHITE => "go wtime 1000",
-            colors::BLACK => "go btime 1000",
-            _ => panic!("Invalid color"),
-        };
+    println!("{pos}");
 
-        execute_uci(e, command.to_string(), ct.clone())?
-            .right()
-            .expect("go-command didn't return a join handle.")
-            .join()
-            .expect("failed to join thread");
+    loop {
+        let mov = search::mcts(pos.clone(), model, limit.clone(), debug.clone(), ct.clone());
+
+        if mov.is_none() || pos.fifty_move_rule() || pos.has_threefold_repetition() {
+            break;
+        }
+
+        pos.make_move(mov.unwrap());
+
+        println!("{pos}");
     }
+
+    Ok(())
 }

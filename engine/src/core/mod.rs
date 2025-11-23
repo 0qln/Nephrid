@@ -133,7 +133,10 @@ pub fn execute_uci(
                         type Backend = Cuda<f32>;
                         let device = CudaDevice::default();
                         let model = ModelConfig::new().init::<Backend>(&device);
-                        let result = search::mcts(position, model, limit, debug, token);
+
+                        let result = search::mcts(position, &model, limit, debug, token)
+                            .expect("search did not complete");
+
                         sync::out(&format!("bestmove {result}"));
                     }
                     _ => unimplemented!(),

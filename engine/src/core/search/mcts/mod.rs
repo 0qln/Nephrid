@@ -58,13 +58,15 @@ impl Tree {
         }
     }
 
-    pub fn best_move(&self) -> Move {
-        self.root
+    /// Returns None if there are no moves.
+    pub fn best_move(&self) -> Option<Move> {
+        let most_visited = self
+            .root
             .branches
             .iter()
-            .max_by(|a, b| a.visits().cmp(&b.visits()))
-            .expect("Root need's to have children.")
-            .mov()
+            .max_by(|a, b| a.visits().cmp(&b.visits()))?;
+
+        Some(most_visited.mov())
     }
 
     pub fn grow<B: Backend>(&mut self, pos: &mut Position, model: &Model<B>) {
@@ -273,6 +275,7 @@ impl Node {
                 let b_ucb = b.puct(self.visits);
                 a_ucb.partial_cmp(&b_ucb).expect("Node comparison failed!")
             })
+            // todo: this has happened once, and i can't replicate it :(
             .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
     }
 

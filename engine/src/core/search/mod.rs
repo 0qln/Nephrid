@@ -79,11 +79,11 @@ fn perft_inner(
 
 pub fn mcts<B: Backend>(
     pos: Position,
-    model: Model<B>,
+    model: &Model<B>,
     limit: Limit,
     debug: DebugMode,
     ct: CancellationToken,
-) -> Move {
+) -> Option<Move> {
     mcts_inner(pos, &model, limit, debug, ct)
 }
 
@@ -93,22 +93,29 @@ fn mcts_inner<B: Backend>(
     limit: Limit,
     _debug: DebugMode,
     ct: CancellationToken,
-) -> Move {
+) -> Option<Move> {
     let mut tree = mcts::Tree::new(&pos, model);
     let mut last_best_move = None;
 
     let time_per_move = limit.time_per_move(&pos);
     let time_limit = Instant::now() + time_per_move;
 
+    let mut iterations = 0;
+
     while !ct.is_cancelled() && (!limit.is_active || Instant::now() < time_limit) {
         tree.grow(&mut pos, &model);
+        iterations += 1;
 
         let curr_best_move = tree.best_move();
-        if last_best_move != Some(curr_best_move) {
-            sync::out(&format!("currmove {curr_best_move}"));
-            last_best_move = Some(curr_best_move);
+        if last_best_move != curr_best_move {
+            if let Some(mov) = curr_best_move {
+                sync::out(&format!("currmove {mov}"));
+                last_best_move = Some(mov);
+            }
         }
     }
 
-    last_best_move.expect("search did not complete")
+    println!("iterations: {iterations}");
+
+    last_best_move
 }
