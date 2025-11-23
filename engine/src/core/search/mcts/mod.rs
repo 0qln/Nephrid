@@ -32,17 +32,10 @@ impl Evaluation {
                 }
             }
             Evaluation::Draw => 0.5,
-            Evaluation::Ongoing {
-                quality,
-                relative_to,
-            } => {
+            Evaluation::Ongoing { quality, relative_to } => {
                 // The quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
                 let quality = (quality + 1.0) / 2.0;
-                if relative_to == turn {
-                    quality
-                } else {
-                    1.0 - quality
-                }
+                if relative_to == turn { quality } else { 1.0 - quality }
             }
         }
     }
@@ -135,10 +128,7 @@ pub struct ChildNode {
 impl ChildNode {
     /// Create a new leaf node.
     pub fn leaf(m: Move) -> Self {
-        Self {
-            node: Node::leaf(),
-            mov: m,
-        }
+        Self { node: Node::leaf(), mov: m }
     }
 
     // note: we take the policy as an argument, because if we later convert this
@@ -150,11 +140,7 @@ impl ChildNode {
         // Because of this, we have to divide by the number of playouts
         // to get the average quality of this node.
         // If this node has not yet been visited, we set the quality to 0.
-        let exploitation = if n_i == 0.0 {
-            0.0
-        } else {
-            self.node.value() / n_i
-        };
+        let exploitation = if n_i == 0.0 { 0.0 } else { self.node.value() / n_i };
 
         // todo: fine tune c.
         let c = f32::sqrt(2.0);
@@ -183,38 +169,35 @@ pub struct Branch {
 }
 
 impl Branch {
-    fn puct(&self, cap_n_i: u32) -> f32 {
+    pub fn puct(&self, cap_n_i: u32) -> f32 {
         self.node.puct(cap_n_i, self.policy)
     }
 
-    fn new(m: Move, policy: f32) -> Self {
-        Self {
-            node: ChildNode::leaf(m),
-            policy,
-        }
+    pub fn new(m: Move, policy: f32) -> Self {
+        Self { node: ChildNode::leaf(m), policy }
     }
 
-    fn visits(&self) -> u32 {
+    pub fn visits(&self) -> u32 {
         self.node.visits()
     }
 
-    fn mov(&self) -> Move {
+    pub fn mov(&self) -> Move {
         self.node.mov()
     }
 
-    fn update(&mut self, result: Evaluation, get_turn: Color) {
+    pub fn update(&mut self, result: Evaluation, get_turn: Color) {
         self.node.update(result, get_turn)
     }
 
-    fn traverse(&self) -> &Node {
+    pub fn traverse(&self) -> &Node {
         &self.node.node
     }
 
-    fn traverse_mut(&mut self) -> &mut Node {
+    pub fn traverse_mut(&mut self) -> &mut Node {
         &mut self.node.node
     }
 
-    fn node_state(&self) -> NodeState {
+    pub fn node_state(&self) -> NodeState {
         self.traverse().state()
     }
 }

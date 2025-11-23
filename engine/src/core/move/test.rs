@@ -1,10 +1,10 @@
 use super::*;
-use crate::core::coordinates::Square;
+use crate::core::coordinates::squares;
 
 #[test]
 fn non_promo_moves_unique_indices() {
-    let move1 = Move::new(Square::A1, Square::A2, MoveFlag::QUIET);
-    let move2 = Move::new(Square::A1, Square::A3, MoveFlag::QUIET);
+    let move1 = Move::new(squares::A1, squares::A2, move_flags::QUIET);
+    let move2 = Move::new(squares::A1, squares::A3, move_flags::QUIET);
     assert_ne!(
         usize::from(move1),
         usize::from(move2),
@@ -14,13 +14,13 @@ fn non_promo_moves_unique_indices() {
 
 #[test]
 fn promo_moves_same_file_different_types_unique() {
-    let from = Square::B7;
-    let to = Square::B8;
+    let from = squares::B7;
+    let to = squares::B8;
     let moves = [
-        Move::new(from, to, MoveFlag::PROMOTION_KNIGHT),
-        Move::new(from, to, MoveFlag::PROMOTION_BISHOP),
-        Move::new(from, to, MoveFlag::PROMOTION_ROOK),
-        Move::new(from, to, MoveFlag::PROMOTION_QUEEN),
+        Move::new(from, to, move_flags::PROMOTION_KNIGHT),
+        Move::new(from, to, move_flags::PROMOTION_BISHOP),
+        Move::new(from, to, move_flags::PROMOTION_ROOK),
+        Move::new(from, to, move_flags::PROMOTION_QUEEN),
     ];
     let indices: Vec<usize> = moves.iter().map(|m| usize::from(*m)).collect();
     for i in 0..indices.len() {
@@ -35,9 +35,9 @@ fn promo_moves_same_file_different_types_unique() {
 
 #[test]
 fn capture_vs_non_capture_promo_unique_indices() {
-    let from = Square::C7;
-    let non_cap = Move::new(from, Square::C8, MoveFlag::PROMOTION_QUEEN);
-    let cap = Move::new(from, Square::D8, MoveFlag::CAPTURE_PROMOTION_QUEEN);
+    let from = squares::C7;
+    let non_cap = Move::new(from, squares::C8, move_flags::PROMOTION_QUEEN);
+    let cap = Move::new(from, squares::D8, move_flags::CAPTURE_PROMOTION_QUEEN);
     assert_ne!(
         usize::from(non_cap),
         usize::from(cap),
@@ -47,8 +47,8 @@ fn capture_vs_non_capture_promo_unique_indices() {
 
 #[test]
 fn different_from_file_promos_unique() {
-    let promo1 = Move::new(Square::A7, Square::A8, MoveFlag::PROMOTION_QUEEN);
-    let promo2 = Move::new(Square::B7, Square::B8, MoveFlag::PROMOTION_QUEEN);
+    let promo1 = Move::new(squares::A7, squares::A8, move_flags::PROMOTION_QUEEN);
+    let promo2 = Move::new(squares::B7, squares::B8, move_flags::PROMOTION_QUEEN);
     assert_ne!(
         usize::from(promo1),
         usize::from(promo2),
@@ -58,8 +58,8 @@ fn different_from_file_promos_unique() {
 
 #[test]
 fn promo_and_non_promo_indices_dont_overlap() {
-    let non_promo = Move::new(Square::A1, Square::A2, MoveFlag::QUIET);
-    let promo = Move::new(Square::A7, Square::A8, MoveFlag::PROMOTION_QUEEN);
+    let non_promo = Move::new(squares::A1, squares::A2, move_flags::QUIET);
+    let promo = Move::new(squares::A7, squares::A8, move_flags::PROMOTION_QUEEN);
     assert!(
         usize::from(non_promo) < Move::MASK_SQ as usize,
         "Non-promo index should be below 4096"
@@ -72,30 +72,30 @@ fn promo_and_non_promo_indices_dont_overlap() {
 
 #[test]
 fn all_promo_indices_within_expected_range() {
-    let from = Square::H7; // Max file (7)
-    let max_promo = Move::new(from, Square::H8, MoveFlag::CAPTURE_PROMOTION_QUEEN);
+    let from = squares::H7; // Max file (7)
+    let max_promo = Move::new(from, squares::H8, move_flags::CAPTURE_PROMOTION_QUEEN);
     let idx: usize = max_promo.into();
     assert!(idx <= 4096 + 7 + 8, "Promo indices must not exceed 4111");
 }
 
 #[test]
 fn promo_indices_from_same_file_are_consecutive_without_gaps() {
-    let from = Square::A7;
-    let to_non_cap = Square::A8;
-    let to_cap = Square::B8;
-    
+    let from = squares::A7;
+    let to_non_cap = squares::A8;
+    let to_cap = squares::B8;
+
     // Generate all 8 possible promotion moves from this file
     let moves = [
         // Non-capture promotions
-        Move::new(from, to_non_cap, MoveFlag::PROMOTION_KNIGHT),
-        Move::new(from, to_non_cap, MoveFlag::PROMOTION_BISHOP),
-        Move::new(from, to_non_cap, MoveFlag::PROMOTION_ROOK),
-        Move::new(from, to_non_cap, MoveFlag::PROMOTION_QUEEN),
+        Move::new(from, to_non_cap, move_flags::PROMOTION_KNIGHT),
+        Move::new(from, to_non_cap, move_flags::PROMOTION_BISHOP),
+        Move::new(from, to_non_cap, move_flags::PROMOTION_ROOK),
+        Move::new(from, to_non_cap, move_flags::PROMOTION_QUEEN),
         // Capture promotions
-        Move::new(from, to_cap, MoveFlag::CAPTURE_PROMOTION_KNIGHT),
-        Move::new(from, to_cap, MoveFlag::CAPTURE_PROMOTION_BISHOP),
-        Move::new(from, to_cap, MoveFlag::CAPTURE_PROMOTION_ROOK),
-        Move::new(from, to_cap, MoveFlag::CAPTURE_PROMOTION_QUEEN),
+        Move::new(from, to_cap, move_flags::CAPTURE_PROMOTION_KNIGHT),
+        Move::new(from, to_cap, move_flags::CAPTURE_PROMOTION_BISHOP),
+        Move::new(from, to_cap, move_flags::CAPTURE_PROMOTION_ROOK),
+        Move::new(from, to_cap, move_flags::CAPTURE_PROMOTION_QUEEN),
     ];
 
     // Convert to indices and sort
@@ -107,9 +107,9 @@ fn promo_indices_from_same_file_are_consecutive_without_gaps() {
     for i in 1..indices.len() {
         assert_eq!(
             indices[i],
-            indices[i-1] + 1,
+            indices[i - 1] + 1,
             "Gap detected between promotion indices {} and {}",
-            indices[i-1],
+            indices[i - 1],
             indices[i]
         );
     }
@@ -122,15 +122,18 @@ fn promo_indices_from_same_file_are_consecutive_without_gaps() {
 #[test]
 fn non_promo_indices_use_contiguous_low_range() {
     // Test first and last possible non-promo indices
-    let min_move = Move::new(Square::A1, Square::A1, MoveFlag::QUIET);
-    let max_move = Move::new(Square::H8, Square::H8, MoveFlag::CAPTURE);
-    
+    let min_move = Move::new(squares::A1, squares::A1, move_flags::QUIET);
+    let max_move = Move::new(squares::H8, squares::H8, move_flags::CAPTURE);
+
     assert_eq!(
-        usize::from(min_move), 0,
+        usize::from(min_move),
+        0,
         "Lowest non-promo index should be 0"
     );
     assert_eq!(
-        usize::from(max_move), 0x0FFF, // 4095
+        usize::from(max_move),
+        0x0FFF, // 4095
         "Highest non-promo index should be 4095"
     );
 }
+

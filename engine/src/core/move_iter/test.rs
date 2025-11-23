@@ -1,23 +1,24 @@
-use std::cell::UnsafeCell;
-
 use crate::{
     core::{
-        depth::Depth, move_iter::sliding_piece::magics, position::Position, search::Search, zobrist,
+        depth::Depth,
+        move_iter::sliding_piece::magics,
+        position::Position,
+        search::{self, target::Target},
+        zobrist,
     },
+    misc::DebugMode,
     uci::{sync::CancellationToken, tokens::Tokenizer},
 };
+
 fn test_pos(mut fen: Tokenizer, depth: Depth, expected: u64) {
     magics::init();
     zobrist::init();
 
     let pos = Position::try_from(&mut fen).unwrap();
-    let search = Search::default();
-    let result = search.perft(
-        &mut UnsafeCell::new(pos),
-        depth,
-        CancellationToken::new(),
-        |_, _, _, _| {},
-    );
+    let target = Target { depth, ..Default::default() };
+    let debug = DebugMode::default();
+    let ct = CancellationToken::new();
+    let result = search::perft(pos, target, ct, debug);
     assert_eq!(expected, result);
 }
 

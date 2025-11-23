@@ -1,11 +1,10 @@
 use std::ops::ControlFlow;
 
-use rand::{rngs::SmallRng, Rng, RngCore, SeedableRng};
+use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 
 use engine::core::{
     move_iter::{fold_legal_moves, sliding_piece::magics},
     position::Position,
-    search::mcts::{self, NodeState},
     zobrist,
 };
 
@@ -50,9 +49,9 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
                     })
                 });
 
-                // if mcts::PlayoutResult::maybe_new(pos, if buffer.is_empty() { NodeState::Terminal } else { NodeState::Branch }).is_some() {
-                //     break;
-                // }
+                if buffer.is_empty() || pos.fifty_move_rule() || pos.has_threefold_repetition() {
+                    break;
+                }
 
                 let mov = buffer[rng.random_range(0..buffer.len())];
                 pos.make_move(mov);

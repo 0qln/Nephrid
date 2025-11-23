@@ -10,7 +10,6 @@ use std::{
     ops::{self, ControlFlow, FromResidual, Try},
 };
 
-use burn::{prelude::Backend, tensor::Tensor};
 use const_for::const_for;
 
 use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose, squares::*};

@@ -6,15 +6,15 @@ use thiserror::Error;
 use crate::{
     core::{
         bitboard::Bitboard,
-        castling::{castling_sides, CastlingRights, CastlingSideTokenizationError},
-        color::{colors, Color, ColorTokenizationError},
+        castling::{CastlingRights, CastlingSideTokenizationError, castling_sides},
+        color::{Color, ColorTokenizationError, colors},
         coordinates::{
-            files, squares, EpTargetSquareTokenizationError, File, Rank, RankParseError, Square,
+            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, squares,
         },
+        r#move::{Move, move_flags},
         move_iter::{bishop, king, knight, pawn, rook},
-        piece::{piece_type, Piece, PieceParseError, PieceType, PromoPieceType},
+        piece::{Piece, PieceParseError, PieceType, PromoPieceType, piece_type},
         ply::{FullMoveCountTokenizationError, PlyTokenizationError},
-        r#move::{move_flags, Move},
         turn::Turn,
         zobrist,
     },
@@ -99,8 +99,7 @@ impl StateInfo {
                 let between_occupancy = occupancy & between_squares;
                 if between_occupancy.pop_cnt_eq_1() {
                     acc | between_squares
-                }
-                else {
+                } else {
                     acc
                 }
             });
@@ -313,14 +312,15 @@ impl Position {
 
     #[inline]
     pub fn get_ep_capture_bitboard(&self, c: Color) -> Bitboard {
-        if let Some(sq) = self.get_ep_capture_square().v() && self.get_turn() == c {
+        if let Some(sq) = self.get_ep_capture_square().v()
+            && self.get_turn() == c
+        {
             Bitboard::from_c(sq)
-        }
-        else {
+        } else {
             Default::default()
         }
     }
-    
+
     #[inline]
     pub fn get_castling(&self) -> CastlingRights {
         self.state.get_current().castling
@@ -371,7 +371,7 @@ impl Position {
     pub fn is_insufficient_material(&self) -> bool {
         self.piece_counts.iter().sum::<i8>() <= 2
     }
-    
+
     #[inline]
     pub fn repetition_table_capacity(&self) -> usize {
         Repetitions::capacity()
@@ -623,8 +623,7 @@ impl Position {
             let color_case = squares::A8_C * c.v();
             if sq.v() == (squares::A1_C | color_case) {
                 cr.set_false(castling_sides::QUEEN_SIDE, c)
-            }
-            else if sq.v() == (squares::H1_C | color_case) {
+            } else if sq.v() == (squares::H1_C | color_case) {
                 cr.set_false(castling_sides::KING_SIDE, c)
             }
         }

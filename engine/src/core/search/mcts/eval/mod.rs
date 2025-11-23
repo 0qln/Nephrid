@@ -1,7 +1,4 @@
-use std::sync::Once;
-
 use burn_cuda::Cuda;
-use model::Model;
 
 pub mod model;
 
@@ -9,3 +6,4 @@ pub mod model;
 pub mod test;
 
 pub type Backend = Cuda<f32>;
+

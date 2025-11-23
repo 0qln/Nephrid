@@ -1,12 +1,15 @@
-use search::{limit::Limit, mode::Mode, target::Target, Search};
+use burn_cuda::{Cuda, CudaDevice};
+use itertools::Either;
+use search::{limit::Limit, mode::Mode, target::Target};
 
 use self::r#move::LongAlgebraicUciNotation;
 use crate::{
     core::{
         config::{ConfigOptionType, Configuration},
         depth::Depth,
-        position::Position,
         r#move::Move,
+        position::Position,
+        search::mcts::eval::model::ModelConfig,
     },
     misc::trim_newline,
 };
@@ -17,7 +20,11 @@ use crate::{
         tokens::Tokenizer,
     },
 };
-use std::{error::Error, process, thread};
+use std::{
+    error::Error,
+    process,
+    thread::{self, JoinHandle},
+};
 
 pub mod bitboard;
 pub mod castling;
@@ -46,8 +53,7 @@ pub fn execute_uci(
     engine: &mut Engine,
     mut command: String,
     cancellation_token: CancellationToken,
-    blocking: bool,
-) -> Result<(), Box<dyn Error>> {
+) -> Result<Either<(), JoinHandle<()>>, Box<dyn Error>> {
     trim_newline(&mut command);
     let mut tokenizer = Tokenizer::new(command.as_str());
     match tokenizer.next_token() {
@@ -55,25 +61,24 @@ pub fn execute_uci(
             let pos = &engine.position;
             let str = if engine.debug.get() {
                 format!("{pos:?}")
-            }
-            else {
+            } else {
                 format!("{pos}")
             };
 
             sync::out(&str);
 
-            Ok(())
+            Ok(Either::Left(()))
         }
         Some("quit") => {
             process::exit(0);
         }
         Some("stop") => {
             cancellation_token.cancel();
-            Ok(())
+            Ok(Either::Left(()))
         }
         Some("go") => {
             let token = cancellation_token.clone();
-            let mut position = engine.position.clone();
+            let position = engine.position.clone();
             let debug = engine.debug.clone();
 
             macro_rules! collect_and_parse {
@@ -117,11 +122,25 @@ pub fn execute_uci(
                 };
             }
 
-            thread::spawn(move || {
-                let search = Search::new(limit, target, mode, debug);
-                search.go(&mut position, token);
+            let thread = thread::spawn(move || {
+                match mode {
+                    Mode::Perft => {
+                        let nodes = search::perft(position.clone(), target, token, debug);
+                        sync::out(&format!("\nNodes searched: {nodes}"));
+                    }
+                    Mode::Normal => {
+                        // todo: don't hardcode this...
+                        type Backend = Cuda<f32>;
+                        let device = CudaDevice::default();
+                        let model = ModelConfig::new().init::<Backend>(&device);
+                        let result = search::mcts(position, model, limit, debug, token);
+                        sync::out(&format!("bestmove {result}"));
+                    }
+                    _ => unimplemented!(),
+                };
             });
-            Ok(())
+
+            Ok(Either::Right(thread))
         }
         Some("position") => {
             if command.len() > engine.pos_src.len()
@@ -138,7 +157,7 @@ pub fn execute_uci(
                     engine.position.make_move(Move::try_from(mov)?);
                 }
                 engine.pos_src = command;
-                return Ok(());
+                return Ok(Either::Left(()));
             }
             match tokenizer.next_token() {
                 Some("fen") => engine.position = Position::try_from(&mut tokenizer)?,
@@ -160,7 +179,7 @@ pub fn execute_uci(
                 }
             }
             engine.pos_src = command;
-            Ok(())
+            Ok(Either::Left(()))
         }
         Some("uci") => {
             // Id response
@@ -172,7 +191,7 @@ pub fn execute_uci(
             }
             // Uciok response
             sync::out("uciok");
-            Ok(())
+            Ok(Either::Left(()))
         }
         Some("setoption") => {
             // collect name
@@ -242,11 +261,11 @@ pub fn execute_uci(
                     ConfigOptionType::String(value) => *value = new_value.into(),
                 },
             };
-            Ok(())
+            Ok(Either::Left(()))
         }
         Some("ucinewgame") => {
             engine.pos_src = "".to_string();
-            Ok(())
+            Ok(Either::Left(()))
         }
         Some("debug") => {
             let debug = match tokenizer.next_token() {
@@ -262,13 +281,13 @@ pub fn execute_uci(
                 None => return Err(UciError::MissingArgument("value").into()),
             };
             engine.debug.set(debug);
-            Ok(())
+            Ok(Either::Left(()))
         }
         Some("isready") => {
             sync::out("readyok");
-            Ok(())
+            Ok(Either::Left(()))
         }
         Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
-        None => Ok(()),
+        None => Ok(Either::Left(())),
     }
 }

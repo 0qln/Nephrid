@@ -12,7 +12,6 @@
 #![feature(try_blocks)]
 #![feature(assert_matches)]
 #![feature(generic_const_exprs)]
-#![feature(let_chains)]
 #![feature(iter_collect_into)]
 #![feature(new_range_api)]
 #![feature(range_into_bounds)]
