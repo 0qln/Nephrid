@@ -21,9 +21,11 @@ use crate::core::{
 };
 
 // +1 for the possible ep capture square.
-const BOARD_INPUT_CHANNELS: usize = colors::N_VARIANTS * (piece_type::N_VARIANTS);
+pub const BOARD_INPUT_CHANNELS: usize = colors::N_VARIANTS * (piece_type::N_VARIANTS);
 
-const BOARD_INPUT_TENSOR_DIM: usize = {
+pub const BOARD_INPUT_LEN: usize = BOARD_INPUT_CHANNELS * ranks::N_VARIANTS * files::N_VARIANTS;
+
+pub const BOARD_INPUT_TENSOR_DIM: usize = {
     // Batch
     1 +
     // Channel
@@ -34,17 +36,31 @@ const BOARD_INPUT_TENSOR_DIM: usize = {
     1
 };
 
-const STATE_INPUT_LEN: usize = {
+pub const STATE_INPUT_LEN: usize = {
     // Castling rights
     4 +
     // Plys after last capture or pawn move (should be normalized / devided by 50)
     1
 };
 
-const STATE_INPUT_TENSOR_DIM: usize = {
+pub const STATE_INPUT_TENSOR_DIM: usize = {
     // Batch
     1 +
     // Values
+    1
+};
+
+pub const POLICY_OUTPUT_TENSOR_DIM: usize = {
+    // Batch
+    1 +
+    // Move
+    1
+};
+
+pub const VALUE_OUTPUT_TENSOR_DIM: usize = {
+    // Batch
+    1 +
+    // <Singleton>
     1
 };
 
@@ -206,9 +222,12 @@ impl<B: Backend> Model<B> {
     /// - `policy_out`: (batch_size, num_moves)
     pub fn forward(
         &self,
-        board_input: Tensor<B, 4>,
-        state_input: Tensor<B, 2>,
-    ) -> (Tensor<B, 2>, Tensor<B, 2>) {
+        board_input: Tensor<B, BOARD_INPUT_TENSOR_DIM>,
+        state_input: Tensor<B, STATE_INPUT_TENSOR_DIM>,
+    ) -> (
+        Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
+        Tensor<B, POLICY_OUTPUT_TENSOR_DIM>,
+    ) {
         let [bi_batch_size, bil, rs, fs] = board_input.dims();
         assert_eq!(bil, BOARD_INPUT_CHANNELS);
         assert_eq!(rs, ranks::N_VARIANTS);

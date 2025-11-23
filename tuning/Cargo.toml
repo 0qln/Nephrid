@@ -18,7 +18,7 @@ path = "src/eval_model.rs"
 engine = { version = "*", path = "../engine" }
 itertools = "0.14.0"
 rand = "0.9.0"
-burn = "0.16.0"
+burn = { version = "0.16.0", features = ["train"] }
 burn-cuda = "0.16.0"
 # Don't updgrade, see https://github.com/tracel-ai/burn/issues/2876
 bincode = "=2.0.0-rc.3"

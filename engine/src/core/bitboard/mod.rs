@@ -22,7 +22,7 @@ pub struct Bitboard {
     pub v: u64,
 }
 
-pub type Floats = [[f32; 8]; 8];
+pub type Floats = [[f32; files::N_VARIANTS]; ranks::N_VARIANTS];
 
 impl Try for Bitboard {
     type Output = Self;
