@@ -301,7 +301,7 @@ impl<B: Backend> Model<B> {
 
 #[derive(Config, Debug)]
 pub struct ModelConfig {
-    #[config(default = 0.5)]
+    #[config(default = 0.2)]
     dropout: f64,
 }
 

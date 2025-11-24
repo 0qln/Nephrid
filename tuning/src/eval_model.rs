@@ -1,14 +1,23 @@
 use std::{error::Error, fs};
 
 use burn::{
-    backend::Autodiff,
+    backend::{Autodiff, NdArray},
     config::Config,
-    data::dataloader::batcher::Batcher,
+    data::{
+        dataloader::{DataLoaderBuilder, batcher::Batcher},
+        dataset::{InMemDataset, transform::Mapper},
+    },
+    module::Module,
     nn::loss::{CrossEntropyLossConfig, MseLoss, Reduction},
     optim::AdamConfig,
     prelude::Backend,
+    record::CompactRecorder,
     tensor::{Int, Tensor, TensorData, backend::AutodiffBackend},
-    train::{ClassificationOutput, RegressionOutput, TrainOutput, TrainStep, ValidStep},
+    train::{
+        ClassificationOutput, LearnerBuilder, LearningStrategy, RegressionOutput, TrainOutput,
+        TrainStep, ValidStep,
+        metric::{Adaptor, ItemLazy, LossInput, LossMetric},
+    },
 };
 use burn_cuda::{Cuda, CudaDevice};
 use engine::{
@@ -20,7 +29,7 @@ use engine::{
             self,
             limit::Limit,
             mcts::eval::model::{
-                BOARD_INPUT_CHANNELS, BOARD_INPUT_TENSOR_DIM, Model, ModelConfig, POLICY_OUTPUTS,
+                BOARD_INPUT_CHANNELS, BOARD_INPUT_TENSOR_DIM, Model, ModelConfig,
                 POLICY_TARGET_TENSOR_DIM, STATE_INPUT_LEN, STATE_INPUT_TENSOR_DIM,
                 VALUE_OUTPUT_TENSOR_DIM,
             },
@@ -44,35 +53,89 @@ fn main() {
     magics::init();
     zobrist::init();
 
-    // let batch = generate_batch(&model);
-    let result = self_play(
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        &model,
+    let artifact_dir = "/tmp/nephrid/eval_model";
+    train::<AutodiffBackend>(
+        artifact_dir,
+        TrainingConfig::new(ModelConfig::new(), AdamConfig::new()),
+        device,
     );
-    println!("{result:?}");
+
+    // let batch = generate_batch(&model);
+    // let result = self_play(
+    //     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    //     &model,
+    // );
+    // println!("{result:?}");
 }
 
 #[derive(Clone, Debug)]
-pub struct SelfplayBatch<B: Backend> {
+pub struct PlayoutBatch<B: Backend> {
     pub board_inputs: Tensor<B, BOARD_INPUT_TENSOR_DIM>,
     pub state_inputs: Tensor<B, STATE_INPUT_TENSOR_DIM>,
     pub value_targets: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
     pub policy_targets: Tensor<B, POLICY_TARGET_TENSOR_DIM, Int>,
 }
 
-pub struct SelfplayItem {
-    pub board_input: [bitboard::Floats; BOARD_INPUT_CHANNELS],
-    pub state_input: [f32; STATE_INPUT_LEN],
-    pub value_target: f32,
-    pub policy_target: [f32; POLICY_OUTPUTS],
+pub struct PlayoutItemRaw {
+    /// The position string that is to be played out
+    pub fen: String,
 }
 
-pub type LossOutput<B> = (
+#[derive(Clone, Debug)]
+pub struct PlayoutItem {
+    /// Board info
+    pub board_input: [bitboard::Floats; BOARD_INPUT_CHANNELS],
+
+    /// State info
+    pub state_input: [f32; STATE_INPUT_LEN],
+
+    /// Target Value
+    pub value_target: f32,
+
+    /// Target Move index
+    pub policy_target: u32,
+}
+
+struct FenToPlayoutItem;
+
+impl Mapper<PlayoutItemRaw, PlayoutItem> for FenToPlayoutItem {
+    fn map(&self, item: &PlayoutItemRaw) -> PlayoutItem {
+        todo!("")
+    }
+}
+
+pub struct LossOutput<B: Backend> {
     // Value output
-    RegressionOutput<B>,
+    value_loss: RegressionOutput<B>,
     // Quality Output
-    ClassificationOutput<B>,
-);
+    policy_loss: ClassificationOutput<B>,
+}
+
+impl<B: Backend> LossOutput<B> {
+    pub fn loss(&self) -> Tensor<B, 1> {
+        // todo: weight decay loss
+        let ref value = self.value_loss;
+        let ref policy = self.value_loss;
+        value.loss.clone() + policy.loss.clone()
+    }
+}
+
+impl<B: Backend> ItemLazy for LossOutput<B> {
+    type ItemSync = LossOutput<NdArray>;
+
+    fn sync(self) -> Self::ItemSync {
+        LossOutput {
+            value_loss: self.value_loss.sync(),
+            policy_loss: self.policy_loss.sync(),
+        }
+    }
+}
+
+impl<B: Backend> Adaptor<LossInput<B>> for LossOutput<B> {
+    fn adapt(&self) -> LossInput<B> {
+        LossInput::new(self.loss())
+    }
+}
 
 pub fn forward_with_loss<B: Backend>(
     this: &Model<B>,
@@ -90,14 +153,14 @@ pub fn forward_with_loss<B: Backend>(
         .init(&policy_output.device())
         .forward(policy_output.clone(), target_policy.clone());
 
-    (
-        RegressionOutput::new(value_loss, value_output, target_value),
-        ClassificationOutput::new(policy_loss, policy_output, target_policy),
-    )
+    LossOutput {
+        value_loss: RegressionOutput::new(value_loss, value_output, target_value),
+        policy_loss: ClassificationOutput::new(policy_loss, policy_output, target_policy),
+    }
 }
 
-impl<B: AutodiffBackend> TrainStep<SelfplayBatch<B>, LossOutput<B>> for Model<B> {
-    fn step(&self, batch: SelfplayBatch<B>) -> TrainOutput<LossOutput<B>> {
+impl<B: AutodiffBackend> TrainStep<PlayoutBatch<B>, LossOutput<B>> for Model<B> {
+    fn step(&self, batch: PlayoutBatch<B>) -> TrainOutput<LossOutput<B>> {
         let item = forward_with_loss(
             self,
             batch.board_inputs,
@@ -106,14 +169,12 @@ impl<B: AutodiffBackend> TrainStep<SelfplayBatch<B>, LossOutput<B>> for Model<B>
             batch.policy_targets,
         );
 
-        let (ref value, ref policy) = item;
-        let loss = value.loss.clone() + policy.loss.clone(); // todo: weight decay
-        TrainOutput::new(self, loss.backward(), item)
+        TrainOutput::new(self, item.loss().backward(), item)
     }
 }
 
-impl<B: Backend> ValidStep<SelfplayBatch<B>, LossOutput<B>> for Model<B> {
-    fn step(&self, batch: SelfplayBatch<B>) -> LossOutput<B> {
+impl<B: Backend> ValidStep<PlayoutBatch<B>, LossOutput<B>> for Model<B> {
+    fn step(&self, batch: PlayoutBatch<B>) -> LossOutput<B> {
         forward_with_loss(
             self,
             batch.board_inputs,
@@ -146,56 +207,54 @@ fn create_artifact_dir(artifact_dir: &str) {
     fs::create_dir_all(artifact_dir).ok();
 }
 
-// pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, device: B::Device) {
-//     create_artifact_dir(artifact_dir);
-//     config
-//         .save(format!("{artifact_dir}/config.json"))
-//         .expect("Config should be saved successfully");
+pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, device: B::Device) {
+    create_artifact_dir(artifact_dir);
+    config
+        .save(format!("{artifact_dir}/config.json"))
+        .expect("Config should be saved successfully");
 
-//     B::seed(&device, config.seed);
+    B::seed(&device, config.seed);
 
-//     let batcher = SelfplayBatcher::default();
+    let batcher = PlayoutBatcher::default();
 
-//     let dataloader_train = DataLoaderBuilder::new(batcher.clone())
-//         .batch_size(config.batch_size)
-//         .shuffle(config.seed)
-//         .num_workers(config.num_workers)
-//         .build(MnistDataset::train());
+    let dataloader_train = DataLoaderBuilder::new(batcher.clone())
+        .batch_size(config.batch_size)
+        .shuffle(config.seed)
+        .num_workers(config.num_workers)
+        .build();
 
-//     let dataloader_test = DataLoaderBuilder::new(batcher)
-//         .batch_size(config.batch_size)
-//         .shuffle(config.seed)
-//         .num_workers(config.num_workers)
-//         .build(MnistDataset::test());
+    let dataloader_test = DataLoaderBuilder::new(batcher)
+        .batch_size(config.batch_size)
+        .shuffle(config.seed)
+        .num_workers(config.num_workers)
+        .build();
 
-//     let learner = LearnerBuilder::new(artifact_dir)
-//         .metric_train_numeric(AccuracyMetric::new())
-//         .metric_valid_numeric(AccuracyMetric::new())
-//         .metric_train_numeric(LossMetric::new())
-//         .metric_valid_numeric(LossMetric::new())
-//         .with_file_checkpointer(CompactRecorder::new())
-//         .learning_strategy(LearningStrategy::SingleDevice(device.clone()))
-//         .num_epochs(config.num_epochs)
-//         .summary()
-//         .build(
-//             config.model.init::<B>(&device),
-//             config.optimizer.init(),
-//             config.learning_rate,
-//         );
+    let learner = LearnerBuilder::new(artifact_dir)
+        .metric_train_numeric(LossMetric::new())
+        .metric_valid_numeric(LossMetric::new())
+        .with_file_checkpointer(CompactRecorder::new())
+        .learning_strategy(LearningStrategy::SingleDevice(device.clone()))
+        .num_epochs(config.num_epochs)
+        .summary()
+        .build(
+            config.model.init::<B>(&device),
+            config.optimizer.init(),
+            config.learning_rate,
+        );
 
-//     let result = learner.fit(dataloader_train, dataloader_test);
+    let result = learner.fit(dataloader_train, dataloader_test);
 
-//     result
-//         .model
-//         .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
-//         .expect("Trained model should be saved successfully");
-// }
+    result
+        .model
+        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+        .expect("Trained model should be saved successfully");
+}
 
 #[derive(Clone, Default)]
-pub struct SelfplayBatcher;
+pub struct PlayoutBatcher;
 
-impl<B: Backend> Batcher<B, SelfplayItem, SelfplayBatch<B>> for SelfplayBatcher {
-    fn batch(&self, items: Vec<SelfplayItem>, device: &B::Device) -> SelfplayBatch<B> {
+impl<B: Backend> Batcher<B, PlayoutItem, PlayoutBatch<B>> for PlayoutBatcher {
+    fn batch(&self, items: Vec<PlayoutItem>, device: &B::Device) -> PlayoutBatch<B> {
         let boards = items
             .iter()
             .map(|x| TensorData::from(x.board_input))
@@ -216,11 +275,11 @@ impl<B: Backend> Batcher<B, SelfplayItem, SelfplayBatch<B>> for SelfplayBatcher 
 
         let policies = items
             .iter()
-            .map(|x| TensorData::from(x.policy_target))
+            .map(|x| TensorData::from([x.policy_target]))
             .map(|x| Tensor::from_data(x, device))
             .collect();
 
-        SelfplayBatch {
+        PlayoutBatch {
             board_inputs: Tensor::cat(boards, 0),
             state_inputs: Tensor::cat(states, 0),
             value_targets: Tensor::cat(values, 0),
@@ -228,6 +287,8 @@ impl<B: Backend> Batcher<B, SelfplayItem, SelfplayBatch<B>> for SelfplayBatcher 
         }
     }
 }
+
+fn obtain_dataset<B: Backend>() -> InMemDataset {}
 
 fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<(), Box<dyn Error>> {
     let limit = Limit {
@@ -262,3 +323,5 @@ fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<(), Box<dyn Erro
 
     Ok(())
 }
+
+// todo: for deployment, we can `include!()` the serialized `Record`.
