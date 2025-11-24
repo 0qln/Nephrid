@@ -57,10 +57,16 @@ pub const POLICY_OUTPUT_TENSOR_DIM: usize = {
     1
 };
 
+pub const POLICY_TARGET_TENSOR_DIM: usize = {
+    POLICY_OUTPUT_TENSOR_DIM -
+    // Just use the index, no need to bring all the zeros.
+    1
+};
+
 pub const VALUE_OUTPUT_TENSOR_DIM: usize = {
     // Batch
     1 +
-    // <Singleton>
+    // singleton
     1
 };
 
@@ -122,7 +128,7 @@ pub const POLICY_OUTPUTS: usize = {
 #[derive(Module, Debug)]
 pub struct ConvBlock<B: Backend> {
     conv: Conv2d<B>,
-    b_norm: BatchNorm<B, { BOARD_INPUT_TENSOR_DIM - 2 }>,
+    b_norm: BatchNorm<B>,
     activation: Relu,
 }
 
@@ -222,11 +228,12 @@ impl<B: Backend> Model<B> {
     /// - `policy_out`: (batch_size, num_moves)
     pub fn forward(
         &self,
-        board_input: Tensor<B, BOARD_INPUT_TENSOR_DIM>,
-        state_input: Tensor<B, STATE_INPUT_TENSOR_DIM>,
+        // getting some kind of recursive evaluation error here, so inline the constants （´＿｀）
+        board_input: Tensor<B, 4>, // BOARD_INPUT_TENSOR_DIM
+        state_input: Tensor<B, 2>, // STATE_INPUT_TENSOR_DIM
     ) -> (
-        Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
-        Tensor<B, POLICY_OUTPUT_TENSOR_DIM>,
+        Tensor<B, 2>, // VALUE_OUTPUT_TENSOR_DIM
+        Tensor<B, 2>, // POLICY_OUTPUT_TENSOR_DIM
     ) {
         let [bi_batch_size, bil, rs, fs] = board_input.dims();
         assert_eq!(bil, BOARD_INPUT_CHANNELS);
@@ -289,16 +296,6 @@ impl<B: Backend> Model<B> {
         let policy_out = softmax(policy_out, 1);
 
         (value_out, policy_out)
-    }
-
-    pub fn forward_with_loss(
-        &self,
-        board_input: Tensor<B, 4>,
-        state_input: Tensor<B, 2>,
-        target_value: Tensor<B, 2>,
-        target_policy: Tensor<B, 2>,
-    ) -> () {
-        unimplemented!()
     }
 }
 
