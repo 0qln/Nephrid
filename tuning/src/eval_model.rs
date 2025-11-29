@@ -320,19 +320,19 @@ impl<B: Backend> Batcher<B, PlayoutItem, PlayoutBatch<B>> for PlayoutBatcher {
     fn batch(&self, items: Vec<PlayoutItem>, device: &B::Device) -> PlayoutBatch<B> {
         let boards = items
             .iter()
-            .map(|x| TensorData::from(x.board_input))
+            .map(|x| TensorData::from([x.board_input]))
             .map(|x| Tensor::from_data(x, device))
             .collect();
 
         let states = items
             .iter()
-            .map(|x| TensorData::from(x.state_input))
+            .map(|x| TensorData::from([x.state_input]))
             .map(|x| Tensor::from_data(x, device))
             .collect();
 
         let values = items
             .iter()
-            .map(|x| TensorData::from([x.value_target]))
+            .map(|x| TensorData::from([[x.value_target]]))
             .map(|x| Tensor::from_data(x, device))
             .collect();
 

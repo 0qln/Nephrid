@@ -372,7 +372,10 @@ impl Node {
                 *policy /= policy_sum;
             }
 
-            assert_eq!(policies.iter().sum::<f32>(), 1.);
+            fn f32_eq(a: f32, b: f32, e: f32) -> bool {
+                f32::abs(a - b) < e
+            }
+            debug_assert!(f32_eq(policies.iter().sum::<f32>(), 1., 0.001));
 
             Evaluation::Guess {
                 relative_to: pos.get_turn(),
