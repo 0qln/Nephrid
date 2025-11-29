@@ -4,34 +4,35 @@ use burn::{
     backend::{Autodiff, NdArray},
     config::Config,
     data::{
-        dataloader::{DataLoaderBuilder, batcher::Batcher},
-        dataset::{InMemDataset, transform::Mapper},
+        dataloader::batcher::Batcher,
+        dataset::{InMemDataset, transform::MapperDataset},
     },
-    module::Module,
     nn::loss::{CrossEntropyLossConfig, MseLoss, Reduction},
-    optim::AdamConfig,
+    optim::{AdamConfig, GradientsParams, Optimizer},
     prelude::Backend,
-    record::CompactRecorder,
     tensor::{Int, Tensor, TensorData, backend::AutodiffBackend},
     train::{
-        ClassificationOutput, LearnerBuilder, LearningStrategy, RegressionOutput, TrainOutput,
-        TrainStep, ValidStep,
-        metric::{Adaptor, ItemLazy, LossInput, LossMetric},
+        ClassificationOutput, RegressionOutput, TrainOutput, TrainStep, ValidStep,
+        metric::{Adaptor, ItemLazy, LossInput},
     },
 };
 use burn_cuda::{Cuda, CudaDevice};
 use engine::{
     core::{
-        bitboard,
+        color::Color,
+        r#move::Move,
         move_iter::sliding_piece::magics,
         position::Position,
         search::{
-            self,
+            self, MctsStrategy, MctsUci,
             limit::Limit,
-            mcts::eval::model::{
-                BOARD_INPUT_CHANNELS, BOARD_INPUT_TENSOR_DIM, Model, ModelConfig,
-                POLICY_TARGET_TENSOR_DIM, STATE_INPUT_LEN, STATE_INPUT_TENSOR_DIM,
-                VALUE_OUTPUT_TENSOR_DIM,
+            mcts::{
+                self, Evaluation, GameResult,
+                eval::model::{
+                    BOARD_INPUT_TENSOR_DIM, BoardInputFloats, Model, ModelConfig,
+                    POLICY_TARGET_TENSOR_DIM, STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW,
+                    VALUE_LOSE, VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
+                },
             },
         },
         zobrist,
@@ -60,12 +61,7 @@ fn main() {
         device,
     );
 
-    // let batch = generate_batch(&model);
-    // let result = self_play(
-    //     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-    //     &model,
-    // );
-    // println!("{result:?}");
+    // todo: for deployment, we can `include!()` the serialized `Record`.
 }
 
 #[derive(Clone, Debug)]
@@ -84,25 +80,41 @@ pub struct PlayoutItemRaw {
 #[derive(Clone, Debug)]
 pub struct PlayoutItem {
     /// Board info
-    pub board_input: [bitboard::Floats; BOARD_INPUT_CHANNELS],
+    pub board_input: BoardInputFloats,
 
     /// State info
-    pub state_input: [f32; STATE_INPUT_LEN],
+    pub state_input: StateInputFloats,
 
     /// Target Value
     pub value_target: f32,
 
     /// Target Move index
-    pub policy_target: u32,
+    pub policy_target: usize,
 }
 
-struct FenToPlayoutItem;
+// struct FenToPlayoutItem;
 
-impl Mapper<PlayoutItemRaw, PlayoutItem> for FenToPlayoutItem {
-    fn map(&self, item: &PlayoutItemRaw) -> PlayoutItem {
-        todo!("")
-    }
-}
+// impl Mapper<PlayoutItemRaw, PlayoutItem> for FenToPlayoutItem {
+//     fn map(&self, item: &PlayoutItemRaw) -> PlayoutItem {
+//         todo!("Playout the fen from `item` and write the result into  a PlayoutItem.")
+//     }
+// }
+
+// type MappedDataset = MapperDataset<InMemDataset<PlayoutItemRaw>, FenToPlayoutItem, PlayoutItemRaw>;
+
+// pub struct PlayoutDataset {
+//     dataset: MappedDataset,
+// }
+
+// impl Dataset<PlayoutItem> for PlayoutDataset {
+//     fn get(&self, index: usize) -> Option<PlayoutItem> {
+//         self.dataset.get(index)
+//     }
+
+//     fn len(&self) -> usize {
+//         self.dataset.len()
+//     }
+// }
 
 pub struct LossOutput<B: Backend> {
     // Value output
@@ -137,10 +149,13 @@ impl<B: Backend> Adaptor<LossInput<B>> for LossOutput<B> {
     }
 }
 
+type BoardInputTensor<B> = Tensor<B, BOARD_INPUT_TENSOR_DIM>;
+type StateInputTensor<B> = Tensor<B, STATE_INPUT_TENSOR_DIM>;
+
 pub fn forward_with_loss<B: Backend>(
     this: &Model<B>,
-    board_input: Tensor<B, BOARD_INPUT_TENSOR_DIM>,
-    state_input: Tensor<B, STATE_INPUT_TENSOR_DIM>,
+    board_input: BoardInputTensor<B>,
+    state_input: StateInputTensor<B>,
     target_value: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
     target_policy: Tensor<B, POLICY_TARGET_TENSOR_DIM, Int>,
 ) -> LossOutput<B> {
@@ -215,39 +230,87 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
 
     B::seed(&device, config.seed);
 
-    let batcher = PlayoutBatcher::default();
+    // let learner = LearnerBuilder::new(artifact_dir)
+    //     .metric_train_numeric(LossMetric::new())
+    //     .metric_valid_numeric(LossMetric::new())
+    //     .with_file_checkpointer(CompactRecorder::new())
+    //     .learning_strategy(LearningStrategy::SingleDevice(device.clone()))
+    //     .num_epochs(config.num_epochs)
+    //     .summary()
+    //     .build(
+    //         config.model.init::<B>(&device),
+    //         config.optimizer.init(),
+    //         config.learning_rate,
+    //     );
 
-    let dataloader_train = DataLoaderBuilder::new(batcher.clone())
-        .batch_size(config.batch_size)
-        .shuffle(config.seed)
-        .num_workers(config.num_workers)
-        .build();
+    // let result = learner.fit(dataloader_train, dataloader_test);
 
-    let dataloader_test = DataLoaderBuilder::new(batcher)
-        .batch_size(config.batch_size)
-        .shuffle(config.seed)
-        .num_workers(config.num_workers)
-        .build();
+    //
+    // # Custom training loop variant:
+    //
 
-    let learner = LearnerBuilder::new(artifact_dir)
-        .metric_train_numeric(LossMetric::new())
-        .metric_valid_numeric(LossMetric::new())
-        .with_file_checkpointer(CompactRecorder::new())
-        .learning_strategy(LearningStrategy::SingleDevice(device.clone()))
-        .num_epochs(config.num_epochs)
-        .summary()
-        .build(
-            config.model.init::<B>(&device),
-            config.optimizer.init(),
-            config.learning_rate,
-        );
+    // Create the model and optimizer.
+    let mut model = config.model.init::<B>(&device);
+    let mut optim = config.optimizer.init();
 
-    let result = learner.fit(dataloader_train, dataloader_test);
+    // Iterate over our training and validation loop for X epochs.
+    for epoch in 1..config.num_epochs + 1 {
+        let batcher = PlayoutBatcher::default();
 
-    result
-        .model
-        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
-        .expect("Trained model should be saved successfully");
+        // let dataloader_train = DataLoaderBuilder::new(batcher.clone())
+        //     .batch_size(config.batch_size)
+        //     // .shuffle(config.seed)
+        //     .num_workers(config.num_workers)
+        //     .build();
+
+        // let dataloader_test = DataLoaderBuilder::new(batcher)
+        //     .batch_size(config.batch_size)
+        //     // .shuffle(config.seed)
+        //     .num_workers(config.num_workers)
+        //     .build();
+
+        // Implement our training loop.
+        for iteration in 0..config.batch_size {
+            // for (iteration, batch) in dataloader_train.iter().enumerate() {
+            let batch = generate_batch(&model, &device).expect("Failed to generate batch");
+            let result = TrainStep::step(&model, batch);
+            let loss = result.item.loss();
+
+            println!(
+                "[Train - Epoch {} - Iteration {}] Loss {:.3}",
+                epoch,
+                iteration,
+                loss.clone().into_scalar(),
+            );
+
+            // Gradients for the current backward pass
+            let grads = loss.backward();
+            // Gradients linked to each parameter of the model.
+            let grads = GradientsParams::from_grads(grads, &model);
+            // Update the model using the optimizer.
+            model = optim.step(config.learning_rate, model, grads);
+        }
+
+        // // Get the model without autodiff.
+        // let model_valid = model.valid();
+
+        // // Implement our validation loop.
+        // for (iteration, batch) in dataloader_test.iter().enumerate() {
+        //     let result = forward_with_loss(model_valid, batch);
+
+        //     println!(
+        //         "[Valid - Epoch {} - Iteration {}] Loss {}",
+        //         epoch,
+        //         iteration,
+        //         result.loss.clone().into_scalar(),
+        //     );
+        // }
+    }
+
+    // result
+    //     .model
+    //     .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+    //     .expect("Trained model should be saved successfully");
 }
 
 #[derive(Clone, Default)]
@@ -288,9 +351,39 @@ impl<B: Backend> Batcher<B, PlayoutItem, PlayoutBatch<B>> for PlayoutBatcher {
     }
 }
 
-fn obtain_dataset<B: Backend>() -> InMemDataset {}
+fn generate_batch<B: Backend>(
+    model: &Model<B>,
+    device: &B::Device,
+) -> Result<PlayoutBatch<B>, Box<dyn Error>> {
+    let playout_items = self_play(
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        &model,
+    )?;
 
-fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<(), Box<dyn Error>> {
+    let batcher = PlayoutBatcher::default();
+    Ok(batcher.batch(playout_items, device))
+}
+
+#[derive(Default, Debug)]
+pub struct MctsTrain {
+    infer: MctsUci,
+}
+
+impl MctsStrategy for MctsTrain {
+    type Result = (<MctsUci as MctsStrategy>::Result, mcts::Tree);
+
+    fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result {
+        let inference_result = self.infer.result(tree);
+        let tree = tree.to_owned();
+        (inference_result, tree)
+    }
+
+    fn step(&mut self, tree: &mut mcts::Tree) {
+        self.infer.step(tree);
+    }
+}
+
+fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<Vec<PlayoutItem>, Box<dyn Error>> {
     let limit = Limit {
         is_active: true,
         winc: 100,
@@ -307,21 +400,78 @@ fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<(), Box<dyn Erro
         .try_into()
         .expect(format!("Invalid FEN: {pos}").as_str());
 
-    println!("{pos}");
+    // The inputs to the model.
+    type Input = (BoardInputFloats, StateInputFloats);
 
-    loop {
-        let mov = search::mcts(pos.clone(), model, limit.clone(), debug.clone(), ct.clone());
+    // Info to help find the training target.
+    // 0: Most visited move / best_move.
+    type Target = (Move,);
 
-        if mov.is_none() || pos.fifty_move_rule() || pos.has_threefold_repetition() {
-            break;
+    // Some state info at the time of the move.
+    // 0: The move that was made
+    // 1: The color of the moving player.
+    type State = (Move, Color);
+
+    let mut decisions = Vec::<(Input, Target, State)>::new();
+
+    let eval: GameResult = {
+        let mut game_result = GameResult::Draw;
+        loop {
+            let turn = pos.get_turn();
+            let result = search::mcts::<MctsTrain, _>(
+                pos.clone(),
+                model,
+                limit.clone(),
+                debug.clone(),
+                ct.clone(),
+            );
+            let mov = result.0;
+            let tree = result.1;
+
+            match tree.get_root().eval(&pos, model) {
+                Evaluation::Guess { .. } => { /* continue with game */ }
+                Evaluation::Terminal(result) => {
+                    game_result = result;
+                    break;
+                }
+            };
+
+            let b_in = board_input(&pos);
+            let s_in = state_input(&pos);
+
+            let mov = mov.expect("we just checked that it is not none");
+            pos.make_move(mov);
+
+            let state_info = (mov, turn);
+            let inputs = (b_in, s_in);
+            let targets = (mov,);
+            decisions.push((inputs, targets, state_info));
         }
+        game_result
+    };
 
-        pos.make_move(mov.unwrap());
+    let mut result = Vec::<PlayoutItem>::new();
 
-        println!("{pos}");
+    for (input, target, state) in decisions {
+        let value_target = match eval {
+            GameResult::Draw => VALUE_DRAW,
+            GameResult::Win { relative_to } => {
+                if relative_to == state.1 {
+                    VALUE_WIN
+                } else {
+                    VALUE_LOSE
+                }
+            }
+            _ => panic!("The only evaluation result has to be on that ends the game."),
+        };
+        let playout_item = PlayoutItem {
+            board_input: input.0,
+            state_input: input.1,
+            value_target,
+            policy_target: usize::from(target.0),
+        };
+        result.push(playout_item);
     }
 
-    Ok(())
+    Ok(result)
 }
-
-// todo: for deployment, we can `include!()` the serialized `Record`.

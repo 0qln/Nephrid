@@ -94,6 +94,7 @@
                 # CUDA libraries
                 # how to get lib/ of nvrtc: https://github.com/NixOS/nixpkgs/pull/297590/files#diff-59c22b0fc67d897077e55030166ca816d19c80b7767b2ad486bc0aaa2a772115R494
                 export LD_LIBRARY_PATH="${lib.getLib cudaPackages.cuda_nvrtc}/lib:${linuxPackages.nvidia_x11}/lib:$LD_LIBRARY_PATH"
+                export CUDA_PATH=${cudatoolkit}
               '')
               +
               # bash

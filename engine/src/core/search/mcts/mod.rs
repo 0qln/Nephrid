@@ -8,34 +8,55 @@ use std::ptr::NonNull;
 
 use crate::core::move_iter::king::King;
 use crate::core::piece::IPieceType;
-use crate::core::turn::Turn;
 use crate::core::{color::Color, r#move::Move, move_iter::fold_legal_moves, position::Position};
 
 pub mod eval;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub enum Evaluation {
+pub enum GameResult {
     Win { relative_to: Color },
-    Ongoing { relative_to: Color, quality: f32 },
     Draw,
 }
 
-impl Evaluation {
+#[derive(Debug, PartialEq, Clone)]
+pub enum Evaluation {
+    Guess {
+        relative_to: Color,
+        quality: f32,
+        policies: Vec<f32>,
+    },
+    Terminal(GameResult),
+}
+
+impl GameResult {
     /// Returns a number between 0 and 1, where 0 is a loss and 1 is a win.
-    fn to_value(&self, turn: Color) -> f32 {
-        match *self {
-            Evaluation::Win { relative_to } => {
+    fn to_value(self, turn: Color) -> f32 {
+        match self {
+            Self::Win { relative_to } => {
                 if relative_to == turn {
                     1.0
                 } else {
                     0.0
                 }
             }
-            Evaluation::Draw => 0.5,
-            Evaluation::Ongoing { quality, relative_to } => {
+            Self::Draw => 0.5,
+        }
+    }
+}
+
+impl Evaluation {
+    /// Returns a number between 0 and 1, where 0 is a loss and 1 is a win.
+    fn to_value(&self, turn: Color) -> f32 {
+        match self {
+            Self::Terminal(result) => result.to_value(turn),
+            Evaluation::Guess {
+                quality,
+                relative_to,
+                policies: _policies,
+            } => {
                 // The quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
                 let quality = (quality + 1.0) / 2.0;
-                if relative_to == turn { quality } else { 1.0 - quality }
+                if *relative_to == turn { quality } else { 1.0 - quality }
             }
         }
     }
@@ -70,8 +91,8 @@ impl Tree {
     }
 
     pub fn grow<B: Backend>(&mut self, pos: &mut Position, model: &Model<B>) {
-        let result = self.select_leaf_mut(pos, model);
-        self.backpropagate(pos, result);
+        let evaluation = self.select_leaf_mut(pos, model);
+        self.backpropagate(pos, &evaluation);
     }
 
     pub fn selected_leaf(&mut self) -> NonNull<Branch> {
@@ -81,16 +102,20 @@ impl Tree {
             .expect("This is only None, if root.state == Leaf, which is not the case.")
     }
 
-    fn backpropagate(&mut self, pos: &mut Position, result: Evaluation) {
+    fn backpropagate(&mut self, pos: &mut Position, eval: &Evaluation) {
         unsafe {
             for branch in self.selection_buffer.iter_mut().rev().map(|n| n.as_mut()) {
                 pos.unmake_move(branch.mov());
-                branch.update(result, pos.get_turn());
+                let value = eval.to_value(pos.get_turn());
+                branch.update_node(value);
             }
         }
-        self.root.update(result, pos.get_turn());
+        let value = eval.to_value(pos.get_turn());
+        self.root.update(value);
     }
 
+    /// Walk down the tree and select the branches with the highest score, until we find a leaf
+    /// node. sono-ato, expand the leaf and return the evaluation of that leaf.
     pub fn select_leaf_mut<B: Backend>(
         &mut self,
         pos: &mut Position,
@@ -111,6 +136,10 @@ impl Tree {
                 }
             }
         }
+    }
+
+    pub fn get_root(&self) -> &Node {
+        &self.root
     }
 }
 
@@ -159,8 +188,8 @@ impl ChildNode {
         self.node.visits()
     }
 
-    fn update(&mut self, result: Evaluation, get_turn: Color) {
-        self.node.update(result, get_turn)
+    fn update(&mut self, value: f32) {
+        self.node.update(value)
     }
 }
 
@@ -187,8 +216,8 @@ impl Branch {
         self.node.mov()
     }
 
-    pub fn update(&mut self, result: Evaluation, get_turn: Color) {
-        self.node.update(result, get_turn)
+    pub fn update_node(&mut self, value: f32) {
+        self.node.update(value)
     }
 
     pub fn traverse(&self) -> &Node {
@@ -259,9 +288,9 @@ impl Node {
     }
 
     /// Update the node with the result of an evaluation.
-    pub fn update(&mut self, eval: Evaluation, turn: Turn) {
+    pub fn update(&mut self, value: f32) {
         self.visits += 1;
-        self.value += eval.to_value(turn);
+        self.value += value;
     }
 
     /// Select the branch with the highest PUCT score.
@@ -275,46 +304,37 @@ impl Node {
                 let b_ucb = b.puct(self.visits);
                 a_ucb.partial_cmp(&b_ucb).expect("Node comparison failed!")
             })
-            // todo: this has happened once, and i can't replicate it :(
+            //
+            // this has happened once, and i can't replicate it :(
+            //
+            // todo:
+            // return an error here, and further up if we get errors during the search, log
+            // the callstack conditionally to a file or something, that way we have better error
+            // handling and don't have much runtime overhead, even for debug builds.
+            //
             .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
     }
 
-    /// Returns true if the node is a terminal node.
-    fn is_terminal(&self) -> bool {
-        self.state() == NodeState::Expanded && self.branches.is_empty()
-    }
+    /// Returns an evaluation of the position.
+    pub fn eval<B: Backend>(&self, pos: &Position, model: &Model<B>) -> Evaluation {
+        assert_matches!(self.state(), NodeState::Expanded);
 
-    /// Expand the node and return an evaluation of the position.
-    fn expand_and_eval<B: Backend>(&mut self, pos: &Position, model: &Model<B>) -> Evaluation {
-        assert_matches!(self.state(), NodeState::Leaf);
+        if pos.has_threefold_repetition() || pos.fifty_move_rule() || pos.is_insufficient_material()
+        {
+            return Evaluation::Terminal(GameResult::Draw);
+        }
 
-        _ = fold_legal_moves(pos, &mut self.branches, |acc, m| {
-            ControlFlow::Continue::<(), _>({
-                acc.push(Branch::new(m, 0.0));
-                acc
-            })
-        });
-
-        self.state = NodeState::Expanded;
-
-        if self.is_terminal() {
-            if pos.has_threefold_repetition()
-                || pos.fifty_move_rule()
-                || pos.is_insufficient_material()
-            {
-                return Evaluation::Draw;
-            }
-
+        if self.branches.is_empty() {
             let us = pos.get_turn();
             let king = pos.get_bitboard(King::ID, us);
             let nstm_attacks = pos.get_nstm_attacks();
             let in_check = !(king & nstm_attacks).is_empty();
             if in_check {
                 // If in check and no moves, it's a loss for the current player
-                Evaluation::Win { relative_to: !us }
+                Evaluation::Terminal(GameResult::Win { relative_to: !us })
             } else {
                 // Stalemate
-                Evaluation::Draw
+                Evaluation::Terminal(GameResult::Draw)
             }
         } else {
             let b_in = [board_input(pos)].into();
@@ -325,34 +345,70 @@ impl Node {
                 .to_data()
                 .to_vec::<f32>()
                 .expect("Policy could not be converted to vec.");
+
             let quality = quality
                 .to_data()
                 .to_vec::<f32>()
                 .expect("Quality could not be converted to vec.");
 
-            for branch in &mut self.branches {
-                branch.policy = policy[usize::from(branch.node.mov)];
+            let mut policies = Vec::<f32>::new();
+            for branch in &self.branches {
+                policies.push(policy[usize::from(branch.node.mov)]);
             }
 
-            // Renormalize the policy
-            let policy_sum = self.branches.iter().map(|b| b.policy).sum::<f32>();
+            // Renormalize the policy to a sum of 1, since not all of the probabilities
+            // were assigned to moves that are actually playable in this position:
 
-            // Fallback to uniform distribution
-            let policy_sum = if policy_sum == 0.0 {
-                self.branches.len() as f32
-            } else {
-                policy_sum
+            let policy_sum = {
+                let sum = policies.iter().sum();
+                if sum == 0.0 {
+                    // Fallback to uniform distribution
+                    policies.len() as f32
+                } else {
+                    sum
+                }
             };
-
-            for branch in &mut self.branches {
-                branch.policy /= policy_sum;
+            for policy in &mut policies {
+                *policy /= policy_sum;
             }
 
-            Evaluation::Ongoing {
+            assert_eq!(policies.iter().sum::<f32>(), 1.);
+
+            Evaluation::Guess {
                 relative_to: pos.get_turn(),
                 quality: quality[0],
+                policies,
             }
         }
+    }
+
+    /// Expand the node.
+    fn expand(&mut self, pos: &Position) {
+        assert_matches!(self.state(), NodeState::Leaf);
+
+        _ = fold_legal_moves(pos, &mut self.branches, |acc, m| {
+            ControlFlow::Continue::<(), _>({
+                acc.push(Branch::new(m, 0.0));
+                acc
+            })
+        });
+
+        self.state = NodeState::Expanded;
+    }
+
+    /// Expand the node and return an evaluation of the position.
+    fn expand_and_eval<B: Backend>(&mut self, pos: &Position, model: &Model<B>) -> Evaluation {
+        self.expand(pos);
+
+        let eval = self.eval(pos, model);
+
+        if let Evaluation::Guess { policies, .. } = &eval {
+            for (i, branch) in self.branches.iter_mut().enumerate() {
+                branch.policy = policies[i];
+            }
+        }
+
+        eval
     }
 
     fn visits(&self) -> u32 {

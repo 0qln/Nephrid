@@ -70,7 +70,7 @@ pub const VALUE_OUTPUT_TENSOR_DIM: usize = {
     1
 };
 
-type BoardInputFloats = [bitboard::Floats; BOARD_INPUT_CHANNELS];
+pub type BoardInputFloats = [bitboard::Floats; BOARD_INPUT_CHANNELS];
 
 pub fn board_input(pos: &Position) -> BoardInputFloats {
     let us = pos.get_turn();
@@ -94,7 +94,7 @@ pub fn board_input(pos: &Position) -> BoardInputFloats {
     ]
 }
 
-type StateInputFloats = [f32; STATE_INPUT_LEN];
+pub type StateInputFloats = [f32; STATE_INPUT_LEN];
 
 pub fn state_input(pos: &Position) -> StateInputFloats {
     let us = pos.get_turn();
@@ -117,6 +117,11 @@ pub fn input_batched<const N: usize, B: Backend>(
 }
 
 const VALUE_OUTPUTS: usize = 1;
+
+// because our value_output_layer is uses tanh
+pub const VALUE_WIN: f32 = 1.0;
+pub const VALUE_DRAW: f32 = 0.0;
+pub const VALUE_LOSE: f32 = -1.0;
 
 pub const POLICY_OUTPUTS: usize = {
     // from * to

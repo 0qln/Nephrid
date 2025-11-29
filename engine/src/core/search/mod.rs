@@ -77,45 +77,83 @@ fn perft_inner(
     }
 }
 
-pub fn mcts<B: Backend>(
+pub trait MctsStrategy {
+    type Result;
+
+    fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result;
+    fn step(&mut self, tree: &mut mcts::Tree);
+}
+
+#[derive(Default, Debug)]
+pub struct MctsUci {
+    last_best_move: Option<Move>,
+}
+
+impl MctsStrategy for MctsUci {
+    type Result = Option<Move>;
+
+    fn result(&mut self, _tree: &mut mcts::Tree) -> Self::Result {
+        self.last_best_move
+    }
+
+    fn step(&mut self, tree: &mut mcts::Tree) {
+        let curr_best_move = tree.best_move();
+        if self.last_best_move != curr_best_move {
+            if let Some(mov) = curr_best_move {
+                sync::out(&format!("currmove {mov}"));
+                self.last_best_move = Some(mov);
+            }
+        }
+    }
+}
+
+/// Debugs another mcts strategy
+#[derive(Default, Debug)]
+pub struct MctsDebug<I: MctsStrategy> {
+    inner: I,
+    iterations: u64,
+}
+
+impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
+    type Result = (<I as MctsStrategy>::Result, u64);
+
+    fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result {
+        (self.inner.result(tree), self.iterations)
+    }
+
+    fn step(&mut self, tree: &mut mcts::Tree) {
+        self.inner.step(tree);
+        self.iterations += 1;
+    }
+}
+
+pub fn mcts<S: MctsStrategy + Default, B: Backend>(
     pos: Position,
     model: &Model<B>,
     limit: Limit,
     debug: DebugMode,
     ct: CancellationToken,
-) -> Option<Move> {
-    mcts_inner(pos, &model, limit, debug, ct)
+) -> S::Result {
+    mcts_inner::<S, B>(pos, &model, limit, debug, ct, S::default())
 }
 
-fn mcts_inner<B: Backend>(
+fn mcts_inner<S: MctsStrategy, B: Backend>(
     mut pos: Position,
     model: &Model<B>,
     limit: Limit,
     _debug: DebugMode,
     ct: CancellationToken,
-) -> Option<Move> {
+    mut strategy: S,
+) -> S::Result {
     let mut tree = mcts::Tree::new(&pos, model);
-    let mut last_best_move = None;
 
     let time_per_move = limit.time_per_move(&pos);
     let time_limit = Instant::now() + time_per_move;
 
-    let mut iterations = 0;
-
     while !ct.is_cancelled() && (!limit.is_active || Instant::now() < time_limit) {
         tree.grow(&mut pos, &model);
-        iterations += 1;
-
-        let curr_best_move = tree.best_move();
-        if last_best_move != curr_best_move {
-            if let Some(mov) = curr_best_move {
-                sync::out(&format!("currmove {mov}"));
-                last_best_move = Some(mov);
-            }
-        }
+        strategy.step(&mut tree);
     }
 
-    println!("iterations: {iterations}");
-
-    last_best_move
+    strategy.result(&mut tree)
 }
