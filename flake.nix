@@ -99,6 +99,12 @@
               +
               # bash
               ''
+                # Rust configuration
+                export RUST_BACKTRACE=1
+              ''
+              +
+              # bash
+              ''
                 echo "yo! o/"
               '';
           };
