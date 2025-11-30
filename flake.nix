@@ -51,6 +51,7 @@
             packages =
               (with pkgs; [
                 cutechess
+                bacon
               ])
               ++ (with pkgs-cuda; [
                 # reference: https://discourse.nixos.org/t/cuda-12-8-support-in-nixpkgs/60645/39
