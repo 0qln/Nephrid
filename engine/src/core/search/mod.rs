@@ -5,6 +5,7 @@ use std::time::Instant;
 use crate::misc::DebugMode;
 use crate::uci::sync::{self, CancellationToken};
 use burn::prelude::Backend;
+use itertools::Itertools;
 use limit::Limit;
 use mcts::eval::model::Model;
 use target::Target;
@@ -125,8 +126,13 @@ impl MctsStrategy for MctsUci {
 
     fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step {
         let step = self.find_best.step(tree);
+        let pv = tree.principal_variation();
         if let Some(mov) = step {
             sync::out(&format!("currmove {mov}"));
+            sync::out(&format!(
+                "info pv {}",
+                pv.iter().map(|x| x.mov().to_string()).join(" ")
+            ));
         }
         step
     }

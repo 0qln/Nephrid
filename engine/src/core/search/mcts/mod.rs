@@ -83,13 +83,33 @@ impl Tree {
 
     /// Returns None if there are no moves.
     pub fn best_move(&self) -> Option<Move> {
-        let most_visited = self
-            .root
-            .branches
-            .iter()
-            .max_by(|a, b| a.visits().cmp(&b.visits()))?;
+        let best = self.root.select_best()?;
+        Some(best.mov())
+    }
 
-        Some(most_visited.mov())
+    /// Returns the current principal variation.
+    pub fn principal_variation(&self) -> Vec<&Branch> {
+        let mut buf = Vec::new();
+        let mut current = &self.root;
+        loop {
+            match current.state() {
+                NodeState::Expanded => {
+                    debug_assert!(
+                        !current.branches.is_empty(),
+                        "Contradiction: NodeState == Expanded, but there are no branches."
+                    );
+
+                    // SAFETY: This branch is only reached when NodeState == Expanded
+                    let branch = unsafe { current.select_best().unwrap_unchecked() };
+                    buf.push(branch);
+                    current = branch.traverse();
+                }
+                NodeState::Leaf | NodeState::Terminal => {
+                    break;
+                }
+            }
+        }
+        buf
     }
 
     pub fn grow<E: Evaluator>(&mut self, pos: &mut Position, eval: &E) {
@@ -123,7 +143,7 @@ impl Tree {
                     );
 
                     // SAFETY: This branch is only reached when NodeState == Expanded
-                    let branch = unsafe { current.select_mut().unwrap_unchecked() };
+                    let branch = unsafe { current.select_puct_mut().unwrap_unchecked() };
                     pos.make_move(branch.mov());
                     self.selection_buffer.push(NonNull::from_ref(branch));
                     current = branch.traverse_mut();
@@ -304,11 +324,40 @@ impl Node {
 
     /// Select the branch with the highest PUCT score.
     /// Returns None if there are no branches.
-    pub fn select_mut(&mut self) -> Option<&mut Branch> {
+    pub fn select_puct_mut(&mut self) -> Option<&mut Branch> {
+        let visits = self.visits();
+        self.select_mut(|b| b.puct(visits))
+    }
+
+    /// Select the branch with the most visits.
+    /// Returns None if there are no branches.
+    pub fn select_best(&self) -> Option<&Branch> {
+        self.select(|b| b.visits())
+    }
+
+    /// Returns None if there are no branches.
+    pub fn select<F, T>(&self, transform: F) -> Option<&Branch>
+    where
+        F: Fn(&Branch) -> T,
+        T: PartialOrd,
+    {
+        self.branches.iter().max_by(|a, b| {
+            let a = transform(a);
+            let b = transform(b);
+            a.partial_cmp(&b).expect("Node comparison failed!")
+        })
+    }
+
+    /// Returns None if there are no branches.
+    pub fn select_mut<F, T>(&mut self, transform: F) -> Option<&mut Branch>
+    where
+        F: Fn(&Branch) -> T,
+        T: PartialOrd,
+    {
         self.branches.iter_mut().max_by(|a, b| {
-            let a_ucb = a.puct(self.visits);
-            let b_ucb = b.puct(self.visits);
-            a_ucb.partial_cmp(&b_ucb).expect("Node comparison failed!")
+            let a = transform(a);
+            let b = transform(b);
+            a.partial_cmp(&b).expect("Node comparison failed!")
         })
     }
 
