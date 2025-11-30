@@ -128,8 +128,11 @@ impl Tree {
                     self.selection_buffer.push(NonNull::from_ref(branch));
                     current = branch.traverse_mut();
                 }
-                NodeState::Leaf | NodeState::Terminal => {
+                NodeState::Leaf => {
                     return current.expand_and_eval(pos, model);
+                }
+                NodeState::Terminal => {
+                    return current.eval(pos, model);
                 }
             }
         }
@@ -262,7 +265,7 @@ impl fmt::Debug for Node {
 
 pub trait Evaluator {
     /// Returns: (quality [-1;1], policy [over ALL moves])
-    fn evaluate(&self, pos: &Position) -> (f32, &'_ [f32; POLICY_OUTPUTS]);
+    fn evaluate(&self, pos: &Position) -> (f32, [f32; POLICY_OUTPUTS]);
 }
 
 impl Node {

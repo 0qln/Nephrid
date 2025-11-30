@@ -111,7 +111,7 @@ pub fn state_input(pos: &Position) -> StateInputFloats {
 }
 
 impl<B: Backend> mcts::Evaluator for Model<B> {
-    fn evaluate(&self, pos: &Position) -> (f32, &'_ [f32; POLICY_OUTPUTS]) {
+    fn evaluate(&self, pos: &Position) -> (f32, [f32; POLICY_OUTPUTS]) {
         let b_in = [board_input(pos)].into();
         let s_in = [state_input(pos)].into();
         let (quality, policy) = self.forward(b_in, s_in);
@@ -129,7 +129,7 @@ impl<B: Backend> mcts::Evaluator for Model<B> {
                 .into_boxed_slice(),
         );
 
-        (quality[0], &policy.unwrap())
+        (quality[0], *policy.unwrap())
     }
 }
 
