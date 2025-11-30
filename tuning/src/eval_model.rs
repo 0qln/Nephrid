@@ -1,11 +1,11 @@
-use std::{error::Error, fs};
+use std::{error::Error, fs, marker::PhantomData};
 
 use burn::{
     backend::{Autodiff, NdArray},
     config::Config,
     data::{
-        dataloader::batcher::Batcher,
-        dataset::{InMemDataset, transform::MapperDataset},
+        dataloader::{DataLoaderBuilder, batcher::Batcher},
+        dataset::{Dataset, InMemDataset},
     },
     nn::loss::{CrossEntropyLossConfig, MseLoss, Reduction},
     optim::{AdamConfig, GradientsParams, Optimizer},
@@ -24,7 +24,7 @@ use engine::{
         move_iter::sliding_piece::magics,
         position::Position,
         search::{
-            self, MctsStrategy, MctsUci,
+            self, MctsFindBest, MctsStrategy,
             limit::Limit,
             mcts::{
                 self, Evaluation, GameResult,
@@ -40,6 +40,8 @@ use engine::{
     misc::DebugMode,
     uci::{sync::CancellationToken, tokens::Tokenizer},
 };
+use itertools::Itertools;
+use std::path::{Path, PathBuf};
 
 fn main() {
     type Backend = Cuda<f32>;
@@ -72,9 +74,16 @@ pub struct PlayoutBatch<B: Backend> {
     pub policy_targets: Tensor<B, POLICY_TARGET_TENSOR_DIM, Int>,
 }
 
-pub struct PlayoutItemRaw {
+#[derive(Clone, Default, Debug)]
+pub struct FenItemRaw {
     /// The position string that is to be played out
     pub fen: String,
+}
+
+impl FenItemRaw {
+    pub fn new(s: String) -> Self {
+        Self { fen: s }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -92,29 +101,72 @@ pub struct PlayoutItem {
     pub policy_target: usize,
 }
 
-// struct FenToPlayoutItem;
+pub struct FenDataset {
+    dataset: InMemDataset<FenItemRaw>,
+}
 
-// impl Mapper<PlayoutItemRaw, PlayoutItem> for FenToPlayoutItem {
-//     fn map(&self, item: &PlayoutItemRaw) -> PlayoutItem {
-//         todo!("Playout the fen from `item` and write the result into  a PlayoutItem.")
-//     }
-// }
+impl Dataset<FenItemRaw> for FenDataset {
+    fn get(&self, index: usize) -> Option<FenItemRaw> {
+        self.dataset.get(index)
+    }
 
-// type MappedDataset = MapperDataset<InMemDataset<PlayoutItemRaw>, FenToPlayoutItem, PlayoutItemRaw>;
+    fn len(&self) -> usize {
+        self.dataset.len()
+    }
+}
 
-// pub struct PlayoutDataset {
-//     dataset: MappedDataset,
-// }
+impl FenDataset {
+    /// Creates a new train dataset.
+    pub fn train() -> Self {
+        Self::new("train")
+    }
 
-// impl Dataset<PlayoutItem> for PlayoutDataset {
-//     fn get(&self, index: usize) -> Option<PlayoutItem> {
-//         self.dataset.get(index)
-//     }
+    /// Creates a new test dataset.
+    pub fn test() -> Self {
+        Self::new("test")
+    }
 
-//     fn len(&self) -> usize {
-//         self.dataset.len()
-//     }
-// }
+    fn new(split: &str) -> Self {
+        let root = FenDataset::load_path(split);
+        let fens = FenDataset::read_edp(&root, split, 0.9, 1_000);
+
+        let items: Vec<_> = fens
+            .into_iter()
+            .map(|s| FenItemRaw::new(s.to_owned()))
+            .collect();
+
+        let dataset = InMemDataset::new(items);
+
+        Self { dataset }
+    }
+
+    fn load_path(_split: &str) -> PathBuf {
+        // todo: use `split`
+        Path::new("./UHO_Lichess_4852_v1.epd").to_path_buf()
+    }
+
+    /// num_fens_total: the number of fens in |train + test|
+    fn read_edp<P: AsRef<Path>>(
+        root: &P,
+        split: &str,
+        split_ratio: f32,
+        num_fens_total: usize,
+    ) -> Vec<String> {
+        // todo: use `split`
+        let edp = fs::read_to_string(root).expect("Couldn't read path");
+        let lines = edp
+            .lines()
+            .map(|l| l.to_owned())
+            .take(num_fens_total)
+            .collect_vec();
+        let split_idx = (lines.len() as f32 * split_ratio) as usize;
+        match split {
+            "train" => lines[..split_idx].to_vec(),
+            "test" => lines[split_idx..].to_vec(),
+            _ => panic!("invalid split"),
+        }
+    }
+}
 
 pub struct LossOutput<B: Backend> {
     // Value output
@@ -127,7 +179,7 @@ impl<B: Backend> LossOutput<B> {
     pub fn loss(&self) -> Tensor<B, 1> {
         // todo: weight decay loss
         let ref value = self.value_loss;
-        let ref policy = self.value_loss;
+        let ref policy = self.policy_loss;
         value.loss.clone() + policy.loss.clone()
     }
 }
@@ -208,11 +260,9 @@ pub struct TrainingConfig {
     pub num_epochs: usize,
     #[config(default = 64)]
     pub batch_size: usize,
-    #[config(default = 4)]
-    pub num_workers: usize,
     #[config(default = 0x_dead_beef)]
     pub seed: u64,
-    #[config(default = 1.0e-4)]
+    #[config(default = 1.0e-5)]
     pub learning_rate: f64,
 }
 
@@ -220,6 +270,17 @@ fn create_artifact_dir(artifact_dir: &str) {
     // Remove existing artifacts before to get an accurate learner summary
     fs::remove_dir_all(artifact_dir).ok();
     fs::create_dir_all(artifact_dir).ok();
+}
+
+#[derive(Clone, Default)]
+pub struct IdentityBatcher<I> {
+    item: PhantomData<I>,
+}
+
+impl<B: Backend, I: Send + Sync> Batcher<B, I, Vec<I>> for IdentityBatcher<I> {
+    fn batch(&self, items: Vec<I>, _device: &B::Device) -> Vec<I> {
+        items
+    }
 }
 
 pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, device: B::Device) {
@@ -230,24 +291,20 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
 
     B::seed(&device, config.seed);
 
-    // let learner = LearnerBuilder::new(artifact_dir)
-    //     .metric_train_numeric(LossMetric::new())
-    //     .metric_valid_numeric(LossMetric::new())
-    //     .with_file_checkpointer(CompactRecorder::new())
-    //     .learning_strategy(LearningStrategy::SingleDevice(device.clone()))
-    //     .num_epochs(config.num_epochs)
-    //     .summary()
-    //     .build(
-    //         config.model.init::<B>(&device),
-    //         config.optimizer.init(),
-    //         config.learning_rate,
-    //     );
+    // Create the dataloaders.
+    let dataloader_train =
+        DataLoaderBuilder::<B, _, _>::new(IdentityBatcher::<FenItemRaw>::default())
+            .batch_size(config.batch_size)
+            .shuffle(config.seed)
+            .num_workers(0)
+            .build(FenDataset::train());
 
-    // let result = learner.fit(dataloader_train, dataloader_test);
-
-    //
-    // # Custom training loop variant:
-    //
+    // let dataloader_test =
+    //     DataLoaderBuilder::<B, _, _>::new(IdentityBatcher::<FenItemRaw>::default())
+    //         .batch_size(config.batch_size)
+    //         .shuffle(config.seed)
+    //         .num_workers(0)
+    //         .build(FenDataset::test());
 
     // Create the model and optimizer.
     let mut model = config.model.init::<B>(&device);
@@ -255,40 +312,28 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
 
     // Iterate over our training and validation loop for X epochs.
     for epoch in 1..config.num_epochs + 1 {
-        let batcher = PlayoutBatcher::default();
-
-        // let dataloader_train = DataLoaderBuilder::new(batcher.clone())
-        //     .batch_size(config.batch_size)
-        //     // .shuffle(config.seed)
-        //     .num_workers(config.num_workers)
-        //     .build();
-
-        // let dataloader_test = DataLoaderBuilder::new(batcher)
-        //     .batch_size(config.batch_size)
-        //     // .shuffle(config.seed)
-        //     .num_workers(config.num_workers)
-        //     .build();
-
         // Implement our training loop.
-        for iteration in 0..config.batch_size {
-            // for (iteration, batch) in dataloader_train.iter().enumerate() {
-            let batch = generate_batch(&model, &device).expect("Failed to generate batch");
-            let result = TrainStep::step(&model, batch);
-            let loss = result.item.loss();
+        {
+            for (iteration, fens_batch) in dataloader_train.iter().enumerate() {
+                let playouts_batch =
+                    generate_batch(&model, &device, &fens_batch).expect("Failed to generate batch");
+                let result = TrainStep::step(&model, playouts_batch);
+                let loss = result.item.loss();
 
-            println!(
-                "[Train - Epoch {} - Iteration {}] Loss {:.3}",
-                epoch,
-                iteration,
-                loss.clone().into_scalar(),
-            );
+                println!(
+                    "[Train - Epoch {} - Iteration {}] Loss {:.5}",
+                    epoch,
+                    iteration,
+                    loss.clone().into_scalar(),
+                );
 
-            // Gradients for the current backward pass
-            let grads = loss.backward();
-            // Gradients linked to each parameter of the model.
-            let grads = GradientsParams::from_grads(grads, &model);
-            // Update the model using the optimizer.
-            model = optim.step(config.learning_rate, model, grads);
+                // Gradients for the current backward pass
+                let grads = loss.backward();
+                // Gradients linked to each parameter of the model.
+                let grads = GradientsParams::from_grads(grads, &model);
+                // Update the model using the optimizer.
+                model = optim.step(config.learning_rate, model, grads);
+            }
         }
 
         // // Get the model without autodiff.
@@ -354,11 +399,12 @@ impl<B: Backend> Batcher<B, PlayoutItem, PlayoutBatch<B>> for PlayoutBatcher {
 fn generate_batch<B: Backend>(
     model: &Model<B>,
     device: &B::Device,
+    fens: &[FenItemRaw],
 ) -> Result<PlayoutBatch<B>, Box<dyn Error>> {
-    let playout_items = self_play(
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        &model,
-    )?;
+    let mut playout_items = Vec::new();
+    for fen in fens {
+        playout_items.extend(self_play(&fen.fen, &model)?);
+    }
 
     let batcher = PlayoutBatcher::default();
     Ok(batcher.batch(playout_items, device))
@@ -366,11 +412,12 @@ fn generate_batch<B: Backend>(
 
 #[derive(Default, Debug)]
 pub struct MctsTrain {
-    infer: MctsUci,
+    infer: MctsFindBest,
 }
 
 impl MctsStrategy for MctsTrain {
-    type Result = (<MctsUci as MctsStrategy>::Result, mcts::Tree);
+    type Result = (<MctsFindBest as MctsStrategy>::Result, mcts::Tree);
+    type Step = (<MctsFindBest as MctsStrategy>::Step,);
 
     fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result {
         let inference_result = self.infer.result(tree);
@@ -378,16 +425,16 @@ impl MctsStrategy for MctsTrain {
         (inference_result, tree)
     }
 
-    fn step(&mut self, tree: &mut mcts::Tree) {
-        self.infer.step(tree);
+    fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step {
+        (self.infer.step(tree),)
     }
 }
 
 fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<Vec<PlayoutItem>, Box<dyn Error>> {
     let limit = Limit {
         is_active: true,
-        winc: 100,
-        binc: 100,
+        winc: 1000,
+        binc: 1000,
         wtime: 0,
         btime: 0,
         ..Default::default()
@@ -396,9 +443,7 @@ fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<Vec<PlayoutItem>
     let ct = CancellationToken::new();
 
     let tok = &mut Tokenizer::new(pos);
-    let mut pos: Position = tok
-        .try_into()
-        .expect(format!("Invalid FEN: {pos}").as_str());
+    let mut pos: Position = tok.try_into()?;
 
     // The inputs to the model.
     type Input = (BoardInputFloats, StateInputFloats);
@@ -415,7 +460,7 @@ fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<Vec<PlayoutItem>
     let mut decisions = Vec::<(Input, Target, State)>::new();
 
     let eval: GameResult = {
-        let mut game_result = GameResult::Draw;
+        let game_result;
         loop {
             let turn = pos.get_turn();
             let result = search::mcts::<MctsTrain, _>(
@@ -439,7 +484,7 @@ fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<Vec<PlayoutItem>
             let b_in = board_input(&pos);
             let s_in = state_input(&pos);
 
-            let mov = mov.expect("we just checked that it is not none");
+            let mov = mov.expect("if the ");
             pos.make_move(mov);
 
             let state_info = (mov, turn);
@@ -462,7 +507,6 @@ fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<Vec<PlayoutItem>
                     VALUE_LOSE
                 }
             }
-            _ => panic!("The only evaluation result has to be on that ends the game."),
         };
         let playout_item = PlayoutItem {
             board_input: input.0,

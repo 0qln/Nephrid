@@ -79,31 +79,56 @@ fn perft_inner(
 
 pub trait MctsStrategy {
     type Result;
+    type Step;
 
     fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result;
-    fn step(&mut self, tree: &mut mcts::Tree);
+    fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step;
 }
 
 #[derive(Default, Debug)]
-pub struct MctsUci {
+pub struct MctsFindBest {
     last_best_move: Option<Move>,
 }
 
-impl MctsStrategy for MctsUci {
+impl MctsStrategy for MctsFindBest {
     type Result = Option<Move>;
+    type Step = Option<Move>;
 
     fn result(&mut self, _tree: &mut mcts::Tree) -> Self::Result {
         self.last_best_move
     }
 
-    fn step(&mut self, tree: &mut mcts::Tree) {
+    fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step {
         let curr_best_move = tree.best_move();
         if self.last_best_move != curr_best_move {
             if let Some(mov) = curr_best_move {
-                sync::out(&format!("currmove {mov}"));
                 self.last_best_move = Some(mov);
+                return Some(mov);
             }
         }
+        return None;
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct MctsUci {
+    find_best: MctsFindBest,
+}
+
+impl MctsStrategy for MctsUci {
+    type Result = <MctsFindBest as MctsStrategy>::Result;
+    type Step = <MctsFindBest as MctsStrategy>::Step;
+
+    fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result {
+        self.find_best.result(tree)
+    }
+
+    fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step {
+        let step = self.find_best.step(tree);
+        if let Some(mov) = step {
+            sync::out(&format!("currmove {mov}"));
+        }
+        step
     }
 }
 
@@ -111,19 +136,21 @@ impl MctsStrategy for MctsUci {
 #[derive(Default, Debug)]
 pub struct MctsDebug<I: MctsStrategy> {
     inner: I,
-    iterations: u64,
+    iteration: u64,
 }
 
 impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
     type Result = (<I as MctsStrategy>::Result, u64);
+    type Step = (<I as MctsStrategy>::Step, u64);
 
     fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result {
-        (self.inner.result(tree), self.iterations)
+        (self.inner.result(tree), self.iteration)
     }
 
-    fn step(&mut self, tree: &mut mcts::Tree) {
-        self.inner.step(tree);
-        self.iterations += 1;
+    fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step {
+        let step = (self.inner.step(tree), self.iteration);
+        self.iteration += 1;
+        step
     }
 }
 
@@ -151,7 +178,7 @@ fn mcts_inner<S: MctsStrategy, B: Backend>(
     let time_limit = Instant::now() + time_per_move;
 
     while !ct.is_cancelled() && (!limit.is_active || Instant::now() < time_limit) {
-        tree.grow(&mut pos, &model);
+        tree.grow(&mut pos, model);
         strategy.step(&mut tree);
     }
 

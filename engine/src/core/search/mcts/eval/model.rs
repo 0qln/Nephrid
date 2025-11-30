@@ -18,6 +18,7 @@ use crate::core::{
     coordinates::{files, ranks, squares},
     piece::{piece_type, promo_piece_type},
     position::Position,
+    search::mcts,
 };
 
 // +1 for the possible ep capture square.
@@ -107,6 +108,29 @@ pub fn state_input(pos: &Position) -> StateInputFloats {
         castling.get_float(castling_sides::QUEEN_SIDE, them),
         pos.plys_50().v as f32 / 50.0,
     ]
+}
+
+impl<B: Backend> mcts::Evaluator for Model<B> {
+    fn evaluate(&self, pos: &Position) -> (f32, &'_ [f32; POLICY_OUTPUTS]) {
+        let b_in = [board_input(pos)].into();
+        let s_in = [state_input(pos)].into();
+        let (quality, policy) = self.forward(b_in, s_in);
+
+        let quality = quality
+            .to_data()
+            .to_vec::<f32>()
+            .expect("Quality could not be converted to vec.");
+
+        let policy = TryInto::<Box<[f32; POLICY_OUTPUTS]>>::try_into(
+            policy
+                .to_data()
+                .to_vec::<f32>()
+                .expect("Policy could not be converted to vec.")
+                .into_boxed_slice(),
+        );
+
+        (quality[0], &policy.unwrap())
+    }
 }
 
 pub fn input_batched<const N: usize, B: Backend>(

@@ -1,5 +1,3 @@
-use burn::prelude::Backend;
-use eval::model::{Model, board_input, state_input};
 use itertools::Itertools;
 use std::assert_matches::assert_matches;
 use std::fmt;
@@ -8,9 +6,13 @@ use std::ptr::NonNull;
 
 use crate::core::move_iter::king::King;
 use crate::core::piece::IPieceType;
+use crate::core::search::mcts::eval::model::POLICY_OUTPUTS;
 use crate::core::{color::Color, r#move::Move, move_iter::fold_legal_moves, position::Position};
 
 pub mod eval;
+
+#[cfg(test)]
+pub mod test;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum GameResult {
@@ -72,9 +74,9 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn new<B: Backend>(pos: &Position, model: &Model<B>) -> Self {
+    pub fn new<E: Evaluator>(pos: &Position, eval: &E) -> Self {
         Self {
-            root: Node::root(pos, model),
+            root: Node::root(pos, eval),
             ..Default::default()
         }
     }
@@ -90,16 +92,9 @@ impl Tree {
         Some(most_visited.mov())
     }
 
-    pub fn grow<B: Backend>(&mut self, pos: &mut Position, model: &Model<B>) {
-        let evaluation = self.select_leaf_mut(pos, model);
+    pub fn grow<E: Evaluator>(&mut self, pos: &mut Position, eval: &E) {
+        let evaluation = self.select_leaf_mut(pos, eval);
         self.backpropagate(pos, &evaluation);
-    }
-
-    pub fn selected_leaf(&mut self) -> NonNull<Branch> {
-        *self
-            .selection_buffer
-            .last_mut()
-            .expect("This is only None, if root.state == Leaf, which is not the case.")
     }
 
     fn backpropagate(&mut self, pos: &mut Position, eval: &Evaluation) {
@@ -116,22 +111,24 @@ impl Tree {
 
     /// Walk down the tree and select the branches with the highest score, until we find a leaf
     /// node. sono-ato, expand the leaf and return the evaluation of that leaf.
-    pub fn select_leaf_mut<B: Backend>(
-        &mut self,
-        pos: &mut Position,
-        model: &Model<B>,
-    ) -> Evaluation {
+    pub fn select_leaf_mut<E: Evaluator>(&mut self, pos: &mut Position, model: &E) -> Evaluation {
         self.selection_buffer.clear();
         let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
         loop {
             match current.state() {
                 NodeState::Expanded => {
-                    let branch = current.select_mut();
+                    debug_assert!(
+                        !current.branches.is_empty(),
+                        "Contradiction: NodeState == Expanded, but there are no branches."
+                    );
+
+                    // SAFETY: This branch is only reached when NodeState == Expanded
+                    let branch = unsafe { current.select_mut().unwrap_unchecked() };
                     pos.make_move(branch.mov());
                     self.selection_buffer.push(NonNull::from_ref(branch));
                     current = branch.traverse_mut();
                 }
-                NodeState::Leaf => {
+                NodeState::Leaf | NodeState::Terminal => {
                     return current.expand_and_eval(pos, model);
                 }
             }
@@ -145,9 +142,13 @@ impl Tree {
 
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NodeState {
+    /// A leaf is an untouched node.
     #[default]
     Leaf,
+    /// An expanded node is a node which has been analized and to be found to have children.
     Expanded,
+    /// A terminal node is a node which has been analized and to be found to have no children.
+    Terminal,
 }
 
 #[derive(Clone, Default, Debug, PartialEq)]
@@ -157,7 +158,7 @@ pub struct ChildNode {
 }
 
 impl ChildNode {
-    /// Create a new leaf node.
+    /// Create a new leaf node with the move that leads to this child node.
     pub fn leaf(m: Move) -> Self {
         Self { node: Node::leaf(), mov: m }
     }
@@ -259,11 +260,16 @@ impl fmt::Debug for Node {
     }
 }
 
+pub trait Evaluator {
+    /// Returns: (quality [-1;1], policy [over ALL moves])
+    fn evaluate(&self, pos: &Position) -> (f32, &'_ [f32; POLICY_OUTPUTS]);
+}
+
 impl Node {
     /// Create a new root node.
-    pub fn root<B: Backend>(pos: &Position, model: &Model<B>) -> Self {
+    pub fn root<E: Evaluator>(pos: &Position, eval: &E) -> Self {
         let mut result = Self::leaf();
-        result.expand_and_eval(pos, model);
+        result.expand_and_eval(pos, eval);
         result
     }
 
@@ -294,30 +300,18 @@ impl Node {
     }
 
     /// Select the branch with the highest PUCT score.
-    pub fn select_mut(&mut self) -> &mut Branch {
-        assert_matches!(self.state(), NodeState::Expanded);
-
-        self.branches
-            .iter_mut()
-            .max_by(|a, b| {
-                let a_ucb = a.puct(self.visits);
-                let b_ucb = b.puct(self.visits);
-                a_ucb.partial_cmp(&b_ucb).expect("Node comparison failed!")
-            })
-            //
-            // this has happened once, and i can't replicate it :(
-            //
-            // todo:
-            // return an error here, and further up if we get errors during the search, log
-            // the callstack conditionally to a file or something, that way we have better error
-            // handling and don't have much runtime overhead, even for debug builds.
-            //
-            .expect("This is either a branch or a root node, which implies that this is not a terminal node, so there has to be atleast on child.")
+    /// Returns None if there are no branches.
+    pub fn select_mut(&mut self) -> Option<&mut Branch> {
+        self.branches.iter_mut().max_by(|a, b| {
+            let a_ucb = a.puct(self.visits);
+            let b_ucb = b.puct(self.visits);
+            a_ucb.partial_cmp(&b_ucb).expect("Node comparison failed!")
+        })
     }
 
     /// Returns an evaluation of the position.
-    pub fn eval<B: Backend>(&self, pos: &Position, model: &Model<B>) -> Evaluation {
-        assert_matches!(self.state(), NodeState::Expanded);
+    pub fn eval<E: Evaluator>(&self, pos: &Position, evaluator: &E) -> Evaluation {
+        assert_matches!(self.state(), NodeState::Expanded | NodeState::Terminal);
 
         if pos.has_threefold_repetition() || pos.fifty_move_rule() || pos.is_insufficient_material()
         {
@@ -337,23 +331,11 @@ impl Node {
                 Evaluation::Terminal(GameResult::Draw)
             }
         } else {
-            let b_in = [board_input(pos)].into();
-            let s_in = [state_input(pos)].into();
-            let (quality, policy) = model.forward(b_in, s_in);
-
-            let policy = policy
-                .to_data()
-                .to_vec::<f32>()
-                .expect("Policy could not be converted to vec.");
-
-            let quality = quality
-                .to_data()
-                .to_vec::<f32>()
-                .expect("Quality could not be converted to vec.");
+            let (quality, raw_policy) = evaluator.evaluate(pos);
 
             let mut policies = Vec::<f32>::new();
             for branch in &self.branches {
-                policies.push(policy[usize::from(branch.node.mov)]);
+                policies.push(raw_policy[usize::from(branch.node.mov)]);
             }
 
             // Renormalize the policy to a sum of 1, since not all of the probabilities
@@ -372,6 +354,7 @@ impl Node {
                 *policy /= policy_sum;
             }
 
+            // Evaluator should return a probability distribution.
             fn f32_eq(a: f32, b: f32, e: f32) -> bool {
                 f32::abs(a - b) < e
             }
@@ -379,7 +362,7 @@ impl Node {
 
             Evaluation::Guess {
                 relative_to: pos.get_turn(),
-                quality: quality[0],
+                quality,
                 policies,
             }
         }
@@ -396,14 +379,18 @@ impl Node {
             })
         });
 
-        self.state = NodeState::Expanded;
+        self.state = if self.branches.is_empty() {
+            NodeState::Terminal
+        } else {
+            NodeState::Expanded
+        };
     }
 
     /// Expand the node and return an evaluation of the position.
-    fn expand_and_eval<B: Backend>(&mut self, pos: &Position, model: &Model<B>) -> Evaluation {
+    fn expand_and_eval<E: Evaluator>(&mut self, pos: &Position, e: &E) -> Evaluation {
         self.expand(pos);
 
-        let eval = self.eval(pos, model);
+        let eval = self.eval(pos, e);
 
         if let Evaluation::Guess { policies, .. } = &eval {
             for (i, branch) in self.branches.iter_mut().enumerate() {
