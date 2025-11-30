@@ -57,16 +57,17 @@ use std::path::{Path, PathBuf};
 fn main() {
     magics::init();
     zobrist::init();
+    log4rs::init_file("./tuning/src/eval_model/log4rs.yml", Default::default()).unwrap();
 
     type Backend = Cuda<f32>;
     type AutodiffBackend = Autodiff<Backend>;
 
     let device = CudaDevice::default();
-    println!("Device: {:?}", device);
+    log::info!("Device: {:?}", device);
 
-    let artifact_dir = "/tmp/nephrid/eval_model";
+    let train_dir = "tuning/out/eval_model";
     train::<AutodiffBackend>(
-        artifact_dir,
+        train_dir,
         TrainingConfig::new(ModelConfig::new(), AdamConfig::new()),
         device,
     );
@@ -272,10 +273,10 @@ pub struct TrainingConfig {
     pub learning_rate: f64,
 }
 
-fn create_artifact_dir(artifact_dir: &str) {
+fn clean_dir(dir: &str) {
     // Remove existing artifacts before to get an accurate learner summary
-    fs::remove_dir_all(artifact_dir).ok();
-    fs::create_dir_all(artifact_dir).ok();
+    fs::remove_dir_all(dir).ok();
+    fs::create_dir_all(dir).ok();
 }
 
 #[derive(Clone, Default)]
@@ -289,10 +290,12 @@ impl<B: Backend, I: Send + Sync> Batcher<B, I, Vec<I>> for IdentityBatcher<I> {
     }
 }
 
-pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, device: B::Device) {
-    create_artifact_dir(artifact_dir);
+pub fn train<B: AutodiffBackend>(output_dir: &str, config: TrainingConfig, device: B::Device) {
+    let artifact_dir = &format!("{output_dir}/artifacts");
+    clean_dir(artifact_dir);
+
     config
-        .save(format!("{artifact_dir}/config.json"))
+        .save(format!("{output_dir}/config.json"))
         .expect("Config should be saved successfully");
 
     B::seed(&device, config.seed);
@@ -326,12 +329,13 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
                 let result = TrainStep::step(&model, playouts_batch);
                 let loss = result.item.loss();
 
-                println!(
+                let msg = format!(
                     "[Train - Epoch {} - Iteration {}] Loss {:.5}",
                     epoch,
                     iteration,
                     loss.clone().into_scalar(),
                 );
+                log::info!(target: "reports::train", "{msg}");
 
                 // Gradients for the current backward pass
                 let grads = loss.backward();
@@ -427,11 +431,11 @@ fn generate_batch<B: AutodiffBackend>(
                         .iter()
                         .map(|x| format!("{}", x.1.state.mov))
                         .join(" > ");
-                    println!("[Fen {fen}] {moves}");
+                    log::debug!(target: "games", "[Fen {fen}] {moves}");
                     result.iter().map(|x| x.0.clone()).collect_vec()
                 }
                 Err(err) => {
-                    eprintln!("[Fen {fen}] Error: {err}");
+                    log::error!(target: "games", "[Fen {fen}] Error: {err}");
                     vec![]
                 }
             }
