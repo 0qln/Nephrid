@@ -20,3 +20,4 @@ itertools = "0.14.0"
 rand = "0.9.0"
 burn = { version = "0.19.1", features = ["train"] }
 burn-cuda = "0.19.1"
+rayon = "1.11.0"

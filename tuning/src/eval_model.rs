@@ -1,16 +1,27 @@
+use burn::prelude::Module;
+use burn::record::CompactRecorder;
+use rayon::iter::IntoParallelRefIterator;
+use rayon::iter::ParallelIterator;
+use std::sync::Mutex;
 use std::{error::Error, fs, marker::PhantomData};
+
+use burn::{
+    data::dataloader::DataLoaderBuilder,
+    module::AutodiffModule,
+    optim::{AdamConfig, GradientsParams, Optimizer},
+    tensor::backend::AutodiffBackend,
+};
 
 use burn::{
     backend::{Autodiff, NdArray},
     config::Config,
     data::{
-        dataloader::{DataLoaderBuilder, batcher::Batcher},
+        dataloader::batcher::Batcher,
         dataset::{Dataset, InMemDataset},
     },
     nn::loss::{CrossEntropyLossConfig, MseLoss, Reduction},
-    optim::{AdamConfig, GradientsParams, Optimizer},
     prelude::Backend,
-    tensor::{Int, Tensor, TensorData, backend::AutodiffBackend},
+    tensor::{Int, Tensor, TensorData},
     train::{
         ClassificationOutput, RegressionOutput, TrainOutput, TrainStep, ValidStep,
         metric::{Adaptor, ItemLazy, LossInput},
@@ -44,17 +55,14 @@ use itertools::Itertools;
 use std::path::{Path, PathBuf};
 
 fn main() {
+    magics::init();
+    zobrist::init();
+
     type Backend = Cuda<f32>;
     type AutodiffBackend = Autodiff<Backend>;
 
     let device = CudaDevice::default();
     println!("Device: {:?}", device);
-
-    let model = ModelConfig::new().init::<Backend>(&device);
-    println!("Model: {:#?}", model);
-
-    magics::init();
-    zobrist::init();
 
     let artifact_dir = "/tmp/nephrid/eval_model";
     train::<AutodiffBackend>(
@@ -141,8 +149,7 @@ impl FenDataset {
     }
 
     fn load_path(_split: &str) -> PathBuf {
-        // todo: use `split`
-        Path::new("./UHO_Lichess_4852_v1.epd").to_path_buf()
+        Path::new("./tuning/resources/UHO_Lichess_4852_v1.epd").to_path_buf()
     }
 
     /// num_fens_total: the number of fens in |train + test|
@@ -152,7 +159,6 @@ impl FenDataset {
         split_ratio: f32,
         num_fens_total: usize,
     ) -> Vec<String> {
-        // todo: use `split`
         let edp = fs::read_to_string(root).expect("Couldn't read path");
         let lines = edp
             .lines()
@@ -258,7 +264,7 @@ pub struct TrainingConfig {
     pub optimizer: AdamConfig,
     #[config(default = 10)]
     pub num_epochs: usize,
-    #[config(default = 64)]
+    #[config(default = 8)]
     pub batch_size: usize,
     #[config(default = 0x_dead_beef)]
     pub seed: u64,
@@ -350,12 +356,15 @@ pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, dev
         //         result.loss.clone().into_scalar(),
         //     );
         // }
-    }
 
-    // result
-    //     .model
-    //     .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
-    //     .expect("Trained model should be saved successfully");
+        model
+            .clone()
+            .save_file(
+                format!("{artifact_dir}/model_e-{epoch}"),
+                &CompactRecorder::new(),
+            )
+            .expect("Trained model should be saved successfully");
+    }
 }
 
 #[derive(Clone, Default)]
@@ -396,15 +405,38 @@ impl<B: Backend> Batcher<B, PlayoutItem, PlayoutBatch<B>> for PlayoutBatcher {
     }
 }
 
-fn generate_batch<B: Backend>(
+fn generate_batch<B: AutodiffBackend>(
     model: &Model<B>,
     device: &B::Device,
     fens: &[FenItemRaw],
 ) -> Result<PlayoutBatch<B>, Box<dyn Error>> {
-    let mut playout_items = Vec::new();
-    for fen in fens {
-        playout_items.extend(self_play(&fen.fen, &model)?);
-    }
+    let mutex = Mutex::new(model.to_owned());
+    let playout_items = fens
+        .par_iter()
+        .flat_map(|fen| {
+            let fen = fen.fen.clone();
+            let model = {
+                let lock_result = mutex.lock();
+                let model_lock = lock_result.expect("Unable to acquire lock.");
+                model_lock.valid()
+            };
+
+            match self_play(&fen, &model) {
+                Ok(result) => {
+                    let moves = result
+                        .iter()
+                        .map(|x| format!("{}", x.1.state.mov))
+                        .join(" > ");
+                    println!("[Fen {fen}] {moves}");
+                    result.iter().map(|x| x.0.clone()).collect_vec()
+                }
+                Err(err) => {
+                    eprintln!("[Fen {fen}] Error: {err}");
+                    vec![]
+                }
+            }
+        })
+        .collect::<Vec<_>>();
 
     let batcher = PlayoutBatcher::default();
     Ok(batcher.batch(playout_items, device))
@@ -430,7 +462,36 @@ impl MctsStrategy for MctsTrain {
     }
 }
 
-fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<Vec<PlayoutItem>, Box<dyn Error>> {
+// The inputs to the model.
+struct Input {
+    board_in: BoardInputFloats,
+    state_in: StateInputFloats,
+}
+
+// Info to help find the training target.
+// 0: Most visited move / best_move.
+struct Target {
+    mov: Move,
+}
+
+// Some state info at the time of the move.
+// 0: The move that was made
+// 1: The color of the moving player.
+struct State {
+    mov: Move,
+    moving_color: Color,
+}
+
+struct Decision {
+    input: Input,
+    target: Target,
+    state: State,
+}
+
+fn self_play<B: Backend>(
+    pos: &str,
+    model: &Model<B>,
+) -> Result<Vec<(PlayoutItem, Decision)>, Box<dyn Error>> {
     let limit = Limit {
         is_active: true,
         winc: 1000,
@@ -445,19 +506,7 @@ fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<Vec<PlayoutItem>
     let tok = &mut Tokenizer::new(pos);
     let mut pos: Position = tok.try_into()?;
 
-    // The inputs to the model.
-    type Input = (BoardInputFloats, StateInputFloats);
-
-    // Info to help find the training target.
-    // 0: Most visited move / best_move.
-    type Target = (Move,);
-
-    // Some state info at the time of the move.
-    // 0: The move that was made
-    // 1: The color of the moving player.
-    type State = (Move, Color);
-
-    let mut decisions = Vec::<(Input, Target, State)>::new();
+    let mut decisions = Vec::<Decision>::new();
 
     let eval: GameResult = {
         let game_result;
@@ -487,21 +536,21 @@ fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<Vec<PlayoutItem>
             let mov = mov.expect("if the ");
             pos.make_move(mov);
 
-            let state_info = (mov, turn);
-            let inputs = (b_in, s_in);
-            let targets = (mov,);
-            decisions.push((inputs, targets, state_info));
+            let state = State { mov, moving_color: turn };
+            let input = Input { board_in: b_in, state_in: s_in };
+            let target = Target { mov };
+            decisions.push(Decision { input, target, state });
         }
         game_result
     };
 
-    let mut result = Vec::<PlayoutItem>::new();
+    let mut result = Vec::<(PlayoutItem, Decision)>::new();
 
-    for (input, target, state) in decisions {
+    for decision in decisions {
         let value_target = match eval {
             GameResult::Draw => VALUE_DRAW,
             GameResult::Win { relative_to } => {
-                if relative_to == state.1 {
+                if relative_to == decision.state.moving_color {
                     VALUE_WIN
                 } else {
                     VALUE_LOSE
@@ -509,12 +558,12 @@ fn self_play<B: Backend>(pos: &str, model: &Model<B>) -> Result<Vec<PlayoutItem>
             }
         };
         let playout_item = PlayoutItem {
-            board_input: input.0,
-            state_input: input.1,
+            board_input: decision.input.board_in,
+            state_input: decision.input.state_in,
             value_target,
-            policy_target: usize::from(target.0),
+            policy_target: usize::from(decision.target.mov),
         };
-        result.push(playout_item);
+        result.push((playout_item, decision));
     }
 
     Ok(result)
