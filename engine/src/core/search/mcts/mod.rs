@@ -358,9 +358,7 @@ impl Node {
             }
 
             // Evaluator should return a probability distribution.
-            fn f32_eq(a: f32, b: f32, e: f32) -> bool {
-                f32::abs(a - b) < e
-            }
+            let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
             debug_assert!(f32_eq(policies.iter().sum::<f32>(), 1., 0.001));
 
             Evaluation::Guess {
