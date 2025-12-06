@@ -2,6 +2,7 @@
 
 use burn::prelude::Module;
 use burn::record::CompactRecorder;
+use engine::core::depth::Depth;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use std::env::var;
@@ -59,9 +60,6 @@ use std::path::{Path, PathBuf};
 
 #[cfg(test)]
 pub mod test;
-
-// pub mod only_policy;
-// pub mod only_value;
 
 fn main() {
     magics::init();
@@ -593,6 +591,7 @@ fn self_play<B: Backend>(
         btime: 0,
         ..Default::default()
     };
+    let limiter = mcts::NoopLimiter;
     let debug = DebugMode::default();
     let ct = CancellationToken::new();
 
@@ -603,6 +602,7 @@ fn self_play<B: Backend>(
 
     let eval: GameResult = {
         let game_result;
+        let mut depth = Depth::MIN;
         loop {
             let turn = pos.get_turn();
             let result = search::mcts::<MctsTrain, _>(
@@ -615,8 +615,9 @@ fn self_play<B: Backend>(
             let mov = result.0;
             let tree = result.1;
 
-            let guess = match tree.get_root().eval(&pos, model) {
+            let guess = match tree.get_root().eval(&pos, model, &limiter, Depth::MIN) {
                 Evaluation::Guess(guess) => guess,
+                Evaluation::Nope => unreachable!("We entered a limiter that will not stop."),
                 Evaluation::Terminal(result) => {
                     game_result = result;
                     break;

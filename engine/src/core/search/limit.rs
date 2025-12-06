@@ -1,7 +1,10 @@
 use std::time::Duration;
 
+use crate::core::depth::Depth;
+use crate::core::r#move::Move;
 use crate::core::{color::colors, position::Position};
 
+/// A struct to hold all by the UCI defined search limits and targets.
 #[derive(Debug, Clone)]
 pub struct Limit {
     pub is_active: bool,
@@ -12,6 +15,9 @@ pub struct Limit {
     pub movestogo: u16,
     pub nodes: u64,
     pub movetime: u64,
+    pub mate: Depth,
+    pub depth: Depth,
+    pub search_moves: Vec<Move>,
 }
 
 impl Limit {
@@ -25,6 +31,9 @@ impl Limit {
             movestogo: 0,
             nodes: u64::MAX,
             movetime: u64::MAX,
+            mate: Depth::MAX,
+            depth: Depth::MAX,
+            search_moves: vec![],
         }
     }
 
@@ -55,6 +64,9 @@ impl Default for Limit {
             movestogo: 0,
             nodes: u64::MAX,
             movetime: u64::MAX,
+            mate: Depth::MAX,
+            depth: Depth::MAX,
+            search_moves: vec![],
         }
     }
 }

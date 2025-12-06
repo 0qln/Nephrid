@@ -369,65 +369,6 @@ impl<B: Backend> Model<B> {
 
         (value_out, policy_out)
     }
-
-    /// # Shapes
-    /// - `board_input`: (batch_size, see: `BOARD_INPUT_LEN`, ranks, files)
-    /// - `state_input`: (batch_size, see: `STATE_INPUT_LEN`)
-    /// - `value_out`: (batch_size, 1)
-    /// - `policy_out`: (batch_size, num_moves)
-    pub fn forward_only_policy(
-        &self,
-        // getting some kind of recursive evaluation error here, so inline the constants （´＿｀）
-        board_input: Tensor<B, 4>, // BOARD_INPUT_TENSOR_DIM
-        state_input: Tensor<B, 2>, // STATE_INPUT_TENSOR_DIM
-    ) -> Tensor<B, 2> // POLICY_OUTPUT_TENSOR_DIM
-    {
-        let [bi_batch_size, bil, rs, fs] = board_input.dims();
-        assert_eq!(bil, BOARD_INPUT_CHANNELS);
-        assert_eq!(rs, ranks::N_VARIANTS);
-        assert_eq!(fs, files::N_VARIANTS);
-
-        let [si_batch_size, sil] = state_input.dims();
-        assert_eq!(si_batch_size, bi_batch_size);
-        assert_eq!(sil, STATE_INPUT_LEN);
-
-        let x = board_input;
-
-        let x = self.convs1.forward(x);
-
-        let x = self.convs2.forward(x);
-        let x = self.convs3.forward(x);
-        let x = self.convs4.forward(x);
-        let x = self.convs5.forward(x);
-        let x = self.convs6.forward(x);
-        let x = self.pool.forward(x);
-
-        let x = self.convs7.forward(x);
-        let x = self.pool.forward(x);
-
-        let x = self.convs8.forward(x);
-        let x = self.pool.forward(x);
-
-        let x = x.flatten(1, 3);
-
-        // println!("{:?}", x.shape());
-
-        // todo: should we always use a dropout layer?
-        let x = self.dropout.forward(x);
-
-        let x = Tensor::cat(vec![x, state_input], 1);
-
-        let x = self.dense0.forward(x);
-        let x = self.dense1.forward(x);
-        let x = self.dense2.forward(x);
-        let x = self.dense3.forward(x);
-
-        let policy_out = self.policy_dense.forward(x.clone());
-        let policy_out = self.policy_out.forward(policy_out);
-        let policy_out = softmax(policy_out, 1);
-
-        policy_out
-    }
 }
 
 #[derive(Config, Debug)]

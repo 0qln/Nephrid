@@ -1,6 +1,6 @@
 use burn_cuda::{Cuda, CudaDevice};
 use itertools::Either;
-use search::{limit::Limit, mode::Mode, target::Target};
+use search::{limit::Limit, mode::Mode};
 
 use self::r#move::LongAlgebraicUciNotation;
 use crate::{
@@ -90,7 +90,6 @@ pub fn execute_uci(
 
             let mut mode = Mode::default();
             let mut limit = Limit::default();
-            let mut target = Target::default();
 
             while let Some(token) = tokenizer.next_token() {
                 match token {
@@ -101,21 +100,21 @@ pub fn execute_uci(
                     "winc" => collect_and_parse!(limit.winc),
                     "binc" => collect_and_parse!(limit.binc),
                     "movestogo" => collect_and_parse!(limit.movestogo),
-                    "depth" => collect_and_parse!(target.depth),
+                    "depth" => collect_and_parse!(limit.depth),
                     "nodes" => collect_and_parse!(limit.nodes),
-                    "mate" => collect_and_parse!(target.mate),
+                    "mate" => collect_and_parse!(limit.mate),
                     "movetime" => collect_and_parse!(limit.movetime),
                     "infinite" => limit.is_active = false,
                     // to be compatible with stockfish
                     depth if Depth::try_from(depth).is_ok() => {
-                        target.depth = depth.try_into().unwrap()
+                        limit.depth = depth.try_into().unwrap()
                     }
                     /* searchmoves */
                     _ => {
                         let move_notation =
                             LongAlgebraicUciNotation::new(&mut tokenizer, &position);
                         match Move::try_from(move_notation) {
-                            Ok(m) => target.search_moves.push(m),
+                            Ok(m) => limit.search_moves.push(m),
                             Err(e) => sync::out(&format!("Error: {e}")),
                         }
                     }
@@ -125,7 +124,7 @@ pub fn execute_uci(
             let thread = thread::spawn(move || {
                 match mode {
                     Mode::Perft => {
-                        let nodes = search::perft(position.clone(), target, token, debug);
+                        let nodes = search::perft(position.clone(), limit, token, debug);
                         sync::out(&format!("\nNodes searched: {nodes}"));
                     }
                     Mode::Normal => {

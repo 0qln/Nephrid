@@ -4,11 +4,8 @@ use std::time::Instant;
 
 use crate::misc::DebugMode;
 use crate::uci::sync::{self, CancellationToken};
-use burn::prelude::Backend;
 use itertools::Itertools;
 use limit::Limit;
-use mcts::eval::model::Model;
-use target::Target;
 
 use crate::core::position::Position;
 
@@ -19,13 +16,12 @@ use super::move_iter::fold_legal_moves;
 pub mod limit;
 pub mod mcts;
 pub mod mode;
-pub mod target;
 
-pub fn perft(pos: Position, target: Target, ct: CancellationToken, debug: DebugMode) -> u64 {
+pub fn perft(pos: Position, limit: Limit, ct: CancellationToken, debug: DebugMode) -> u64 {
     perft_inner(
         &mut UnsafeCell::new(pos),
-        target.depth,
-        target,
+        limit.depth,
+        limit,
         ct.clone(),
         debug,
         |mov, count, depth: Depth, debug| {
@@ -42,7 +38,7 @@ pub fn perft(pos: Position, target: Target, ct: CancellationToken, debug: DebugM
 fn perft_inner(
     pos: &mut UnsafeCell<Position>,
     depth: Depth,
-    target: Target,
+    limit: Limit,
     cancellation_token: CancellationToken,
     debug: DebugMode,
     f: fn(Move, u64, Depth, bool) -> (),
@@ -64,12 +60,12 @@ fn perft_inner(
             let c = perft_inner(
                 pos,
                 depth - 1,
-                target.clone(),
+                limit.clone(),
                 cancellation_token.clone(),
                 debug.clone(),
                 if debug.get() { f } else { |_, _, _, _| {} },
             );
-            f(m, c, target.depth - depth, debug.get());
+            f(m, c, limit.depth - depth, debug.get());
             pos.get_mut().unmake_move(m);
             ControlFlow::Continue::<(), _>(acc + c)
         })
@@ -160,6 +156,17 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
     }
 }
 
+#[derive(Default, Debug)]
+pub struct MctsLimiter {
+    limit: Limit,
+}
+
+impl mcts::Limiter for MctsLimiter {
+    fn should_stop(&self, _pos: &Position, depth: Depth) -> bool {
+        depth > self.limit.depth || depth > Depth::MAX
+    }
+}
+
 pub fn mcts<S: MctsStrategy + Default, E: mcts::Evaluator>(
     pos: Position,
     model: &E,
@@ -178,13 +185,14 @@ fn mcts_inner<S: MctsStrategy, E: mcts::Evaluator>(
     ct: CancellationToken,
     mut strategy: S,
 ) -> S::Result {
-    let mut tree = mcts::Tree::new(&pos, model);
+    let limiter = MctsLimiter { limit: limit.clone() };
+    let mut tree = mcts::Tree::new(&pos, model, &limiter);
 
     let time_per_move = limit.time_per_move(&pos);
     let time_limit = Instant::now() + time_per_move;
 
     while !ct.is_cancelled() && (!limit.is_active || Instant::now() < time_limit) {
-        tree.grow(&mut pos, model);
+        tree.grow(&mut pos, model, &limiter);
         strategy.step(&mut tree);
     }
 

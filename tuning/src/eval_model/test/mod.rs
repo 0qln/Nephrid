@@ -16,6 +16,7 @@ use burn::record::Recorder;
 use burn_cuda::Cuda;
 use burn_cuda::CudaDevice;
 use engine::core::coordinates::squares;
+use engine::core::depth::Depth;
 use engine::core::r#move::Move;
 use engine::core::r#move::move_flags;
 use engine::core::move_iter::sliding_piece::magics;
@@ -23,6 +24,8 @@ use engine::core::position::Position;
 use engine::core::search;
 use engine::core::search::limit::Limit;
 use engine::core::search::mcts::Evaluation;
+use engine::core::search::mcts::Limiter;
+use engine::core::search::mcts::NoopLimiter;
 use engine::core::search::mcts::eval::model::ModelConfig;
 use engine::core::search::mcts::test::DummyEvaluator;
 use engine::core::zobrist;
@@ -179,6 +182,7 @@ pub fn learn_mate_in_2() {
             btime: 0,
             ..Default::default()
         };
+        let limiter = NoopLimiter;
         let debug = DebugMode::default();
         let ct = CancellationToken::new();
 
@@ -212,7 +216,10 @@ pub fn learn_mate_in_2() {
         );
 
         let evaluator = DummyEvaluator::default();
-        result.1.get_root().eval(&pos, &evaluator)
+        result
+            .1
+            .get_root()
+            .eval(&pos, &evaluator, &limiter, Depth::MIN)
     };
     println!("{:#?}", result);
 

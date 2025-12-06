@@ -4,8 +4,8 @@ use std::fmt;
 use std::ops::ControlFlow;
 use std::ptr::NonNull;
 
-use crate::core::move_iter::king::King;
-use crate::core::piece::IPieceType;
+use crate::core::depth::Depth;
+use crate::core::position::CheckState;
 use crate::core::search::mcts::eval::model::POLICY_OUTPUTS;
 use crate::core::{color::Color, r#move::Move, move_iter::fold_legal_moves, position::Position};
 
@@ -34,16 +34,20 @@ impl Guess {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Evaluation {
+    // we will go further and have a gues about this game.
     Guess(Guess),
+    // we cannot go any further.
     Terminal(GameResult),
+    // we don't feel like going any further.
+    Nope,
 }
 
 impl GameResult {
     /// Returns a number between 0 and 1, where 0 is a loss and 1 is a win.
-    fn to_value(self, turn: Color) -> f32 {
+    const fn to_value(self, turn: Color) -> f32 {
         match self {
             Self::Win { relative_to } => {
-                if relative_to == turn {
+                if relative_to.v() == turn.v() {
                     1.0
                 } else {
                     0.0
@@ -59,7 +63,8 @@ impl Evaluation {
     fn to_value(&self, turn: Color) -> f32 {
         match self {
             Self::Terminal(result) => result.to_value(turn),
-            Evaluation::Guess(Guess {
+            Self::Nope => GameResult::Draw.to_value(turn),
+            Self::Guess(Guess {
                 quality,
                 relative_to,
                 policies: _policies,
@@ -82,9 +87,9 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn new<E: Evaluator>(pos: &Position, eval: &E) -> Self {
+    pub fn new<E: Evaluator, L: Limiter>(pos: &Position, eval: &E, l: &L) -> Self {
         Self {
-            root: Node::root(pos, eval),
+            root: Node::root(pos, eval, l),
             ..Default::default()
         }
     }
@@ -120,8 +125,8 @@ impl Tree {
         buf
     }
 
-    pub fn grow<E: Evaluator>(&mut self, pos: &mut Position, eval: &E) {
-        let evaluation = self.select_leaf_mut(pos, eval);
+    pub fn grow<E: Evaluator, L: Limiter>(&mut self, pos: &mut Position, eval: &E, l: &L) {
+        let evaluation = self.select_leaf_mut(pos, eval, l);
         self.backpropagate(pos, &evaluation);
     }
 
@@ -139,9 +144,15 @@ impl Tree {
 
     /// Walk down the tree and select the branches with the highest score, until we find a leaf
     /// node. sono-ato, expand the leaf and return the evaluation of that leaf.
-    pub fn select_leaf_mut<E: Evaluator>(&mut self, pos: &mut Position, model: &E) -> Evaluation {
+    pub fn select_leaf_mut<E: Evaluator, L: Limiter>(
+        &mut self,
+        pos: &mut Position,
+        model: &E,
+        l: &L,
+    ) -> Evaluation {
         self.selection_buffer.clear();
         let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
+        let mut depth = Depth::MIN;
         loop {
             match current.state() {
                 NodeState::Expanded => {
@@ -157,12 +168,13 @@ impl Tree {
                     current = branch.traverse_mut();
                 }
                 NodeState::Leaf => {
-                    return current.expand_and_eval(pos, model);
+                    return current.expand_and_eval(pos, model, l, depth);
                 }
                 NodeState::Terminal => {
-                    return current.eval(pos, model);
+                    return current.eval(pos, model, l, depth);
                 }
             }
+            depth += 1;
         }
     }
 
@@ -296,11 +308,25 @@ pub trait Evaluator {
     fn evaluate(&self, pos: &Position) -> (f32, [f32; POLICY_OUTPUTS]);
 }
 
+pub trait Limiter {
+    /// Returns: Whether to stop searching.
+    fn should_stop(&self, pos: &Position, depth: Depth) -> bool;
+}
+
+#[derive(Default, Debug)]
+pub struct NoopLimiter;
+
+impl Limiter for NoopLimiter {
+    fn should_stop(&self, _pos: &Position, _depth: Depth) -> bool {
+        false
+    }
+}
+
 impl Node {
     /// Create a new root node.
-    pub fn root<E: Evaluator>(pos: &Position, eval: &E) -> Self {
+    pub fn root<E: Evaluator, L: Limiter>(pos: &Position, eval: &E, l: &L) -> Self {
         let mut result = Self::leaf();
-        result.expand_and_eval(pos, eval);
+        result.expand_and_eval(pos, eval, l, Depth::MIN);
         result
     }
 
@@ -370,27 +396,39 @@ impl Node {
     }
 
     /// Returns an evaluation of the position.
-    pub fn eval<E: Evaluator>(&self, pos: &Position, evaluator: &E) -> Evaluation {
+    pub fn eval<E: Evaluator, L: Limiter>(
+        &self,
+        pos: &Position,
+        evaluator: &E,
+        limiter: &L,
+        depth: Depth,
+    ) -> Evaluation {
         assert_matches!(self.state(), NodeState::Expanded | NodeState::Terminal);
 
+        // First check if the position is a normal game ending.
+        if self.branches.is_empty() {
+            return if pos.get_check_state() != CheckState::None {
+                // If in check and no moves, it's a loss for the current player
+                Evaluation::Terminal(GameResult::Win { relative_to: !pos.get_turn() })
+            } else {
+                // Stalemate
+                Evaluation::Terminal(GameResult::Draw)
+            };
+        }
+
+        // Then check if the position has reached some of the extra-rule endings.
         if pos.has_threefold_repetition() || pos.fifty_move_rule() || pos.is_insufficient_material()
         {
             return Evaluation::Terminal(GameResult::Draw);
         }
 
-        if self.branches.is_empty() {
-            let us = pos.get_turn();
-            let king = pos.get_bitboard(King::ID, us);
-            let nstm_attacks = pos.get_nstm_attacks();
-            let in_check = !(king & nstm_attacks).is_empty();
-            if in_check {
-                // If in check and no moves, it's a loss for the current player
-                Evaluation::Terminal(GameResult::Win { relative_to: !us })
-            } else {
-                // Stalemate
-                Evaluation::Terminal(GameResult::Draw)
-            }
-        } else {
+        // Then check if we are even interested in searching this line any further.
+        if limiter.should_stop(pos, depth) {
+            return Evaluation::Nope;
+        }
+
+        // Otherwise guess a score.
+        {
             let (quality, raw_policy) = evaluator.evaluate(pos);
 
             let mut policies = Vec::<f32>::new();
@@ -445,10 +483,16 @@ impl Node {
     }
 
     /// Expand the node and return an evaluation of the position.
-    fn expand_and_eval<E: Evaluator>(&mut self, pos: &Position, e: &E) -> Evaluation {
+    fn expand_and_eval<E: Evaluator, L: Limiter>(
+        &mut self,
+        pos: &Position,
+        e: &E,
+        l: &L,
+        depth: Depth,
+    ) -> Evaluation {
         self.expand(pos);
 
-        let eval = self.eval(pos, e);
+        let eval = self.eval(pos, e, l, depth);
 
         if let Evaluation::Guess(Guess { policies, .. }) = &eval {
             for (i, branch) in self.branches.iter_mut().enumerate() {
