@@ -101,7 +101,8 @@
               # bash
               ''
                 # Rust configuration
-                export RUST_BACKTRACE=1
+                export RUST_BACKTRACE=full
+                export PROJECT_ROOT="$PWD"
               ''
               +
               # bash

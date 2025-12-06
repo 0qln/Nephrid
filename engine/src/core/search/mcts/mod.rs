@@ -11,7 +11,6 @@ use crate::core::{color::Color, r#move::Move, move_iter::fold_legal_moves, posit
 
 pub mod eval;
 
-#[cfg(test)]
 pub mod test;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -21,12 +20,21 @@ pub enum GameResult {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct Guess {
+    relative_to: Color,
+    quality: f32,
+    policies: Vec<f32>,
+}
+
+impl Guess {
+    pub fn policies(&self) -> &[f32] {
+        &self.policies
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Evaluation {
-    Guess {
-        relative_to: Color,
-        quality: f32,
-        policies: Vec<f32>,
-    },
+    Guess(Guess),
     Terminal(GameResult),
 }
 
@@ -51,11 +59,11 @@ impl Evaluation {
     fn to_value(&self, turn: Color) -> f32 {
         match self {
             Self::Terminal(result) => result.to_value(turn),
-            Evaluation::Guess {
+            Evaluation::Guess(Guess {
                 quality,
                 relative_to,
                 policies: _policies,
-            } => {
+            }) => {
                 // The quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
                 let quality = (quality + 1.0) / 2.0;
                 if *relative_to == turn { quality } else { 1.0 - quality }
@@ -410,11 +418,11 @@ impl Node {
             let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
             debug_assert!(f32_eq(policies.iter().sum::<f32>(), 1., 0.001));
 
-            Evaluation::Guess {
+            Evaluation::Guess(Guess {
                 relative_to: pos.get_turn(),
                 quality,
                 policies,
-            }
+            })
         }
     }
 
@@ -442,7 +450,7 @@ impl Node {
 
         let eval = self.eval(pos, e);
 
-        if let Evaluation::Guess { policies, .. } = &eval {
+        if let Evaluation::Guess(Guess { policies, .. }) = &eval {
             for (i, branch) in self.branches.iter_mut().enumerate() {
                 branch.policy = policies[i];
             }

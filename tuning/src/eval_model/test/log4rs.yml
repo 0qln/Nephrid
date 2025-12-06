@@ -1,0 +1,37 @@
+appenders:
+  stdout:
+    kind: console
+    encoder:
+      pattern: "{d(%H:%M:%S)} {l} {t} - {m}{n}"
+
+  file:
+    kind: file
+    path: "tuning/out/eval_model/test/mod.log"
+    encoder:
+      pattern: "{d(%Y-%m-%d %H:%M:%S)} {l} {t} - {m}{n}"
+
+root:
+  level: debug
+  appenders:
+    - file
+
+loggers:
+  reports::train:
+    level: info
+    appenders:
+      - stdout
+      - file
+    additive: false
+
+  reports::test:
+    level: info
+    appenders:
+      - stdout
+      - file
+    additive: false
+
+  games:
+    level: debug
+    appenders:
+      - file
+    additive: false

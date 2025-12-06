@@ -11,6 +11,17 @@ opt-level = 2
 [profile.dev]
 opt-level = 0
 
+[profile._check]
+inherits = "dev"
+opt-level = 1
+debug = true
+strip = "none"
+debug-assertions = true
+overflow-checks = true
+lto = "off"
+incremental = true
+codegen-units = 1024
+
 [profile.release]
 opt-level = 3
 codegen-units = 1

@@ -52,19 +52,6 @@ pub const STATE_INPUT_TENSOR_DIM: usize = {
     1
 };
 
-pub const POLICY_OUTPUT_TENSOR_DIM: usize = {
-    // Batch
-    1 +
-    // Move
-    1
-};
-
-pub const POLICY_TARGET_TENSOR_DIM: usize = {
-    POLICY_OUTPUT_TENSOR_DIM -
-    // Just use the index, no need to bring all the zeros.
-    1
-};
-
 pub const VALUE_OUTPUT_TENSOR_DIM: usize = {
     // Batch
     1 +
@@ -112,25 +99,17 @@ pub fn state_input(pos: &Position) -> StateInputFloats {
 }
 
 impl<B: Backend> mcts::Evaluator for Model<B> {
-    fn evaluate(&self, pos: &Position) -> (f32, [f32; POLICY_OUTPUTS]) {
+    fn evaluate(&self, pos: &Position) -> (f32, [f32; super::model::POLICY_OUTPUTS]) {
         let b_in = [board_input(pos)].into();
         let s_in = [state_input(pos)].into();
-        let (quality, policy) = self.forward(b_in, s_in);
+        let quality = self.forward(b_in, s_in);
 
         let quality = quality
             .to_data()
             .to_vec::<f32>()
             .expect("Quality could not be converted to vec.");
 
-        let policy = TryInto::<Box<[f32; POLICY_OUTPUTS]>>::try_into(
-            policy
-                .to_data()
-                .to_vec::<f32>()
-                .expect("Policy could not be converted to vec.")
-                .into_boxed_slice(),
-        );
-
-        (quality[0], *policy.unwrap())
+        (quality[0], [0.01; super::model::POLICY_OUTPUTS])
     }
 }
 
@@ -147,13 +126,6 @@ const VALUE_OUTPUTS: usize = 1;
 pub const VALUE_WIN: f32 = 1.0;
 pub const VALUE_DRAW: f32 = 0.0;
 pub const VALUE_LOSE: f32 = -1.0;
-
-pub const POLICY_OUTPUTS: usize = {
-    // from * to
-    squares::N_VARIANTS * squares::N_VARIANTS +
-    // Possible promotions
-    promo_piece_type::N_VARIANTS * files::N_VARIANTS
-};
 
 #[derive(Module, Debug)]
 pub struct ConvBlock<B: Backend> {
@@ -298,10 +270,6 @@ pub struct Model<B: Backend> {
     value_dense: Linear<B>,
     value_out: Linear<B>,
     value_activ: Tanh,
-
-    policy_dense: Linear<B>,
-    policy_out: Linear<B>,
-    // (softmax)
 }
 
 impl<B: Backend> Model<B> {
@@ -309,16 +277,13 @@ impl<B: Backend> Model<B> {
     /// - `board_input`: (batch_size, see: `BOARD_INPUT_LEN`, ranks, files)
     /// - `state_input`: (batch_size, see: `STATE_INPUT_LEN`)
     /// - `value_out`: (batch_size, 1)
-    /// - `policy_out`: (batch_size, num_moves)
     pub fn forward(
         &self,
         // getting some kind of recursive evaluation error here, so inline the constants （´＿｀）
         board_input: Tensor<B, 4>, // BOARD_INPUT_TENSOR_DIM
         state_input: Tensor<B, 2>, // STATE_INPUT_TENSOR_DIM
-    ) -> (
-        Tensor<B, 2>, // VALUE_OUTPUT_TENSOR_DIM
-        Tensor<B, 2>, // POLICY_OUTPUT_TENSOR_DIM
-    ) {
+    ) -> Tensor<B, 2> // VALUE_OUTPUT_TENSOR_DIM
+    {
         let [bi_batch_size, bil, rs, fs] = board_input.dims();
         assert_eq!(bil, BOARD_INPUT_CHANNELS);
         assert_eq!(rs, ranks::N_VARIANTS);
@@ -363,70 +328,7 @@ impl<B: Backend> Model<B> {
         let value_out = self.value_out.forward(value_out);
         let value_out = self.value_activ.forward(value_out);
 
-        let policy_out = self.policy_dense.forward(x.clone());
-        let policy_out = self.policy_out.forward(policy_out);
-        let policy_out = softmax(policy_out, 1);
-
-        (value_out, policy_out)
-    }
-
-    /// # Shapes
-    /// - `board_input`: (batch_size, see: `BOARD_INPUT_LEN`, ranks, files)
-    /// - `state_input`: (batch_size, see: `STATE_INPUT_LEN`)
-    /// - `value_out`: (batch_size, 1)
-    /// - `policy_out`: (batch_size, num_moves)
-    pub fn forward_only_policy(
-        &self,
-        // getting some kind of recursive evaluation error here, so inline the constants （´＿｀）
-        board_input: Tensor<B, 4>, // BOARD_INPUT_TENSOR_DIM
-        state_input: Tensor<B, 2>, // STATE_INPUT_TENSOR_DIM
-    ) -> Tensor<B, 2> // POLICY_OUTPUT_TENSOR_DIM
-    {
-        let [bi_batch_size, bil, rs, fs] = board_input.dims();
-        assert_eq!(bil, BOARD_INPUT_CHANNELS);
-        assert_eq!(rs, ranks::N_VARIANTS);
-        assert_eq!(fs, files::N_VARIANTS);
-
-        let [si_batch_size, sil] = state_input.dims();
-        assert_eq!(si_batch_size, bi_batch_size);
-        assert_eq!(sil, STATE_INPUT_LEN);
-
-        let x = board_input;
-
-        let x = self.convs1.forward(x);
-
-        let x = self.convs2.forward(x);
-        let x = self.convs3.forward(x);
-        let x = self.convs4.forward(x);
-        let x = self.convs5.forward(x);
-        let x = self.convs6.forward(x);
-        let x = self.pool.forward(x);
-
-        let x = self.convs7.forward(x);
-        let x = self.pool.forward(x);
-
-        let x = self.convs8.forward(x);
-        let x = self.pool.forward(x);
-
-        let x = x.flatten(1, 3);
-
-        // println!("{:?}", x.shape());
-
-        // todo: should we always use a dropout layer?
-        let x = self.dropout.forward(x);
-
-        let x = Tensor::cat(vec![x, state_input], 1);
-
-        let x = self.dense0.forward(x);
-        let x = self.dense1.forward(x);
-        let x = self.dense2.forward(x);
-        let x = self.dense3.forward(x);
-
-        let policy_out = self.policy_dense.forward(x.clone());
-        let policy_out = self.policy_out.forward(policy_out);
-        let policy_out = softmax(policy_out, 1);
-
-        policy_out
+        value_out
     }
 }
 
@@ -482,9 +384,6 @@ impl ModelConfig {
         let value_out = LinearConfig::new(64 << 1, VALUE_OUTPUTS);
         let value_activ = Tanh::new();
 
-        let policy_dense = LinearConfig::new(64 << 2, 64 << 4);
-        let policy_out = LinearConfig::new(64 << 4, POLICY_OUTPUTS);
-
         Model {
             convs1: convs1.clone().init(device),
             convs2: convs2.clone().init(device),
@@ -507,9 +406,6 @@ impl ModelConfig {
             value_dense: value_dense.init(device),
             value_out: value_out.init(device),
             value_activ,
-
-            policy_dense: policy_dense.init(device),
-            policy_out: policy_out.init(device),
         }
     }
 }

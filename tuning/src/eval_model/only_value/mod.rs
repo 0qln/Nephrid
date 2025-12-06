@@ -1,5 +1,3 @@
-#![feature(assert_matches)]
-
 use burn::prelude::Module;
 use burn::record::CompactRecorder;
 use rayon::iter::IntoParallelRefIterator;
@@ -11,12 +9,12 @@ use std::{error::Error, fs, marker::PhantomData};
 use burn::{
     data::dataloader::DataLoaderBuilder,
     module::AutodiffModule,
-    optim::{AdamConfig, Optimizer},
+    optim::{AdamConfig, GradientsParams, Optimizer},
     tensor::backend::AutodiffBackend,
 };
 
 use burn::{
-    backend::Autodiff,
+    backend::{Autodiff, NdArray},
     config::Config,
     data::{
         dataloader::batcher::Batcher,
@@ -27,7 +25,7 @@ use burn::{
     tensor::{Int, Tensor, TensorData},
     train::{
         ClassificationOutput, RegressionOutput, TrainOutput, TrainStep, ValidStep,
-        metric::{Adaptor, LossInput},
+        metric::{Adaptor, ItemLazy, LossInput},
     },
 };
 use burn_cuda::{Cuda, CudaDevice};
@@ -41,11 +39,11 @@ use engine::{
             self, MctsFindBest, MctsStrategy,
             limit::Limit,
             mcts::{
-                self, Evaluation, GameResult, Guess,
-                eval::model::{
+                self, Evaluation, GameResult,
+                eval::model_only_value::{
                     BOARD_INPUT_TENSOR_DIM, BoardInputFloats, Model, ModelConfig,
-                    POLICY_TARGET_TENSOR_DIM, STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW,
-                    VALUE_LOSE, VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
+                    STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW, VALUE_LOSE,
+                    VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
                 },
             },
         },
@@ -59,9 +57,6 @@ use std::path::{Path, PathBuf};
 
 #[cfg(test)]
 pub mod test;
-
-// pub mod only_policy;
-// pub mod only_value;
 
 fn main() {
     magics::init();
@@ -93,7 +88,6 @@ pub struct PlayoutBatch<B: Backend> {
     pub board_inputs: Tensor<B, BOARD_INPUT_TENSOR_DIM>,
     pub state_inputs: Tensor<B, STATE_INPUT_TENSOR_DIM>,
     pub value_targets: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
-    pub policy_targets: Tensor<B, POLICY_TARGET_TENSOR_DIM, Int>,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -118,9 +112,6 @@ pub struct PlayoutItem {
 
     /// Target Value
     pub value_target: f32,
-
-    /// Target Move index
-    pub policy_target: usize,
 }
 
 pub struct FenDataset {
@@ -195,37 +186,31 @@ impl FenDataset {
 }
 
 pub struct LossOutput<B: Backend> {
-    pub loss: Tensor<B, 1>,
     // Value output
-    pub value_loss: Tensor<B, 1>,
-    // Quality Output
-    pub policy_loss: Tensor<B, 1>,
+    pub value_loss: RegressionOutput<B>,
 }
 
 impl<B: Backend> LossOutput<B> {
-    pub fn new(value_output: RegressionOutput<B>, policy_output: ClassificationOutput<B>) -> Self {
-        Self {
-            loss: value_output.loss.clone() + policy_output.loss.clone(),
-            value_loss: value_output.loss,
-            policy_loss: policy_output.loss,
+    pub fn loss(&self) -> Tensor<B, 1> {
+        // todo: weight decay loss
+        let ref value = self.value_loss;
+        value.loss.clone()
+    }
+}
+
+impl<B: Backend> ItemLazy for LossOutput<B> {
+    type ItemSync = LossOutput<NdArray>;
+
+    fn sync(self) -> Self::ItemSync {
+        LossOutput {
+            value_loss: self.value_loss.sync(),
         }
     }
 }
 
-// impl<B: Backend> ItemLazy for LossOutput<B> {
-//     type ItemSync = LossOutput<NdArray>;
-
-//     fn sync(self) -> Self::ItemSync {
-//         LossOutput {
-//             value_loss: self.value_loss.sync(),
-//             policy_loss: self.policy_loss.sync(),
-//         }
-//     }
-// }
-
 impl<B: Backend> Adaptor<LossInput<B>> for LossOutput<B> {
     fn adapt(&self) -> LossInput<B> {
-        LossInput::new(self.loss.clone())
+        LossInput::new(self.loss())
     }
 }
 
@@ -237,21 +222,15 @@ pub fn forward_with_loss<B: Backend>(
     board_input: BoardInputTensor<B>,
     state_input: StateInputTensor<B>,
     target_value: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
-    target_policy: Tensor<B, POLICY_TARGET_TENSOR_DIM, Int>,
 ) -> LossOutput<B> {
-    let (value_output, policy_output) = this.forward(board_input, state_input);
+    let value_output = this.forward(board_input, state_input);
 
     let value_loss =
         MseLoss::new().forward(value_output.clone(), target_value.clone(), Reduction::Auto);
 
-    let policy_loss = CrossEntropyLossConfig::new()
-        .init(&policy_output.device())
-        .forward(policy_output.clone(), target_policy.clone());
-
-    LossOutput::new(
-        RegressionOutput::new(value_loss, value_output, target_value),
-        ClassificationOutput::new(policy_loss, policy_output, target_policy),
-    )
+    LossOutput {
+        value_loss: RegressionOutput::new(value_loss, value_output, target_value),
+    }
 }
 
 impl<B: AutodiffBackend> TrainStep<PlayoutBatch<B>, LossOutput<B>> for Model<B> {
@@ -261,10 +240,9 @@ impl<B: AutodiffBackend> TrainStep<PlayoutBatch<B>, LossOutput<B>> for Model<B> 
             batch.board_inputs,
             batch.state_inputs,
             batch.value_targets,
-            batch.policy_targets,
         );
 
-        TrainOutput::new(self, item.loss.backward(), item)
+        TrainOutput::new(self, item.loss().backward(), item)
     }
 }
 
@@ -275,7 +253,6 @@ impl<B: Backend> ValidStep<PlayoutBatch<B>, LossOutput<B>> for Model<B> {
             batch.board_inputs,
             batch.state_inputs,
             batch.value_targets,
-            batch.policy_targets,
         )
     }
 }
@@ -361,22 +338,33 @@ pub fn train<B: AutodiffBackend>(
                 let playouts_batch =
                     generate_batch(&model, &device, &fens_batch).expect("Failed to generate batch");
 
-                let result: _ = TrainStep::step(&model, playouts_batch.clone());
+                for _ in 0..20 {
+                    // let result = TrainStep::step(&model, playouts_batch.clone());
+                    // let loss = result.item.loss();
+                    let batch = playouts_batch.clone();
+                    let output = model.forward(batch.board_inputs, batch.state_inputs);
 
-                let msg = format!(
-                    "[Train - Epoch {} - Iteration {}] Loss {:.5} (Value: {:.5}, Policy: {:.5})",
-                    epoch,
-                    iteration,
-                    result.item.loss.clone().into_scalar(),
-                    result.item.value_loss.clone().into_scalar(),
-                    result.item.policy_loss.clone().into_scalar(),
-                );
-                log::info!(target: "reports::train", "{msg}");
+                    let loss = MseLoss::new().forward(
+                        output.clone(),
+                        playouts_batch.value_targets.clone(),
+                        Reduction::Auto,
+                    );
 
-                // Gradients for the current backward pass
-                let grads = result.grads;
-                // Update the model using the optimizer.
-                model = optim.step(config.learning_rate, model, grads);
+                    let msg = format!(
+                        "[Train - Epoch {} - Iteration {}] Loss {:.5}",
+                        epoch,
+                        iteration,
+                        loss.clone().into_scalar(),
+                    );
+                    log::info!(target: "reports::train", "{msg}");
+
+                    // Gradients for the current backward pass
+                    let grads = loss.backward();
+                    // Gradients linked to each parameter of the model.
+                    let grads = GradientsParams::from_grads(grads, &model);
+                    // Update the model using the optimizer.
+                    model = optim.step(config.learning_rate, model, grads);
+                }
             }
         }
 
@@ -431,17 +419,10 @@ impl<B: Backend> Batcher<B, PlayoutItem, PlayoutBatch<B>> for PlayoutBatcher {
             .map(|x| Tensor::from_data(x, device))
             .collect();
 
-        let policies = items
-            .iter()
-            .map(|x| TensorData::from([x.policy_target]))
-            .map(|x| Tensor::from_data(x, device))
-            .collect();
-
         PlayoutBatch {
             board_inputs: Tensor::cat(boards, 0),
             state_inputs: Tensor::cat(states, 0),
             value_targets: Tensor::cat(values, 0),
-            policy_targets: Tensor::cat(policies, 0),
         }
     }
 }
@@ -464,18 +445,12 @@ fn generate_batch<B: AutodiffBackend>(
 
             match self_play(&fen, &model) {
                 Ok(result) => {
-                    // todo: replace this with printing the game in PGN format
-                    // log::debug!(target: "games", "[Fen {fen}] {moves}");
-
-                    // log misc information
                     let moves = result
                         .iter()
-                        .map(|x| format!("({}, {:?})", x.decision.state.mov, x.decision.stats))
+                        .map(|x| format!("{}", x.1.state.mov))
                         .join(" ");
                     log::debug!(target: "games", "[Fen {fen}] {moves}");
-
-                    // map each playout_item to a training target.
-                    result.iter().map(|x| x.playout_item.clone()).collect_vec()
+                    result.iter().map(|x| x.0.clone()).collect_vec()
                 }
                 Err(err) => {
                     log::error!(target: "games", "[Fen {fen}] Error: {err}");
@@ -532,63 +507,21 @@ struct State {
     moving_color: Color,
 }
 
-// Some interesting stats about the decision.
-#[derive(Debug)]
-struct Stats {
-    pub policy_avg: f32,
-    pub policy_variance: f32,
-    pub policy_entropy: f32,
-}
-
-impl Stats {
-    pub fn new(guess: Guess) -> Self {
-        let policy_values = guess.policies();
-
-        let policy_avg = policy_values.iter().sum::<f32>() / policy_values.len() as f32;
-
-        let variance = policy_values
-            .iter()
-            .map(|&p| (p - policy_avg).powi(2))
-            .sum::<f32>()
-            / policy_values.len() as f32;
-        let policy_variance = variance.sqrt();
-
-        let policy_entropy = -policy_values
-            .iter()
-            .filter(|&&p| p > 0.0)
-            .map(|&p| p * p.log2())
-            .sum::<f32>();
-
-        Self {
-            policy_avg,
-            policy_variance,
-            policy_entropy,
-        }
-    }
-}
-
 #[derive(Debug)]
 struct Decision {
     input: Input,
     target: Target,
     state: State,
-    stats: Stats,
-}
-
-#[derive(Debug)]
-struct SelfPlayResult {
-    playout_item: PlayoutItem,
-    decision: Decision,
 }
 
 fn self_play<B: Backend>(
     pos: &str,
     model: &Model<B>,
-) -> Result<Vec<SelfPlayResult>, Box<dyn Error>> {
+) -> Result<Vec<(PlayoutItem, Decision)>, Box<dyn Error>> {
     let limit = Limit {
         is_active: true,
-        winc: 10000,
-        binc: 10000,
+        winc: 1000,
+        binc: 1000,
         wtime: 0,
         btime: 0,
         ..Default::default()
@@ -615,8 +548,8 @@ fn self_play<B: Backend>(
             let mov = result.0;
             let tree = result.1;
 
-            let guess = match tree.get_root().eval(&pos, model) {
-                Evaluation::Guess(guess) => guess,
+            match tree.get_root().eval(&pos, model) {
+                Evaluation::Guess { .. } => { /* continue with game */ }
                 Evaluation::Terminal(result) => {
                     game_result = result;
                     break;
@@ -632,13 +565,12 @@ fn self_play<B: Backend>(
             let state = State { mov, moving_color: turn };
             let input = Input { board_in: b_in, state_in: s_in };
             let target = Target { mov };
-            let stats = Stats::new(guess);
-            decisions.push(Decision { input, target, state, stats });
+            decisions.push(Decision { input, target, state });
         }
         game_result
     };
 
-    let mut result = Vec::<SelfPlayResult>::new();
+    let mut result = Vec::<(PlayoutItem, Decision)>::new();
 
     for decision in decisions {
         let value_target = match eval {
@@ -658,10 +590,9 @@ fn self_play<B: Backend>(
             board_input: decision.input.board_in,
             state_input: decision.input.state_in,
             value_target,
-            policy_target: usize::from(decision.target.mov),
         };
 
-        result.push(SelfPlayResult { playout_item, decision });
+        result.push((playout_item, decision));
     }
 
     Ok(result)

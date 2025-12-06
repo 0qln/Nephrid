@@ -160,19 +160,19 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
     }
 }
 
-pub fn mcts<S: MctsStrategy + Default, B: Backend>(
+pub fn mcts<S: MctsStrategy + Default, E: mcts::Evaluator>(
     pos: Position,
-    model: &Model<B>,
+    model: &E,
     limit: Limit,
     debug: DebugMode,
     ct: CancellationToken,
 ) -> S::Result {
-    mcts_inner::<S, B>(pos, &model, limit, debug, ct, S::default())
+    mcts_inner::<S, E>(pos, &model, limit, debug, ct, S::default())
 }
 
-fn mcts_inner<S: MctsStrategy, B: Backend>(
+fn mcts_inner<S: MctsStrategy, E: mcts::Evaluator>(
     mut pos: Position,
-    model: &Model<B>,
+    model: &E,
     limit: Limit,
     _debug: DebugMode,
     ct: CancellationToken,

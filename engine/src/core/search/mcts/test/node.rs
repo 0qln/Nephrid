@@ -46,6 +46,6 @@ fn test_terminal_expansion() {
     assert_eq!(node.state, NodeState::Terminal);
     assert!(node.branches.is_empty());
 
-    let branch = node.select_mut();
+    let branch = node.select_puct_mut();
     assert!(branch.is_none());
 }
