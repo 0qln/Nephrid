@@ -3,6 +3,7 @@
 use burn::prelude::Module;
 use burn::record::CompactRecorder;
 use engine::core::depth::Depth;
+use engine::core::search::mcts::eval::model::EvalModel;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use std::env::var;
@@ -460,7 +461,7 @@ fn generate_batch<B: AutodiffBackend>(
                 model_lock.valid()
             };
 
-            match self_play(&fen, &model) {
+            match self_play(&fen, model, device) {
                 Ok(result) => {
                     // todo: replace this with printing the game in PGN format
                     // log::debug!(target: "games", "[Fen {fen}] {moves}");
@@ -581,7 +582,8 @@ struct SelfPlayResult {
 
 fn self_play<B: Backend>(
     pos: &str,
-    model: &Model<B>,
+    model: Model<B>,
+    device: &B::Device,
 ) -> Result<Vec<SelfPlayResult>, Box<dyn Error>> {
     let limit = Limit {
         is_active: true,
@@ -599,6 +601,7 @@ fn self_play<B: Backend>(
     let mut pos: Position = tok.try_into()?;
 
     let mut decisions = Vec::<Decision>::new();
+    let mut eval_model = EvalModel::new(model, device);
 
     let eval: GameResult = {
         let game_result;
@@ -607,7 +610,7 @@ fn self_play<B: Backend>(
             let turn = pos.get_turn();
             let result = search::mcts::<MctsTrain, _>(
                 pos.clone(),
-                model,
+                &mut eval_model,
                 limit.clone(),
                 debug.clone(),
                 ct.clone(),
@@ -615,7 +618,10 @@ fn self_play<B: Backend>(
             let mov = result.0;
             let tree = result.1;
 
-            let guess = match tree.get_root().eval(&pos, model, &limiter, Depth::MIN) {
+            let guess = match tree
+                .get_root()
+                .eval(&pos, &mut eval_model, &limiter, Depth::MIN)
+            {
                 Evaluation::Guess(guess) => guess,
                 Evaluation::Nope => unreachable!("We entered a limiter that will not stop."),
                 Evaluation::Terminal(result) => {

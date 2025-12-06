@@ -169,17 +169,17 @@ impl mcts::Limiter for MctsLimiter {
 
 pub fn mcts<S: MctsStrategy + Default, E: mcts::Evaluator>(
     pos: Position,
-    model: &E,
+    model: &mut E,
     limit: Limit,
     debug: DebugMode,
     ct: CancellationToken,
 ) -> S::Result {
-    mcts_inner::<S, E>(pos, &model, limit, debug, ct, S::default())
+    mcts_inner::<S, E>(pos, model, limit, debug, ct, S::default())
 }
 
 fn mcts_inner<S: MctsStrategy, E: mcts::Evaluator>(
     mut pos: Position,
-    model: &E,
+    model: &mut E,
     limit: Limit,
     _debug: DebugMode,
     ct: CancellationToken,

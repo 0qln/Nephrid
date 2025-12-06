@@ -9,7 +9,10 @@ use crate::{
         depth::Depth,
         r#move::Move,
         position::Position,
-        search::{MctsUci, mcts::eval::model::ModelConfig},
+        search::{
+            MctsUci,
+            mcts::eval::model::{EvalModel, ModelConfig},
+        },
     },
     misc::trim_newline,
 };
@@ -132,9 +135,10 @@ pub fn execute_uci(
                         type Backend = Cuda<f32>;
                         let device = CudaDevice::default();
                         let model = ModelConfig::new().init::<Backend>(&device);
+                        let mut model = EvalModel::new(model, &device);
 
                         let result =
-                            search::mcts::<MctsUci, _>(position, &model, limit, debug, token)
+                            search::mcts::<MctsUci, _>(position, &mut model, limit, debug, token)
                                 .expect("search did not complete");
 
                         sync::out(&format!("bestmove {result}"));

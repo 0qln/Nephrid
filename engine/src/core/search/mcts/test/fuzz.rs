@@ -14,11 +14,12 @@ pub fn brrr() -> Result<(), Box<dyn Error>> {
     let mut fen = Tokenizer::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     let mut pos = Position::try_from(&mut fen).unwrap();
 
-    let eval = DummyEvaluator::default();
-    let mut tree = Tree::new(&pos, &eval);
+    let mut eval = DummyEvaluator::default();
+    let limiter = NoopLimiter::default();
+    let mut tree = Tree::new(&pos, &mut eval, &limiter);
 
     for _ in 0..1_000_000 {
-        tree.grow(&mut pos, &eval);
+        tree.grow(&mut pos, &mut eval, &limiter);
     }
 
     Ok(())

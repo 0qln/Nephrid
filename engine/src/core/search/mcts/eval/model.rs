@@ -1,3 +1,4 @@
+use crate::core::zobrist;
 use burn::{
     config::Config,
     module::Module,
@@ -22,10 +23,10 @@ use crate::core::{
     search::mcts,
 };
 
-// +1 for the possible ep capture square.
-pub const BOARD_INPUT_CHANNELS: usize = colors::N_VARIANTS * (piece_type::N_VARIANTS);
+pub const BOARD_INPUT_HISTORY: usize = 8;
 
-pub const BOARD_INPUT_LEN: usize = BOARD_INPUT_CHANNELS * ranks::N_VARIANTS * files::N_VARIANTS;
+// +1 for the possible ep capture square.
+pub const BOARD_INPUT_CHANNELS: usize = colors::N_VARIANTS * piece_type::N_VARIANTS;
 
 pub const BOARD_INPUT_TENSOR_DIM: usize = {
     // Batch
@@ -72,6 +73,8 @@ pub const VALUE_OUTPUT_TENSOR_DIM: usize = {
     1
 };
 
+pub type BoardInputTensor<B: Backend> = Tensor<B, 4>;
+
 pub type BoardInputFloats = [bitboard::Floats; BOARD_INPUT_CHANNELS];
 
 pub fn board_input(pos: &Position) -> BoardInputFloats {
@@ -96,6 +99,8 @@ pub fn board_input(pos: &Position) -> BoardInputFloats {
     ]
 }
 
+pub type StateInputTensor<B: Backend> = Tensor<B, 2>;
+
 pub type StateInputFloats = [f32; STATE_INPUT_LEN];
 
 pub fn state_input(pos: &Position) -> StateInputFloats {
@@ -107,15 +112,78 @@ pub fn state_input(pos: &Position) -> StateInputFloats {
         castling.get_float(castling_sides::QUEEN_SIDE, us),
         castling.get_float(castling_sides::KING_SIDE, them),
         castling.get_float(castling_sides::QUEEN_SIDE, them),
+        // todo: figure out what the right scale is. maybe make it dependent on the max depth at
+        // which the limiter stops the mcts search?
         pos.plys_50().v as f32 / 50.0,
     ]
 }
 
-impl<B: Backend> mcts::Evaluator for Model<B> {
-    fn evaluate(&self, pos: &Position) -> (f32, [f32; POLICY_OUTPUTS]) {
-        let b_in = [board_input(pos)].into();
-        let s_in = [state_input(pos)].into();
-        let (quality, policy) = self.forward(b_in, s_in);
+pub struct EvalModel<B: Backend> {
+    board_history: Vec<(zobrist::Hash, BoardInputTensor<B>)>,
+    state: StateInputTensor<B>,
+    model: Model<B>,
+}
+
+impl<B: Backend> EvalModel<B> {
+    pub fn new(model: Model<B>, device: &B::Device) -> Self {
+        Self {
+            board_history: vec![
+                (
+                    zobrist::Hash::default(),
+                    BoardInputTensor::<B>::zeros(
+                        [
+                            // todo: if you later youse batching during the mcts search you
+                            // should see that you take this as a parameter.
+                            1,
+                            BOARD_INPUT_CHANNELS,
+                            ranks::N_VARIANTS,
+                            files::N_VARIANTS
+                        ],
+                        device
+                    )
+                );
+                BOARD_INPUT_HISTORY
+            ],
+            state: StateInputTensor::<B>::zeros([1, STATE_INPUT_LEN], device),
+            model,
+        }
+    }
+}
+
+impl<B: Backend> mcts::Evaluator for EvalModel<B> {
+    fn push(&mut self, pos: &Position) {
+        let hash = pos.get_key();
+        let board_input = [board_input(pos)].into();
+        let state_input = [state_input(pos)].into();
+        self.board_history.push((hash, board_input));
+        self.state = state_input;
+    }
+
+    fn pop(&mut self) {
+        assert!(
+            self.board_history.len() > BOARD_INPUT_HISTORY,
+            "Cannot pop the padding."
+        );
+        self.board_history.pop();
+    }
+
+    fn clear(&mut self) {
+        while self.board_history.len() > BOARD_INPUT_HISTORY {
+            self.pop();
+        }
+    }
+
+    fn evaluate(&self) -> (f32, [f32; POLICY_OUTPUTS]) {
+        let b_in_idx = self.board_history.len() - BOARD_INPUT_HISTORY;
+        let b_in = Tensor::cat(
+            self.board_history[b_in_idx..]
+                .iter()
+                .map(|x| x.1.clone())
+                .collect_vec(),
+            1,
+        );
+        let s_in = self.state.clone();
+        let (quality, policy) = self.model.forward(b_in, s_in);
 
         let quality = quality
             .to_data()
@@ -306,8 +374,6 @@ pub struct Model<B: Backend> {
 
 impl<B: Backend> Model<B> {
     /// # Shapes
-    /// - `board_input`: (batch_size, see: `BOARD_INPUT_LEN`, ranks, files)
-    /// - `state_input`: (batch_size, see: `STATE_INPUT_LEN`)
     /// - `value_out`: (batch_size, 1)
     /// - `policy_out`: (batch_size, num_moves)
     pub fn forward(
@@ -320,7 +386,7 @@ impl<B: Backend> Model<B> {
         Tensor<B, 2>, // POLICY_OUTPUT_TENSOR_DIM
     ) {
         let [bi_batch_size, bil, rs, fs] = board_input.dims();
-        assert_eq!(bil, BOARD_INPUT_CHANNELS);
+        assert_eq!(bil, BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY);
         assert_eq!(rs, ranks::N_VARIANTS);
         assert_eq!(fs, files::N_VARIANTS);
 
@@ -394,7 +460,7 @@ impl ModelConfig {
         const B8_CHANNELS: usize = 1024;
         const B8_HEADS: [[usize; 2]; 2] = [[1, 1], [3, 3]];
 
-        let convs1_in = BOARD_INPUT_CHANNELS;
+        let convs1_in = BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY;
         let convs1 = MultiConvBlockConfig::new(B1_HEADS.to_vec(), convs1_in, B1_CHANNELS);
 
         let convs2_in = B1_CHANNELS * B1_HEADS.len();

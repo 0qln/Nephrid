@@ -13,7 +13,7 @@ pub mod node;
 
 pub struct DummyEvaluator(RefCell<SmallRng>);
 impl Evaluator for DummyEvaluator {
-    fn evaluate(&self, _pos: &Position) -> (f32, [f32; POLICY_OUTPUTS]) {
+    fn evaluate(&self) -> (f32, [f32; POLICY_OUTPUTS]) {
         let mut rng = self.0.borrow_mut();
 
         let quality = rng.random_range(-1.0..=1.0);
@@ -26,6 +26,18 @@ impl Evaluator for DummyEvaluator {
         };
 
         (quality, policies)
+    }
+
+    fn push(&mut self, _pos: &Position) -> () {
+        ()
+    }
+
+    fn pop(&mut self) -> () {
+        ()
+    }
+
+    fn clear(&mut self) -> () {
+        ()
     }
 }
 

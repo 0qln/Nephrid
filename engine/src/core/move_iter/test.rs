@@ -3,7 +3,7 @@ use crate::{
         depth::Depth,
         move_iter::sliding_piece::magics,
         position::Position,
-        search::{self, target::Target},
+        search::{self, limit::Limit},
         zobrist,
     },
     misc::DebugMode,
@@ -15,10 +15,10 @@ fn test_pos(mut fen: Tokenizer, depth: Depth, expected: u64) {
     zobrist::init();
 
     let pos = Position::try_from(&mut fen).unwrap();
-    let target = Target { depth, ..Default::default() };
+    let limit = Limit { depth, ..Default::default() };
     let debug = DebugMode::default();
     let ct = CancellationToken::new();
-    let result = search::perft(pos, target, ct, debug);
+    let result = search::perft(pos, limit, ct, debug);
     assert_eq!(expected, result);
 }
 

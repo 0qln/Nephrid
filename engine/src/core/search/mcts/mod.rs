@@ -77,6 +77,18 @@ impl Evaluation {
     }
 }
 
+/// Multi pv.
+/// Use multi pv lines with batched evaluation if we have access to GPU and can parallelize. If we
+/// don't have access to hardware, resort to using a backend like WebGPU, or NArray, and just do
+/// TreeSearcher<MPV=1>.
+/// The pv lines are the top few lines sorted by puct. (e.g.:
+/// ```rust
+/// self.multi_select(|b| b.puct(self))
+/// ```
+/// )
+/// Idea: Maybe we can have lines that are a lot more explorative next to the main puct line?
+pub struct TreeSearcher<const MPV: usize> {}
+
 #[derive(Default, Debug, Clone)]
 pub struct Tree {
     /// Root of the tree.
@@ -125,8 +137,9 @@ impl Tree {
         buf
     }
 
-    pub fn grow<E: Evaluator, L: Limiter>(&mut self, pos: &mut Position, eval: &E, l: &L) {
+    pub fn grow<E: Evaluator, L: Limiter>(&mut self, pos: &mut Position, eval: &mut E, l: &L) {
         let evaluation = self.select_leaf_mut(pos, eval, l);
+        eval.clear();
         self.backpropagate(pos, &evaluation);
     }
 
@@ -147,10 +160,11 @@ impl Tree {
     pub fn select_leaf_mut<E: Evaluator, L: Limiter>(
         &mut self,
         pos: &mut Position,
-        model: &E,
+        model: &mut E,
         l: &L,
     ) -> Evaluation {
         self.selection_buffer.clear();
+        model.push(pos);
         let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
         let mut depth = Depth::MIN;
         loop {
@@ -164,6 +178,7 @@ impl Tree {
                     // SAFETY: This branch is only reached when NodeState == Expanded
                     let branch = unsafe { current.select_puct_mut().unwrap_unchecked() };
                     pos.make_move(branch.mov());
+                    model.push(pos);
                     self.selection_buffer.push(NonNull::from_ref(branch));
                     current = branch.traverse_mut();
                 }
@@ -304,8 +319,17 @@ impl fmt::Debug for Node {
 }
 
 pub trait Evaluator {
+    /// prepare the newest position that needs to be evaluated.
+    fn push(&mut self, pos: &Position) -> ();
+
+    /// pop the latest position that was prepared.
+    fn pop(&mut self) -> ();
+
+    /// clear all prepaered
+    fn clear(&mut self) -> ();
+
     /// Returns: (quality [-1;1], policy [over ALL moves])
-    fn evaluate(&self, pos: &Position) -> (f32, [f32; POLICY_OUTPUTS]);
+    fn evaluate(&self) -> (f32, [f32; POLICY_OUTPUTS]);
 }
 
 pub trait Limiter {
@@ -429,7 +453,7 @@ impl Node {
 
         // Otherwise guess a score.
         {
-            let (quality, raw_policy) = evaluator.evaluate(pos);
+            let (quality, raw_policy) = evaluator.evaluate();
 
             let mut policies = Vec::<f32>::new();
             for branch in &self.branches {

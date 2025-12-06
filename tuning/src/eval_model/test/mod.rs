@@ -1,3 +1,4 @@
+use engine::core::search::mcts::eval::model::EvalModel;
 use std::assert_matches::assert_matches;
 use std::env::var;
 use std::path::PathBuf;
@@ -91,6 +92,8 @@ pub fn learn_mate_in_1() {
             .init::<Backend>(&device)
             .load_record(record);
 
+        let mut model = EvalModel::new(model, &device);
+
         let limit = Limit {
             is_active: true,
             winc: 100,
@@ -104,7 +107,7 @@ pub fn learn_mate_in_1() {
 
         search::mcts::<MctsTrain, _>(
             pos.clone(),
-            &model,
+            &mut model,
             limit.clone(),
             debug.clone(),
             ct.clone(),
@@ -174,6 +177,8 @@ pub fn learn_mate_in_2() {
             .init::<Backend>(&device)
             .load_record(record);
 
+        let mut model = EvalModel::new(model, &device);
+
         let limit = Limit {
             is_active: true,
             winc: 100,
@@ -189,7 +194,7 @@ pub fn learn_mate_in_2() {
         // us/mov-1
         let result = search::mcts::<MctsTrain, _>(
             pos.clone(),
-            &model,
+            &mut model,
             limit.clone(),
             debug.clone(),
             ct.clone(),
@@ -199,7 +204,7 @@ pub fn learn_mate_in_2() {
         // them/mov-1
         let result = search::mcts::<MctsTrain, _>(
             pos.clone(),
-            &model,
+            &mut model,
             limit.clone(),
             debug.clone(),
             ct.clone(),
@@ -209,7 +214,7 @@ pub fn learn_mate_in_2() {
         // us/mov-2
         let result = search::mcts::<MctsTrain, _>(
             pos.clone(),
-            &model,
+            &mut model,
             limit.clone(),
             debug.clone(),
             ct.clone(),
