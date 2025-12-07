@@ -118,13 +118,14 @@ pub fn state_input(pos: &Position) -> StateInputFloats {
     ]
 }
 
-pub struct EvalModel<B: Backend> {
-    board_history: Vec<(zobrist::Hash, BoardInputTensor<B>)>,
+/// x: batch size
+pub struct EvalModel<B: Backend, const X: usize> {
+    board_history: Vec<(zobrist::Hash, )>,
     state: StateInputTensor<B>,
     model: Model<B>,
 }
 
-impl<B: Backend> EvalModel<B> {
+impl<B: Backend, const X: usize> EvalModel<B, X> {
     pub fn new(model: Model<B>, device: &B::Device) -> Self {
         Self {
             board_history: vec![
@@ -132,9 +133,7 @@ impl<B: Backend> EvalModel<B> {
                     zobrist::Hash::default(),
                     BoardInputTensor::<B>::zeros(
                         [
-                            // todo: if you later youse batching during the mcts search you
-                            // should see that you take this as a parameter.
-                            1,
+                            X,
                             BOARD_INPUT_CHANNELS,
                             ranks::N_VARIANTS,
                             files::N_VARIANTS
@@ -144,13 +143,13 @@ impl<B: Backend> EvalModel<B> {
                 );
                 BOARD_INPUT_HISTORY
             ],
-            state: StateInputTensor::<B>::zeros([1, STATE_INPUT_LEN], device),
+            state: StateInputTensor::<B>::zeros([X, STATE_INPUT_LEN], device),
             model,
         }
     }
 }
 
-impl<B: Backend> mcts::Evaluator for EvalModel<B> {
+impl<B: Backend, const X: usize> mcts::Evaluator<X> for EvalModel<B, X> {
     fn push(&mut self, pos: &Position) {
         let hash = pos.get_key();
         let board_input = [board_input(pos)].into();

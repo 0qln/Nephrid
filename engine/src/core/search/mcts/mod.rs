@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use ringbuf::{StaticRb, traits::*};
 use std::assert_matches::assert_matches;
 use std::fmt;
 use std::ops::ControlFlow;
@@ -77,25 +78,91 @@ impl Evaluation {
     }
 }
 
-/// Multi pv.
-/// Use multi pv lines with batched evaluation if we have access to GPU and can parallelize. If we
-/// don't have access to hardware, resort to using a backend like WebGPU, or NArray, and just do
+pub trait Searcher {}
+
+/// # ja;lsdkjfh
+///
+/// This statemachine should hold all the info that is required to search.
+///
+/// This is the implementation for the nn-backed eval model searcher. (e.g. lc0, a0)
+///
+/// ## Multi pv.
+///
+/// Use multi pv lines with batched evaluation, if we have access to GPU and can parallelize. If we
+/// don't have access to hardware accell, resort to using a backend like WebGPU, or NdArray, and just do
 /// TreeSearcher<MPV=1>.
+///
 /// The pv lines are the top few lines sorted by puct. (e.g.:
 /// ```rust
 /// self.multi_select(|b| b.puct(self))
 /// ```
 /// )
+///
 /// Idea: Maybe we can have lines that are a lot more explorative next to the main puct line?
-pub struct TreeSearcher<const MPV: usize> {}
+pub struct TreeSearcher<'a, B: Backend, E: Evaluator, L: Limiter, const MPV: usize> {
+    /// Stack of nodes that were selected during the selection phase, for each principal line.
+    selection_buffer: [Vec<NonNull<Branch>>; MPV],
+
+    /// History info that the eval model can use.
+    history_info: [StaticRb<BoardInputTensor<B>, BOARD_INPUT_HISTORY>; MPV],
+
+    /// The position that will be edited during the selection and backpropagatation.
+    pos: Position,
+
+    /// Evaluator to evaluate non-terminating nodes.
+    evaluater: E,
+
+    /// Limiter to dicide whether to keep searching non-terminating nodes.
+    limiter: L,
+
+    /// The tree to be searched.
+    tree: &'a mut Tree,
+}
+
+impl<const MPV: usize> TreeSearcher<MPV> {
+    pub fn grow<E: Evaluator, L: Limiter>(&mut self) {
+        let evaluation = self.select_leaf_mut(pos, eval, &mut line_history, l);
+        self.backpropagate(pos, &evaluation);
+    }
+
+    /// Walk down the tree and select the branches with the highest score, until we find a leaf
+    /// node. sono-ato, expand the leaf and return the evaluation of that leaf.
+    fn select_leafs_mut<E: Evaluator, L: Limiter>(&mut self) -> [(Evaluation); MPV] {
+        self.selection_buffer.clear();
+
+        let mut current = unsafe { NonNull::from_ref(&self.tree.root()).as_mut() };
+        let mut depth = Depth::MIN;
+        loop {
+            match current.state() {
+                NodeState::Expanded => {
+                    debug_assert!(
+                        !current.branches.is_empty(),
+                        "Contradiction: NodeState == Expanded, but there are no branches."
+                    );
+
+                    // SAFETY: This branch is only reached when NodeState == Expanded
+                    let branch = unsafe { current.select_puct_mut().unwrap_unchecked() };
+                    pos.make_move(branch.mov());
+                    model.push(pos);
+                    self.selection_buffer.push(NonNull::from_ref(branch));
+                    current = branch.traverse_mut();
+                }
+                NodeState::Leaf => {
+                    return current.expand_and_eval(pos, model, l, depth);
+                }
+                NodeState::Terminal => {
+                    return current.eval(pos, model, l, depth);
+                }
+            }
+            depth += 1;
+        }
+    }
+}
 
 #[derive(Default, Debug, Clone)]
 pub struct Tree {
     /// Root of the tree.
     root: Node,
-
-    /// Stack of nodes that were selected during the selection phase.
-    selection_buffer: Vec<NonNull<Branch>>,
 }
 
 impl Tree {
@@ -104,6 +171,11 @@ impl Tree {
             root: Node::root(pos, eval, l),
             ..Default::default()
         }
+    }
+
+    pub fn advance_best(self) -> Option<Tree> {
+        let best = self.root.take_best()?;
+        Some(Tree { root: best.node.node })
     }
 
     /// Returns None if there are no moves.
@@ -318,7 +390,7 @@ impl fmt::Debug for Node {
     }
 }
 
-pub trait Evaluator {
+pub trait Evaluator<const X: usize> {
     /// prepare the newest position that needs to be evaluated.
     fn push(&mut self, pos: &Position) -> ();
 
@@ -329,7 +401,7 @@ pub trait Evaluator {
     fn clear(&mut self) -> ();
 
     /// Returns: (quality [-1;1], policy [over ALL moves])
-    fn evaluate(&self) -> (f32, [f32; POLICY_OUTPUTS]);
+    fn evaluate(&self) -> [(f32, [f32; POLICY_OUTPUTS]); X];
 }
 
 pub trait Limiter {
@@ -393,6 +465,10 @@ impl Node {
         self.select(|b| b.visits())
     }
 
+    pub fn take_best(self) -> Option<Branch> {
+        self.take(|b| b.visits())
+    }
+
     /// Returns None if there are no branches.
     pub fn select<F, T>(&self, transform: F) -> Option<&Branch>
     where
@@ -413,6 +489,19 @@ impl Node {
         T: PartialOrd,
     {
         self.branches.iter_mut().max_by(|a, b| {
+            let a = transform(a);
+            let b = transform(b);
+            a.partial_cmp(&b).expect("Node comparison failed!")
+        })
+    }
+
+    /// Returns None if there are no branches.
+    pub fn take<F, T>(self, transform: F) -> Option<Branch>
+    where
+        F: Fn(Branch) -> T,
+        T: PartialOrd,
+    {
+        self.branches.into_iter().max_by(|a, b| {
             let a = transform(a);
             let b = transform(b);
             a.partial_cmp(&b).expect("Node comparison failed!")

@@ -44,23 +44,40 @@ pub mod search;
 pub mod turn;
 pub mod zobrist;
 
+/// Stores relevant information of the chess engine.
 #[derive(Default)]
 pub struct Engine {
+    /// Current engine configuration.
     config: Configuration,
+
+    /// # The search state.
+    ///
+    /// Either we have ownership of a search-tree, or we have the join handle of the thread that
+    /// will give us back the ownership of the search-tree.
+    ///
+    /// (An option because maybe we just started something else like perft or some sht)
+    search_state: Option<Either<mcts::Tree, JoinHandle<mcts::Tree>>>,
+
+    /// Whether the engine runs in debug mode.
     debug: DebugMode,
+
+    /// The currently set position of the engine. Changing this during a search should not
+    /// immediatly affect the search tree.
     position: Position,
-    pos_src: String,
+
+    /// Cached position source string to improve position decoding speed.
+    _pos_src: String,
 }
 
 pub fn execute_uci(
     engine: &mut Engine,
     mut command: String,
     cancellation_token: CancellationToken,
-) -> Result<Either<(), JoinHandle<()>>, Box<dyn Error>> {
+) -> Result<(), Box<dyn Error>> {
     trim_newline(&mut command);
     let mut tokenizer = Tokenizer::new(command.as_str());
     match tokenizer.next_token() {
-        Some("d") => {
+        Some("d") | Some("print") => {
             let pos = &engine.position;
             let str = if engine.debug.get() {
                 format!("{pos:?}")
@@ -76,8 +93,20 @@ pub fn execute_uci(
             process::exit(0);
         }
         Some("stop") => {
+            /// signal the thread the finish safely.
             cancellation_token.cancel();
-            Ok(Either::Left(()))
+
+            if let Some(search_state) = engine.search_state {
+                /// wait for the engine to finish and take back ownership of the search tree.
+                let tree = match search_state {
+                    Left(tree) => tree,
+                    Right(join_handle) => join_handle.join()?;
+                };
+
+                engine.search_state = Some(Left(tree));
+            }
+
+            Ok(())
         }
         Some("go") => {
             let token = cancellation_token.clone();
@@ -91,38 +120,48 @@ pub fn execute_uci(
                 }};
             }
 
-            let mut mode = Mode::default();
-            let mut limit = Limit::default();
 
-            while let Some(token) = tokenizer.next_token() {
-                match token {
-                    "perft" => mode = Mode::Perft,
-                    "ponder" => mode = Mode::Ponder,
-                    "wtime" => collect_and_parse!(limit.wtime),
-                    "btime" => collect_and_parse!(limit.btime),
-                    "winc" => collect_and_parse!(limit.winc),
-                    "binc" => collect_and_parse!(limit.binc),
-                    "movestogo" => collect_and_parse!(limit.movestogo),
-                    "depth" => collect_and_parse!(limit.depth),
-                    "nodes" => collect_and_parse!(limit.nodes),
-                    "mate" => collect_and_parse!(limit.mate),
-                    "movetime" => collect_and_parse!(limit.movetime),
-                    "infinite" => limit.is_active = false,
-                    // to be compatible with stockfish
-                    depth if Depth::try_from(depth).is_ok() => {
-                        limit.depth = depth.try_into().unwrap()
-                    }
-                    /* searchmoves */
-                    _ => {
-                        let move_notation =
-                            LongAlgebraicUciNotation::new(&mut tokenizer, &position);
-                        match Move::try_from(move_notation) {
-                            Ok(m) => limit.search_moves.push(m),
-                            Err(e) => sync::out(&format!("Error: {e}")),
+            let (mode, limit) = {
+                let mut mode = Mode::default();
+                let mut limit = Limit::default();
+
+                while let Some(token) = tokenizer.next_token() {
+                    match token {
+                        "perft" => mode = Mode::Perft,
+                        "ponder" => mode = Mode::Ponder,
+                        "wtime" => collect_and_parse!(limit.wtime),
+                        "btime" => collect_and_parse!(limit.btime),
+                        "winc" => collect_and_parse!(limit.winc),
+                        "binc" => collect_and_parse!(limit.binc),
+                        "movestogo" => collect_and_parse!(limit.movestogo),
+                        "depth" => collect_and_parse!(limit.depth),
+                        "nodes" => collect_and_parse!(limit.nodes),
+                        "mate" => collect_and_parse!(limit.mate),
+                        "movetime" => collect_and_parse!(limit.movetime),
+                        "infinite" => limit.is_active = false,
+                        "searchmoves" => {
+                            // interpret all remaining arguments as moves.
+                            while let Some(token) = tokenizer.next_token() {
+                                let mov = LongAlgebraicUciNotation::new(&mut tokenizer, &position);
+                                limit.search_moves.push(Move::try_from(mov)?),
+                            }
+                            break;
                         }
-                    }
-                };
-            }
+                        // to be compatible with stockfish
+                        depth if Depth::try_from(depth).is_ok() => {
+                            limit.depth = depth.try_into().unwrap()
+                        }
+                        o => return Err(UciError::UnknownOption(o)),
+                    };
+                }
+
+                (mode, limit)
+            };
+
+            // todo: <Send> the self.tree to the thread. Maybe copy since we can't garantee that
+            // the thread will finish and return ownership? Or just capture the <thread> and safe
+            // it in the <self as Engine> state machine thingy and regain ownership when we cancel
+            // the thread, e.g. with a UCI "stop" command?
 
             let thread = thread::spawn(move || {
                 match mode {
@@ -150,11 +189,11 @@ pub fn execute_uci(
             Ok(Either::Right(thread))
         }
         Some("position") => {
-            if command.len() > engine.pos_src.len()
-                && !engine.pos_src.is_empty()
-                && command[..engine.pos_src.len()] == engine.pos_src
+            if command.len() > engine._pos_src.len()
+                && !engine._pos_src.is_empty()
+                && command[..engine._pos_src.len()] == engine._pos_src
             {
-                let new_moves = &command[engine.pos_src.len()..];
+                let new_moves = &command[engine._pos_src.len()..];
                 for tok in Tokenizer::new(new_moves).tokens() {
                     if tok == "moves" {
                         continue;
@@ -163,7 +202,7 @@ pub fn execute_uci(
                     let mov = LongAlgebraicUciNotation::new(tok, &engine.position);
                     engine.position.make_move(Move::try_from(mov)?);
                 }
-                engine.pos_src = command;
+                engine._pos_src = command;
                 return Ok(Either::Left(()));
             }
             match tokenizer.next_token() {
@@ -185,7 +224,7 @@ pub fn execute_uci(
                     engine.position.make_move(Move::try_from(mov)?);
                 }
             }
-            engine.pos_src = command;
+            engine._pos_src = command;
             Ok(Either::Left(()))
         }
         Some("uci") => {
@@ -233,8 +272,9 @@ pub fn execute_uci(
 
             let new_value = new_value.trim();
 
-            match engine.config.find_mut(name.trim()) {
-                None => Err(UciError::UnknownOption)?,
+            let name = name.trim();
+            match engine.config.find_mut(name) {
+                None => Err(UciError::UnknownOption(name))?,
                 Some(option) => match &mut option.cfg_type {
                     ConfigOptionType::Check { value, .. } => {
                         if new_value.is_empty() {
@@ -271,7 +311,7 @@ pub fn execute_uci(
             Ok(Either::Left(()))
         }
         Some("ucinewgame") => {
-            engine.pos_src = "".to_string();
+            engine._pos_src = "".to_string();
             Ok(Either::Left(()))
         }
         Some("debug") => {
