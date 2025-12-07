@@ -119,42 +119,147 @@ pub struct TreeSearcher<'a, B: Backend, E: Evaluator, L: Limiter, const MPV: usi
     tree: &'a mut Tree,
 }
 
-impl<const MPV: usize> TreeSearcher<MPV> {
+impl<const MPV: usize, B: Backend, E: Evaluator, L: Limiter> TreeSearcher<MPV, B, E, L> {
     pub fn grow<E: Evaluator, L: Limiter>(&mut self) {
-        let evaluation = self.select_leaf_mut(pos, eval, &mut line_history, l);
-        self.backpropagate(pos, &evaluation);
+        let evals = self.select_leaf_mut();
+        self.tree.backpropagate(pos, &evaluation);
     }
 
     /// Walk down the tree and select the branches with the highest score, until we find a leaf
     /// node. sono-ato, expand the leaf and return the evaluation of that leaf.
-    fn select_leafs_mut<E: Evaluator, L: Limiter>(&mut self) -> [(Evaluation); MPV] {
+    fn select_leafs_mut<E: Evaluator, L: Limiter>(&mut self) -> [Evaluation; MPV] {
+        //
+        // # Selecr the leafes.
+        //
         self.selection_buffer.clear();
 
-        let mut current = unsafe { NonNull::from_ref(&self.tree.root()).as_mut() };
-        let mut depth = Depth::MIN;
-        loop {
-            match current.state() {
-                NodeState::Expanded => {
-                    debug_assert!(
-                        !current.branches.is_empty(),
-                        "Contradiction: NodeState == Expanded, but there are no branches."
-                    );
+        // todo: the sorting can be done a lot more efficient:
+        // The puct score does not change very often later on, only as we start the search.
+        // Also we only need the first few branches.
+        let root_visits = self.tree.root.visits();
+        self.tree.root.branches.sort_by_key(|x| -x.puct(root_visits));
+        for (branch, i) in self.tree.root.branches.iter_mut().take(MPV).enumerate() {
+            let selection = &mut self.selection[i];
+            selection.push(NonNull::from_ref(&self.tree.root());
+            selection.push(NonNull::from_ref(&branch.node.node));
+        }
 
-                    // SAFETY: This branch is only reached when NodeState == Expanded
-                    let branch = unsafe { current.select_puct_mut().unwrap_unchecked() };
-                    pos.make_move(branch.mov());
-                    model.push(pos);
-                    self.selection_buffer.push(NonNull::from_ref(branch));
-                    current = branch.traverse_mut();
-                }
-                NodeState::Leaf => {
-                    return current.expand_and_eval(pos, model, l, depth);
-                }
-                NodeState::Terminal => {
-                    return current.eval(pos, model, l, depth);
+        for line in &mut self.selection {
+            // depth is + 2 because we pushed 2 nodes already.
+            let mut depth = Depth::MIN + 2;
+            let mut current = unsafe { NonNull::from_ref(&line[depth]).as_mut() };
+            while depth <= Depth::MAX {
+                match current.state() {
+                    NodeState::Expanded => {
+                        debug_assert!(
+                            !current.branches.is_empty(),
+                            "Contradiction: NodeState == Expanded, but there are no branches."
+                        );
+
+                        // SAFETY: This branch is only reached when NodeState == Expanded
+                        let branch = unsafe { current.select_puct_mut().unwrap_unchecked() };
+
+                        pos.make_move(branch.mov());
+                        depth += 1;
+
+                        self.history_info.push_overwrite(...);
+                        self.selection_buffer.push(NonNull::from_ref(branch));
+
+                        current = branch.traverse_mut();
+                    }
+                    NodeState::Leaf => {
+                        current.expand(pos, model, l, depth);
+
+                        let eval = self.eval(current, pos, depth);
+
+                        if let Evaluation::Guess(Guess { policies, .. }) = &eval {
+                            current.set_policies(&policies);
+                        }
+
+                        return eval;
+                    }
+                    NodeState::Terminal => {
+                        return self.eval(current, pos, depth);
+
+                    }
                 }
             }
-            depth += 1;
+        }
+
+        //
+        // # Backpropagate the results.
+        //
+        unsafe {
+            for branch in self.selection_buffer.iter_mut().rev().map(|n|  n.as_mut()) {
+                pos.unmake_move(branch.mov());
+                let value = eval.to_value(pos.get_turn());
+                branch.update_node(value);
+            }
+        }
+        let value = eval.to_value(pos.get_turn());
+        self.root.update(value);
+    }
+
+    /// Returns an evaluation of the position.
+    pub fn eval(&self, node: &Node, pos: &Position, depth: Depth) -> Evaluation {
+        assert_matches!(node.state(), NodeState::Expanded | NodeState::Terminal);
+
+        // First check if the position is a normal game ending.
+        if node.branches.is_empty() {
+            return if pos.get_check_state() != CheckState::None {
+                // If in check and no moves, it's a loss for the current player
+                Evaluation::Terminal(GameResult::Win { relative_to: !pos.get_turn() })
+            } else {
+                // Stalemate
+                Evaluation::Terminal(GameResult::Draw)
+            };
+        }
+
+        // Then check if the position has reached some of the extra-rule endings.
+        if pos.has_threefold_repetition() || pos.fifty_move_rule() || pos.is_insufficient_material()
+        {
+            return Evaluation::Terminal(GameResult::Draw);
+        }
+
+        // Then check if we are even interested in searching this line any further.
+        if limiter.should_stop(pos, depth) {
+            return Evaluation::Nope;
+        }
+
+        // Otherwise guess a score.
+        {
+            let (quality, raw_policy) = evaluator.evaluate();
+
+            let mut policies = Vec::<f32>::new();
+            for branch in &node.branches {
+                policies.push(raw_policy[usize::from(branch.node.mov)]);
+            }
+
+            // Renormalize the policy to a sum of 1, since not all of the probabilities
+            // were assigned to moves that are actually playable in this position:
+
+            let policy_sum = {
+                let sum = policies.iter().sum();
+                if sum == 0.0 {
+                    // Fallback to uniform distribution
+                    policies.len() as f32
+                } else {
+                    sum
+                }
+            };
+            for policy in &mut policies {
+                *policy /= policy_sum;
+            }
+
+            // Evaluator should return a probability distribution.
+            let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
+            debug_assert!(f32_eq(policies.iter().sum::<f32>(), 1., 0.001));
+
+            Evaluation::Guess(Guess {
+                relative_to: pos.get_turn(),
+                quality,
+                policies,
+            })
         }
     }
 }
@@ -213,18 +318,6 @@ impl Tree {
         let evaluation = self.select_leaf_mut(pos, eval, l);
         eval.clear();
         self.backpropagate(pos, &evaluation);
-    }
-
-    fn backpropagate(&mut self, pos: &mut Position, eval: &Evaluation) {
-        unsafe {
-            for branch in self.selection_buffer.iter_mut().rev().map(|n| n.as_mut()) {
-                pos.unmake_move(branch.mov());
-                let value = eval.to_value(pos.get_turn());
-                branch.update_node(value);
-            }
-        }
-        let value = eval.to_value(pos.get_turn());
-        self.root.update(value);
     }
 
     /// Walk down the tree and select the branches with the highest score, until we find a leaf
@@ -422,7 +515,7 @@ impl Node {
     /// Create a new root node.
     pub fn root<E: Evaluator, L: Limiter>(pos: &Position, eval: &E, l: &L) -> Self {
         let mut result = Self::leaf();
-        result.expand_and_eval(pos, eval, l, Depth::MIN);
+        // result.expand_and_eval(pos, eval, l, Depth::MIN); todo
         result
     }
 
@@ -508,75 +601,6 @@ impl Node {
         })
     }
 
-    /// Returns an evaluation of the position.
-    pub fn eval<E: Evaluator, L: Limiter>(
-        &self,
-        pos: &Position,
-        evaluator: &E,
-        limiter: &L,
-        depth: Depth,
-    ) -> Evaluation {
-        assert_matches!(self.state(), NodeState::Expanded | NodeState::Terminal);
-
-        // First check if the position is a normal game ending.
-        if self.branches.is_empty() {
-            return if pos.get_check_state() != CheckState::None {
-                // If in check and no moves, it's a loss for the current player
-                Evaluation::Terminal(GameResult::Win { relative_to: !pos.get_turn() })
-            } else {
-                // Stalemate
-                Evaluation::Terminal(GameResult::Draw)
-            };
-        }
-
-        // Then check if the position has reached some of the extra-rule endings.
-        if pos.has_threefold_repetition() || pos.fifty_move_rule() || pos.is_insufficient_material()
-        {
-            return Evaluation::Terminal(GameResult::Draw);
-        }
-
-        // Then check if we are even interested in searching this line any further.
-        if limiter.should_stop(pos, depth) {
-            return Evaluation::Nope;
-        }
-
-        // Otherwise guess a score.
-        {
-            let (quality, raw_policy) = evaluator.evaluate();
-
-            let mut policies = Vec::<f32>::new();
-            for branch in &self.branches {
-                policies.push(raw_policy[usize::from(branch.node.mov)]);
-            }
-
-            // Renormalize the policy to a sum of 1, since not all of the probabilities
-            // were assigned to moves that are actually playable in this position:
-
-            let policy_sum = {
-                let sum = policies.iter().sum();
-                if sum == 0.0 {
-                    // Fallback to uniform distribution
-                    policies.len() as f32
-                } else {
-                    sum
-                }
-            };
-            for policy in &mut policies {
-                *policy /= policy_sum;
-            }
-
-            // Evaluator should return a probability distribution.
-            let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
-            debug_assert!(f32_eq(policies.iter().sum::<f32>(), 1., 0.001));
-
-            Evaluation::Guess(Guess {
-                relative_to: pos.get_turn(),
-                quality,
-                policies,
-            })
-        }
-    }
-
     /// Expand the node.
     fn expand(&mut self, pos: &Position) {
         assert_matches!(self.state(), NodeState::Leaf);
@@ -595,25 +619,13 @@ impl Node {
         };
     }
 
-    /// Expand the node and return an evaluation of the position.
-    fn expand_and_eval<E: Evaluator, L: Limiter>(
-        &mut self,
-        pos: &Position,
-        e: &E,
-        l: &L,
-        depth: Depth,
-    ) -> Evaluation {
-        self.expand(pos);
+    /// Sets the policies of the branches.
+    fn set_policies(&mut self, policies: &[f32]) {
+        assert!(self.branches.len() == policies.len(), "Their has to be exactly one policy for each branch.");
 
-        let eval = self.eval(pos, e, l, depth);
-
-        if let Evaluation::Guess(Guess { policies, .. }) = &eval {
-            for (i, branch) in self.branches.iter_mut().enumerate() {
-                branch.policy = policies[i];
-            }
+        for (i, branch) in self.branches.iter_mut().enumerate() {
+            branch.policy = policies[i];
         }
-
-        eval
     }
 
     fn visits(&self) -> u32 {

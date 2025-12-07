@@ -93,14 +93,14 @@ pub fn execute_uci(
             process::exit(0);
         }
         Some("stop") => {
-            /// signal the thread the finish safely.
+            // signal the thread the finish safely.
             cancellation_token.cancel();
 
             if let Some(search_state) = engine.search_state {
-                /// wait for the engine to finish and take back ownership of the search tree.
+                // wait for the engine to finish and take back ownership of the search tree.
                 let tree = match search_state {
                     Left(tree) => tree,
-                    Right(join_handle) => join_handle.join()?;
+                    Right(join_handle) => join_handle.join()?,
                 };
 
                 engine.search_state = Some(Left(tree));
@@ -119,7 +119,6 @@ pub fn execute_uci(
                     $field = token.map_or(Ok(Default::default()), |s| s.parse())?;
                 }};
             }
-
 
             let (mode, limit) = {
                 let mut mode = Mode::default();
@@ -143,7 +142,7 @@ pub fn execute_uci(
                             // interpret all remaining arguments as moves.
                             while let Some(token) = tokenizer.next_token() {
                                 let mov = LongAlgebraicUciNotation::new(&mut tokenizer, &position);
-                                limit.search_moves.push(Move::try_from(mov)?),
+                                limit.search_moves.push(Move::try_from(mov)?);
                             }
                             break;
                         }
