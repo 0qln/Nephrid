@@ -11,6 +11,9 @@ pub mod fuzz;
 #[cfg(test)]
 pub mod node;
 
+#[cfg(test)]
+pub mod mpv;
+
 pub struct DummyEvaluator(RefCell<SmallRng>);
 impl Evaluator for DummyEvaluator {
     fn evaluate(&self) -> (f32, [f32; POLICY_OUTPUTS]) {

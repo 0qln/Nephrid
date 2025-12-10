@@ -44,19 +44,30 @@ pub mod search;
 pub mod turn;
 pub mod zobrist;
 
+// todo:
+// instead of storing the gametree in between moves, try using bump-allocation to allocate all the
+// nodes. Maybe the speed up is better than storing the compute? (We can't do both, since with bump
+// allocation we either would have to move the subtree to a new `Bump`, or we would just not be
+// able to deallocate the unused nodes. If our search is *that* slow that we aren't even using that
+// much memory for the Tree, maybe just risc having a huge memory leak for each `ucinewgame` then
+// :3 idk)
+//
+/// # The search state.
+///
+/// Either we have ownership of a search-tree, or we have the join handle of the thread that
+/// will give us back the ownership of the search-tree.
+///
+/// (An option because maybe we just started something else like perft or some sht)
+pub type SearchState = Option<Either<mcts::Tree, JoinHandle<mcts::Tree>>>;
+
 /// Stores relevant information of the chess engine.
 #[derive(Default)]
 pub struct Engine {
     /// Current engine configuration.
     config: Configuration,
 
-    /// # The search state.
-    ///
-    /// Either we have ownership of a search-tree, or we have the join handle of the thread that
-    /// will give us back the ownership of the search-tree.
-    ///
-    /// (An option because maybe we just started something else like perft or some sht)
-    search_state: Option<Either<mcts::Tree, JoinHandle<mcts::Tree>>>,
+    /// Search state of the engine
+    search_state: SearchState,
 
     /// Whether the engine runs in debug mode.
     debug: DebugMode,
@@ -199,7 +210,14 @@ pub fn execute_uci(
                     }
                     let tok = &mut Tokenizer::new(tok);
                     let mov = LongAlgebraicUciNotation::new(tok, &engine.position);
-                    engine.position.make_move(Move::try_from(mov)?);
+                    let mov = Move::try_from(mov)?;
+                    engine.position.make_move(mov);
+
+                    if Some(Either::Left(search_state)) = engine.search_state {
+                        search_state.advance(mov);
+                    } else {
+                        println!("search state is out of sync!!!");
+                    }
                 }
                 engine._pos_src = command;
                 return Ok(Either::Left(()));
@@ -224,7 +242,12 @@ pub fn execute_uci(
                 }
             }
             engine._pos_src = command;
-            Ok(Either::Left(()))
+            Ok(())
+        }
+        Some("ucinewgame") => {
+            engine._pos_src = "".to_string();
+            engine.search_state = None;
+            Ok(())
         }
         Some("uci") => {
             // Id response
@@ -236,7 +259,7 @@ pub fn execute_uci(
             }
             // Uciok response
             sync::out("uciok");
-            Ok(Either::Left(()))
+            Ok(())
         }
         Some("setoption") => {
             // collect name
@@ -307,10 +330,6 @@ pub fn execute_uci(
                     ConfigOptionType::String(value) => *value = new_value.into(),
                 },
             };
-            Ok(Either::Left(()))
-        }
-        Some("ucinewgame") => {
-            engine._pos_src = "".to_string();
             Ok(Either::Left(()))
         }
         Some("debug") => {

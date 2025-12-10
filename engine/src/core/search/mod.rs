@@ -169,6 +169,7 @@ impl mcts::Limiter for MctsLimiter {
 
 pub fn mcts<S: MctsStrategy + Default, E: mcts::Evaluator>(
     pos: Position,
+    tree: &mut mcts::Tree,
     model: &mut E,
     limit: Limit,
     debug: DebugMode,
@@ -186,15 +187,14 @@ fn mcts_inner<S: MctsStrategy, E: mcts::Evaluator>(
     mut strategy: S,
 ) -> S::Result {
     let limiter = MctsLimiter { limit: limit.clone() };
-    let mut tree = mcts::Tree::new(&pos, model, &limiter);
 
     let time_per_move = limit.time_per_move(&pos);
     let time_limit = Instant::now() + time_per_move;
 
     while !ct.is_cancelled() && (!limit.is_active || Instant::now() < time_limit) {
         tree.grow(&mut pos, model, &limiter);
-        strategy.step(&mut tree);
+        strategy.step(tree);
     }
 
-    strategy.result(&mut tree)
+    strategy.result(tree)
 }
