@@ -127,7 +127,7 @@ pub trait Selector {
 
 #[derive(Debug)]
 pub struct PuctSelector {
-    // todo: fine tune c.
+    // todo: fine tune c. or make a uci option out of it idk
     c: f32,
 }
 
@@ -225,14 +225,6 @@ struct EvalInfoNode {
     children: Vec<Rc<RefCell<EvalInfoNode>>>,
     parent: Rc<RefCell<EvalInfoNode>>,
 }
-
-// struct SelectionNode {
-//     node: Weak<RefCell<Node>>,
-//     parent: Rc<RefCell<SelectionNode>>,
-//     children: Vec<Rc<RefCell<SelectionNode>>>,
-//     board: BoardHistoryBuffer,
-//     state: StatsInputFloats
-// }
 
 impl<'a, const MPV: usize, E: Evaluator, L: Limiter> TreeSearcher<'a, MPV, E, L> {
     fn grow(&mut self) -> () {
