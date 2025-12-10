@@ -1,4 +1,3 @@
-use crate::core::zobrist;
 use burn::{
     config::Config,
     module::Module,
@@ -20,7 +19,6 @@ use crate::core::{
     coordinates::{files, ranks, squares},
     piece::{piece_type, promo_piece_type},
     position::Position,
-    search::mcts,
 };
 
 pub const BOARD_INPUT_HISTORY: usize = 8;

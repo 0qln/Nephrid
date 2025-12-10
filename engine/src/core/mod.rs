@@ -9,10 +9,7 @@ use crate::{
         depth::Depth,
         r#move::Move,
         position::Position,
-        search::{
-            MctsUci,
-            mcts::eval::model::{EvalModel, ModelConfig},
-        },
+        search::MctsUci,
     },
     misc::trim_newline,
 };

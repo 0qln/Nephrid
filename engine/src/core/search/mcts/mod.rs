@@ -3,7 +3,6 @@ use crate::core::search::mcts::eval::model::board_input;
 use burn::tensor::backend::Backend;
 use itertools::Itertools;
 use rand::rngs::SmallRng;
-use ringbuf::{StaticRb, traits::*};
 use std::assert_matches::assert_matches;
 use std::fmt;
 use std::ops::ControlFlow;
@@ -131,18 +130,20 @@ pub struct PuctSelector {
     c: f32,
 }
 
-impl Default for PuctSelector {
+impl PuctSelector {
     pub fn new(c: f32) -> Self {
         Self { c }
     }
+}
 
-    pub fn default() -> Self {
+impl Default for PuctSelector {
+    fn default() -> Self {
         Self { c: f32::sqrt(2.0) };
     }
 }
 
 impl Selector for PuctSelector {
-    fn puct(&self, branch: &Branch, cap_n_i: u32) -> f32 {
+    fn score(&self, branch: &Branch, cap_n_i: u32) -> f32 {
         let n_i = branch.visits() as f32;
 
         // The quality is updated incrementally as the tree is explored.
@@ -190,7 +191,7 @@ impl Selector for PuctSelector {
 /// )
 ///
 /// Idea: Maybe we can have lines that are a lot more explorative next to the main puct line?
-pub struct TreeSearcher<'a, E: Evaluator, L: Limiter, const MPV: usize> {
+pub struct TreeSearcher<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> {
     /// RNG
     rng: SmallRng,
 
@@ -198,7 +199,7 @@ pub struct TreeSearcher<'a, E: Evaluator, L: Limiter, const MPV: usize> {
     /// Stack of nodes that were selected during the selection phase, for each principal line.
     selection: [(Weak<RefCell<Node>>, Rc<RefCell<EvalInfoNode>>); MPV],
 
-    // todo: implement this thingy first, then see if we can refactor this into the Evaluator.
+    // todo:refactor this into the Evaluator.
     /// Eval info
     eval_info_root: EvalInfoNode,
 
@@ -218,72 +219,163 @@ pub struct TreeSearcher<'a, E: Evaluator, L: Limiter, const MPV: usize> {
     tree: &'a mut Tree,
 }
 
-struct EvalInfoNode {
-    board_info: BoardInputFloats,
-    state_info: StateInputFloats,
-
-    children: Vec<Rc<RefCell<EvalInfoNode>>>,
-    parent: Rc<RefCell<EvalInfoNode>>,
+struct DoubleLinkedNode<T> {
+    data: T,
+    children: Vec<Rc<RefCell<Self>>>,
+    parent: Option<Weak<RefCell<Self>>>,
 }
 
-impl<'a, const MPV: usize, E: Evaluator, L: Limiter> TreeSearcher<'a, MPV, E, L> {
-    fn grow(&mut self) -> () {
+impl<T> DoubleLinkedNode<T> {
+    pub fn new_root(data: T) -> Self {
+        Self {
+            data,
+            parent: None,
+            children: vec![],
+        }
+    }
+
+    pub fn new_child(parent: Weak<RefCell<EvalInfoNode>>, data: T) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self {
+            data,
+            parent: Some(parent),
+            children: vec![],
+        }))
+    }
+
+    pub fn append(parent: &mut Rc<RefCell<EvalInfoNode>>, data: T) -> Rc<RefCell<Self>> {
+        let child = Self::new_child(parent.downgrade(), data);
+        parent.borrow_mut().children.push(child.clone());
+        child
+    }
+
+    pub fn data(&self) -> &T {
+        self.data
+    }
+
+    pub fn set_data(&mut self, data: T) {
+        self.data = data;
+    }
+}
+
+pub struct InputFloats(BoardInputFloats, StateInputFloats);
+
+pub struct EvalInfo {
+    /// input floats for the eval model
+    inputs: InputFloats,
+
+    /// whose turn it is at the node
+    turn: Turn,
+}
+
+pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
+
+impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, E, L> {
+    pub fn new() -> Self {
+        Self {
+            eval_info_root: EvalInfoNode::new_root(None),
+            ..Default::default()
+        }
+    }
+
+    pub fn grow(&mut self) -> () {
         self.prepare_grow();
         self.select_lines();
         self.eval_leafes_();
         self.backup_evals();
     }
 
-    fn prepare_grow(&mut self) -> () {}
-
     //
     // # Select the leafes.
     //
     fn select_lines(&mut self) -> () {
-        //
         // todo: convert to iterative approach -- or not if the stack frame is
         // small with this one ._.
-        //
-        self.select_branches(MPV, 0, Depth::MIN, &self.tree.root());
+        let root = self.tree.root();
+        let eval_node = self.eval_info_root;
+        self.follow_line(MPV, 0, Depth::MIN, root, eval_node);
     }
 
-    fn select_branches(
+    /// Follows a branch and decides what to do depending on the current state of the branch's
+    /// node.
+    fn follow_line(
+        &mut self,
+        budget: usize,
+        line_index: usize,
+        depth: Depth,
+        node: Rc<RefCell<Node>>,
+        eval_node: Rc<RefCell<EvalInfoNode>>,
+    ) {
+        // Push evaluation info for this node to the tree.
+        // The info is written to this eval_node.
+        self.push_eval_info(eval_node.clone());
+
+        match node.borrow().state() {
+            // Only if the node is already expanded we want to follow the branch.
+            NodeState::Expanded => {
+                // If the node is expanded, pick branches and follow the lines.
+                self.pick_branches(budget, line_index, depth, node, eval_node);
+            }
+            NodeState::Leaf => {
+                // If the node is a leaf, expand the node's branches for future mcts iterations.
+                // And select it for mcts evaluation.
+                //
+                // this is fine to do now, since we split above and in the fn `select_branches` we
+                // immidieatly increment the branch_index and thus during a single selection phase, this
+                // match block is only reached once per node in a mcts iteration. Altough we should probably
+                // unit test this somehow.
+                node.borrow_mut()
+                    .expand(self.pos, self.evaluator, self.limiter, depth);
+
+                self.selection[line_index] = (node.downgrade(), eval_node);
+            }
+            NodeState::Terminal => {
+                // select the node.
+                self.selection[line_index] = (node.downgrade(), eval_node);
+            }
+        }
+    }
+
+    fn push_eval_info(&self, parent: &mut Rc<RefCell<EvalInfoNode>>) -> () {
+        debug_assert_eq!(parent.borrow().data(), None);
+
+        let board = board_input(&self.pos);
+        let state = state_input(&self.pos);
+        let input = InputFloats(board, state);
+        parent.borrow_mut().set_data(input);
+    }
+
+    fn pick_branches(
         &mut self,
         budget: usize,
         line_index: usize,
         depth: Depth,
         current: Rc<RefCell<Node>>,
+        eval_node_parent: Rc<RefCell<EvalInfoNode>>,
     ) {
-        // 0. Make sure that we do nothing when we have no budget.
-        if budget == 0 {
-            return;
-        }
-
-        // 1. Just follow the line if we only got a budget of 1 left.
-        if budget == 1 {
-            self.follow_line(1, line_index, depth, current);
-            return;
-        }
-
-        // 2. If we have more budget, split it up between this and the subsequent best nodes.
-        let root_visits = self.tree.root().borrow().visits();
+        // Split the budget up between this and the subsequent best nodes.
+        let root_visits = current.borrow().visits();
         let selector = PuctSelector::default();
-        self.tree
-            .root()
+        current
+            .borrow_mut()
             .sort_by(|b| -selector.score(b, root_visits));
 
         let mut budget = budget;
         let mut line_index = line_index;
         let mut branch_index = 0;
         while budget >= 1 {
-            // note: if current is root, then root has to be expanded by now.
-            // todo: that is currently not ensured.
             if let Some(branch) = current.get_branch(branch_index) {
                 // todo: maybe make this relative to the branch's puct score.
                 let current_budget = (budget as f32 * 0.3) as usize;
 
+                // make the move of the current branch, such that we can follow the line.
+                self.pos.make_move(branch.mov());
+
                 // follow the line and decide what to do depending on the fucking state.
-                self.follow_line(current_budget, line_index, depth, branch);
+                let eval_info = EvalInfoNode::append(&mut eval_node_parent, None);
+                self.follow_line(current_budget, line_index, depth + 1, branch, eval_info);
+
+                // undo the move again
+                self.pos.unmake_move(branch.mov());
 
                 budget -= current_budget;
                 line_index += current_budget;
@@ -295,50 +387,6 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter> TreeSearcher<'a, MPV, E, L>
                 // or later if we make the selection and eval parallel, just go select as many
                 // lines as possible, until we have a full (X==MPV) batch.
                 break;
-            }
-        }
-    }
-
-    fn push_eval_info(&mut self) -> () {
-        // todo: push the current board and state
-    }
-
-    /// Follows a branch and decides what to do depending on the current state of the branch's
-    /// node.
-    fn follow_line(&mut self, budget: usize, line_index: usize, depth: Depth, branch: &Branch) {
-        // i don't know if this is the right place to do this
-        self.push_eval_info();
-
-        let node = branch.node();
-        match node.borrow().state() {
-            // Only if the node is already expanded we want to follow the branch.
-            NodeState::Expanded => {
-                // make the move of the current branch, such that we can follow the line.
-                self.pos.make_move(branch.mov());
-
-                // here we want to select multiple branches again, iff the budget allows to (that
-                // will be decided in `select_branches`).
-                self.select_branches(budget, line_index, depth + 1, node);
-
-                // undo the move again
-                self.pos.unmake_move(branch.mov())
-            }
-            NodeState::Leaf => {
-                // expand the node's branches for future mcts iterations.
-                //
-                // this is fine to do now, since we split above and in the fn `select_branches` we
-                // immidieatly up the branch_index and thus during a single selection phase, this
-                // match block is only reached once. Altough we should probably unit test this
-                // somehow. (todo)
-                node.borrow_mut()
-                    .expand(self.pos, self.evaluator, self.limiter, depth);
-
-                // select the node.
-                self.selection[line_index] = (node.downgrade(), self.current_eval_info_node());
-            }
-            NodeState::Terminal => {
-                // select the node.
-                self.selection[line_index] = (node.downgrade(), self.current_eval_info_node());
             }
         }
     }
@@ -372,8 +420,8 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter> TreeSearcher<'a, MPV, E, L>
         let board_input = self.build_board_batch();
         let state_input = self.build_state_batch();
         let evals = self.evaluator.evaluate(..);
+        // save the evaluation result.
         for (eval, i) in evals.into_iter().enumerate() {
-            // safe the evaluation
             self.evaluation[batch[i]] = eval;
         }
     }
@@ -381,26 +429,18 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter> TreeSearcher<'a, MPV, E, L>
     fn build_board_batch(&self, selection_indeces: &[usize]) -> Tensor<B, 4> {
         // concatenate the board inputs along the batch dimension.
         let board_batch = Tensor::cat(
-            batch
-                .map(|d_idx| self.get_node_histor(d_idx))
+            selection_indeces
+                .map(|d_idx| self.get_node_history(d_idx))
                 // concatenate the board inputs along the channel dimension.
                 .map(|history| {
-                    // todo: make sure that we generate the history in the proper order.
-                    // currently the ringbuffer might have a history where the youngest is at the index
-                    // 0 and then there are boards that are older. like this:
-                    //
-                    // (the number represents age:)
-                    //
-                    // 7 6 5 4 3 2 1 0 (would generate correct)
-                    //
-                    // then if we write once more:
-                    // (all elements age by one and the new one overwrite the oldest.)
-                    // 0 7 6 5 4 3 2 1
-                    //
-                    // this is the correct order, but we need to remember to read from index 1 now
-                    // instead of index 0...
-                    //
-                    let history_tensor = todo!();
+                    // convert input floats to tensors
+                    let history_tensor = Tensor::cat(
+                        history
+                            .into_iter()
+                            .map(|b| Tensor::from_floats([b]))
+                            .collect_vec(),
+                        1,
+                    );
 
                     // pad missing history info with zeroes.
                     let padding_len = BOARD_INPUT_HISTORY - history.len();
@@ -425,28 +465,53 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter> TreeSearcher<'a, MPV, E, L>
     /// return the history where:
     /// the oldest board state is the first index
     /// the youngest board state is the last index
-    fn get_node_history(&self, selected_node_index: usize) -> BoardHistoryBuffer {
-        // todo:
-        // 1. traverse the eval_info in reverse
-        // 2. and select all the
-        todo!("")
+    fn get_node_history(&self, selected_node_index: usize) -> Vec<BoardInputFloats> {
+        let mut vec: Vec<BoardInputFloats> = vec![];
+
+        let selection = self.selection[selected_node_index];
+        let mut eval_info = selection.1;
+
+        let board_input = eval_info.borrow().data().expect("Eval info is missing").0;
+        vec.prepend(board_input);
+
+        while let Some(parent) = eval_info.borrow().parent {
+            eval_info = parent.upgrade().expect("can't get a Rc from a Weak");
+
+            let board_input = eval_info.borrow().data().expect("Eval info is missing").0;
+            vec.prepend(board_input);
+        }
+
+        vec
     }
 
     fn build_state_batch(&self, selection_indeces: &[usize]) -> Tensor<B, 2> {
         // concatenate the state inputs along the batch dimension.
-        let state_batch = Tensor::cat(batch.map(|d_idx| self.data[d_idx].2).collect_vec(), 0);
+        let state_batch = Tensor::cat(
+            selection_indeces
+                .map(|d_idx| {
+                    let selection = self.selection[selected_node_index];
+                    let eval_info = selection.1;
+                    let state_input = eval_info.borrow().data().expect("Eval info is missing").1;
+                    [state_input]
+                })
+                .collect_vec(),
+            0,
+        );
     }
 
     fn backup_evals(&mut self) -> () {
         for (selected, i) in self.selection.enumerate() {
             let eval = self.evaluation[i];
             // 1. Traverse the selected node in reverse, updating the parents along the way.
-
+            // e.g.:
             // for branch in selected.iter_mut().rev().map(|n| n.as_mut()) {
-            //     pos.unmake_move(branch.mov());
             //     let value = eval.to_value(pos.get_turn());
             //     branch.update_node(value);
             // }
+            let node = selected.0.upgrade().expect("Failed to upgrade weak");
+            let value = eval.to_value(pos.get_turn());
+            while let Some(parent) = node.parent {}
+            node.update(eval);
 
             // 2. If the eval was a guess make sure to also set the policies of the selected leaf.
             // todo
@@ -474,7 +539,7 @@ pub struct EvalModel<B: Backend, const X: usize> {
 //     }
 // }
 
-impl<B: Backend, const X: usize> mcts::Evaluator<X> for EvalModel<B, X> {
+impl<B: Backend, const X: usize> Evaluator<X> for EvalModel<B, X> {
     // fn push(&mut self, pos: &Position, x: usize) {
     //     let board_input = [board_input(pos)].into();
     //     let state_input = [state_input(pos)].into();
@@ -645,50 +710,6 @@ impl Tree {
         buf
     }
 
-    pub fn grow<E: Evaluator, L: Limiter>(&mut self, pos: &mut Position, eval: &mut E, l: &L) {
-        let evaluation = self.select_leaf_mut(pos, eval, l);
-        eval.clear();
-        self.backpropagate(pos, &evaluation);
-    }
-
-    /// Walk down the tree and select the branches with the highest score, until we find a leaf
-    /// node. sono-ato, expand the leaf and return the evaluation of that leaf.
-    pub fn select_leaf_mut<E: Evaluator, L: Limiter>(
-        &mut self,
-        pos: &mut Position,
-        model: &mut E,
-        l: &L,
-    ) -> Evaluation {
-        self.selection_buffer.clear();
-        model.push(pos);
-        let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
-        let mut depth = Depth::MIN;
-        loop {
-            match current.state() {
-                NodeState::Expanded => {
-                    debug_assert!(
-                        !current.branches.is_empty(),
-                        "Contradiction: NodeState == Expanded, but there are no branches."
-                    );
-
-                    // SAFETY: This branch is only reached when NodeState == Expanded
-                    let branch = unsafe { current.select_puct_mut().unwrap_unchecked() };
-                    pos.make_move(branch.mov());
-                    model.push(pos);
-                    self.selection_buffer.push(NonNull::from_ref(branch));
-                    current = branch.traverse_mut();
-                }
-                NodeState::Leaf => {
-                    return current.expand_and_eval(pos, model, l, depth);
-                }
-                NodeState::Terminal => {
-                    return current.eval(pos, model, l, depth);
-                }
-            }
-            depth += 1;
-        }
-    }
-
     pub fn get_root(&self) -> Rc<RefCell<Node>> {
         self.root
     }
@@ -802,16 +823,16 @@ impl fmt::Debug for Node {
 
 pub trait Evaluator<const X: usize> {
     /// prepare the newest position that needs to be evaluated.
-    fn push(&mut self, pos: &Position, x: usize) -> ();
+    // fn push(&mut self, pos: &Position, x: usize) -> ();
 
     /// pop the latest position that was prepared.
-    fn pop(&mut self, x: usize) -> ();
+    // fn pop(&mut self, x: usize) -> ();
 
     /// clear all prepaered
     // fn clear(&mut self) -> ();
 
     /// Returns: (quality [-1;1], policy [over ALL moves])
-    fn evaluate(&self) -> [(f32, [f32; POLICY_OUTPUTS]); X];
+    // fn evaluate(&self) -> [(f32, [f32; POLICY_OUTPUTS]); X];
 }
 
 pub trait Limiter {
@@ -840,13 +861,6 @@ impl Node {
     pub fn get_branch(&self, index: usize) -> Option<&Branch> {
         self.branches.get(index)
     }
-
-    /// Create a new root node.
-    // pub fn root<E: Evaluator, L: Limiter>(pos: &Position, eval: &E, l: &L) -> Self {
-    //     let mut result = Self::leaf();
-    //     // result.expand_and_eval(pos, eval, l, Depth::MIN); todo
-    //     result
-    // }
 
     /// Create a new leaf node.
     pub fn leaf() -> Self {

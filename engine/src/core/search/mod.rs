@@ -167,7 +167,7 @@ impl mcts::Limiter for MctsLimiter {
     }
 }
 
-pub fn mcts<S: MctsStrategy + Default, E: mcts::Evaluator>(
+pub fn mcts<const X: usize, S: MctsStrategy + Default, E: mcts::Evaluator<X>>(
     pos: Position,
     tree: &mut mcts::Tree,
     model: &mut E,

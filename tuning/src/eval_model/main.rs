@@ -1,5 +1,7 @@
 #![feature(assert_matches)]
 
+//todo: derichlet noise
+
 use burn::prelude::Module;
 use burn::record::CompactRecorder;
 use engine::core::depth::Depth;
