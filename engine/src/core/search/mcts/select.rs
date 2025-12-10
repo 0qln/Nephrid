@@ -1,3 +1,5 @@
+use crate::core::search::mcts::node::Branch;
+
 pub trait Selector {
     // note: we take the policy as an argument, because if we later convert this
     // tree structure to a graph, we have to consider different policies from different parents.

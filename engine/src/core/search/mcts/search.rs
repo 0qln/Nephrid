@@ -1,3 +1,20 @@
+use crate::core::Position;
+use crate::core::search::mcts::eval::EvalInfoNode;
+use crate::core::search::mcts::eval::Evaluation;
+use crate::core::search::mcts::eval::Evaluator;
+use crate::core::search::mcts::limiter::Limiter;
+use crate::core::search::mcts::node::Node;
+use crate::core::search::mcts::node::NodeState;
+use crate::core::search::mcts::node::Tree;
+use crate::core::search::mcts::select::PuctSelector;
+use itertools::Itertools;
+use rand::rngs::SmallRng;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::rc::Weak;
+
+use crate::core::depth::Depth;
+
 /// # Tree searcher
 ///
 /// This statemachine should hold all the info that is required to search.
@@ -23,14 +40,10 @@ pub struct TreeSearcher<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> {
 
     // todo: be careful when we dereference the selection, there might be collisions in the tree.
     /// Stack of nodes that were selected during the selection phase, for each principal line.
-    selection: [(Weak<RefCell<Node>>, Rc<RefCell<EvalInfoNode>>); MPV],
+    selection: [Weak<RefCell<Node>>; MPV],
 
     /// Evaluations of the selected lines
     evaluations: [Evaluation; MPV],
-
-    // todo: also refactor out (??)
-    /// Backup info
-    backup_info_root: BackupInfoNode,
 
     /// The position that will be edited during the selection and backpropagatation.
     position: Position,
@@ -67,7 +80,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
         // todo: convert to iterative approach -- or not if the stack frame is
         // small with this one ._.
         let root = self.tree.root();
-        let eval_node = self.eval_info_root;
+        let eval_node = self.evaluator.info_root(root);
         self.follow_line(MPV, 0, Depth::MIN, root, eval_node);
     }
 
@@ -83,7 +96,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
     ) {
         // Push evaluation info for this node to the tree.
         // The info is written to this eval_node.
-        self.push_eval_info(eval_node.clone());
+        self.evaluator.push(eval_node.clone(), &self.pos);
 
         match node.borrow().state() {
             // Only if the node is already expanded we want to follow the branch.
@@ -102,22 +115,16 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
                 node.borrow_mut()
                     .expand(self.pos, self.evaluator, self.limiter, depth);
 
-                self.selection[line_index] = (node.downgrade(), eval_node);
+                let node = node.downgrade();
+                self.selection[line_index] = node;
+                self.evaluator.push_item(eval_node);
             }
             NodeState::Terminal => {
                 // select the node.
-                self.selection[line_index] = (node.downgrade(), eval_node);
+                self.selection[line_index] = node.downgrade();
+                self.evaluator.push_item(eval_node);
             }
         }
-    }
-
-    fn push_eval_info(&self, parent: &mut Rc<RefCell<EvalInfoNode>>) -> () {
-        debug_assert_eq!(parent.borrow().data(), None);
-
-        let board = board_input(&self.pos);
-        let state = state_input(&self.pos);
-        let input = InputFloats(board, state);
-        parent.borrow_mut().set_data(input);
     }
 
     fn pick_branches(
@@ -182,97 +189,17 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
                 }
                 // If not, note down that the need to guess this node's evaluation.
                 else {
-                    to_be_guessed.push((i,));
+                    batch.push(i);
                 }
             }
         }
 
         // 2. For all nodes in the batch buffer, build the input tensors and evaluate them using
         //    the eval model.
-        //
-        // todo: this belongs in the evaluator. refactor later.
-        // self.evaluator.evaluate()
-        //
-        let board_input = self.build_board_batch();
-        let state_input = self.build_state_batch();
-        let evals = self.evaluator.evaluate(..);
-        // save the evaluation result.
+        let evals = self.evaluator.eval_guess();
         for (eval, i) in evals.into_iter().enumerate() {
             self.evaluation[batch[i]] = eval;
         }
-    }
-
-    fn build_board_batch(&self, selection_indeces: &[usize]) -> Tensor<B, 4> {
-        // concatenate the board inputs along the batch dimension.
-        let board_batch = Tensor::cat(
-            selection_indeces
-                .map(|d_idx| self.get_node_history(d_idx))
-                // concatenate the board inputs along the channel dimension.
-                .map(|history| {
-                    // convert input floats to tensors
-                    let history_tensor = Tensor::cat(
-                        history
-                            .into_iter()
-                            .map(|b| Tensor::from_floats([b]))
-                            .collect_vec(),
-                        1,
-                    );
-
-                    // pad missing history info with zeroes.
-                    let padding_len = BOARD_INPUT_HISTORY - history.len();
-                    let padding_tensor = BoardInputTensor::<B>::zeros(
-                        [
-                            X,
-                            BOARD_INPUT_CHANNELS,
-                            ranks::N_VARIANTS,
-                            files::N_VARIANTS,
-                        ],
-                        device,
-                    );
-
-                    // concat padding with history
-                    Tensor::cat(vec![padding_tensor, history], 1)
-                })
-                .collect_vec(),
-            0,
-        );
-    }
-
-    /// return the history where:
-    /// the oldest board state is the first index
-    /// the youngest board state is the last index
-    fn get_node_history(&self, selected_node_index: usize) -> Vec<BoardInputFloats> {
-        let mut vec: Vec<BoardInputFloats> = vec![];
-
-        let selection = self.selection[selected_node_index];
-        let mut eval_info = selection.1;
-
-        let board_input = eval_info.borrow().data().expect("Eval info is missing").0;
-        vec.prepend(board_input);
-
-        while let Some(parent) = eval_info.borrow().parent {
-            eval_info = parent.upgrade().expect("can't get a Rc from a Weak");
-
-            let board_input = eval_info.borrow().data().expect("Eval info is missing").0;
-            vec.prepend(board_input);
-        }
-
-        vec
-    }
-
-    fn build_state_batch(&self, selection_indeces: &[usize]) -> Tensor<B, 2> {
-        // concatenate the state inputs along the batch dimension.
-        let state_batch = Tensor::cat(
-            selection_indeces
-                .map(|d_idx| {
-                    let selection = self.selection[selected_node_index];
-                    let eval_info = selection.1;
-                    let state_input = eval_info.borrow().data().expect("Eval info is missing").1;
-                    [state_input]
-                })
-                .collect_vec(),
-            0,
-        );
     }
 
     fn backup_evals(&mut self) -> () {

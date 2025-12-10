@@ -1,4 +1,12 @@
-
+use crate::core::Move;
+use crate::core::Position;
+use crate::core::search::ControlFlow;
+use crate::core::search::fold_legal_moves;
+use crate::core::turn::Turn;
+use std::assert_matches::assert_matches;
+use std::cell::RefCell;
+use std::fmt;
+use std::rc::Rc;
 
 #[derive(Default, Debug, Clone)]
 pub struct Tree {
@@ -7,7 +15,7 @@ pub struct Tree {
 }
 
 impl Tree {
-    pub fn new<E: Evaluator, L: Limiter>() -> Self {
+    pub fn new() -> Self {
         Self {
             root: Rc::new(RefCell::new(Node::leaf())),
             ..Default::default()
@@ -133,6 +141,9 @@ pub struct Node {
 
     /// The current state of this node.
     state: NodeState,
+
+    /// The turn of the current player
+    turn: Turn,
 
     /// All the branches from this node.
     branches: Vec<Branch>,
@@ -296,5 +307,9 @@ impl Node {
 
     fn state(&self) -> NodeState {
         self.state
+    }
+
+    fn turn(&self) -> Turn {
+        self.turn
     }
 }

@@ -1,4 +1,8 @@
-struct DoubleLinkedNode<T> {
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::rc::Weak;
+
+pub struct DoubleLinkedNode<T> {
     data: T,
     children: Vec<Rc<RefCell<Self>>>,
     parent: Option<Weak<RefCell<Self>>>,
@@ -13,7 +17,7 @@ impl<T> DoubleLinkedNode<T> {
         }
     }
 
-    pub fn new_child(parent: Weak<RefCell<EvalInfoNode>>, data: T) -> Rc<RefCell<Self>> {
+    pub fn new_child(parent: Weak<RefCell<Self>>, data: T) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Self {
             data,
             parent: Some(parent),
@@ -21,7 +25,7 @@ impl<T> DoubleLinkedNode<T> {
         }))
     }
 
-    pub fn append(parent: &mut Rc<RefCell<EvalInfoNode>>, data: T) -> Rc<RefCell<Self>> {
+    pub fn append(parent: &mut Rc<RefCell<Self>>, data: T) -> Rc<RefCell<Self>> {
         let child = Self::new_child(parent.downgrade(), data);
         parent.borrow_mut().children.push(child.clone());
         child

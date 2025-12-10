@@ -1,3 +1,6 @@
+use super::utils::*;
+use crate::core::turn::Turn;
+
 pub trait Backpropagater {}
 
 pub struct BackupInfo {
@@ -6,3 +9,5 @@ pub struct BackupInfo {
 }
 
 pub type BackupNode = DoubleLinkedNode<BackupInfo>;
+
+pub struct DefaultBackuper {}

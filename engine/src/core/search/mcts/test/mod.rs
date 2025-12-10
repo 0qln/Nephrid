@@ -1,9 +1,7 @@
-use super::*;
 use std::cell::RefCell;
+use crate::core::search::mcts::eval::Evaluator;
 
-use rand::{Rng, SeedableRng, rngs::SmallRng};
-
-use crate::core::{position::Position, search::mcts::eval::model::POLICY_OUTPUTS};
+use rand::{SeedableRng, rngs::SmallRng};
 
 #[cfg(test)]
 pub mod fuzz;

@@ -181,7 +181,7 @@ pub fn execute_uci(
                         type Backend = Cuda<f32>;
                         let device = CudaDevice::default();
                         let model = ModelConfig::new().init::<Backend>(&device);
-                        let mut model = EvalModel::new(model, &device);
+                        let model = EvalModel::new(model, &device);
 
                         let result =
                             search::mcts::<MctsUci, _>(position, &mut model, limit, debug, token)

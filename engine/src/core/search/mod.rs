@@ -156,17 +156,6 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct MctsLimiter {
-    limit: Limit,
-}
-
-impl mcts::Limiter for MctsLimiter {
-    fn should_stop(&self, _pos: &Position, depth: Depth) -> bool {
-        depth > self.limit.depth || depth > Depth::MAX
-    }
-}
-
 pub fn mcts<const X: usize, S: MctsStrategy + Default, E: mcts::Evaluator<X>>(
     pos: Position,
     tree: &mut mcts::Tree,

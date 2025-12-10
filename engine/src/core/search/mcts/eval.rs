@@ -1,3 +1,28 @@
+use super::utils::*;
+use crate::core::Depth;
+use crate::core::Position;
+use crate::core::color::Color;
+use crate::core::coordinates::files;
+use crate::core::coordinates::ranks;
+use crate::core::position::CheckState;
+use crate::core::search::mcts::limiter::{self, Limiter};
+use crate::core::search::mcts::nn::BOARD_INPUT_CHANNELS;
+use crate::core::search::mcts::nn::BOARD_INPUT_HISTORY;
+use crate::core::search::mcts::nn::BoardInputFloats;
+use crate::core::search::mcts::nn::BoardInputTensor;
+use crate::core::search::mcts::nn::Model;
+use crate::core::search::mcts::nn::POLICY_OUTPUTS;
+use crate::core::search::mcts::nn::StateInputFloats;
+use crate::core::search::mcts::nn::board_input;
+use crate::core::search::mcts::nn::state_input;
+use crate::core::search::mcts::node::Node;
+use burn::Tensor;
+use burn::tensor::backend::Backend;
+use std::cell::RefCell;
+use std::marker::PhantomData;
+use std::rc::Rc;
+use std::rc::Weak;
+
 pub trait Evaluator<const X: usize> {
     /// prepare the newest position that needs to be evaluated.
     // fn push(&mut self, pos: &Position, x: usize) -> ();
@@ -10,16 +35,27 @@ pub trait Evaluator<const X: usize> {
 
     /// Returns: (quality [-1;1], policy [over ALL moves])
     // fn evaluate(&self) -> [(f32, [f32; POLICY_OUTPUTS]); X];
+
+    fn push(&self, parent: &mut Rc<RefCell<EvalInfoNode>>) -> ();
+
+    fn push_item(&self, parent: &mut Rc<RefCell<EvalInfoNode>>) -> ();
+
+    fn eval_guess(&self) -> Vec<Evaluation>;
+
+    fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation>;
 }
 
-pub struct InputFloats(BoardInputFloats, StateInputFloats);
+pub struct InputFloats {
+    board: BoardInputFloats,
+    state: StateInputFloats,
+}
 
 pub struct EvalInfo {
     /// input floats for the eval model
     inputs: InputFloats,
 
-    /// whose turn it is at the node
-    turn: Turn,
+    /// The node that this eval info is for.
+    node: Weak<RefCell<Node>>,
 }
 
 pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
@@ -28,33 +64,129 @@ pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
 
 /// X: batch size
 pub struct NNEvaluator<B: Backend, const X: usize> {
-    /// Eval info
+    /// Eval info root
     eval_info_root: EvalInfoNode,
 
-    // nn model
+    /// Eval infos
+    eval_infos: Vec<Rc<RefCell<EvalInfoNode>>>,
+
+    /// NN Model
     model: Model<B>,
 
+    /// Device
+    device: Rc<B::Device>,
+
     /// shut up the compiler, i will probably use X later on...
-    _x: [PhatomData; X]
+    _x: [PhantomData<()>; X],
 }
 
-// impl<B: Backend, const X: usize> EvalModel<B, X> {
-//     pub fn new(model: Model<B>, device: &B::Device) -> Self {
-//         Self {
-//             board_history: vec![ (); BOARD_INPUT_HISTORY ],
-//             model,
-//         }
-//     }
-// }
+impl<B: Backend, const X: usize> NNEvaluator<B, X> {
+    pub fn new(model: Model<B>, device: Rc<B::Device>) -> Self {
+        Self {
+            board_history: vec![(); BOARD_INPUT_HISTORY],
+            model,
+            device,
+        }
+    }
 
-impl<B: Backend, const X: usize> Evaluator<X> for EvalModel<B, X> {
-    // fn push(&mut self, pos: &Position, x: usize) {
-    //     let board_input = [board_input(pos)].into();
-    //     let state_input = [state_input(pos)].into();
+    fn build_board_batch(&self) -> Tensor<B, 4> {
+        // concatenate the board inputs along the batch dimension.
+        let board_batch = Tensor::cat(
+            self.eval_nodes
+                .iter()
+                .cloned()
+                .map(|eval_node| Self::get_node_history(eval_node))
+                // concatenate the board inputs along the channel dimension.
+                .map(|history| {
+                    // convert input floats to tensors
+                    let history_tensor = Tensor::cat(
+                        history
+                            .into_iter()
+                            .map(|b| Tensor::from_floats([b]))
+                            .collect_vec(),
+                        1,
+                    );
 
-    //     self.board_history[x].push_overwrite(board_input);
-    //     self.state[x] = state_input;
-    // }
+                    // pad missing history info with zeroes.
+                    let padding_len = BOARD_INPUT_HISTORY - history.len();
+                    let padding_tensor = BoardInputTensor::<B>::zeros(
+                        [
+                            X,
+                            BOARD_INPUT_CHANNELS,
+                            ranks::N_VARIANTS,
+                            files::N_VARIANTS,
+                        ],
+                        self.device,
+                    );
+
+                    // concat padding with history
+                    Tensor::cat(vec![padding_tensor, history], 1)
+                })
+                .collect_vec(),
+            0,
+        );
+    }
+
+    /// return the history where:
+    /// the oldest board state is the first index
+    /// the youngest board state is the last index
+    fn get_node_history(mut eval_info: Rc<RefCell<EvalInfoNode>>) -> Vec<BoardInputFloats> {
+        let mut vec: Vec<BoardInputFloats> = vec![];
+
+        let board_input = eval_info
+            .borrow()
+            .data()
+            .expect("Eval info is missing")
+            .board;
+        vec.prepend(board_input);
+
+        while let Some(parent) = eval_info.borrow().parent {
+            eval_info = parent.upgrade().expect("can't get a Rc from a Weak");
+
+            let board_input = eval_info
+                .borrow()
+                .data()
+                .expect("Eval info is missing")
+                .board;
+            vec.prepend(board_input);
+        }
+
+        vec
+    }
+
+    fn build_state_batch(&self) -> Tensor<B, 2> {
+        // concatenate the state inputs along the batch dimension.
+        let state_batch = Tensor::cat(
+            self.eval_infos
+                .iter()
+                .cloned()
+                .map(|eval_info| {
+                    let state_input = eval_info
+                        .borrow()
+                        .data()
+                        .expect("Eval info is missing")
+                        .state;
+                    [state_input]
+                })
+                .collect_vec(),
+            0,
+        );
+    }
+}
+
+impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
+    fn push(&self, parent: &mut Rc<RefCell<EvalInfoNode>>, pos: &Position) -> () {
+        debug_assert_eq!(parent.borrow().data(), None);
+
+        let board = board_input(pos);
+        let state = state_input(pos);
+        let input = InputFloats(board, state);
+        parent.borrow_mut().set_data(input);
+    }
+
+    fn push_item(&mut self, item: Rc<RefCell<EvalInfoNode>>) -> () {
+        self.eval_infos.push(item);
+    }
 
     // fn pop(&mut self, x: usize) {
     //     assert!(
@@ -64,7 +196,12 @@ impl<B: Backend, const X: usize> Evaluator<X> for EvalModel<B, X> {
     //     self.board_history[x].pop();
     // }
 
-    fn eval_terminal(node: &Node) -> Option<Evaluation> {
+    fn eval_terminal(
+        node: &Node,
+        pos: &Position,
+        limiter: impl Limiter,
+        depth: Depth,
+    ) -> Option<Evaluation> {
         // First check if the position is a normal game ending.
         if node.branches.is_empty() {
             Some(if pos.get_check_state() != CheckState::None {
@@ -83,7 +220,7 @@ impl<B: Backend, const X: usize> Evaluator<X> for EvalModel<B, X> {
             Some(Evaluation::Terminal(GameResult::Draw))
         }
         // Then check if we are even interested in searching this line any further.
-        else if limiter.should_stop(pos, depth) {
+        else if limiter.should_stop(limiter::Params { pos, depth }) {
             Some(Evaluation::Nope)
         }
         // Otherwise not a terminal evaluation.
@@ -92,79 +229,67 @@ impl<B: Backend, const X: usize> Evaluator<X> for EvalModel<B, X> {
         }
     }
 
-    fn evaluate(&self) -> [Evaluation; X] {
-        let mut x = 0; // current index in the batch
+    // todo: the below should be used.
+    // fn eval_guess(&self) -> [Evaluation; X] {
+    //
+    fn eval_guess(&self) -> Vec<Evaluation> {
+        let board_batch = self.build_board_batch(self.eval_items.iter().cloned());
+        let state_batch = self.build_state_batch(self.eval_items.iter().cloned());
+        let (qualities, raw_policies) = self.model.forward(board_batch, state_batch);
 
-        for (&mut datum, i) in self.data.iter_mut().enumerate() {
-            let node = &datum.0;
-
-            result[i] = Either::Left(x);
-            batch.push(i);
-
-            continue;
-        }
-
-        // Otherwise guess a score.
-        {
-            let (quality, raw_policy) = evaluator.evaluate();
-
-            let mut policies = Vec::<f32>::new();
-            for branch in &node.branches {
-                policies.push(raw_policy[usize::from(branch.node.mov)]);
-            }
-
-            // Renormalize the policy to a sum of 1, since not all of the probabilities
-            // were assigned to moves that are actually playable in this position:
-
-            let policy_sum = {
-                let sum = policies.iter().sum();
-                if sum == 0.0 {
-                    // Fallback to uniform distribution
-                    policies.len() as f32
-                } else {
-                    sum
-                }
-            };
-            for policy in &mut policies {
-                *policy /= policy_sum;
-            }
-
-            // Evaluator should return a probability distribution.
-            let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
-            debug_assert!(f32_eq(policies.iter().sum::<f32>(), 1., 0.001));
-
-            Evaluation::Guess(Guess {
-                relative_to: pos.get_turn(),
-                quality,
-                policies,
-            })
-        }
-
-        let b_in_idx = self.board_history.len() - BOARD_INPUT_HISTORY;
-        let b_in = Tensor::cat(
-            self.board_history[b_in_idx..]
-                .iter()
-                .map(|x| x.1.clone())
-                .collect_vec(),
-            1,
-        );
-        let s_in = self.state.clone();
-        let (quality, policy) = self.model.forward(b_in, s_in);
-
-        let quality = quality
+        let qualities = qualities
             .to_data()
             .to_vec::<f32>()
-            .expect("Quality could not be converted to vec.");
+            .expect("Qualities could not be converted to vec.");
 
-        let policy = TryInto::<Box<[f32; POLICY_OUTPUTS]>>::try_into(
-            policy
+        let raw_policies = TryInto::<Vec<[f32; POLICY_OUTPUTS]>>::try_into(
+            raw_policies
                 .to_data()
-                .to_vec::<f32>()
+                .to_vec::<[f32; POLICY_OUTPUTS]>()
                 .expect("Policy could not be converted to vec.")
                 .into_boxed_slice(),
         );
 
-        (quality[0], *policy.unwrap())
+        let evals = self
+            .eval_infos
+            .iter()
+            .map(|x| x.node.clone())
+            .zip(qualities)
+            .zip(raw_policies)
+            .map(|(node, quality, raw_policy)| {
+                let mut policies = Vec::<f32>::new();
+                for branch in &node.branches {
+                    policies.push(raw_policy[usize::from(branch.mov)]);
+                }
+
+                // Renormalize the policy to a sum of 1, since not all of the probabilities
+                // were assigned to moves that are actually playable in this position:
+
+                let policy_sum = {
+                    let sum = policies.iter().sum();
+                    if sum == 0.0 {
+                        // Fallback to uniform distribution
+                        policies.len() as f32
+                    } else {
+                        sum
+                    }
+                };
+                for policy in &mut policies {
+                    *policy /= policy_sum;
+                }
+
+                // Evaluator should return a probability distribution.
+                let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
+                debug_assert!(f32_eq(policies.iter().sum::<f32>(), 1., 0.001));
+
+                Evaluation::Guess(Guess {
+                    relative_to: node.turn(),
+                    quality,
+                    policies,
+                })
+            });
+
+        evals.collect_vec();
     }
 }
 
