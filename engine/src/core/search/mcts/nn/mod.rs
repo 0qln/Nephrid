@@ -21,6 +21,9 @@ use crate::core::{
     position::Position,
 };
 
+#[cfg(test)]
+pub mod test;
+
 pub const BOARD_INPUT_HISTORY: usize = 8;
 
 // +1 for the possible ep capture square.
