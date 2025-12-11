@@ -41,22 +41,6 @@ pub mod search;
 pub mod turn;
 pub mod zobrist;
 
-// todo:
-// instead of storing the gametree in between moves, try using bump-allocation to allocate all the
-// nodes. Maybe the speed up is better than storing the compute? (We can't do both, since with bump
-// allocation we either would have to move the subtree to a new `Bump`, or we would just not be
-// able to deallocate the unused nodes. If our search is *that* slow that we aren't even using that
-// much memory for the Tree, maybe just risc having a huge memory leak for each `ucinewgame` then
-// :3 idk)
-//
-/// # The search state.
-///
-/// Either we have ownership of a search-tree, or we have the join handle of the thread that
-/// will give us back the ownership of the search-tree.
-///
-/// (An option because maybe we just started something else like perft or some sht)
-pub type SearchState = Option<Either<mcts::Tree, JoinHandle<mcts::Tree>>>;
-
 /// Stores relevant information of the chess engine.
 #[derive(Default)]
 pub struct Engine {
@@ -79,6 +63,7 @@ pub struct Engine {
 
 pub fn execute_uci(
     engine: &mut Engine,
+    search_state: &mut SearchState,
     mut command: String,
     cancellation_token: CancellationToken,
 ) -> Result<(), Box<dyn Error>> {

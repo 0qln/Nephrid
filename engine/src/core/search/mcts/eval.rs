@@ -180,7 +180,7 @@ impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
 
         let board = board_input(pos);
         let state = state_input(pos);
-        let input = InputFloats(board, state);
+        let input = InputFloats { board, state };
         parent.borrow_mut().set_data(input);
     }
 
