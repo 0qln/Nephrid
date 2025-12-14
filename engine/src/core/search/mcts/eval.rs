@@ -1,11 +1,9 @@
 use super::utils::*;
-use crate::core::Depth;
 use crate::core::Position;
 use crate::core::color::Color;
 use crate::core::coordinates::files;
 use crate::core::coordinates::ranks;
 use crate::core::position::CheckState;
-use crate::core::search::mcts::limiter::{self, Limiter};
 use crate::core::search::mcts::nn::BOARD_INPUT_CHANNELS;
 use crate::core::search::mcts::nn::BOARD_INPUT_HISTORY;
 use crate::core::search::mcts::nn::BoardInputFloats;
@@ -23,6 +21,10 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 use std::rc::Weak;
 
+pub struct EvalItem {
+    node: Rc<RefCell<EvalInfoNode>>,
+}
+
 pub trait Evaluator<const X: usize> {
     /// prepare the newest position that needs to be evaluated.
     // fn push(&mut self, pos: &Position, x: usize) -> ();
@@ -36,9 +38,9 @@ pub trait Evaluator<const X: usize> {
     /// Returns: (quality [-1;1], policy [over ALL moves])
     // fn evaluate(&self) -> [(f32, [f32; POLICY_OUTPUTS]); X];
 
-    fn push(&self, parent: &mut Rc<RefCell<EvalInfoNode>>) -> ();
+    fn push(&mut self, parent: Rc<RefCell<EvalInfoNode>>, pos: &Position) -> ();
 
-    fn push_item(&self, parent: &mut Rc<RefCell<EvalInfoNode>>) -> ();
+    fn push_item(&mut self, item: Rc<RefCell<EvalInfoNode>>) -> ();
 
     fn eval_guess(&self) -> Vec<Evaluation>;
 
@@ -71,22 +73,19 @@ pub struct NNEvaluator<B: Backend, const X: usize> {
     eval_infos: Vec<Rc<RefCell<EvalInfoNode>>>,
 
     /// NN Model
-    model: Model<B>,
-
-    /// Device
-    device: Rc<B::Device>,
+    model: Rc<Model<B>>,
 
     /// shut up the compiler, i will probably use X later on...
     _x: [PhantomData<()>; X],
 }
 
 impl<B: Backend, const X: usize> NNEvaluator<B, X> {
-    pub fn new(model: Model<B>, device: Rc<B::Device>) -> Self {
-        Self {
-            board_history: vec![(); BOARD_INPUT_HISTORY],
-            model,
-            device,
-        }
+    pub fn new(model: Rc<Model<B>>) -> Self {
+        Self { model, ..Default::default() }
+    }
+
+    fn device(&self) -> B::Device {
+        self.model.device
     }
 
     fn build_board_batch(&self) -> Tensor<B, 4> {
@@ -102,7 +101,7 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
                     let history_tensor = Tensor::cat(
                         history
                             .into_iter()
-                            .map(|b| Tensor::from_floats([b]))
+                            .map(|b| Tensor::from_floats([b], self.device()))
                             .collect_vec(),
                         1,
                     );
@@ -116,7 +115,7 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
                             ranks::N_VARIANTS,
                             files::N_VARIANTS,
                         ],
-                        self.device,
+                        self.device(),
                     );
 
                     // concat padding with history
@@ -140,7 +139,7 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
             .board;
         vec.prepend(board_input);
 
-        while let Some(parent) = eval_info.borrow().parent {
+        while let Some(parent) = eval_info.borrow().parent() {
             eval_info = parent.upgrade().expect("can't get a Rc from a Weak");
 
             let board_input = eval_info
@@ -175,7 +174,7 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
 }
 
 impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
-    fn push(&self, parent: &mut Rc<RefCell<EvalInfoNode>>, pos: &Position) -> () {
+    fn push(&mut self, parent: Rc<RefCell<EvalInfoNode>>, pos: &Position) -> () {
         debug_assert_eq!(parent.borrow().data(), None);
 
         let board = board_input(pos);
@@ -196,14 +195,9 @@ impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
     //     self.board_history[x].pop();
     // }
 
-    fn eval_terminal(
-        node: &Node,
-        pos: &Position,
-        limiter: impl Limiter,
-        depth: Depth,
-    ) -> Option<Evaluation> {
+    fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation> {
         // First check if the position is a normal game ending.
-        if node.branches.is_empty() {
+        if node.has_branches() {
             Some(if pos.get_check_state() != CheckState::None {
                 // If in check and no moves, it's a loss for the current player
                 Evaluation::Terminal(GameResult::Win { relative_to: !pos.get_turn() })
@@ -219,10 +213,6 @@ impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
         {
             Some(Evaluation::Terminal(GameResult::Draw))
         }
-        // Then check if we are even interested in searching this line any further.
-        else if limiter.should_stop(limiter::Params { pos, depth }) {
-            Some(Evaluation::Nope)
-        }
         // Otherwise not a terminal evaluation.
         else {
             None
@@ -233,8 +223,8 @@ impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
     // fn eval_guess(&self) -> [Evaluation; X] {
     //
     fn eval_guess(&self) -> Vec<Evaluation> {
-        let board_batch = self.build_board_batch(self.eval_items.iter().cloned());
-        let state_batch = self.build_state_batch(self.eval_items.iter().cloned());
+        let board_batch = self.build_board_batch();
+        let state_batch = self.build_state_batch();
         let (qualities, raw_policies) = self.model.forward(board_batch, state_batch);
 
         let qualities = qualities
@@ -314,11 +304,11 @@ impl Guess {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Evaluation {
-    // we will go further and have a gues about this game.
+    /// we will go further and have a guess about this game.
     Guess(Guess),
-    // we cannot go any further.
+    /// we cannot go any further.
     Terminal(GameResult),
-    // we don't feel like going any further.
+    /// we don't feel like going any further.
     Nope,
 }
 
@@ -328,22 +318,38 @@ impl GameResult {
         match self {
             Self::Win { relative_to } => {
                 if relative_to.v() == turn.v() {
-                    1.0
+                    Self::win_value()
                 } else {
-                    0.0
+                    Self::loss_value()
                 }
             }
-            Self::Draw => 0.5,
+            Self::Draw => Self::draw_value(),
         }
+    }
+
+    // these are functions, because maybe later we want to have different values for e.g. a
+    // win that is close to the root node or further.
+
+    pub const fn draw_value() -> f32 {
+        0.5
+    }
+
+    pub const fn win_value() -> f32 {
+        1.0
+    }
+
+    pub const fn loss_value() -> f32 {
+        0.0
     }
 }
 
 impl Evaluation {
     /// Returns a number between 0 and 1, where 0 is a loss and 1 is a win.
+    /// `turn`: Relative to which player should the value of the evaoluation be?
     fn to_value(&self, turn: Color) -> f32 {
         match self {
             Self::Terminal(result) => result.to_value(turn),
-            Self::Nope => GameResult::Draw.to_value(turn),
+            Self::Nope => GameResult::draw_value(),
             Self::Guess(Guess {
                 quality,
                 relative_to,

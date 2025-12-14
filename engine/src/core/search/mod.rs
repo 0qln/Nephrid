@@ -1,10 +1,16 @@
+use crate::core::search::mcts::eval::Evaluator;
+use crate::core::search::mcts::limiter::DefaultLimiter;
+use crate::core::search::mcts::nn::Model;
 use crate::core::search::mcts::node::Tree;
+use crate::core::search::mcts::search::TreeSearcher;
 use std::cell::UnsafeCell;
 use std::ops::ControlFlow;
+use std::thread::JoinHandle;
 use std::time::Instant;
 
 use crate::misc::DebugMode;
 use crate::uci::sync::{self, CancellationToken};
+use burn_cuda::Cuda;
 use itertools::Itertools;
 use limit::Limit;
 
@@ -79,8 +85,8 @@ pub trait MctsStrategy {
     type Result;
     type Step;
 
-    fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result;
-    fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step;
+    fn result(&mut self, tree: &mut Tree) -> Self::Result;
+    fn step(&mut self, tree: &mut Tree) -> Self::Step;
 }
 
 #[derive(Default, Debug)]
@@ -92,11 +98,11 @@ impl MctsStrategy for MctsFindBest {
     type Result = Option<Move>;
     type Step = Option<Move>;
 
-    fn result(&mut self, _tree: &mut mcts::Tree) -> Self::Result {
+    fn result(&mut self, _tree: &mut Tree) -> Self::Result {
         self.last_best_move
     }
 
-    fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step {
+    fn step(&mut self, tree: &mut Tree) -> Self::Step {
         let curr_best_move = tree.best_move();
         if self.last_best_move != curr_best_move {
             if let Some(mov) = curr_best_move {
@@ -117,11 +123,11 @@ impl MctsStrategy for MctsUci {
     type Result = <MctsFindBest as MctsStrategy>::Result;
     type Step = <MctsFindBest as MctsStrategy>::Step;
 
-    fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result {
+    fn result(&mut self, tree: &mut Tree) -> Self::Result {
         self.find_best.result(tree)
     }
 
-    fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step {
+    fn step(&mut self, tree: &mut Tree) -> Self::Step {
         let step = self.find_best.step(tree);
         let pv = tree.principal_variation();
         if let Some(mov) = step {
@@ -146,20 +152,20 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
     type Result = (<I as MctsStrategy>::Result, u64);
     type Step = (<I as MctsStrategy>::Step, u64);
 
-    fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result {
+    fn result(&mut self, tree: &mut Tree) -> Self::Result {
         (self.inner.result(tree), self.iteration)
     }
 
-    fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step {
+    fn step(&mut self, tree: &mut Tree) -> Self::Step {
         let step = (self.inner.step(tree), self.iteration);
         self.iteration += 1;
         step
     }
 }
 
-pub fn mcts<const X: usize, S: MctsStrategy + Default, E: mcts::Evaluator<X>>(
+pub fn mcts<const X: usize, S: MctsStrategy + Default, E: Evaluator<X>>(
     pos: Position,
-    tree: &mut mcts::Tree,
+    tree: &mut Tree,
     model: &mut E,
     limit: Limit,
     debug: DebugMode,
@@ -168,25 +174,29 @@ pub fn mcts<const X: usize, S: MctsStrategy + Default, E: mcts::Evaluator<X>>(
     mcts_inner::<S, E>(pos, model, limit, debug, ct, S::default())
 }
 
-fn mcts_inner<S: MctsStrategy, E: mcts::Evaluator>(
+fn mcts_inner<S: MctsStrategy>(
     mut pos: Position,
-    model: &mut E,
+    state: SearchState,
+    model: &Model<Backend>,
     limit: Limit,
     _debug: DebugMode,
     ct: CancellationToken,
     mut strategy: S,
-) -> S::Result {
-    let limiter = MctsLimiter { limit: limit.clone() };
+) -> (S::Result, SearchState) {
+    let limiter = DefaultLimiter::new(limit.clone());
 
     let time_per_move = limit.time_per_move(&pos);
     let time_limit = Instant::now() + time_per_move;
 
+    let mut tree = state.tree.inner();
+    let mut searcher = TreeSearcher::new(&mut tree, model);
+
     while !ct.is_cancelled() && (!limit.is_active || Instant::now() < time_limit) {
         tree.grow(&mut pos, model, &limiter);
-        strategy.step(tree);
+        strategy.step(&mut tree);
     }
 
-    strategy.result(tree)
+    (strategy.result(&mut tree), SearchState::new(tree))
 }
 
 // todo:
@@ -203,9 +213,70 @@ fn mcts_inner<S: MctsStrategy, E: mcts::Evaluator>(
 /// will give us back the ownership of the search-tree.
 ///
 /// (An option because maybe we just started something else like perft or some sht)
-pub struct SearchState<B: Backend> {
+#[derive(Default, Debug)]
+pub struct SearchState {
     /// The game tree.
-    tree: Option<Either<Tree, JoinHandle<Tree>>>,
-    /// The eval model.
-    model: Model<B>,
+    tree: Somewhere<Tree>,
 }
+
+impl SearchState {
+    pub fn new(tree: Tree) -> Self {
+        Self { tree: Somewhere::Here(tree) }
+    }
+}
+
+/// we got a T somwhere, maybe here, maybe on another thread.
+#[derive(Debug)]
+pub enum Somewhere<T> {
+    Here(T),
+    There(JoinHandle<T>),
+}
+
+impl<T> Somewhere<T> {
+    pub fn inner(self) -> T {
+        match self {
+            Self::Here(t) => t,
+            Self::There(h) => h.join().expect("The thread should complete."),
+        }
+    }
+
+    /// Returns the `Here` variant of self.
+    pub fn local(self) -> Somewhere<T> {
+        match self {
+            Self::There(h) => Self::Here(h.join().expect("The thread should complete")),
+            here => here,
+        }
+    }
+
+    pub fn here(&self) -> Option<&T> {
+        match self {
+            Self::Here(t) => Some(t),
+            Self::There(_) => None,
+        }
+    }
+
+    pub fn here_mut(&mut self) -> Option<&mut T> {
+        match self {
+            Self::Here(t) => Some(t),
+            Self::There(_) => None,
+        }
+    }
+}
+
+impl<T: Default> Default for Somewhere<T> {
+    fn default() -> Self {
+        Somewhere::Here(T::default())
+    }
+}
+
+#[cfg(feature = "nn-backend-cuda")]
+pub type Backend = Cuda;
+
+#[cfg(feature = "nn-backend-cuda")]
+pub const MPV: usize = 256;
+
+#[cfg(feature = "nn-backend-ndarray")]
+type Backend = NdArray;
+
+#[cfg(feature = "nn-backend-ndarray")]
+pub const MPV: usize = 8;

@@ -38,4 +38,8 @@ impl<T> DoubleLinkedNode<T> {
     pub fn set_data(&mut self, data: T) {
         self.data = data;
     }
+
+    pub fn parent(&self) -> Option<Weak<RefCell<Self>>> {
+        self.parent.clone()
+    }
 }

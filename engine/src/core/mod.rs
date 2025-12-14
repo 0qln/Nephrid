@@ -9,7 +9,7 @@ use crate::{
         depth::Depth,
         r#move::Move,
         position::Position,
-        search::MctsUci,
+        search::{MctsUci, SearchState, Somewhere},
     },
     misc::trim_newline,
 };
@@ -23,7 +23,7 @@ use crate::{
 use std::{
     error::Error,
     process,
-    thread::{self, JoinHandle},
+    thread::{self},
 };
 
 pub mod bitboard;
@@ -80,7 +80,7 @@ pub fn execute_uci(
 
             sync::out(&str);
 
-            Ok(Either::Left(()))
+            Ok(())
         }
         Some("quit") => {
             process::exit(0);
@@ -89,15 +89,8 @@ pub fn execute_uci(
             // signal the thread the finish safely.
             cancellation_token.cancel();
 
-            if let Some(search_state) = engine.search_state {
-                // wait for the engine to finish and take back ownership of the search tree.
-                let tree = match search_state {
-                    Left(tree) => tree,
-                    Right(join_handle) => join_handle.join()?,
-                };
-
-                engine.search_state = Some(Left(tree));
-            }
+            // wait for the engine to finish and take back ownership of the search tree.
+            engine.search_state = engine.search_state.local();
 
             Ok(())
         }

@@ -14,3 +14,9 @@ burn = { version = "0.19.1", features = ["ndarray"] }
 burn-cuda = "0.19.1"
 ndarray = "0.17.1"
 ringbuf = "0.4.8"
+
+[features]
+default = ["nn-backend-cuda"]
+
+nn-backend-cuda = []
+nn-backend-ndarray = []

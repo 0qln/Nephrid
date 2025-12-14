@@ -8,8 +8,8 @@ pub trait Limiter {
 }
 
 pub struct Params<'a> {
-    pos: &'a Position,
-    depth: Depth,
+    pub pos: &'a Position,
+    pub depth: Depth,
 }
 
 #[derive(Default, Debug)]
@@ -26,8 +26,14 @@ pub struct DefaultLimiter {
     limit: Limit,
 }
 
+impl DefaultLimiter {
+    pub fn new(limit: Limit) -> Self {
+        Self { limit }
+    }
+}
+
 impl Limiter for DefaultLimiter {
-    fn should_stop(&self, _pos: &Position, depth: Depth) -> bool {
-        depth > self.limit.depth || depth > Depth::MAX
+    fn should_stop(&self, p: Params) -> bool {
+        p.depth > self.limit.depth || p.depth > Depth::MAX
     }
 }

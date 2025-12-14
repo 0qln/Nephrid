@@ -1,4 +1,26 @@
-use crate::core::search::mcts::node::Branch;
+use std::{cell::RefCell, rc::Weak};
+
+use ringbuf::{
+    StaticRb,
+    traits::{Consumer, Producer},
+};
+
+use crate::core::{
+    depth::Depth,
+    search::mcts::node::{Branch, Node},
+    turn::Turn,
+};
+
+pub struct SelectionItem {
+    /// The selected node.
+    pub leaf: Weak<RefCell<Node>>,
+
+    /// Depth from root
+    pub depth: Depth,
+
+    /// Current player's turn
+    pub turn: Turn,
+}
 
 pub trait Selector {
     // note: we take the policy as an argument, because if we later convert this
@@ -14,27 +36,37 @@ pub trait Selector {
     /// branch: The branch to be scored.
     /// cap_n_i: The number of times that the parent node has been visited.
     fn score(&self, branch: &Branch, cap_n_i: u32) -> f32;
+
+    fn push(&self, leaf: SelectionItem) -> ();
+
+    fn iter(&self) -> impl Iterator<Item = &SelectionItem>;
 }
 
 #[derive(Debug)]
-pub struct PuctSelector {
+pub struct PuctSelector<const X: usize> {
     // todo: fine tune c. or make a uci option out of it idk
     c: f32,
+
+    /// Stack of nodes that were selected during the selection phase, for each principal line.
+    selection: StaticRb<SelectionItem, X>,
 }
 
-impl PuctSelector {
+impl<const X: usize> PuctSelector<X> {
     pub fn new(c: f32) -> Self {
-        Self { c }
+        Self { c, ..Default::default() }
     }
 }
 
-impl Default for PuctSelector {
+impl<const X: usize> Default for PuctSelector<X> {
     fn default() -> Self {
-        Self { c: f32::sqrt(2.0) };
+        Self {
+            c: f32::sqrt(2.0),
+            ..Default::default()
+        };
     }
 }
 
-impl Selector for PuctSelector {
+impl<const X: usize> Selector for PuctSelector<X> {
     fn score(&self, branch: &Branch, cap_n_i: u32) -> f32 {
         let n_i = branch.visits() as f32;
 
@@ -47,6 +79,16 @@ impl Selector for PuctSelector {
         let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1f32 + n_i);
 
         exploitation + exploration
+    }
+
+    fn push(&self, item: SelectionItem) -> () {
+        self.selection
+            .try_push(item)
+            .expect("The searcher tried to push more than was expected via `X`");
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &SelectionItem> {
+        self.selection.iter()
     }
 }
 

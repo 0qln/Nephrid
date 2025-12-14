@@ -7,6 +7,7 @@ use std::assert_matches::assert_matches;
 use std::cell::RefCell;
 use std::fmt;
 use std::rc::Rc;
+use std::rc::Weak;
 
 #[derive(Default, Debug, Clone)]
 pub struct Tree {
@@ -91,9 +92,9 @@ impl Branch {
         self.node.puct(cap_n_i, self.policy)
     }
 
-    pub fn new(m: Move, policy: f32) -> Self {
+    pub fn new(m: Move, policy: f32, parent: Weak<RefCell<Node>>) -> Self {
         Self {
-            node: Node::leaf(),
+            node: Node::leaf(parent),
             policy,
             mov: m,
         }
@@ -134,16 +135,13 @@ impl Branch {
 #[derive(Clone, Default, PartialEq)]
 pub struct Node {
     /// The number of times this node was visited.
-    visits: u32,
+    pub visits: u32,
 
     /// The value of this node. (~sums all the values of it's children)
-    value: f32,
+    pub value: f32,
 
     /// The current state of this node.
     state: NodeState,
-
-    /// The turn of the current player
-    turn: Turn,
 
     /// All the branches from this node.
     branches: Vec<Branch>,
@@ -174,7 +172,7 @@ impl fmt::Debug for Node {
 
 impl Node {
     // Sort the branches.
-    pub fn sort_by(&mut self, f: Fn(&Branch) -> f32) {
+    pub fn sort_by(&mut self, f: impl Fn(&Branch) -> f32) {
         // todo: the sorting can be done a lot more efficiently:
         // The puct score does not change very often later on, only as we start the search.
         // Also we might only need the first few branches if MPV is low.
@@ -186,29 +184,19 @@ impl Node {
     }
 
     /// Create a new leaf node.
-    pub fn leaf() -> Self {
-        debug_assert_eq!(
-            Self::default(),
-            Self {
-                state: NodeState::Leaf,
-                branches: Vec::new(),
-                visits: 0,
-                value: 0.0
-            }
-        );
-
+    pub fn leaf(parent: Weak<RefCell<Node>>) -> Self {
         Self {
             state: NodeState::Leaf,
             branches: Vec::new(),
             visits: 0,
             value: 0.0,
+            parent,
         }
     }
 
-    /// Update the node with the result of an evaluation.
-    pub fn update(&mut self, value: f32) {
-        self.visits += 1;
-        self.value += value;
+    /// Whether this node has branches.
+    pub fn has_branches(&self) -> bool {
+        !self.branches.is_empty()
     }
 
     /// Select the branch with the highest PUCT score.
@@ -268,7 +256,7 @@ impl Node {
     }
 
     /// Expand the node.
-    fn expand(&mut self, pos: &Position) {
+    pub fn expand(&mut self, pos: &Position) {
         assert_matches!(self.state(), NodeState::Leaf);
 
         _ = fold_legal_moves(pos, &mut self.branches, |acc, m| {
@@ -286,7 +274,7 @@ impl Node {
     }
 
     /// Sets the policies of the branches.
-    fn set_policies(&mut self, policies: &[f32]) {
+    pub fn set_policies(&mut self, policies: &[f32]) {
         assert!(
             self.branches.len() == policies.len(),
             "There has to be exactly one policy for each branch."
@@ -297,19 +285,19 @@ impl Node {
         }
     }
 
-    fn visits(&self) -> u32 {
+    pub fn visits(&self) -> u32 {
         self.visits
     }
 
-    fn value(&self) -> f32 {
+    pub fn value(&self) -> f32 {
         self.value
     }
 
-    fn state(&self) -> NodeState {
+    pub fn state(&self) -> NodeState {
         self.state
     }
 
-    fn turn(&self) -> Turn {
+    pub fn turn(&self) -> Turn {
         self.turn
     }
 }

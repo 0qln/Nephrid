@@ -1,17 +1,18 @@
 use crate::core::Position;
+use crate::core::search::mcts::back::Backpropagater;
 use crate::core::search::mcts::eval::EvalInfoNode;
 use crate::core::search::mcts::eval::Evaluation;
 use crate::core::search::mcts::eval::Evaluator;
+use crate::core::search::mcts::limiter;
 use crate::core::search::mcts::limiter::Limiter;
 use crate::core::search::mcts::node::Node;
 use crate::core::search::mcts::node::NodeState;
 use crate::core::search::mcts::node::Tree;
-use crate::core::search::mcts::select::PuctSelector;
+use crate::core::search::mcts::select::SelectionItem;
+use crate::core::search::mcts::select::Selector;
 use itertools::Itertools;
-use rand::rngs::SmallRng;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::rc::Weak;
 
 use crate::core::depth::Depth;
 
@@ -32,15 +33,16 @@ use crate::core::depth::Depth;
 /// self.multi_select(|b| b.puct(self))
 /// ```
 /// )
-///
-/// Idea: Maybe we can have lines that are a lot more explorative next to the main puct line?
-pub struct TreeSearcher<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> {
-    /// RNG
-    rng: SmallRng,
-
+pub struct TreeSearcher<
+    'a,
+    const MPV: usize,
+    E: Evaluator<MPV>,
+    L: Limiter,
+    S: Selector,
+    B: Backpropagater,
+> {
     // todo: be careful when we dereference the selection, there might be collisions in the tree.
-    /// Stack of nodes that were selected during the selection phase, for each principal line.
-    selection: [Weak<RefCell<Node>>; MPV],
+    selector: S,
 
     /// Evaluations of the selected lines
     evaluations: [Evaluation; MPV],
@@ -49,7 +51,10 @@ pub struct TreeSearcher<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> {
     position: Position,
 
     /// Evaluator to evaluate non-terminating nodes.
-    evaluater: E,
+    evaluator: E,
+
+    /// Backpropagater
+    backpropagater: B,
 
     /// Limiter to dicide whether to keep searching non-terminating nodes.
     limiter: L,
@@ -58,14 +63,27 @@ pub struct TreeSearcher<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> {
     tree: &'a mut Tree,
 }
 
-impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, E, L> {
-    pub fn new() -> Self {
+impl<
+    'a,
+    const MPV: usize,
+    E: Evaluator<MPV>,
+    L: Limiter + Default,
+    S: Selector + Default,
+    B: Backpropagater + Default,
+> TreeSearcher<'a, MPV, E, L, S, B>
+{
+    pub fn new(tree: &'a mut Tree, evaluator: E) -> Self {
         Self {
-            eval_info_root: EvalInfoNode::new_root(None),
-            ..Default::default()
+            tree,
+            evaluator,
+            position
         }
     }
+}
 
+impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpropagater>
+    TreeSearcher<'a, MPV, E, L, S, B>
+{
     pub fn grow(&mut self) -> () {
         self.prepare_grow();
         self.select_lines();
@@ -96,7 +114,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
     ) {
         // Push evaluation info for this node to the tree.
         // The info is written to this eval_node.
-        self.evaluator.push(eval_node.clone(), &self.pos);
+        self.evaluator.push(eval_node.clone(), &self.position);
 
         match node.borrow().state() {
             // Only if the node is already expanded we want to follow the branch.
@@ -112,16 +130,23 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
                 // immidieatly increment the branch_index and thus during a single selection phase, this
                 // match block is only reached once per node in a mcts iteration. Altough we should probably
                 // unit test this somehow.
-                node.borrow_mut()
-                    .expand(self.pos, self.evaluator, self.limiter, depth);
+                node.borrow_mut().expand(self.position);
 
-                let node = node.downgrade();
-                self.selection[line_index] = node;
+                // select the node.
+                self.selector.push(SelectionItem {
+                    leaf: node.downgrade(),
+                    depth,
+                    turn: self.position.get_turn(),
+                });
                 self.evaluator.push_item(eval_node);
             }
             NodeState::Terminal => {
                 // select the node.
-                self.selection[line_index] = node.downgrade();
+                self.selector.push(SelectionItem {
+                    leaf: node.downgrade(),
+                    depth,
+                    turn: self.position.get_turn(),
+                });
                 self.evaluator.push_item(eval_node);
             }
         }
@@ -137,10 +162,9 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
     ) {
         // Split the budget up between this and the subsequent best nodes.
         let root_visits = current.borrow().visits();
-        let selector = PuctSelector::default();
         current
             .borrow_mut()
-            .sort_by(|b| -selector.score(b, root_visits));
+            .sort_by(|b| -self.selector.score(b, root_visits));
 
         let mut budget = budget;
         let mut line_index = line_index;
@@ -151,14 +175,14 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
                 let current_budget = (budget as f32 * 0.3) as usize;
 
                 // make the move of the current branch, such that we can follow the line.
-                self.pos.make_move(branch.mov());
+                self.position.make_move(branch.mov());
 
                 // follow the line and decide what to do depending on the fucking state.
                 let eval_info = EvalInfoNode::append(&mut eval_node_parent, None);
                 self.follow_line(current_budget, line_index, depth + 1, branch, eval_info);
 
                 // undo the move again
-                self.pos.unmake_move(branch.mov());
+                self.position.unmake_move(branch.mov());
 
                 budget -= current_budget;
                 line_index += current_budget;
@@ -180,14 +204,20 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
         // 1. Loop over the selection and
         // 1.a: Node is terminal => safe the evaluation
         // 1.b: Node is on-going => safe the nodes index into a batch buffer.
-        for (leaf, i) in self.selection.enumerate() {
-            let evaluation = &mut self.evaluation[i];
-            if let Some(leaf) = leaf.upgrade() {
+        for (x, i) in self.selector.iter().enumerate() {
+            if let Some(leaf) = x.leaf.upgrade() {
                 // Check if the board has a terminal evaluation
-                if let Some(terminal_eval) = E::eval_terminal(leaf.borrow(), self.pos, depth) {
-                    *evaluation = terminal_eval;
+                if let Some(terminal_eval) = E::eval_terminal(leaf.borrow(), self.position) {
+                    self.evaluation[i] = terminal_eval;
                 }
-                // If not, note down that the need to guess this node's evaluation.
+                // Check if we are even interested in searching this line any further.
+                else if self.limiter.should_stop(limiter::Params {
+                    pos: self.position,
+                    depth: x.depth,
+                }) {
+                    self.evaluation[i] = Evaluation::Nope;
+                }
+                // Note down that the need to guess this node's evaluation.
                 else {
                     batch.push(i);
                 }
@@ -203,7 +233,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
     }
 
     fn backup_evals(&mut self) -> () {
-        for (selected, i) in self.selection.enumerate() {
+        for (selected, i) in self.selector.iter().enumerate() {
             let eval = self.evaluation[i];
             // 1. Traverse the selected node in reverse, updating the parents along the way.
             // e.g.:
@@ -211,10 +241,11 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter> TreeSearcher<'a, MPV, 
             //     let value = eval.to_value(pos.get_turn());
             //     branch.update_node(value);
             // }
-            let node = selected.0.upgrade().expect("Failed to upgrade weak");
-            let value = eval.to_value(pos.get_turn());
-            while let Some(parent) = node.parent {}
-            node.update(eval);
+            let node = selected.leaf.upgrade().expect("Failed to upgrade weak");
+            let value = eval.to_value(selected.turn);
+            while let Some(parent) = node.parent() {
+                node.update(eval);
+            }
 
             // 2. If the eval was a guess make sure to also set the policies of the selected leaf.
             // todo
