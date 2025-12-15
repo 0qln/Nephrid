@@ -1,7 +1,12 @@
-use std::cell::RefCell;
-use crate::core::search::mcts::eval::Evaluator;
+use crate::core::{position::Position, search::mcts::eval::Evaluator};
+use std::{cell::RefCell, rc::Rc};
 
 use rand::{SeedableRng, rngs::SmallRng};
+
+use super::{
+    eval::{EvalInfoNode, Evaluation},
+    node::Node,
+};
 
 #[cfg(test)]
 pub mod fuzz;
@@ -14,32 +19,21 @@ pub mod mpv;
 
 pub struct DummyEvaluator(RefCell<SmallRng>);
 impl<const X: usize> Evaluator<X> for DummyEvaluator {
-    // fn evaluate(&self) -> (f32, [f32; POLICY_OUTPUTS]) {
-    //     let mut rng = self.0.borrow_mut();
+    fn push(&mut self, _parent: Rc<RefCell<EvalInfoNode>>, _pos: &Position) -> () {
+        todo!()
+    }
 
-    //     let quality = rng.random_range(-1.0..=1.0);
+    fn push_item(&mut self, _item: Rc<RefCell<EvalInfoNode>>) -> () {
+        todo!()
+    }
 
-    //     let policies: [f32; POLICY_OUTPUTS] = {
-    //         let mut p = [0.2; POLICY_OUTPUTS];
-    //         let policy_idx = rng.random_range(0..POLICY_OUTPUTS);
-    //         p[policy_idx] = 1.0;
-    //         p
-    //     };
+    fn eval_guess(&self) -> Vec<Evaluation> {
+        todo!()
+    }
 
-    //     (quality, policies)
-    // }
-
-    //     fn push(&mut self, _pos: &Position) -> () {
-    //         ()
-    //     }
-
-    //     fn pop(&mut self) -> () {
-    //         ()
-    //     }
-
-    //     fn clear(&mut self) -> () {
-    //         ()
-    //     }
+    fn eval_terminal(_node: &Node, _pos: &Position) -> Option<Evaluation> {
+        todo!()
+    }
 }
 
 impl Default for DummyEvaluator {

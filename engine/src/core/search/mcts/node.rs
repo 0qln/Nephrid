@@ -60,7 +60,7 @@ impl Tree {
     }
 
     pub fn get_root(&self) -> Rc<RefCell<Node>> {
-        self.root
+        self.root.clone()
     }
 }
 

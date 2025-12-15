@@ -72,7 +72,7 @@ impl<
     B: Backpropagater + Default,
 > TreeSearcher<'a, MPV, E, L, S, B>
 {
-    pub fn new(tree: &'a mut Tree, evaluator: E) -> Self {
+    pub fn new(tree: &'a mut Tree, evaluator: E, position: Position) -> Self {
         Self {
             tree,
             evaluator,

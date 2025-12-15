@@ -9,7 +9,7 @@ use crate::{
         depth::Depth,
         r#move::Move,
         position::Position,
-        search::{MctsUci, SearchState, Somewhere},
+        search::mcts::{MctsState, strategy::MctsUci},
     },
     misc::trim_newline,
 };
@@ -48,7 +48,7 @@ pub struct Engine {
     config: Configuration,
 
     /// Search state of the engine
-    search_state: SearchState,
+    search_state: MctsState,
 
     /// Whether the engine runs in debug mode.
     debug: DebugMode,
@@ -63,7 +63,7 @@ pub struct Engine {
 
 pub fn execute_uci(
     engine: &mut Engine,
-    search_state: &mut SearchState,
+    search_state: &mut MctsState,
     mut command: String,
     cancellation_token: CancellationToken,
 ) -> Result<(), Box<dyn Error>> {

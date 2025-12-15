@@ -1,4 +1,5 @@
 use std::{
+    thread::JoinHandle,
     any::type_name,
     fmt::{self, Debug},
     marker::PhantomData,
@@ -280,5 +281,49 @@ impl DebugMode {
 
     pub fn set(&self, val: bool) {
         self.0.store(val, Ordering::Relaxed);
+    }
+}
+
+/// we got a T somwhere, maybe here, maybe on another thread.
+#[derive(Debug)]
+pub enum Somewhere<T> {
+    Here(T),
+    There(JoinHandle<T>),
+}
+
+impl<T> Somewhere<T> {
+    pub fn inner(self) -> T {
+        match self {
+            Self::Here(t) => t,
+            Self::There(h) => h.join().expect("The thread should complete."),
+        }
+    }
+
+    /// Returns the `Here` variant of self.
+    pub fn local(self) -> Somewhere<T> {
+        match self {
+            Self::There(h) => Self::Here(h.join().expect("The thread should complete")),
+            here => here,
+        }
+    }
+
+    pub fn here(&self) -> Option<&T> {
+        match self {
+            Self::Here(t) => Some(t),
+            Self::There(_) => None,
+        }
+    }
+
+    pub fn here_mut(&mut self) -> Option<&mut T> {
+        match self {
+            Self::Here(t) => Some(t),
+            Self::There(_) => None,
+        }
+    }
+}
+
+impl<T: Default> Default for Somewhere<T> {
+    fn default() -> Self {
+        Somewhere::Here(T::default())
     }
 }
