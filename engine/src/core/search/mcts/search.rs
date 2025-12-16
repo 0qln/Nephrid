@@ -73,11 +73,7 @@ impl<
 > TreeSearcher<'a, MPV, E, L, S, B>
 {
     pub fn new(tree: &'a mut Tree, evaluator: E, position: Position) -> Self {
-        Self {
-            tree,
-            evaluator,
-            position
-        }
+        Self { tree, evaluator, position }
     }
 }
 
@@ -133,21 +129,11 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 node.borrow_mut().expand(self.position);
 
                 // select the node.
-                self.selector.push(SelectionItem {
-                    leaf: node.downgrade(),
-                    depth,
-                    turn: self.position.get_turn(),
-                });
-                self.evaluator.push_item(eval_node);
+                self.select_leaf_(node);
             }
             NodeState::Terminal => {
                 // select the node.
-                self.selector.push(SelectionItem {
-                    leaf: node.downgrade(),
-                    depth,
-                    turn: self.position.get_turn(),
-                });
-                self.evaluator.push_item(eval_node);
+                self.select_leaf_(node);
             }
         }
     }
@@ -196,6 +182,18 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 break;
             }
         }
+    }
+
+    fn select_leaf_(&mut self) -> () {
+        self.selector.push(SelectionItem {
+            leaf: node.downgrade(),
+            depth,
+            turn: self.position.get_turn(),
+        });
+        self.evaluator.push_item(eval_node);
+
+        // todo: do eval (1.a,b) already here, since we don't have the position information later
+        // on...
     }
 
     fn eval_leafes_(&mut self) -> () {
