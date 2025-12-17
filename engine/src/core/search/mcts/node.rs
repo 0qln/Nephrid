@@ -8,6 +8,7 @@ use std::assert_matches::assert_matches;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::fmt;
+use std::ops;
 use std::rc::Rc;
 
 #[derive(Default, Debug, Clone)]
@@ -123,7 +124,10 @@ impl Branch {
 }
 
 #[derive(PartialOrd, PartialEq, Clone, Copy, Debug, Default)]
-pub struct Value(f32);
+pub struct Value(pub f32);
+
+impl_op!(/ |l: Value, r: f32| -> f32 { l.0 / r });
+impl_op!(+= |l: &mut Value, r: f32| { l.0 += r } );
 
 impl Eq for Value {}
 
@@ -170,8 +174,8 @@ impl fmt::Debug for Node {
 }
 
 impl Node {
-    // Sort the branches.
-    pub fn sort_by(&mut self, f: impl Fn(&Branch) -> Value) {
+    // Sort the branches in ascending order.
+    pub fn sort_by<T: Ord>(&mut self, f: impl Fn(&Branch) -> T) {
         // todo: the sorting can be done a lot more efficiently:
         // The puct score does not change very often later on, only as we start the search.
         // Also we might only need the first few branches if MPV is low.

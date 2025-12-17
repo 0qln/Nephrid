@@ -8,9 +8,9 @@ use crate::core::search::mcts::limiter::Limiter;
 use crate::core::search::mcts::node::Node;
 use crate::core::search::mcts::node::NodeState;
 use crate::core::search::mcts::node::Tree;
-use crate::core::search::mcts::select::SelectionItem;
 use crate::core::search::mcts::select::Selector;
 use itertools::Itertools;
+use std::assert_matches::assert_matches;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -96,14 +96,14 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
     fn select_lines(&mut self) -> () {
         // todo: convert to iterative approach -- or not if the stack frame is
         // small with this one ._.
-        let root = self.tree.root();
-        let eval_node = self.evaluator.info_root(root);
-        self.follow_line(MPV, 0, Depth::MIN, root, eval_node);
+        let root = self.tree.get_root();
+        let eval_node = Rc::new(RefCell::new(EvalInfoNode::new_root(None)));
+        self.process_node(MPV, 0, Depth::MIN, root, eval_node);
     }
 
     /// Follows a branch and decides what to do depending on the current state of the branch's
     /// node.
-    fn follow_line(
+    fn process_node(
         &mut self,
         budget: usize,
         line_index: usize,
@@ -111,11 +111,12 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         node: Rc<RefCell<Node>>,
         eval_node: Rc<RefCell<EvalInfoNode>>,
     ) {
-        // Push evaluation info for this node to the tree.
+        // Push evaluation info for this node to the eval infos tree.
         // The info is written to this eval_node.
-        self.evaluator.push(eval_node.clone(), &self.position);
+        self.evaluator
+            .prepare_node(line_index, eval_node.clone(), node.clone(), &self.position);
 
-        match node.borrow().state() {
+        match { node.borrow().state() } {
             // Only if the node is already expanded we want to follow the branch.
             NodeState::Expanded => {
                 // If the node is expanded, pick branches and follow the lines.
@@ -132,13 +133,33 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 node.borrow_mut().expand(&self.position);
 
                 // select the node.
-                self.select_leaf_(node);
+                self.select_leaf(line_index, node, depth);
             }
             NodeState::Terminal => {
                 // select the node.
-                self.select_leaf_(node);
+                self.select_leaf(line_index, node, depth);
             }
         }
+    }
+
+    fn select_leaf(&mut self, line_index: usize, leaf: Rc<RefCell<Node>>, depth: Depth) -> () {
+        assert_matches!(leaf.borrow().state(), NodeState::Terminal | NodeState::Leaf);
+
+        let pos = &self.position;
+
+        // Check if the board has a terminal evaluation
+        if let Some(terminal_eval) = E::eval_terminal(&leaf.borrow(), pos) {
+            self.evaluator.set_eval(line_index, terminal_eval);
+        }
+        // Check if we are even interested in searching this line any further.
+        else if self.limiter.should_stop(limiter::Params { pos, depth }) {
+            self.evaluator.set_eval(line_index, Evaluation::Nope);
+        } else {
+            // Note down that we need to guess this node's evaluation.
+            self.evaluator.clear_eval(line_index);
+        }
+
+        self.selector.set(line_index, leaf);
     }
 
     fn pick_branches(
@@ -146,12 +167,12 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         budget: usize,
         line_index: usize,
         depth: Depth,
-        current: Rc<RefCell<Node>>,
-        eval_node_parent: Rc<RefCell<EvalInfoNode>>,
+        parent_node: Rc<RefCell<Node>>,
+        mut eval_node_parent: Rc<RefCell<EvalInfoNode>>,
     ) {
         // Split the budget up between this and the subsequent best nodes.
-        let root_visits = current.borrow().visits();
-        current
+        let root_visits = parent_node.borrow().visits();
+        parent_node
             .borrow_mut()
             .sort_by(|b| -self.selector.score(b, root_visits));
 
@@ -159,16 +180,22 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         let mut line_index = line_index;
         let mut branch_index = 0;
         while budget >= 1 {
-            if let Some(branch) = current.get_branch(branch_index) {
+            if let Some(branch) = parent_node.borrow().get_branch(branch_index) {
                 // todo: maybe make this relative to the branch's puct score.
                 let current_budget = (budget as f32 * 0.3) as usize;
 
                 // make the move of the current branch, such that we can follow the line.
                 self.position.make_move(branch.mov());
 
-                // follow the line and decide what to do depending on the fucking state.
                 let eval_info = EvalInfoNode::append(&mut eval_node_parent, None);
-                self.follow_line(current_budget, line_index, depth + 1, branch, eval_info);
+
+                self.process_node(
+                    current_budget,
+                    line_index,
+                    depth + 1,
+                    branch.node(),
+                    eval_info,
+                );
 
                 // undo the move again
                 self.position.unmake_move(branch.mov());
@@ -187,32 +214,10 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         }
     }
 
-    fn select_leaf(&mut self, line_index: usize, leaf: Rc<RefCell<Node>>, eval_node_parent: Rc<RefCell<EvalInfoNode>>, depth: Depth, pos: &Position) -> () {
-        assert_matches!(leaf.state(), NodeState::Terminal | NodeState::Leaf)
-
-        // Check if the board has a terminal evaluation
-        if let Some(terminal_eval) = E::eval_terminal(&leaf.borrow(), pos) {
-            self.evaluator.set_eval(line_index, terminal_eval);
-        }
-        // Check if we are even interested in searching this line any further.
-        else if self.limiter.should_stop(limiter::Params { pos: pos, depth, }) {
-            self.evaluator.set_eval(line_index, Evaluation::Nope);
-        }
-        // Note down that we need to guess this node's evaluation.
-        else {
-            self.evaluator.prepare_guess(line_index, leaf, eval_node_parent, pos);
-        }
-    }
-
     fn eval_leafes_(&mut self) -> () {
-        let mut batch: Vec<usize> = vec![];
-
-        // 2. For all nodes in the batch buffer, build the input tensors and evaluate them using
-        //    the eval model.
-        let evals = self.evaluator.eval_guess();
-        for (eval, i) in evals.into_iter().enumerate() {
-            self.evaluation[batch[i]] = eval;
-        }
+        // For all nodes in the batch buffer, build the input tensors and evaluate them using
+        // the eval model.
+        self.evaluator.eval_guesses()
     }
 
     fn backup_evals(&mut self) -> () {

@@ -1,4 +1,9 @@
-use std::{cell::RefCell, rc::Weak};
+use std::{
+    cell::RefCell,
+    cmp::Ordering,
+    ops,
+    rc::{Rc, Weak},
+};
 
 use ringbuf::{
     StaticRb,
@@ -13,7 +18,7 @@ use crate::core::{
 
 pub struct SelectionItem {
     /// The selected node.
-    pub leaf: Weak<RefCell<Node>>,
+    pub leaf: Rc<RefCell<Node>>,
 
     /// Depth from root
     pub depth: Depth,
@@ -23,6 +28,8 @@ pub struct SelectionItem {
 }
 
 pub trait Selector {
+    type Score: Ord + ops::Neg<Output = Self::Score>;
+
     // note: we take the policy as an argument, because if we later convert this
     // tree structure to a graph, we have to consider different policies from different parents.
     // same reason that we have different struct for node and branch.
@@ -35,9 +42,9 @@ pub trait Selector {
     ///
     /// branch: The branch to be scored.
     /// cap_n_i: The number of times that the parent node has been visited.
-    fn score(&self, branch: &Branch, cap_n_i: u32) -> f32;
+    fn score(&self, branch: &Branch, cap_n_i: u32) -> Self::Score;
 
-    fn push(&self, leaf: SelectionItem) -> ();
+    fn set(&self, index: usize, leaf: Rc<RefCell<Node>>) -> ();
 
     fn iter(&self) -> impl Iterator<Item = &Option<SelectionItem>>;
 }
@@ -60,27 +67,43 @@ impl<const X: usize> Default for PuctSelector<X> {
     fn default() -> Self {
         Self {
             c: f32::sqrt(2.0),
-            selection: [ const { None }; X],
+            selection: [const { None }; X],
         }
     }
 }
 
+#[derive(PartialOrd, PartialEq, Clone, Copy, Debug, Default)]
+pub struct PuctScore(pub f32);
+
+impl_op!(-|x: PuctScore| -> PuctScore { PuctScore(-x.0) });
+
+impl Eq for PuctScore {}
+
+impl Ord for PuctScore {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        f32::partial_cmp(&self.0, &other.0).expect("This shouldn't happen for puct scores.")
+    }
+}
+
 impl<const X: usize> Selector for PuctSelector<X> {
-    fn score(&self, branch: &Branch, cap_n_i: u32) -> f32 {
+    type Score = PuctScore;
+
+    fn score(&self, branch: &Branch, cap_n_i: u32) -> PuctScore {
         let n_i = branch.visits() as f32;
 
         // The quality is updated incrementally as the tree is explored.
         // Because of this, we have to divide by the number of playouts
         // to get the average quality of this node.
         // If this node has not yet been visited, we set the quality to 0.
-        let exploitation = if n_i == 0.0 { 0.0 } else { branch.value() / n_i };
+        let value = branch.node().borrow().value();
+        let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
 
         let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1f32 + n_i);
 
-        exploitation + exploration
+        PuctScore(exploitation + exploration)
     }
 
-    fn set(&self, index: usize, item: SelectionItem) -> () {
+    fn set(&self, index: usize, item: Rc<RefCell<Node>>) -> () {
         self.selection
             .try_push(item)
             .expect("The searcher tried to push more than was expected via `X`");

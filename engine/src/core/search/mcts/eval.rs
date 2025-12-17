@@ -27,20 +27,33 @@ pub struct EvalItem {
 }
 
 pub trait Evaluator<const X: usize> {
-    fn prepare_guess(
+    // Prepare an eval_info_node with the required info for this evaluator.
+    fn prepare_node(
         &mut self,
         index: usize,
+        eval_node: Rc<RefCell<EvalInfoNode>>,
         node: Rc<RefCell<Node>>,
-        parent: Rc<RefCell<EvalInfoNode>>,
         pos: &Position,
     ) -> ();
 
+    /// Evluate all the nodes in the batch.
+    /// (Which is, all the nodes that are eval `None`)
+    // todo: this might be an issue if we don't have a full batch. Better make a custom enum than
+    // using `Option`.
     fn eval_guesses(&mut self) -> ();
 
+    /// Evaluate a node's terminal state. If the node is terminal, return the evaluation, else
+    /// return None.
     fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation>;
 
+    /// Set the evaluation at a specific index.
     fn set_eval(&mut self, index: usize, eval: Evaluation) -> ();
 
+    /// Clear the evaluation at a specific index.
+    /// (Mark the node at `index` to be evaluated by `eval_guesses`.)
+    fn clear_eval(&mut self, index: usize);
+
+    /// Get the evaluation at a specific index.
     fn get_eval(&self, index: usize) -> Option<&Option<Evaluation>>;
 }
 
@@ -197,29 +210,28 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
 }
 
 impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
-    fn prepare_guess(
+    /// Push the eval info as to be guessed.
+    fn prepare_node(
         &mut self,
         index: usize,
+        eval_node: Rc<RefCell<EvalInfoNode>>,
         node: Rc<RefCell<Node>>,
-        parent: Rc<RefCell<EvalInfoNode>>,
         pos: &Position,
     ) -> () {
-        // we expect the parent here to not have any data, since we only set  the data for leaf
-        // nodes, and no leaf node should have another leaf node as parent.
-        debug_assert_eq!(parent.borrow().data(), &None);
-
         let board = board_input(pos);
         let state = state_input(pos);
         let input = InputFloats { board, state };
-        let eval_info = EvalInfo {
+        let data = EvalInfo {
             inputs: input,
             node,
             turn: pos.get_turn(),
         };
-        let eval_node = EvalInfoNode::new_child(Rc::downgrade(&parent), Some(eval_info));
+        eval_node.borrow_mut().set_data(Some(data));
 
         if let Some(x) = self.eval_infos.get_mut(index) {
             *x = Some(eval_node);
+        } else {
+            panic!("Out of range");
         }
     }
 
@@ -230,6 +242,12 @@ impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
     fn set_eval(&mut self, index: usize, eval: Evaluation) {
         if let Some(x) = self.evaluations.get_mut(index) {
             *x = Some(eval);
+        }
+    }
+
+    fn clear_eval(&mut self, index: usize) {
+        if let Some(x) = self.evaluations.get_mut(index) {
+            *x = None;
         }
     }
 
