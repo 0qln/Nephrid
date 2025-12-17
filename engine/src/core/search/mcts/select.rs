@@ -1,7 +1,5 @@
 use std::{cell::RefCell, ops, rc::Rc};
 
-use ringbuf::traits::Producer;
-
 use crate::core::{
     depth::Depth,
     search::mcts::{
@@ -41,7 +39,7 @@ pub trait Selector {
     /// cap_n_i: The number of times that the parent node has been visited.
     fn score(&self, branch: &Branch, cap_n_i: u32) -> Self::Score;
 
-    fn set(&self, index: usize, leaf: Rc<RefCell<Node>>) -> ();
+    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) -> ();
 
     fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>>;
 }
@@ -100,10 +98,8 @@ impl<const X: usize> Selector for PuctSelector<X> {
         PuctScore(exploitation + exploration)
     }
 
-    fn set(&self, index: usize, item: Rc<RefCell<Node>>) -> () {
-        self.selection
-            .try_push(item)
-            .expect("The searcher tried to push more than was expected via `X`");
+    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) -> () {
+        self.selection[index] = Some(item);
     }
 
     fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>> {

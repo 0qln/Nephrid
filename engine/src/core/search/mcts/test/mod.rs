@@ -17,22 +17,39 @@ pub mod node;
 #[cfg(test)]
 pub mod mpv;
 
+// todo: returning none might break stuff,,.....
 pub struct DummyEvaluator(RefCell<SmallRng>);
 impl<const X: usize> Evaluator<X> for DummyEvaluator {
-    fn push(&mut self, _parent: Rc<RefCell<EvalInfoNode>>, _pos: &Position) -> () {
-        todo!()
+    // Prepare an eval_info_node with the required info for this evaluator.
+    fn prepare_node(
+        &mut self,
+        _index: usize,
+        _eval_node: Rc<RefCell<EvalInfoNode>>,
+        _node: Rc<RefCell<Node>>,
+        _pos: &Position,
+    ) -> () {
     }
 
-    fn push_item(&mut self, _item: Rc<RefCell<EvalInfoNode>>) -> () {
-        todo!()
-    }
+    /// Evluate all the nodes in the batch.
+    /// (Which is, all the nodes that are eval `None`)
+    fn eval_guesses(&mut self) -> () {}
 
-    fn eval_guess(&self) -> Vec<Evaluation> {
-        todo!()
-    }
-
+    /// Evaluate a node's terminal state. If the node is terminal, return the evaluation, else
+    /// return None.
     fn eval_terminal(_node: &Node, _pos: &Position) -> Option<Evaluation> {
-        todo!()
+        None
+    }
+
+    /// Set the evaluation at a specific index.
+    fn set_eval(&mut self, _index: usize, _eval: Evaluation) -> () {}
+
+    /// Clear the evaluation at a specific index.
+    /// (Mark the node at `index` to be evaluated by `eval_guesses`.)
+    fn clear_eval(&mut self, _index: usize) {}
+
+    /// Get the evaluation at a specific index.
+    fn get_eval(&self, _index: usize) -> Option<&Evaluation> {
+        None
     }
 }
 

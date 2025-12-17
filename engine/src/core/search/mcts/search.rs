@@ -144,16 +144,22 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 node.borrow_mut().expand(&self.position);
 
                 // select the node.
-                self.select_leaf(line_index, node, depth);
+                self.select_leaf(line_index, node, sel_node, depth);
             }
             NodeState::Terminal => {
                 // select the node.
-                self.select_leaf(line_index, node, depth);
+                self.select_leaf(line_index, node, sel_node, depth);
             }
         }
     }
 
-    fn select_leaf(&mut self, line_index: usize, leaf: Rc<RefCell<Node>>, depth: Depth) -> () {
+    fn select_leaf(
+        &mut self,
+        line_index: usize,
+        leaf: Rc<RefCell<Node>>,
+        node: Rc<RefCell<SelectionNode>>,
+        depth: Depth,
+    ) -> () {
         assert_matches!(leaf.borrow().state(), NodeState::Terminal | NodeState::Leaf);
 
         let pos = &self.position;
@@ -170,7 +176,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
             self.evaluator.clear_eval(line_index);
         }
 
-        self.selector.set(line_index, leaf);
+        self.selector.set(line_index, node);
     }
 
     fn pick_branches(
