@@ -1,13 +1,14 @@
+use itertools::Itertools;
+
 use crate::core::Move;
 use crate::core::Position;
 use crate::core::search::ControlFlow;
 use crate::core::search::fold_legal_moves;
-use crate::core::turn::Turn;
 use std::assert_matches::assert_matches;
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::fmt;
 use std::rc::Rc;
-use std::rc::Weak;
 
 #[derive(Default, Debug, Clone)]
 pub struct Tree {
@@ -24,40 +25,44 @@ impl Tree {
     }
 
     pub fn advance_best(self) -> Option<Tree> {
-        let best = self.root.take_best()?;
-        Some(Tree { root: best.node.node })
+        let root = Rc::into_inner(self.root)?;
+        let root = RefCell::into_inner(root);
+        let best = root.take_best()?;
+        Some(Tree { root: best.node })
     }
 
     /// Returns None if there are no moves.
     pub fn best_move(&self) -> Option<Move> {
-        let best = self.root.select_best()?;
+        let root = self.root.borrow();
+        let best = root.select_best()?;
         Some(best.mov())
     }
 
     /// Returns the current principal variation.
-    pub fn principal_variation(&self) -> Vec<&Branch> {
-        let mut buf = Vec::new();
-        let mut current = &self.root;
-        loop {
-            match current.state() {
-                NodeState::Expanded => {
-                    debug_assert!(
-                        !current.branches.is_empty(),
-                        "Contradiction: NodeState == Expanded, but there are no branches."
-                    );
+    // pub fn principal_variation(&self) -> Vec<&Branch> {
+    //     let mut buf = Vec::new();
+    //     let mut current = self.root.clone();
+    //     loop {
+    //         let curr_ref = current.borrow();
+    //         match curr_ref.state() {
+    //             NodeState::Expanded => {
+    //                 debug_assert!(
+    //                     !curr_ref.branches.is_empty(),
+    //                     "Contradiction: NodeState == Expanded, but there are no branches."
+    //                 );
 
-                    // SAFETY: This branch is only reached when NodeState == Expanded
-                    let branch = unsafe { current.select_best().unwrap_unchecked() };
-                    buf.push(branch);
-                    current = branch.traverse();
-                }
-                NodeState::Leaf | NodeState::Terminal => {
-                    break;
-                }
-            }
-        }
-        buf
-    }
+    //                 // SAFETY: This branch is only reached when NodeState == Expanded
+    //                 let branch = unsafe { curr_ref.select_best().unwrap_unchecked() };
+    //                 buf.push(branch);
+    //                 current = branch.node();
+    //             }
+    //             NodeState::Leaf | NodeState::Terminal => {
+    //                 break;
+    //             }
+    //         }
+    //     }
+    //     buf
+    // }
 
     pub fn get_root(&self) -> Rc<RefCell<Node>> {
         self.root.clone()
@@ -88,44 +93,43 @@ pub struct Branch {
 }
 
 impl Branch {
-    pub fn puct(&self, cap_n_i: u32) -> f32 {
-        self.node.puct(cap_n_i, self.policy)
-    }
-
-    pub fn new(m: Move, policy: f32, parent: Weak<RefCell<Node>>) -> Self {
+    pub fn new(m: Move, policy: f32) -> Self {
         Self {
-            node: Node::leaf(parent),
+            node: Rc::new(RefCell::new(Node::leaf())),
             policy,
             mov: m,
         }
     }
 
-    pub fn visits(&self) -> u32 {
-        self.node.visits()
-    }
-
     pub fn mov(&self) -> Move {
-        self.node.mov()
+        self.mov
     }
 
-    pub fn update_node(&mut self, value: f32) {
-        self.node.update(value)
-    }
-
-    pub fn traverse(&self) -> &Node {
-        &self.node.node
-    }
-
-    pub fn traverse_mut(&mut self) -> &mut Node {
-        &mut self.node.node
-    }
-
-    pub fn node_state(&self) -> NodeState {
-        self.traverse().state()
+    pub fn policy(&self) -> f32 {
+        self.policy
     }
 
     pub fn node(&self) -> Rc<RefCell<Node>> {
         self.node.clone()
+    }
+
+    pub fn visits(&self) -> u32 {
+        self.node.borrow().visits()
+    }
+
+    pub fn node_state(&self) -> NodeState {
+        self.node.borrow().state()
+    }
+}
+
+#[derive(PartialOrd, PartialEq, Clone, Copy, Debug, Default)]
+pub struct Value(f32);
+
+impl Eq for Value {}
+
+impl Ord for Value {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        f32::partial_cmp(&self.0, &other.0).unwrap_or(Ordering::Equal)
     }
 }
 
@@ -138,18 +142,13 @@ pub struct Node {
     pub visits: u32,
 
     /// The value of this node. (~sums all the values of it's children)
-    pub value: f32,
+    pub value: Value,
 
     /// The current state of this node.
     state: NodeState,
 
     /// All the branches from this node.
     branches: Vec<Branch>,
-
-    // todo: this is only really needed for a simple backup() and select() implementation
-    // in the mcts... we don't really need to waste a wide pointer on this...
-    /// The parent node.
-    parent: Rc<RefCell<Node>>,
 }
 
 impl fmt::Debug for Node {
@@ -172,7 +171,7 @@ impl fmt::Debug for Node {
 
 impl Node {
     // Sort the branches.
-    pub fn sort_by(&mut self, f: impl Fn(&Branch) -> f32) {
+    pub fn sort_by(&mut self, f: impl Fn(&Branch) -> Value) {
         // todo: the sorting can be done a lot more efficiently:
         // The puct score does not change very often later on, only as we start the search.
         // Also we might only need the first few branches if MPV is low.
@@ -183,27 +182,23 @@ impl Node {
         self.branches.get(index)
     }
 
+    pub fn iter_branches(&self) -> impl Iterator<Item = &Branch> {
+        self.branches.iter()
+    }
+
     /// Create a new leaf node.
-    pub fn leaf(parent: Weak<RefCell<Node>>) -> Self {
+    pub fn leaf() -> Self {
         Self {
             state: NodeState::Leaf,
             branches: Vec::new(),
             visits: 0,
-            value: 0.0,
-            parent,
+            value: Value(0.0),
         }
     }
 
     /// Whether this node has branches.
     pub fn has_branches(&self) -> bool {
         !self.branches.is_empty()
-    }
-
-    /// Select the branch with the highest PUCT score.
-    /// Returns None if there are no branches.
-    pub fn select_puct_mut(&mut self) -> Option<&mut Branch> {
-        let visits = self.visits();
-        self.select_mut(|b| b.puct(visits))
     }
 
     /// Select the branch with the most visits.
@@ -245,7 +240,7 @@ impl Node {
     /// Returns None if there are no branches.
     pub fn take<F, T>(self, transform: F) -> Option<Branch>
     where
-        F: Fn(Branch) -> T,
+        F: Fn(&Branch) -> T,
         T: PartialOrd,
     {
         self.branches.into_iter().max_by(|a, b| {
@@ -289,15 +284,11 @@ impl Node {
         self.visits
     }
 
-    pub fn value(&self) -> f32 {
+    pub fn value(&self) -> Value {
         self.value
     }
 
     pub fn state(&self) -> NodeState {
         self.state
-    }
-
-    pub fn turn(&self) -> Turn {
-        self.turn
     }
 }

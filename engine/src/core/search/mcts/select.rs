@@ -39,16 +39,15 @@ pub trait Selector {
 
     fn push(&self, leaf: SelectionItem) -> ();
 
-    fn iter(&self) -> impl Iterator<Item = &SelectionItem>;
+    fn iter(&self) -> impl Iterator<Item = &Option<SelectionItem>>;
 }
 
-#[derive(Debug)]
 pub struct PuctSelector<const X: usize> {
     // todo: fine tune c. or make a uci option out of it idk
     c: f32,
 
     /// Stack of nodes that were selected during the selection phase, for each principal line.
-    selection: StaticRb<SelectionItem, X>,
+    selection: [Option<SelectionItem>; X],
 }
 
 impl<const X: usize> PuctSelector<X> {
@@ -61,8 +60,8 @@ impl<const X: usize> Default for PuctSelector<X> {
     fn default() -> Self {
         Self {
             c: f32::sqrt(2.0),
-            ..Default::default()
-        };
+            selection: [ const { None }; X],
+        }
     }
 }
 
@@ -81,13 +80,13 @@ impl<const X: usize> Selector for PuctSelector<X> {
         exploitation + exploration
     }
 
-    fn push(&self, item: SelectionItem) -> () {
+    fn set(&self, index: usize, item: SelectionItem) -> () {
         self.selection
             .try_push(item)
             .expect("The searcher tried to push more than was expected via `X`");
     }
 
-    fn iter(&self) -> impl Iterator<Item = &SelectionItem> {
+    fn iter(&self) -> impl Iterator<Item = &Option<SelectionItem>> {
         self.selection.iter()
     }
 }

@@ -41,23 +41,20 @@ pub struct TreeSearcher<
     S: Selector,
     B: Backpropagater,
 > {
+    /// The position that will be edited during the selection and backpropagatation.
+    position: Position,
+
     // todo: be careful when we dereference the selection, there might be collisions in the tree.
     selector: S,
 
-    /// Evaluations of the selected lines
-    evaluations: [Evaluation; MPV],
-
-    /// The position that will be edited during the selection and backpropagatation.
-    position: Position,
+    /// Limiter to dicide whether to keep searching non-terminating nodes.
+    limiter: L,
 
     /// Evaluator to evaluate non-terminating nodes.
     evaluator: E,
 
     /// Backpropagater
     backpropagater: B,
-
-    /// Limiter to dicide whether to keep searching non-terminating nodes.
-    limiter: L,
 
     /// The tree to be searched.
     tree: &'a mut Tree,
@@ -72,8 +69,15 @@ impl<
     B: Backpropagater + Default,
 > TreeSearcher<'a, MPV, E, L, S, B>
 {
-    pub fn new(tree: &'a mut Tree, evaluator: E, position: Position) -> Self {
-        Self { tree, evaluator, position }
+    pub fn new(tree: &'a mut Tree, position: Position, evaluator: E) -> Self {
+        Self {
+            tree,
+            evaluator,
+            position,
+            backpropagater: B::default(),
+            limiter: L::default(),
+            selector: S::default(),
+        }
     }
 }
 
@@ -81,7 +85,6 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
     TreeSearcher<'a, MPV, E, L, S, B>
 {
     pub fn grow(&mut self) -> () {
-        self.prepare_grow();
         self.select_lines();
         self.eval_leafes_();
         self.backup_evals();
@@ -126,7 +129,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 // immidieatly increment the branch_index and thus during a single selection phase, this
                 // match block is only reached once per node in a mcts iteration. Altough we should probably
                 // unit test this somehow.
-                node.borrow_mut().expand(self.position);
+                node.borrow_mut().expand(&self.position);
 
                 // select the node.
                 self.select_leaf_(node);
@@ -184,43 +187,25 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         }
     }
 
-    fn select_leaf_(&mut self) -> () {
-        self.selector.push(SelectionItem {
-            leaf: node.downgrade(),
-            depth,
-            turn: self.position.get_turn(),
-        });
-        self.evaluator.push_item(eval_node);
+    fn select_leaf(&mut self, line_index: usize, leaf: Rc<RefCell<Node>>, eval_node_parent: Rc<RefCell<EvalInfoNode>>, depth: Depth, pos: &Position) -> () {
+        assert_matches!(leaf.state(), NodeState::Terminal | NodeState::Leaf)
 
-        // todo: do eval (1.a,b) already here, since we don't have the position information later
-        // on...
+        // Check if the board has a terminal evaluation
+        if let Some(terminal_eval) = E::eval_terminal(&leaf.borrow(), pos) {
+            self.evaluator.set_eval(line_index, terminal_eval);
+        }
+        // Check if we are even interested in searching this line any further.
+        else if self.limiter.should_stop(limiter::Params { pos: pos, depth, }) {
+            self.evaluator.set_eval(line_index, Evaluation::Nope);
+        }
+        // Note down that we need to guess this node's evaluation.
+        else {
+            self.evaluator.prepare_guess(line_index, leaf, eval_node_parent, pos);
+        }
     }
 
     fn eval_leafes_(&mut self) -> () {
         let mut batch: Vec<usize> = vec![];
-
-        // 1. Loop over the selection and
-        // 1.a: Node is terminal => safe the evaluation
-        // 1.b: Node is on-going => safe the nodes index into a batch buffer.
-        for (x, i) in self.selector.iter().enumerate() {
-            if let Some(leaf) = x.leaf.upgrade() {
-                // Check if the board has a terminal evaluation
-                if let Some(terminal_eval) = E::eval_terminal(leaf.borrow(), self.position) {
-                    self.evaluation[i] = terminal_eval;
-                }
-                // Check if we are even interested in searching this line any further.
-                else if self.limiter.should_stop(limiter::Params {
-                    pos: self.position,
-                    depth: x.depth,
-                }) {
-                    self.evaluation[i] = Evaluation::Nope;
-                }
-                // Note down that the need to guess this node's evaluation.
-                else {
-                    batch.push(i);
-                }
-            }
-        }
 
         // 2. For all nodes in the batch buffer, build the input tensors and evaluate them using
         //    the eval model.
@@ -231,15 +216,14 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
     }
 
     fn backup_evals(&mut self) -> () {
-        for (selected, i) in self.selector.iter().enumerate() {
-            let eval = self.evaluation[i];
+        for eval in self.evaluator.iter() {
             // 1. Traverse the selected node in reverse, updating the parents along the way.
             // e.g.:
             // for branch in selected.iter_mut().rev().map(|n| n.as_mut()) {
             //     let value = eval.to_value(pos.get_turn());
             //     branch.update_node(value);
             // }
-            let node = selected.leaf.upgrade().expect("Failed to upgrade weak");
+            let node = eval.node.upgrade().expect("Failed to upgrade weak");
             let value = eval.to_value(selected.turn);
             while let Some(parent) = node.parent() {
                 node.update(eval);

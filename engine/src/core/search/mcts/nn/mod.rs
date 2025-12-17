@@ -126,7 +126,7 @@ pub fn input_batched<const N: usize, B: Backend>(
     Tensor::from_floats(inputs, device)
 }
 
-const VALUE_OUTPUTS: usize = 1;
+pub const VALUE_OUTPUTS: usize = 1;
 
 // because our value_output_layer is uses tanh
 pub const VALUE_WIN: f32 = 1.0;
