@@ -38,8 +38,6 @@ pub trait Evaluator<const X: usize> {
 
     /// Evluate all the nodes in the batch.
     /// (Which is, all the nodes that are eval `None`)
-    // todo: this might be an issue if we don't have a full batch. Better make a custom enum than
-    // using `Option`.
     fn eval_guesses(&mut self) -> ();
 
     /// Evaluate a node's terminal state. If the node is terminal, return the evaluation, else
@@ -75,6 +73,13 @@ pub struct EvalInfo {
     turn: Turn,
 }
 
+#[derive(Clone)]
+pub enum EvalState {
+    OnBatch(Rc<RefCell<EvalInfoNode>>),
+    Evaluated(Evaluation),
+    None,
+}
+
 pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
 
 /// X: batch size
@@ -86,10 +91,7 @@ pub struct NNEvaluator<B: Backend, const X: usize> {
     // children just have weak references to them...
 
     /// Eval infos
-    eval_infos: [Option<Rc<RefCell<EvalInfoNode>>>; X],
-
-    /// Evaluations of the selected lines
-    evaluations: [Option<Evaluation>; X],
+    eval_infos: [EvalState; X],
 
     /// NN Model
     model: Rc<Model<B>>,
@@ -103,8 +105,7 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
         Self {
             model,
             device,
-            evaluations: [const { None }; X],
-            eval_infos: [const { None }; X],
+            eval_infos: [const { EvalState::None }; X],
         }
     }
 
@@ -115,7 +116,7 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
     fn build_board_batch(&self) -> Tensor<B, 4> {
         // concatenate the board inputs along the batch dimension.
         Tensor::cat(
-            self.eval_infos()
+            self.iter_batch()
                 .map(|eval_node| Self::get_node_history(eval_node))
                 // concatenate the board inputs along the channel dimension.
                 .map(|history| {
@@ -177,7 +178,7 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
     fn build_state_batch(&self) -> Tensor<B, 2> {
         // concatenate the state inputs along the batch dimension.
         Tensor::cat(
-            self.eval_infos()
+            self.iter_batch()
                 .map(|eval_info| {
                     let state_input = eval_info
                         .borrow()
@@ -196,17 +197,14 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
         )
     }
 
-    fn eval_infos(&self) -> impl Iterator<Item = Rc<RefCell<EvalInfoNode>>> {
-        self.eval_infos
-            .iter()
-            .filter_map(|x| x.as_ref().map(|x| x.clone()))
-    }
-
-    fn enum_eval_infos(&self) -> impl Iterator<Item = (usize, Rc<RefCell<EvalInfoNode>>)> {
-        self.eval_infos
-            .iter()
-            .enumerate()
-            .filter_map(|(i, x)| Some((i, x.as_ref().map(|x| x.clone())?)))
+    fn iter_batch(&self) -> impl Iterator<Item = Rc<RefCell<EvalInfoNode>>> {
+        self.eval_infos.iter().filter_map(|x| {
+            if let EvalState::OnBatch(eval_info) = x {
+                Some(eval_info.clone())
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -230,25 +228,30 @@ impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
         eval_node.borrow_mut().set_data(Some(data));
 
         if let Some(x) = self.eval_infos.get_mut(index) {
-            *x = Some(eval_node);
+            *x = EvalState::OnBatch(eval_node);
         } else {
             panic!("Out of range");
         }
     }
 
     fn get_eval(&self, index: usize) -> Option<&Evaluation> {
-        self.evaluations.get(index).map(|x| x.as_ref()).flatten()
+        if let Some(x) = self.eval_infos.get(index) {
+            if let EvalState::Evaluated(eval) = x {
+                return Some(eval);
+            }
+        }
+        None
     }
 
     fn set_eval(&mut self, index: usize, eval: Evaluation) {
-        if let Some(x) = self.evaluations.get_mut(index) {
-            *x = Some(eval);
+        if let Some(x) = self.eval_infos.get_mut(index) {
+            *x = EvalState::Evaluated(eval);
         }
     }
 
     fn clear_eval(&mut self, index: usize) {
-        if let Some(x) = self.evaluations.get_mut(index) {
-            *x = None;
+        if let Some(x) = self.eval_infos.get_mut(index) {
+            *x = EvalState::None;
         }
     }
 
@@ -299,7 +302,20 @@ impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
             .eval_infos
             .iter()
             .enumerate()
-            .filter_map(|(i, x)| Some((i, x.as_ref().map(|x| x.clone())?)))
+            .filter_map(|(i, x)| {
+                if let EvalState::OnBatch(eval_info) = x {
+                    Some((i, eval_info.clone()))
+                } else {
+                    None
+                }
+            })
+            // ---
+            // todo: we allocate here bc if we borrow above, we cannot borrow mutably in the
+            // for loop to set the eval_infos...
+            // find a better solution
+            .collect_vec()
+            .into_iter()
+            // ---
             .zip(values.chunks(VALUE_OUTPUTS))
             .zip(raw_policies.chunks(POLICY_OUTPUTS))
             .map(|(((a, b), c), d)| (a, b, c, d))
@@ -340,7 +356,7 @@ impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
                 quality: value[0],
                 policies,
             });
-            self.evaluations[index] = Some(eval);
+            self.eval_infos[index] = EvalState::Evaluated(eval);
         }
     }
 }
