@@ -1,12 +1,26 @@
-use super::model::*;
+use super::*;
 use burn_cuda::{Cuda, CudaDevice};
 
-use crate::core::{
-    move_iter::sliding_piece::magics,
-    position::Position,
-    search::mcts::eval::model::{ModelConfig, board_input, state_input},
-    zobrist,
-};
+use crate::core::{move_iter::sliding_piece::magics, zobrist};
+
+fn make_input<B: Backend>(
+    batch_size: usize,
+    device: &B::Device,
+) -> (BoardInputTensor<B>, StateInputTensor<B>) {
+    let board_input = BoardInputTensor::<B>::zeros(
+        [
+            batch_size,
+            BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
+            ranks::N_VARIANTS,
+            files::N_VARIANTS,
+        ],
+        device,
+    );
+
+    let state_input = StateInputTensor::<B>::zeros([batch_size, STATE_INPUT_LEN], device);
+
+    (board_input, state_input)
+}
 
 #[test]
 fn inference() {
@@ -19,18 +33,9 @@ fn inference() {
     type Backend = Cuda<f32>;
     let model = ModelConfig::new().init::<Backend>(&device);
 
-    let pos = Position::start_position();
-
-    let board_input: BoardInputFloats = board_input(&pos);
-    let state_input: StateInputFloats = state_input(&pos);
-
-    for i in 0..10 {
-        let (value, policy) =
-            model.forward([board_input.clone()].into(), [state_input.clone()].into());
-
-        let value = value.to_data().into_vec::<f32>();
-        let policy = policy.to_data().into_vec::<f32>();
-        println!("[{i}] Value: {:?}", value);
-        println!("[{i}] Policy: {:?}", policy);
+    for i in [1, 2, 4, 8, 16, 32, 64] {
+        println!("Running `forward` with batchsize {i}");
+        let (b_in, s_in) = make_input(i, &device);
+        let (_value, _policy) = model.forward(b_in, s_in);
     }
 }

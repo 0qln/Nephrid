@@ -5,7 +5,6 @@
 use burn::prelude::Module;
 use burn::record::CompactRecorder;
 use engine::core::depth::Depth;
-use engine::core::search::mcts::eval::model::EvalModel;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use std::env::var;

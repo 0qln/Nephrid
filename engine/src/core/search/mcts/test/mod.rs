@@ -1,10 +1,14 @@
-use crate::core::{position::Position, search::mcts::eval::Evaluator};
+use crate::core::{
+    color::colors,
+    position::Position,
+    search::mcts::{eval::Evaluator, nn::POLICY_OUTPUTS},
+};
 use std::{cell::RefCell, rc::Rc};
 
-use rand::{SeedableRng, rngs::SmallRng};
+use rand::{Rng, SeedableRng, rngs::SmallRng};
 
 use super::{
-    eval::{EvalInfoNode, Evaluation},
+    eval::{EvalInfoNode, Evaluation, Guess},
     node::Node,
 };
 
@@ -12,14 +16,35 @@ use super::{
 pub mod fuzz;
 
 #[cfg(test)]
-pub mod node;
-
-#[cfg(test)]
 pub mod mpv;
 
-// todo: returning none might break stuff,,.....
-pub struct DummyEvaluator(RefCell<SmallRng>);
-impl<const X: usize> Evaluator<X> for DummyEvaluator {
+#[derive(Clone)]
+pub struct DummyEvaluator<const X: usize>(RefCell<SmallRng>, [Option<Evaluation>; X]);
+
+impl<const X: usize> DummyEvaluator<X> {
+    fn fill(&mut self) -> () {
+        let mut rng = self.0.borrow_mut();
+
+        for i in 0..X {
+            let quality = rng.random_range(-1.0..=1.0);
+
+            let policies: [f32; POLICY_OUTPUTS] = {
+                let mut p = [0.2; POLICY_OUTPUTS];
+                let policy_idx = rng.random_range(0..POLICY_OUTPUTS);
+                p[policy_idx] = 1.0;
+                p
+            };
+
+            self.1[i] = Some(Evaluation::Guess(Guess {
+                relative_to: colors::WHITE,
+                quality,
+                policies: policies.into(),
+            }));
+        }
+    }
+}
+
+impl<const X: usize> Evaluator<X> for DummyEvaluator<X> {
     // Prepare an eval_info_node with the required info for this evaluator.
     fn prepare_node(
         &mut self,
@@ -31,13 +56,8 @@ impl<const X: usize> Evaluator<X> for DummyEvaluator {
     }
 
     /// Evluate all the nodes in the batch.
-    /// (Which is, all the nodes that are eval `None`)
-    fn eval_guesses(&mut self) -> () {}
-
-    /// Evaluate a node's terminal state. If the node is terminal, return the evaluation, else
-    /// return None.
-    fn eval_terminal(_node: &Node, _pos: &Position) -> Option<Evaluation> {
-        None
+    fn eval_guesses(&mut self) -> () {
+        self.fill()
     }
 
     /// Set the evaluation at a specific index.
@@ -48,15 +68,22 @@ impl<const X: usize> Evaluator<X> for DummyEvaluator {
     fn clear_eval(&mut self, _index: usize) {}
 
     /// Get the evaluation at a specific index.
-    fn get_eval(&self, _index: usize) -> Option<&Evaluation> {
-        None
+    /// (Dummy Code: returns a random value)
+    fn get_eval(&self, index: usize) -> Option<&Evaluation> {
+        if let Some(x) = self.1.get(index) {
+            x.as_ref()
+        } else {
+            None
+        }
     }
 }
 
-impl Default for DummyEvaluator {
+impl<const X: usize> Default for DummyEvaluator<X> {
     fn default() -> Self {
         let seed = 0xdead_beef;
         let rng = SmallRng::seed_from_u64(seed);
-        Self(RefCell::new(rng))
+        let mut result = Self(RefCell::new(rng), [const { None }; X]);
+        result.fill();
+        result
     }
 }

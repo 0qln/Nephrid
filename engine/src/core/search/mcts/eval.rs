@@ -4,6 +4,7 @@ use crate::core::color::Color;
 use crate::core::coordinates::files;
 use crate::core::coordinates::ranks;
 use crate::core::position::CheckState;
+use crate::core::search::mcts::nn::BOARD_INPUT_CHANNELS;
 use crate::core::search::mcts::nn::BOARD_INPUT_HISTORY;
 use crate::core::search::mcts::nn::BoardInputFloats;
 use crate::core::search::mcts::nn::BoardInputTensor;
@@ -22,10 +23,6 @@ use itertools::Itertools;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub struct EvalItem {
-    node: Rc<RefCell<EvalInfoNode>>,
-}
-
 pub trait Evaluator<const X: usize> {
     // Prepare an eval_info_node with the required info for this evaluator.
     fn prepare_node(
@@ -42,7 +39,29 @@ pub trait Evaluator<const X: usize> {
 
     /// Evaluate a node's terminal state. If the node is terminal, return the evaluation, else
     /// return None.
-    fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation>;
+    fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation> {
+        // First check if the position is a normal game ending.
+        if node.has_branches() {
+            Some(if pos.get_check_state() != CheckState::None {
+                // If in check and no moves, it's a loss for the current player
+                Evaluation::Terminal(GameResult::Win { relative_to: !pos.get_turn() })
+            } else {
+                // Stalemate
+                Evaluation::Terminal(GameResult::Draw)
+            })
+        }
+        // Then check if the position has reached some of the extra-rule endings.
+        else if pos.has_threefold_repetition()
+            || pos.fifty_move_rule()
+            || pos.is_insufficient_material()
+        {
+            Some(Evaluation::Terminal(GameResult::Draw))
+        }
+        // Otherwise not a terminal evaluation.
+        else {
+            None
+        }
+    }
 
     /// Set the evaluation at a specific index.
     fn set_eval(&mut self, index: usize, eval: Evaluation) -> ();
@@ -123,7 +142,12 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
                     // pad missing history info with zeroes.
                     let padding_len = BOARD_INPUT_HISTORY - history.len();
                     let padding_tensor = BoardInputTensor::<B>::zeros(
-                        [X, padding_len, ranks::N_VARIANTS, files::N_VARIANTS],
+                        [
+                            X,
+                            padding_len * BOARD_INPUT_CHANNELS,
+                            ranks::N_VARIANTS,
+                            files::N_VARIANTS,
+                        ],
                         self.device(),
                     );
 
@@ -252,30 +276,6 @@ impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
     fn clear_eval(&mut self, index: usize) {
         if let Some(x) = self.eval_infos.get_mut(index) {
             *x = EvalState::None;
-        }
-    }
-
-    fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation> {
-        // First check if the position is a normal game ending.
-        if node.has_branches() {
-            Some(if pos.get_check_state() != CheckState::None {
-                // If in check and no moves, it's a loss for the current player
-                Evaluation::Terminal(GameResult::Win { relative_to: !pos.get_turn() })
-            } else {
-                // Stalemate
-                Evaluation::Terminal(GameResult::Draw)
-            })
-        }
-        // Then check if the position has reached some of the extra-rule endings.
-        else if pos.has_threefold_repetition()
-            || pos.fifty_move_rule()
-            || pos.is_insufficient_material()
-        {
-            Some(Evaluation::Terminal(GameResult::Draw))
-        }
-        // Otherwise not a terminal evaluation.
-        else {
-            None
         }
     }
 

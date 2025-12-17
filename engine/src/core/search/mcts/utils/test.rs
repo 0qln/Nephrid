@@ -200,8 +200,8 @@ fn test_complex_tree_structure() {
     let mut a = DoubleLinkedNode::append(&mut root, "a");
     let mut b = DoubleLinkedNode::append(&mut root, "b");
 
-    let c = DoubleLinkedNode::append(&mut a, "c");
-    let d = DoubleLinkedNode::append(&mut a, "d");
+    let _c = DoubleLinkedNode::append(&mut a, "c");
+    let _d = DoubleLinkedNode::append(&mut a, "d");
     let e = DoubleLinkedNode::append(&mut b, "e");
 
     assert_eq!(root.borrow().children.len(), 2);

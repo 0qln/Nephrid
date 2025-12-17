@@ -1,19 +1,23 @@
 use crate::core::Position;
 use crate::core::search::mcts::back::Backpropagater;
+use crate::core::search::mcts::back::DefaultBackuper;
 use crate::core::search::mcts::eval::EvalInfoNode;
 use crate::core::search::mcts::eval::Evaluation;
 use crate::core::search::mcts::eval::Evaluator;
 use crate::core::search::mcts::eval::Guess;
 use crate::core::search::mcts::limiter;
+use crate::core::search::mcts::limiter::DefaultLimiter;
 use crate::core::search::mcts::limiter::Limiter;
 use crate::core::search::mcts::node::Node;
 use crate::core::search::mcts::node::NodeState;
 use crate::core::search::mcts::node::Tree;
+use crate::core::search::mcts::select::PuctSelector;
 use crate::core::search::mcts::select::SelectionItem;
 use crate::core::search::mcts::select::SelectionNode;
 use crate::core::search::mcts::select::Selector;
 use std::assert_matches::assert_matches;
 use std::cell::RefCell;
+use std::marker::PhantomData;
 use std::ops::ControlFlow;
 use std::rc::Rc;
 
@@ -40,14 +44,14 @@ pub struct TreeSearcher<
     'a,
     const MPV: usize,
     E: Evaluator<MPV>,
-    L: Limiter,
-    S: Selector,
-    B: Backpropagater,
+    L: Limiter = DefaultLimiter,
+    S: Selector = PuctSelector<MPV>,
+    B: Backpropagater = DefaultBackuper,
 > {
     /// The position that will be edited during the selection and backpropagatation.
     position: Position,
 
-    // todo: be careful when we dereference the selection, there might be collisions in the tree.
+    /// Selector to select the leafes.
     selector: S,
 
     /// Limiter to dicide whether to keep searching non-terminating nodes.
@@ -57,7 +61,7 @@ pub struct TreeSearcher<
     evaluator: E,
 
     /// Backpropagater
-    backpropagater: B,
+    backpropagater: PhantomData<B>,
 
     /// The tree to be searched.
     tree: &'a mut Tree,
@@ -72,14 +76,14 @@ impl<
     B: Backpropagater + Default,
 > TreeSearcher<'a, MPV, E, L, S, B>
 {
-    pub fn new(tree: &'a mut Tree, position: Position, evaluator: E) -> Self {
+    pub fn new(tree: &'a mut Tree, position: Position, limiter: L, evaluator: E) -> Self {
         Self {
             tree,
-            evaluator,
             position,
-            backpropagater: B::default(),
-            limiter: L::default(),
             selector: S::default(),
+            limiter,
+            evaluator,
+            backpropagater: Default::default(),
         }
     }
 }
@@ -199,7 +203,12 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         let mut branch_index = 0;
         while budget >= 1 {
             if let Some(branch) = parent_node.borrow().get_branch(branch_index) {
+                //
                 // todo: maybe make this relative to the branch's puct score.
+                //
+                // todo: be careful when we dereference the selection, there might be collisions in the
+                // tree if you switch up the way that the nodes are selected.
+                //
                 let current_budget = (budget as f32 * 0.3) as usize;
 
                 // make the move of the current branch, such that we can follow the line.
@@ -256,7 +265,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 .expect(&format!("Evaluation missing for index {index}"));
 
             // Traverse the selected node in reverse, updating the parents along the way.
-            SelectionNode::try_fold_up_mut(leaf.clone(), (), |_, node| {
+            _ = SelectionNode::try_fold_up_mut(leaf.clone(), (), |_, node| {
                 let turn = node.borrow().data().turn;
                 let value = eval.to_value(turn);
                 B::update(&mut node.borrow_mut().data().leaf.borrow_mut(), value);

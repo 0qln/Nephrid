@@ -12,7 +12,7 @@ pub struct Params<'a> {
     pub depth: Depth,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct NoopLimiter;
 
 impl Limiter for NoopLimiter {
@@ -21,7 +21,7 @@ impl Limiter for NoopLimiter {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct DefaultLimiter {
     limit: Limit,
 }

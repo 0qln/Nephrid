@@ -18,7 +18,7 @@ fn test_pos(mut fen: Tokenizer, depth: Depth, expected: u64) {
     let limit = Limit { depth, ..Default::default() };
     let debug = DebugMode::default();
     let ct = CancellationToken::new();
-    let result = search::perft(pos, limit, ct, debug);
+    let result = search::perft::perft(pos, limit, ct, debug);
     assert_eq!(expected, result);
 }
 

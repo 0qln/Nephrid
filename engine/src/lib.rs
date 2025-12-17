@@ -2,6 +2,9 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 // warn
 #![warn(clippy::obfuscated_if_else)]
+// allow
+#![allow(clippy::just_underscores_and_digits)]
+#![allow(clippy::almost_complete_range)]
 // nightly features
 #![allow(incomplete_features)]
 #![feature(const_trait_impl)]

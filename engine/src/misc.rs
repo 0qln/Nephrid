@@ -307,6 +307,13 @@ impl<T> Somewhere<T> {
         }
     }
 
+    pub fn take_here(self) -> Option<T> {
+        match self {
+            Self::Here(t) => Some(t),
+            Self::There(_) => None,
+        }
+    }
+
     pub fn here(&self) -> Option<&T> {
         match self {
             Self::Here(t) => Some(t),

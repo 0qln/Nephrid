@@ -2,14 +2,17 @@ use itertools::Itertools;
 
 use crate::core::Move;
 use crate::core::Position;
-use crate::core::search::ControlFlow;
-use crate::core::search::fold_legal_moves;
+use crate::core::move_iter::fold_legal_moves;
+use crate::core::search::mcts::node::ops::ControlFlow;
 use std::assert_matches::assert_matches;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::fmt;
 use std::ops;
 use std::rc::Rc;
+
+#[cfg(test)]
+pub mod test;
 
 #[derive(Default, Debug, Clone)]
 pub struct Tree {
@@ -25,11 +28,28 @@ impl Tree {
         }
     }
 
-    pub fn advance_best(self) -> Option<Tree> {
-        let root = Rc::into_inner(self.root)?;
-        let root = RefCell::into_inner(root);
-        let best = root.take_best()?;
-        Some(Tree { root: best.node })
+    pub fn advance_best(&mut self) {
+        let node = {
+            let root = self.root.borrow();
+            let branch = root.select_best();
+            let node = branch.map(|b| b.node());
+            node
+        };
+        if let Some(node) = node {
+            self.root = node;
+        }
+    }
+
+    pub fn advance_to<F: Fn(&Branch) -> bool>(&mut self, pred: F) {
+        let node = {
+            let root = self.root.borrow();
+            let branch = root.iter_branches().find(|x| pred(x));
+            let node = branch.map(|b| b.node());
+            node
+        };
+        if let Some(node) = node {
+            self.root = node;
+        }
     }
 
     /// Returns None if there are no moves.
@@ -40,30 +60,32 @@ impl Tree {
     }
 
     /// Returns the current principal variation.
-    // pub fn principal_variation(&self) -> Vec<&Branch> {
-    //     let mut buf = Vec::new();
-    //     let mut current = self.root.clone();
-    //     loop {
-    //         let curr_ref = current.borrow();
-    //         match curr_ref.state() {
-    //             NodeState::Expanded => {
-    //                 debug_assert!(
-    //                     !curr_ref.branches.is_empty(),
-    //                     "Contradiction: NodeState == Expanded, but there are no branches."
-    //                 );
+    pub fn principal_variation(&self) -> Vec<Branch> {
+        let mut buf = Vec::new();
+        let mut current = self.root.clone();
+        loop {
+            match { current.borrow().state() } {
+                NodeState::Expanded => {
+                    debug_assert!(
+                        !{ current.borrow().branches.is_empty() },
+                        "Contradiction: NodeState == Expanded, but there are no branches."
+                    );
 
-    //                 // SAFETY: This branch is only reached when NodeState == Expanded
-    //                 let branch = unsafe { curr_ref.select_best().unwrap_unchecked() };
-    //                 buf.push(branch);
-    //                 current = branch.node();
-    //             }
-    //             NodeState::Leaf | NodeState::Terminal => {
-    //                 break;
-    //             }
-    //         }
-    //     }
-    //     buf
-    // }
+                    // we can clone here since branch struct is very small
+                    // SAFETY: This branch is only reached when NodeState == Expanded
+                    let branch =
+                        unsafe { current.borrow().select_best().unwrap_unchecked().clone() };
+                    let node = branch.node();
+                    buf.push(branch);
+                    current = node;
+                }
+                NodeState::Leaf | NodeState::Terminal => {
+                    break;
+                }
+            }
+        }
+        buf
+    }
 
     pub fn get_root(&self) -> Rc<RefCell<Node>> {
         self.root.clone()
@@ -136,9 +158,6 @@ impl Ord for Value {
         f32::partial_cmp(&self.0, &other.0).unwrap_or(Ordering::Equal)
     }
 }
-
-// todo: storing Rc<RefCell<Branch/Node>> everywhere is super expensive, but i don't have a better
-// solution for that right now :(
 
 #[derive(Clone, Default, PartialEq)]
 pub struct Node {
@@ -252,6 +271,14 @@ impl Node {
             let b = transform(b);
             a.partial_cmp(&b).expect("Node comparison failed!")
         })
+    }
+
+    /// Returns None if there are no branches.
+    pub fn take_branch<F>(self, pred: F) -> Option<Branch>
+    where
+        F: Fn(&Branch) -> bool,
+    {
+        self.branches.into_iter().find(pred)
     }
 
     /// Expand the node.

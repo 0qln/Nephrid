@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::core::search::mcts::Tree;
 use crate::core::Move;
 use crate::uci::sync;

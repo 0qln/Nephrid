@@ -32,7 +32,7 @@ pub fn out(msg: &str) {
     let _ = writeln!(&mut stdout.lock(), "{}", msg);
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct CancellationToken {
     v: Arc<AtomicBool>,
 }

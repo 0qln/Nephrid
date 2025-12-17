@@ -74,7 +74,7 @@ pub const VALUE_OUTPUT_TENSOR_DIM: usize = {
     1
 };
 
-pub type BoardInputTensor<B: Backend> = Tensor<B, 4>;
+pub type BoardInputTensor<B> = Tensor<B, 4>;
 
 pub type BoardInputFloats = [bitboard::Floats; BOARD_INPUT_CHANNELS];
 
@@ -100,7 +100,7 @@ pub fn board_input(pos: &Position) -> BoardInputFloats {
     ]
 }
 
-pub type StateInputTensor<B: Backend> = Tensor<B, 2>;
+pub type StateInputTensor<B> = Tensor<B, 2>;
 
 pub type StateInputFloats = [f32; STATE_INPUT_LEN];
 
@@ -303,12 +303,14 @@ impl<B: Backend> Model<B> {
         Tensor<B, 2>, // POLICY_OUTPUT_TENSOR_DIM
     ) {
         let [bi_batch_size, bil, rs, fs] = board_input.dims();
+        let [si_batch_size, sil] = state_input.dims();
+
+        assert_eq!(si_batch_size, bi_batch_size);
+
         assert_eq!(bil, BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY);
         assert_eq!(rs, ranks::N_VARIANTS);
         assert_eq!(fs, files::N_VARIANTS);
 
-        let [si_batch_size, sil] = state_input.dims();
-        assert_eq!(si_batch_size, bi_batch_size);
         assert_eq!(sil, STATE_INPUT_LEN);
 
         let x = board_input;
