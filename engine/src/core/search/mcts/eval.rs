@@ -54,7 +54,7 @@ pub trait Evaluator<const X: usize> {
     fn clear_eval(&mut self, index: usize);
 
     /// Get the evaluation at a specific index.
-    fn get_eval(&self, index: usize) -> Option<&Option<Evaluation>>;
+    fn get_eval(&self, index: usize) -> Option<&Evaluation>;
 }
 
 #[derive(Debug, PartialEq)]
@@ -77,12 +77,13 @@ pub struct EvalInfo {
 
 pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
 
-// type BoardHistoryBuffer = StaticRb<BoardInputFloats, BOARD_INPUT_HISTORY>;
-
 /// X: batch size
 pub struct NNEvaluator<B: Backend, const X: usize> {
     /// Eval info root
     // eval_info_root: EvalInfoNode,
+
+    // todo: i think if we don't hold onto the root, the parent's will be dropped since the
+    // children just have weak references to them...
 
     /// Eval infos
     eval_infos: [Option<Rc<RefCell<EvalInfoNode>>>; X],
@@ -235,8 +236,8 @@ impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
         }
     }
 
-    fn get_eval(&self, index: usize) -> Option<&Option<Evaluation>> {
-        self.evaluations.get(index)
+    fn get_eval(&self, index: usize) -> Option<&Evaluation> {
+        self.evaluations.get(index).map(|x| x.as_ref()).flatten()
     }
 
     fn set_eval(&mut self, index: usize, eval: Evaluation) {
@@ -352,9 +353,9 @@ pub enum GameResult {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Guess {
-    relative_to: Color,
-    quality: f32,
-    policies: Vec<f32>,
+    pub relative_to: Color,
+    pub quality: f32,
+    pub policies: Vec<f32>,
 }
 
 impl Guess {
@@ -407,7 +408,7 @@ impl GameResult {
 impl Evaluation {
     /// Returns a number between 0 and 1, where 0 is a loss and 1 is a win.
     /// `turn`: Relative to which player should the value of the evaoluation be?
-    fn to_value(&self, turn: Color) -> f32 {
+    pub fn to_value(&self, turn: Color) -> f32 {
         match self {
             Self::Terminal(result) => result.to_value(turn),
             Self::Nope => GameResult::draw_value(),

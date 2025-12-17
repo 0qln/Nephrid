@@ -3,15 +3,18 @@ use crate::core::search::mcts::back::Backpropagater;
 use crate::core::search::mcts::eval::EvalInfoNode;
 use crate::core::search::mcts::eval::Evaluation;
 use crate::core::search::mcts::eval::Evaluator;
+use crate::core::search::mcts::eval::Guess;
 use crate::core::search::mcts::limiter;
 use crate::core::search::mcts::limiter::Limiter;
 use crate::core::search::mcts::node::Node;
 use crate::core::search::mcts::node::NodeState;
 use crate::core::search::mcts::node::Tree;
+use crate::core::search::mcts::select::SelectionItem;
+use crate::core::search::mcts::select::SelectionNode;
 use crate::core::search::mcts::select::Selector;
-use itertools::Itertools;
 use std::assert_matches::assert_matches;
 use std::cell::RefCell;
+use std::ops::ControlFlow;
 use std::rc::Rc;
 
 use crate::core::depth::Depth;
@@ -96,9 +99,16 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
     fn select_lines(&mut self) -> () {
         // todo: convert to iterative approach -- or not if the stack frame is
         // small with this one ._.
-        let root = self.tree.get_root();
+        let node = self.tree.get_root();
+        let depth = Depth::MIN;
+        let turn = self.position.get_turn();
         let eval_node = Rc::new(RefCell::new(EvalInfoNode::new_root(None)));
-        self.process_node(MPV, 0, Depth::MIN, root, eval_node);
+        let sel_node = Rc::new(RefCell::new(SelectionNode::new_root(SelectionItem {
+            leaf: node.clone(),
+            depth,
+            turn,
+        })));
+        self.process_node(MPV, 0, depth, node, eval_node, sel_node);
     }
 
     /// Follows a branch and decides what to do depending on the current state of the branch's
@@ -110,6 +120,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         depth: Depth,
         node: Rc<RefCell<Node>>,
         eval_node: Rc<RefCell<EvalInfoNode>>,
+        sel_node: Rc<RefCell<SelectionNode>>,
     ) {
         // Push evaluation info for this node to the eval infos tree.
         // The info is written to this eval_node.
@@ -120,7 +131,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
             // Only if the node is already expanded we want to follow the branch.
             NodeState::Expanded => {
                 // If the node is expanded, pick branches and follow the lines.
-                self.pick_branches(budget, line_index, depth, node, eval_node);
+                self.pick_branches(budget, line_index, depth, node, eval_node, sel_node);
             }
             NodeState::Leaf => {
                 // If the node is a leaf, expand the node's branches for future mcts iterations.
@@ -169,6 +180,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         depth: Depth,
         parent_node: Rc<RefCell<Node>>,
         mut eval_node_parent: Rc<RefCell<EvalInfoNode>>,
+        mut sel_node_parent: Rc<RefCell<SelectionNode>>,
     ) {
         // Split the budget up between this and the subsequent best nodes.
         let root_visits = parent_node.borrow().visits();
@@ -187,15 +199,20 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 // make the move of the current branch, such that we can follow the line.
                 self.position.make_move(branch.mov());
 
-                let eval_info = EvalInfoNode::append(&mut eval_node_parent, None);
+                let depth = depth + 1;
+                let node = branch.node();
 
-                self.process_node(
-                    current_budget,
-                    line_index,
-                    depth + 1,
-                    branch.node(),
-                    eval_info,
+                let eval_info = EvalInfoNode::append(&mut eval_node_parent, None);
+                let sel_info = SelectionNode::append(
+                    &mut sel_node_parent,
+                    SelectionItem {
+                        depth,
+                        leaf: node.clone(),
+                        turn: self.position.get_turn(),
+                    },
                 );
+
+                self.process_node(current_budget, line_index, depth, node, eval_info, sel_info);
 
                 // undo the move again
                 self.position.unmake_move(branch.mov());
@@ -221,24 +238,32 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
     }
 
     fn backup_evals(&mut self) -> () {
-        for eval in self.evaluator.iter() {
-            // 1. Traverse the selected node in reverse, updating the parents along the way.
-            // e.g.:
-            // for branch in selected.iter_mut().rev().map(|n| n.as_mut()) {
-            //     let value = eval.to_value(pos.get_turn());
-            //     branch.update_node(value);
-            // }
-            let node = eval.node.upgrade().expect("Failed to upgrade weak");
-            let value = eval.to_value(selected.turn);
-            while let Some(parent) = node.parent() {
-                node.update(eval);
-            }
+        for (index, leaf) in self
+            .selector
+            .iter()
+            .enumerate()
+            .filter_map(|(i, x)| Some((i, x?)))
+        {
+            let eval = self
+                .evaluator
+                .get_eval(index)
+                .expect(&format!("Evaluation missing for index {index}"));
 
-            // 2. If the eval was a guess make sure to also set the policies of the selected leaf.
-            // todo
-            // if let Evaluation::Guess(Guess { policies, .. }) = evaluation {
-            //     current.set_policies(&policies);
-            // }
+            // Traverse the selected node in reverse, updating the parents along the way.
+            SelectionNode::try_fold_up_mut(leaf.clone(), (), |_, node| {
+                let turn = node.borrow().data().turn;
+                let value = eval.to_value(turn);
+                B::update(&mut node.borrow_mut().data().leaf.borrow_mut(), value);
+
+                ControlFlow::Continue::<(), ()>(())
+            });
+
+            // If the eval was a guess make sure to also set the policies of the selected leaf.
+            if let Evaluation::Guess(Guess { policies, .. }) = eval {
+                let leaf_sel = leaf.borrow_mut();
+                let leaf_node = &mut leaf_sel.data().leaf.borrow_mut();
+                leaf_node.set_policies(&policies);
+            }
         }
     }
 }

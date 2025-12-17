@@ -1,18 +1,13 @@
-use std::{
-    cell::RefCell,
-    cmp::Ordering,
-    ops,
-    rc::{Rc, Weak},
-};
+use std::{cell::RefCell, ops, rc::Rc};
 
-use ringbuf::{
-    StaticRb,
-    traits::{Consumer, Producer},
-};
+use ringbuf::traits::Producer;
 
 use crate::core::{
     depth::Depth,
-    search::mcts::node::{Branch, Node},
+    search::mcts::{
+        node::{Branch, Node},
+        utils::DoubleLinkedNode,
+    },
     turn::Turn,
 };
 
@@ -26,6 +21,8 @@ pub struct SelectionItem {
     /// Current player's turn
     pub turn: Turn,
 }
+
+pub type SelectionNode = DoubleLinkedNode<SelectionItem>;
 
 pub trait Selector {
     type Score: Ord + ops::Neg<Output = Self::Score>;
@@ -46,7 +43,7 @@ pub trait Selector {
 
     fn set(&self, index: usize, leaf: Rc<RefCell<Node>>) -> ();
 
-    fn iter(&self) -> impl Iterator<Item = &Option<SelectionItem>>;
+    fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>>;
 }
 
 pub struct PuctSelector<const X: usize> {
@@ -54,7 +51,7 @@ pub struct PuctSelector<const X: usize> {
     c: f32,
 
     /// Stack of nodes that were selected during the selection phase, for each principal line.
-    selection: [Option<SelectionItem>; X],
+    selection: [Option<Rc<RefCell<SelectionNode>>>; X],
 }
 
 impl<const X: usize> PuctSelector<X> {
@@ -109,21 +106,7 @@ impl<const X: usize> Selector for PuctSelector<X> {
             .expect("The searcher tried to push more than was expected via `X`");
     }
 
-    fn iter(&self) -> impl Iterator<Item = &Option<SelectionItem>> {
-        self.selection.iter()
+    fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>> {
+        self.selection.iter().cloned()
     }
 }
-
-// #[derive(Debug)]
-// pub struct PuctWithTempSelector {
-//     rng: SmallRng,
-//     puct: PuctSelector
-// }
-
-// impl PuctWithTempSelector {
-//     pub fn new(seed: u64) -> Self {
-//         let rng = SmallRng::seed_from_u64(seed);
-//         let puct =
-//         Slef { rng, puct: }
-//     }
-// }
