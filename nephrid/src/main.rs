@@ -20,9 +20,10 @@ fn main() {
 
     execute_uci(
         &mut engine,
-        &mut Tokenizer::new("position startpos"),
+        "position startpos".to_string(),
         cmd_cancellation.clone(),
-    );
+    )
+    .unwrap();
 
     loop {
         let mut input = String::new();

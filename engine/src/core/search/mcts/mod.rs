@@ -1,3 +1,5 @@
+use burn::prelude::Backend;
+
 use crate::core::Limit;
 use crate::core::position::Position;
 use crate::core::search::mcts::back::DefaultBackuper;
@@ -12,7 +14,6 @@ use crate::core::search::mcts::strategy::MctsStrategy;
 use crate::misc::DebugMode;
 use crate::uci::sync::CancellationToken;
 
-use std::rc::Rc;
 use std::time::Instant;
 
 pub mod back;
@@ -27,45 +28,38 @@ pub mod utils;
 
 pub mod test;
 
-pub fn mcts<S: MctsStrategy>(
+pub fn mcts<S: MctsStrategy, B: Backend>(
     pos: Position,
-    state: MctsState,
+    state: &mut MctsState<B>,
     limit: Limit,
     _debug: DebugMode,
     ct: CancellationToken,
     mut strategy: S,
-) -> (S::Result, MctsState) {
+) -> S::Result {
     let limiter = DefaultLimiter::new(limit.clone());
 
     let time_per_move = limit.time_per_move(&pos);
     let time_limit = Instant::now() + time_per_move;
 
-    let nn = Rc::new(state.nn);
-    let dev = Rc::new(state.device);
-    let mut tree = state.tree;
+    let nn = &state.nn;
+    let dev = &state.device;
+    let tree = &mut state.tree;
 
     while !ct.is_cancelled() && (!limit.is_active || Instant::now() < time_limit) {
-        let evaluator = NNEvaluator::<_, { config::MPV }>::new(nn.clone(), dev.clone());
+        let evaluator = NNEvaluator::<_, { config::MPV }>::new(nn, dev);
         let mut searcher = TreeSearcher::<
             { config::MPV },
             _,
             _,
             PuctSelector<{ config::MPV }>,
             DefaultBackuper,
-        >::new(&mut tree, pos.clone(), limiter.clone(), evaluator);
+        >::new(tree, pos.clone(), limiter.clone(), evaluator);
 
         searcher.grow();
-        strategy.step(&mut tree);
+        strategy.step(tree);
     }
 
-    (
-        strategy.result(&mut tree),
-        MctsState::reuse(
-            tree,
-            Rc::into_inner(nn).expect("Not all references were dropped"),
-            Rc::into_inner(dev).expect("Not all references were dropped"),
-        ),
-    )
+    strategy.result(tree)
 }
 
 // todo:
@@ -83,47 +77,47 @@ pub fn mcts<S: MctsStrategy>(
 ///
 /// (An option because maybe we just started something else like perft or some sht)
 #[derive(Debug)]
-pub struct MctsState {
+pub struct MctsState<B: Backend> {
     /// The game tree.
     pub tree: Tree,
 
     /// NN Model
-    pub nn: Model<config::Backend>,
+    pub nn: Model<B>,
 
     /// Hardware abstraction for the nn model
-    pub device: config::Device,
+    pub device: B::Device,
 }
 
-impl Default for MctsState {
+impl<B: Backend> Default for MctsState<B> {
     fn default() -> Self {
-        Self::new(Default::default(), "./weights")
+        Self::from_path(Default::default(), "./weights")
     }
 }
 
-impl MctsState {
-    pub fn new(tree: Tree, _nn_path: &str) -> Self {
-        let device = config::Device::default();
+impl<B: Backend> MctsState<B> {
+    pub fn from_path(tree: Tree, _nn_path: &str) -> Self {
+        let device = B::Device::default();
 
         // todo: read from nn_path
         let nn = ModelConfig::new().init(&device);
 
-        Self { tree, device, nn }
+        Self::new(tree, nn, device)
     }
 
-    pub fn reuse(tree: Tree, nn: Model<config::Backend>, device: config::Device) -> Self {
+    pub fn new(tree: Tree, nn: Model<B>, device: B::Device) -> Self {
         Self { tree, nn, device }
     }
 }
 
 #[cfg(feature = "nn-backend-cuda")]
-mod config {
+pub mod config {
     pub type Backend = burn_cuda::Cuda<f32>;
     pub type Device = <self::Backend as burn::prelude::Backend>::Device;
-    pub const MPV: usize = 256;
+    pub const MPV: usize = 64;
 }
 
 #[cfg(feature = "nn-backend-ndarray")]
-mod config {
+pub mod config {
     type Backend = NdArray;
-    pub const MPV: usize = 8;
+    pub const MPV: usize = 4;
 }

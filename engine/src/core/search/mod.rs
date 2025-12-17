@@ -29,7 +29,7 @@ pub struct Thread {
 pub fn init() -> Thread {
     let (tx, rx) = channel::<Command>();
     thread::spawn(move || {
-        let mut mcts_state = MctsState::default();
+        let mut mcts_state = MctsState::<mcts::config::Backend>::default();
         loop {
             let cmd = rx.recv().expect("Should be able to receive data");
             match cmd {
@@ -37,10 +37,8 @@ pub fn init() -> Thread {
                     perft(pos, limit, ct, debug);
                 }
                 Command::Normal(pos, limit, ct, debug) => {
-                    let (result, state) =
-                        mcts(pos, mcts_state, limit, debug, ct, MctsUci::default());
+                    let result = mcts(pos, &mut mcts_state, limit, debug, ct, MctsUci::default());
                     result.expect("");
-                    mcts_state = state;
                 }
                 Command::Ponder => {
                     unimplemented!("todo");

@@ -2,12 +2,24 @@
 
 //todo: derichlet noise
 
+use engine::core::search::mcts::MctsState;
+use engine::core::search::mcts::eval::EvalInfoNode;
+use engine::core::search::mcts::eval::Evaluation;
+use engine::core::search::mcts::eval::Evaluator;
+use engine::core::search::mcts::eval::GameResult;
+use engine::core::search::mcts::eval::Guess;
+use engine::core::search::mcts::eval::NNEvaluator;
+use engine::core::search::mcts::mcts;
+use engine::core::search::mcts::strategy::MctsFindBest;
+use engine::core::search::mcts::strategy::MctsStrategy;
+use std::cell::RefCell;
+
 use burn::prelude::Module;
 use burn::record::CompactRecorder;
-use engine::core::depth::Depth;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use std::env::var;
+use std::rc::Rc;
 use std::sync::Mutex;
 use std::{error::Error, fs, marker::PhantomData};
 
@@ -34,6 +46,7 @@ use burn::{
     },
 };
 use burn_cuda::{Cuda, CudaDevice};
+use engine::core::search::mcts::node::Tree;
 use engine::{
     core::{
         color::Color,
@@ -41,15 +54,11 @@ use engine::{
         move_iter::sliding_piece::magics,
         position::Position,
         search::{
-            self, MctsFindBest, MctsStrategy,
             limit::Limit,
-            mcts::{
-                self, Evaluation, GameResult, Guess,
-                eval::model::{
-                    BOARD_INPUT_TENSOR_DIM, BoardInputFloats, Model, ModelConfig,
-                    POLICY_TARGET_TENSOR_DIM, STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW,
-                    VALUE_LOSE, VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
-                },
+            mcts::nn::{
+                BOARD_INPUT_TENSOR_DIM, BoardInputFloats, Model, ModelConfig,
+                POLICY_TARGET_TENSOR_DIM, STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW,
+                VALUE_LOSE, VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
             },
         },
         zobrist,
@@ -323,6 +332,8 @@ pub fn train<B: AutodiffBackend>(
     config: TrainingConfig,
     device: B::Device,
 ) -> Option<String> {
+    let device = Rc::new(device);
+
     let artifact_dir = &format!("{output_dir}/artifacts");
     clean_dir(artifact_dir);
 
@@ -462,6 +473,8 @@ fn generate_batch<B: AutodiffBackend>(
                 model_lock.valid()
             };
 
+            let device = B::Device::default();
+
             match self_play(&fen, model, device) {
                 Ok(result) => {
                     // todo: replace this with printing the game in PGN format
@@ -495,16 +508,16 @@ pub struct MctsTrain {
 }
 
 impl MctsStrategy for MctsTrain {
-    type Result = (<MctsFindBest as MctsStrategy>::Result, mcts::Tree);
+    type Result = (<MctsFindBest as MctsStrategy>::Result, Tree);
     type Step = (<MctsFindBest as MctsStrategy>::Step,);
 
-    fn result(&mut self, tree: &mut mcts::Tree) -> Self::Result {
+    fn result(&mut self, tree: &mut Tree) -> Self::Result {
         let inference_result = self.infer.result(tree);
         let tree = tree.to_owned();
         (inference_result, tree)
     }
 
-    fn step(&mut self, tree: &mut mcts::Tree) -> Self::Step {
+    fn step(&mut self, tree: &mut Tree) -> Self::Step {
         (self.infer.step(tree),)
     }
 }
@@ -584,7 +597,7 @@ struct SelfPlayResult {
 fn self_play<B: Backend>(
     pos: &str,
     model: Model<B>,
-    device: &B::Device,
+    device: B::Device,
 ) -> Result<Vec<SelfPlayResult>, Box<dyn Error>> {
     let limit = Limit {
         is_active: true,
@@ -594,7 +607,6 @@ fn self_play<B: Backend>(
         btime: 0,
         ..Default::default()
     };
-    let limiter = mcts::NoopLimiter;
     let debug = DebugMode::default();
     let ct = CancellationToken::new();
 
@@ -602,45 +614,57 @@ fn self_play<B: Backend>(
     let mut pos: Position = tok.try_into()?;
 
     let mut decisions = Vec::<Decision>::new();
-    let mut eval_model = EvalModel::new(model, device);
+    let mut mcts_state = MctsState::new(Default::default(), model, device);
 
     let eval: GameResult = {
         let game_result;
-        let mut depth = Depth::MIN;
         loop {
             let turn = pos.get_turn();
-            let result = search::mcts::<MctsTrain, _>(
+            let result = mcts(
                 pos.clone(),
-                &mut eval_model,
+                &mut mcts_state,
                 limit.clone(),
                 debug.clone(),
                 ct.clone(),
+                MctsTrain::default(),
             );
+
             let mov = result.0;
             let tree = result.1;
 
-            let guess = match tree
-                .get_root()
-                .eval(&pos, &mut eval_model, &limiter, Depth::MIN)
+            if let Some(Evaluation::Terminal(x)) =
+                NNEvaluator::<B, 1>::eval_terminal(&tree.get_root().borrow(), &pos)
             {
-                Evaluation::Guess(guess) => guess,
-                Evaluation::Nope => unreachable!("We entered a limiter that will not stop."),
-                Evaluation::Terminal(result) => {
-                    game_result = result;
-                    break;
-                }
-            };
+                game_result = x;
+                break;
+            }
+
+            let model = &mcts_state.nn;
+            let device = &mcts_state.device;
+            let mut evaluator = NNEvaluator::<_, 1>::new(model, device);
+            evaluator.prepare_node(
+                0,
+                Rc::new(RefCell::new(EvalInfoNode::new_root(None))),
+                tree.get_root(),
+                &pos,
+            );
+            evaluator.eval_guesses();
+            let guess = evaluator.get_eval(0);
+            let guess = guess.expect("The evaluator should have generated the guess");
+            let guess = guess.guess().expect(
+                "We specifically told the evaluator to make a guess and not a terminal evaluation.",
+            );
 
             let b_in = board_input(&pos);
             let s_in = state_input(&pos);
 
-            let mov = mov.expect("if the ");
+            let mov = mov.expect("");
             pos.make_move(mov);
 
             let state = State { mov, moving_color: turn };
             let input = Input { board_in: b_in, state_in: s_in };
             let target = Target { mov };
-            let stats = Stats::new(guess);
+            let stats = Stats::new(guess.clone());
             decisions.push(Decision { input, target, state, stats });
         }
         game_result

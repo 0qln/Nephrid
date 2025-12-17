@@ -102,7 +102,7 @@ pub enum EvalState {
 pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
 
 /// X: batch size
-pub struct NNEvaluator<B: Backend, const X: usize> {
+pub struct NNEvaluator<'a, 'b, B: Backend, const X: usize> {
     /// Eval info root
     // eval_info_root: EvalInfoNode,
 
@@ -113,14 +113,14 @@ pub struct NNEvaluator<B: Backend, const X: usize> {
     eval_infos: [EvalState; X],
 
     /// NN Model
-    model: Rc<Model<B>>,
+    model: &'a Model<B>,
 
     // Device on which the nn will run.
-    device: Rc<B::Device>,
+    device: &'b B::Device,
 }
 
-impl<B: Backend, const X: usize> NNEvaluator<B, X> {
-    pub fn new(model: Rc<Model<B>>, device: Rc<B::Device>) -> Self {
+impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
+    pub fn new(model: &'a Model<B>, device: &'b B::Device) -> Self {
         Self {
             model,
             device,
@@ -232,7 +232,7 @@ impl<B: Backend, const X: usize> NNEvaluator<B, X> {
     }
 }
 
-impl<B: Backend, const X: usize> Evaluator<X> for NNEvaluator<B, X> {
+impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B, X> {
     /// Push the eval info as to be guessed.
     fn prepare_node(
         &mut self,
@@ -437,6 +437,20 @@ impl Evaluation {
                 let quality = (quality + 1.0) / 2.0;
                 if *relative_to == turn { quality } else { 1.0 - quality }
             }
+        }
+    }
+
+    pub fn guess(&self) -> Option<&Guess> {
+        match self {
+            Self::Guess(guess) => Some(guess),
+            _ => None,
+        }
+    }
+
+    pub fn terminal(&self) -> Option<&GameResult> {
+        match self {
+            Self::Terminal(x) => Some(x),
+            _ => None,
         }
     }
 }
