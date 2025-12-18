@@ -127,9 +127,14 @@ fn test_node_set_policy_with_correct_length() {
     let policy: Vec<f32> = (0..num_branches).map(|i| i as f32 * 0.1).collect();
     node.set_policy(&Policy::new(policy));
 
-    for (i, branch) in node.branches.iter().enumerate() {
-        assert_eq!(branch.policy(), i as f32 * 0.1);
+    let mut sum = 0.0;
+    for (_, branch) in node.branches.iter().enumerate() {
+        sum += branch.policy();
     }
+
+    // policy should be a probability distribution, even if our input wasn't.
+    let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
+    assert!(f32_eq(sum, 1.0, 0.001));
 }
 
 #[test]

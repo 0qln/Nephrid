@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, thread};
 
 use super::*;
 use crate::{
@@ -14,26 +14,33 @@ use crate::{
     uci::tokens::Tokenizer,
 };
 
-fn brrr<const X: usize>(pos: &str) {
+fn brrr<const X: usize>(pos: &'static str) {
     magics::init();
     zobrist::init();
 
-    let mut fen = Tokenizer::new(pos);
-    let pos = Position::try_from(&mut fen).unwrap();
+    thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            let mut fen = Tokenizer::new(pos);
+            let pos = Position::try_from(&mut fen).unwrap();
 
-    let eval = DummyEvaluator::<X>::default();
-    let limiter = NoopLimiter::default();
-    let mut tree = Tree::new();
+            let eval = DummyEvaluator::<X>::default();
+            let limiter = NoopLimiter::default();
+            let mut tree = Tree::new();
 
-    for _i in 0..(50_000 / X) {
-        let mut searcher = TreeSearcher::<X, _, _, PuctSelector<X>, DefaultBackuper>::new(
-            &mut tree,
-            pos.clone(),
-            limiter.clone(),
-            eval.clone(),
-        );
-        searcher.grow();
-    }
+            for _i in 0..(50_000 / X) {
+                let mut searcher = TreeSearcher::<X, _, _, PuctSelector<X>, DefaultBackuper>::new(
+                    &mut tree,
+                    pos.clone(),
+                    limiter.clone(),
+                    eval.clone(),
+                );
+                searcher.grow();
+            }
+        })
+        .expect("Couldn't spawn thread")
+        .join()
+        .expect("Should be able to join thread");
 }
 
 #[test]

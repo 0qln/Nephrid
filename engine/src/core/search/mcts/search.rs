@@ -33,11 +33,6 @@ use crate::core::depth::Depth;
 /// Use multi pv lines with batched evaluation, if we have access to GPU and can parallelize. If we
 /// don't have access to hardware accell, resort to using a backend like WebGPU, or NdArray, and just do
 /// TreeSearcher<MPV=1>.
-///
-/// The pv lines are the top few lines sorted by puct. (e.g.:
-/// ```rust
-/// self.multi_select(|b| b.puct(self))
-/// ```
 /// )
 pub struct TreeSearcher<
     'a,

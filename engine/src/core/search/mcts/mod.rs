@@ -113,7 +113,7 @@ impl<B: Backend> MctsState<B> {
 pub mod config {
     pub type Backend = burn_cuda::Cuda<f32>;
     pub type Device = <self::Backend as burn::prelude::Backend>::Device;
-    pub const MPV: usize = 64;
+    pub const MPV: usize = 32;
 }
 
 #[cfg(feature = "nn-backend-ndarray")]

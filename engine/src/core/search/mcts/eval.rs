@@ -21,6 +21,7 @@ use burn::tensor::Shape;
 use burn::tensor::backend::Backend;
 use itertools::Itertools;
 use std::cell::RefCell;
+use std::ops::ControlFlow;
 use std::rc::Rc;
 
 pub trait Evaluator<const X: usize> {
@@ -176,21 +177,10 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
     /// return the history where:
     /// the oldest board state is the first index
     /// the youngest board state is the last index
-    fn get_node_history(mut eval_info: Rc<RefCell<EvalInfoNode>>) -> Vec<BoardInputFloats> {
+    fn get_node_history(eval_info: Rc<RefCell<EvalInfoNode>>) -> Vec<BoardInputFloats> {
         let mut vec: Vec<BoardInputFloats> = vec![];
 
-        let board_input = eval_info
-            .borrow()
-            .data()
-            .as_ref()
-            .expect("Eval info is missing")
-            .inputs
-            .board;
-        vec.insert(0, board_input);
-
-        while let Some(parent) = eval_info.clone().borrow().parent() {
-            eval_info = parent.upgrade().expect("can't get a Rc from a Weak");
-
+        _ = EvalInfoNode::try_fold_up_mut(eval_info.clone(), (), |_, eval_info| {
             let board_input = eval_info
                 .borrow()
                 .data()
@@ -198,8 +188,11 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
                 .expect("Eval info is missing")
                 .inputs
                 .board;
+
             vec.insert(0, board_input);
-        }
+
+            ControlFlow::Continue::<(), ()>(())
+        });
 
         vec
     }
