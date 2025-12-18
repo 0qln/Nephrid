@@ -67,6 +67,12 @@ impl Engine {
     }
 }
 
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn execute_uci(
     engine: &mut Engine,
     mut command: String,

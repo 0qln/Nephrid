@@ -35,11 +35,11 @@ pub trait Evaluator<const X: usize> {
         eval_node: Rc<RefCell<EvalInfoNode>>,
         node: Rc<RefCell<Node>>,
         pos: &Position,
-    ) -> ();
+    );
 
     /// Evluate all the nodes in the batch.
     /// (Which is, all the nodes that are eval `None`)
-    fn eval_guesses(&mut self) -> ();
+    fn eval_guesses(&mut self);
 
     /// Evaluate a node's terminal state. If the node is terminal, return the evaluation, else
     /// return None.
@@ -68,7 +68,7 @@ pub trait Evaluator<const X: usize> {
     }
 
     /// Set the evaluation at a specific index.
-    fn set_eval(&mut self, index: usize, eval: Evaluation) -> ();
+    fn set_eval(&mut self, index: usize, eval: Evaluation);
 
     /// Clear the evaluation at a specific index.
     /// (Mark the node at `index` to be evaluated by `eval_guesses`.)
@@ -138,7 +138,7 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
     }
 
     fn device(&self) -> &B::Device {
-        &self.device
+        self.device
     }
 
     fn build_board_batch(&self) -> Tensor<B, 4> {
@@ -213,9 +213,7 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
                         .inputs
                         .state;
 
-                    let state_tensor = Tensor::from_floats([state_input], self.device());
-
-                    state_tensor
+                    Tensor::from_floats([state_input], self.device())
                 })
                 .collect_vec(),
             0,
@@ -247,7 +245,7 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
         eval_node: Rc<RefCell<EvalInfoNode>>,
         node: Rc<RefCell<Node>>,
         pos: &Position,
-    ) -> () {
+    ) {
         let board = board_input(pos);
         let state = state_input(pos);
         let input = InputFloats { board, state };
@@ -266,12 +264,13 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
     }
 
     fn get_eval(&self, index: usize) -> Option<&Evaluation> {
-        if let Some(x) = self.eval_infos.evals.get(index) {
-            if let EvalState::Evaluated(eval) = x {
-                return Some(eval);
-            }
+        if let Some(x) = self.eval_infos.evals.get(index)
+            && let EvalState::Evaluated(eval) = x
+        {
+            Some(eval)
+        } else {
+            None
         }
-        None
     }
 
     fn set_eval(&mut self, index: usize, eval: Evaluation) {
@@ -288,7 +287,7 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
 
     fn eval_guesses(&mut self) {
         let batch_size = self.iter_batch().count();
-        if batch_size <= 0 {
+        if batch_size == 0 {
             return;
         }
 
@@ -346,11 +345,11 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
                 .as_ref()
                 .expect("This should be a leaf and leafes should have data.");
 
-            let eval = Evaluation::Guess(Guess {
+            let eval = Evaluation::Guess(Box::new(Guess {
                 relative_to: eval_info.turn,
                 quality: value[0],
                 policy: raw_policy,
-            });
+            }));
             self.eval_infos.evals[index] = EvalState::Evaluated(eval);
         }
     }
@@ -452,7 +451,7 @@ impl Guess {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Evaluation {
     /// we will go further and have a guess about this game.
-    Guess(Guess),
+    Guess(Box<Guess>),
     /// we cannot go any further.
     Terminal(GameResult),
     /// we don't feel like going any further.
@@ -497,10 +496,14 @@ impl Evaluation {
         match self {
             Self::Terminal(result) => result.to_value(turn),
             Self::Nope => GameResult::draw_value(),
-            Self::Guess(Guess { quality, relative_to, policy: _p }) => {
+            Self::Guess(guess) => {
                 // The quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
-                let quality = (quality + 1.0) / 2.0;
-                if *relative_to == turn { quality } else { 1.0 - quality }
+                let quality = (guess.quality + 1.0) / 2.0;
+                if guess.relative_to == turn {
+                    quality
+                } else {
+                    1.0 - quality
+                }
             }
         }
     }

@@ -4,7 +4,6 @@ use crate::core::search::mcts::back::DefaultBackuper;
 use crate::core::search::mcts::eval::EvalInfoNode;
 use crate::core::search::mcts::eval::Evaluation;
 use crate::core::search::mcts::eval::Evaluator;
-use crate::core::search::mcts::eval::Guess;
 use crate::core::search::mcts::limiter;
 use crate::core::search::mcts::limiter::DefaultLimiter;
 use crate::core::search::mcts::limiter::Limiter;
@@ -85,7 +84,7 @@ impl<
 impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpropagater>
     TreeSearcher<'a, MPV, E, L, S, B>
 {
-    pub fn grow(&mut self) -> () {
+    pub fn grow(&mut self) {
         println!("select");
         self.select_lines();
         println!("eval");
@@ -97,7 +96,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
     //
     // # Select the leafes.
     //
-    fn select_lines(&mut self) -> () {
+    fn select_lines(&mut self) {
         // todo: convert to iterative approach -- or not if the stack frame is
         // small with this one ._.
         let node = self.tree.get_root();
@@ -124,7 +123,8 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         self.evaluator
             .prepare_node(line_index, eval_node.clone(), node.clone(), &self.position);
 
-        match { node.borrow().state() } {
+        let state = node.borrow().state();
+        match state {
             // Only if the node is already expanded we want to follow the branch.
             NodeState::Expanded => {
                 // If the node is expanded, pick branches and follow the lines.
@@ -156,7 +156,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         leaf: Rc<RefCell<Node>>,
         node: Rc<RefCell<SelectionNode>>,
         depth: Depth,
-    ) -> () {
+    ) {
         let pos = &self.position;
 
         // Check if the board has a terminal evaluation
@@ -238,13 +238,13 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         }
     }
 
-    fn eval_leafes_(&mut self) -> () {
+    fn eval_leafes_(&mut self) {
         // For all nodes in the batch buffer, build the input tensors and evaluate them using
         // the eval model.
         self.evaluator.eval_guesses()
     }
 
-    fn backup_evals(&mut self) -> () {
+    fn backup_evals(&mut self) {
         for (index, leaf) in self
             .selector
             .iter()
@@ -254,7 +254,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
             let eval = self
                 .evaluator
                 .get_eval(index)
-                .expect(&format!("Evaluation missing for index {index}"));
+                .unwrap_or_else(|| panic!("Evaluation missing for index {index}"));
 
             // Traverse the selected node in reverse, updating the parents along the way.
             _ = SelectionNode::try_fold_up_mut(leaf.clone(), (), |_, node| {
@@ -266,10 +266,11 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
             });
 
             // If the eval was a guess make sure to also set the policies of the selected leaf.
-            if let Evaluation::Guess(Guess { policy, .. }) = eval {
+            if let Evaluation::Guess(guess) = eval {
+                let policy = &guess.policy;
                 let leaf_sel = leaf.borrow_mut();
                 let leaf_node = &mut leaf_sel.data().leaf.borrow_mut();
-                leaf_node.set_policy_raw(&policy);
+                leaf_node.set_policy_raw(policy);
             }
         }
     }

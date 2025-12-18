@@ -154,8 +154,7 @@ impl<B: Backend> ConvBlock<B> {
     ) -> Tensor<B, { BOARD_INPUT_TENSOR_DIM }> {
         let x = self.conv.forward(x);
         let x = self.b_norm.forward(x);
-        let x = self.activation.forward(x);
-        x
+        self.activation.forward(x)
     }
 }
 
@@ -188,16 +187,13 @@ impl<B: Backend> MultiConvBlock<B> {
         &self,
         x: Tensor<B, { BOARD_INPUT_TENSOR_DIM }>,
     ) -> Tensor<B, { BOARD_INPUT_TENSOR_DIM }> {
-        // println!("m-conv in: {:?}", x.shape());
-        let x = Tensor::cat(
+        Tensor::cat(
             self.convs
                 .iter()
                 .map(|conv| conv.forward(x.clone()))
                 .collect_vec(),
             1,
-        );
-        // println!("m-conv out: {:?}", x.shape());
-        x
+        )
     }
 }
 

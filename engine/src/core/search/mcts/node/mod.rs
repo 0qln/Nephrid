@@ -26,7 +26,6 @@ impl Tree {
     pub fn new() -> Self {
         Self {
             root: Rc::new(RefCell::new(Node::leaf())),
-            ..Default::default()
         }
     }
 
@@ -34,8 +33,7 @@ impl Tree {
         let node = {
             let root = self.root.borrow();
             let branch = root.select_best();
-            let node = branch.map(|b| b.node());
-            node
+            branch.map(|b| b.node())
         };
         if let Some(node) = node {
             self.root = node;
@@ -46,8 +44,7 @@ impl Tree {
         let node = {
             let root = self.root.borrow();
             let branch = root.iter_branches().find(|x| pred(x));
-            let node = branch.map(|b| b.node());
-            node
+            branch.map(|b| b.node())
         };
         if let Some(node) = node {
             self.root = node;
@@ -66,7 +63,8 @@ impl Tree {
         let mut buf = Vec::new();
         let mut current = self.root.clone();
         loop {
-            match { current.borrow().state() } {
+            let state = current.borrow().state();
+            match state {
                 NodeState::Expanded => {
                     debug_assert!(
                         !{ current.borrow().branches.is_empty() },
@@ -147,8 +145,14 @@ impl Branch {
     }
 }
 
-#[derive(PartialOrd, PartialEq, Clone, Copy, Debug, Default)]
+#[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct Value(pub f32);
+
+impl PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
 
 impl_op!(/ |l: Value, r: f32| -> f32 { l.0 / r });
 impl_op!(+= |l: &mut Value, r: f32| { l.0 += r } );

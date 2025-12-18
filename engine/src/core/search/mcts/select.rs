@@ -42,7 +42,7 @@ pub trait Selector {
     /// Initializes and returns a reference to the root selection node.
     fn init(&mut self, root_node: Rc<RefCell<Node>>, turn: Turn) -> Rc<RefCell<SelectionNode>>;
 
-    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) -> ();
+    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>);
 
     fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>>;
 }
@@ -84,16 +84,24 @@ impl<const X: usize> Default for PuctSelector<X> {
     }
 }
 
-#[derive(PartialOrd, PartialEq, Clone, Copy, Debug, Default)]
+#[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct PuctScore(pub f32);
 
 impl_op!(-|x: PuctScore| -> PuctScore { PuctScore(-x.0) });
 
 impl Eq for PuctScore {}
 
+impl PartialOrd for PuctScore {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl Ord for PuctScore {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        f32::partial_cmp(&self.0, &other.0).expect("This shouldn't happen for puct scores.")
+        self.0
+            .partial_cmp(&other.0)
+            .expect("This shouldn't happen for puct scores.")
     }
 }
 
@@ -115,7 +123,7 @@ impl<const X: usize> Selector for PuctSelector<X> {
         PuctScore(exploitation + exploration)
     }
 
-    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) -> () {
+    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) {
         self.selection.leafs[index] = Some(item);
     }
 

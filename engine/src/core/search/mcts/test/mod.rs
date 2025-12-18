@@ -22,7 +22,7 @@ pub mod fuzz;
 pub struct DummyEvaluator<const X: usize>(RefCell<SmallRng>, [Option<Evaluation>; X]);
 
 impl<const X: usize> DummyEvaluator<X> {
-    fn fill(&mut self) -> () {
+    fn fill(&mut self) {
         let mut rng = self.0.borrow_mut();
 
         for i in 0..X {
@@ -35,11 +35,11 @@ impl<const X: usize> DummyEvaluator<X> {
                 p
             });
 
-            self.1[i] = Some(Evaluation::Guess(Guess {
+            self.1[i] = Some(Evaluation::Guess(Box::new(Guess {
                 relative_to: colors::WHITE,
                 quality,
                 policy: raw_policy,
-            }));
+            })));
         }
     }
 }
@@ -52,16 +52,16 @@ impl<const X: usize> Evaluator<X> for DummyEvaluator<X> {
         _eval_node: Rc<RefCell<EvalInfoNode>>,
         _node: Rc<RefCell<Node>>,
         _pos: &Position,
-    ) -> () {
+    ) {
     }
 
     /// Evluate all the nodes in the batch.
-    fn eval_guesses(&mut self) -> () {
+    fn eval_guesses(&mut self) {
         self.fill()
     }
 
     /// Set the evaluation at a specific index.
-    fn set_eval(&mut self, _index: usize, _eval: Evaluation) -> () {}
+    fn set_eval(&mut self, _index: usize, _eval: Evaluation) {}
 
     /// Clear the evaluation at a specific index.
     /// (Mark the node at `index` to be evaluated by `eval_guesses`.)

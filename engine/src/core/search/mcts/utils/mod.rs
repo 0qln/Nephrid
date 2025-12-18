@@ -31,7 +31,7 @@ impl<T> DoubleLinkedNode<T> {
     }
 
     pub fn append(parent: &mut Rc<RefCell<Self>>, data: T) -> Rc<RefCell<Self>> {
-        let child = Self::new_child(Rc::downgrade(&parent), data);
+        let child = Self::new_child(Rc::downgrade(parent), data);
         parent.borrow_mut().children.push(child.clone());
         child
     }

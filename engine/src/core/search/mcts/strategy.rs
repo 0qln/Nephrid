@@ -1,7 +1,7 @@
 use itertools::Itertools;
 
-use crate::core::search::mcts::Tree;
 use crate::core::Move;
+use crate::core::search::mcts::Tree;
 use crate::uci::sync;
 
 pub trait MctsStrategy {
@@ -27,13 +27,13 @@ impl MctsStrategy for MctsFindBest {
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
         let curr_best_move = tree.best_move();
-        if self.last_best_move != curr_best_move {
-            if let Some(mov) = curr_best_move {
-                self.last_best_move = Some(mov);
-                return Some(mov);
-            }
+        if self.last_best_move != curr_best_move
+            && let Some(mov) = curr_best_move
+        {
+            self.last_best_move = Some(mov);
+            return Some(mov);
         }
-        return None;
+        None
     }
 }
 

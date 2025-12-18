@@ -38,7 +38,7 @@ pub fn mcts<S: MctsStrategy, B: Backend>(
 ) -> S::Result {
     let limiter = DefaultLimiter::new(limit.clone());
 
-    let time_per_move = limit.time_per_move(&pos);
+    let time_per_move = limit.time_per_move(pos);
     let time_limit = Instant::now() + time_per_move;
 
     let nn = &state.nn;
