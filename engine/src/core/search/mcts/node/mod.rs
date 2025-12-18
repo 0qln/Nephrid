@@ -334,4 +334,8 @@ impl Node {
     pub fn state(&self) -> NodeState {
         self.state
     }
+
+    pub fn set_state(&mut self, state: NodeState) {
+        self.state = state
+    }
 }

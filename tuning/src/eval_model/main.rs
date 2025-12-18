@@ -557,19 +557,19 @@ impl Stats {
     pub fn new(guess: Guess) -> Self {
         let policy_values = guess.policy();
 
-        let policy_avg = policy_values.iter().sum::<f32>() / policy_values.len() as f32;
+        let policy_avg = policy_values.sum() / policy_values.len() as f32;
 
         let variance = policy_values
             .iter()
-            .map(|&p| (p - policy_avg).powi(2))
+            .map(|p| (p - policy_avg).powi(2))
             .sum::<f32>()
             / policy_values.len() as f32;
         let policy_variance = variance.sqrt();
 
         let policy_entropy = -policy_values
             .iter()
-            .filter(|&&p| p > 0.0)
-            .map(|&p| p * p.log2())
+            .filter(|&p| p > 0.0)
+            .map(|p| p * p.log2())
             .sum::<f32>();
 
         Self {
@@ -621,7 +621,7 @@ fn self_play<B: Backend>(
         loop {
             let turn = pos.get_turn();
             let result = mcts(
-                pos.clone(),
+                &pos,
                 &mut mcts_state,
                 limit.clone(),
                 debug.clone(),

@@ -161,6 +161,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
 
         // Check if the board has a terminal evaluation
         if let Some(terminal_eval) = E::eval_terminal(&leaf.borrow(), pos) {
+            leaf.borrow_mut().set_state(NodeState::Terminal);
             self.evaluator.set_eval(line_index, terminal_eval);
         }
         // Check if we are even interested in searching this line any further.

@@ -18,9 +18,6 @@ use super::{
 #[cfg(test)]
 pub mod fuzz;
 
-#[cfg(test)]
-pub mod mpv;
-
 #[derive(Clone)]
 pub struct DummyEvaluator<const X: usize>(RefCell<SmallRng>, [Option<Evaluation>; X]);
 

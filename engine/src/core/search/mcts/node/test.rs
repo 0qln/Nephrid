@@ -142,8 +142,8 @@ fn test_node_select_best_by_visits() {
     let mut node = Node::leaf();
 
     // Create branches with different visits
-    let mut branch1 = Branch::new(Move::null(), 0.5);
-    let mut branch2 = Branch::new(Move::new(squares::E2, squares::E4, move_flags::QUIET), 0.5);
+    let branch1 = Branch::new(Move::null(), 0.5);
+    let branch2 = Branch::new(Move::new(squares::E2, squares::E4, move_flags::QUIET), 0.5);
 
     branch1.node.borrow_mut().visits = 10;
     branch2.node.borrow_mut().visits = 5;
@@ -219,9 +219,9 @@ fn test_node_sort_by_policy() {
 fn test_node_sort_by_visits() {
     let mut node = Node::leaf();
 
-    let mut branch1 = Branch::new(Move::null(), 0.5);
-    let mut branch2 = Branch::new(Move::new(squares::E2, squares::E4, move_flags::QUIET), 0.5);
-    let mut branch3 = Branch::new(Move::new(squares::D2, squares::D4, move_flags::QUIET), 0.5);
+    let branch1 = Branch::new(Move::null(), 0.5);
+    let branch2 = Branch::new(Move::new(squares::E2, squares::E4, move_flags::QUIET), 0.5);
+    let branch3 = Branch::new(Move::new(squares::D2, squares::D4, move_flags::QUIET), 0.5);
 
     branch1.node.borrow_mut().visits = 3;
     branch2.node.borrow_mut().visits = 1;
@@ -250,7 +250,7 @@ fn test_tree_best_move_returns_most_visited() {
     magics::init();
 
     let pos = create_position("k7/8/8/8/8/8/8/K7 w - - 0 1");
-    let mut tree = Tree::new();
+    let tree = Tree::new();
 
     // Manually set up tree structure
     {
@@ -329,7 +329,7 @@ fn test_tree_principal_variation_from_leaf() {
 
 #[test]
 fn test_tree_principal_variation_simple_path() {
-    let mut tree = Tree::new();
+    let tree = Tree::new();
 
     // Build a simple tree: root -> branch1 -> branch2 -> leaf
     let leaf_node = Rc::new(RefCell::new(Node::leaf()));

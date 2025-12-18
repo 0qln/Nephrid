@@ -24,6 +24,9 @@ use std::cell::RefCell;
 use std::ops::ControlFlow;
 use std::rc::Rc;
 
+#[cfg(test)]
+pub mod test;
+
 pub trait Evaluator<const X: usize> {
     // Prepare an eval_info_node with the required info for this evaluator.
     fn prepare_node(
@@ -42,7 +45,7 @@ pub trait Evaluator<const X: usize> {
     /// return None.
     fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation> {
         // First check if the position is a normal game ending.
-        if node.has_branches() {
+        if !node.has_branches() {
             Some(if pos.get_check_state() != CheckState::None {
                 // If in check and no moves, it's a loss for the current player
                 Evaluation::Terminal(GameResult::Win { relative_to: !pos.get_turn() })
@@ -363,6 +366,19 @@ impl RawPolicy {
 
     pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
         Self(p)
+    }
+
+    pub fn sum(&self) -> f32 {
+        self.0.iter().sum::<f32>()
+    }
+
+    pub fn len(&self) -> usize {
+        debug_assert_eq!(POLICY_OUTPUTS, self.0.len());
+        POLICY_OUTPUTS
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = f32> {
+        self.0.iter().cloned()
     }
 }
 

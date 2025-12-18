@@ -1,7 +1,7 @@
 use std::sync::Once;
-use std::{mem, ops};
+use std::{fmt, mem, ops};
 
-use rand::{rngs::SmallRng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng, rngs::SmallRng};
 
 use crate::core::color::colors;
 use crate::misc::ConstFrom;
@@ -15,11 +15,20 @@ use super::{
     turn::Turn,
 };
 
+#[cfg(test)]
+pub mod test;
+
 /// Note: the default hash is equivalent to the hash of the default (empty)
 /// position.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
 pub struct Hash {
     v: u64,
+}
+
+impl fmt::Display for Hash {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:X?}", self.v)
+    }
 }
 
 #[inline]
@@ -66,13 +75,18 @@ impl Hash {
 
     #[inline]
     pub fn toggle_piece_sq(&mut self, sq: Square, piece: Piece) -> Self {
-        self.v ^= hasher().piece_sq[sq.v() as usize][piece.v() as usize];
+        let sq = sq.v() as usize;
+        let piece = piece.v() as usize;
+        let x = hasher().piece_sq[sq][piece];
+        self.v ^= x;
         *self
     }
 
     #[inline]
     pub fn move_piece_sq(&mut self, from: Square, to: Square, piece: Piece) -> Self {
-        self.toggle_piece_sq(from, piece).toggle_piece_sq(to, piece)
+        self.toggle_piece_sq(from, piece);
+        self.toggle_piece_sq(to, piece);
+        *self
     }
 }
 

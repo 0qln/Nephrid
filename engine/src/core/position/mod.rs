@@ -353,7 +353,7 @@ impl Position {
 
     #[inline]
     pub fn has_threefold_repetition(&self) -> bool {
-        let hash = self.state.get_current().key;
+        let hash = self.get_key();
         self.repetitions.get(hash) >= Some(3)
     }
 
