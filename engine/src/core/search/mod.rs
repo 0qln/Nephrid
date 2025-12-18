@@ -1,4 +1,5 @@
 use crate::core::Move;
+use crate::core::search::mcts::node::Tree;
 use std::{
     sync::mpsc::{Sender, channel},
     thread,
@@ -28,30 +29,34 @@ pub struct Thread {
 
 pub fn init() -> Thread {
     let (tx, rx) = channel::<Command>();
-    thread::spawn(move || {
-        let mut mcts_state = MctsState::<mcts::config::Backend>::default();
-        loop {
-            let cmd = rx.recv().expect("Should be able to receive data");
-            match cmd {
-                Command::Perft(pos, limit, ct, debug) => {
-                    perft(pos, limit, ct, debug);
-                }
-                Command::Normal(pos, limit, ct, debug) => {
-                    let result = mcts(pos, &mut mcts_state, limit, debug, ct, MctsUci::default());
-                    result.expect("");
-                }
-                Command::Ponder => {
-                    unimplemented!("todo");
-                }
-                Command::AdvanceState(mov) => {
-                    mcts_state.tree.advance_to(|b| b.mov() == mov);
-                }
-                Command::ResetState => {
-                    unimplemented!("todo")
+    thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            let mut mcts_state = MctsState::<mcts::config::Backend>::default();
+            loop {
+                let cmd = rx.recv().expect("Should be able to receive data");
+                match cmd {
+                    Command::Perft(pos, limit, ct, debug) => {
+                        perft(pos, limit, ct, debug);
+                    }
+                    Command::Normal(pos, limit, ct, debug) => {
+                        let strat = MctsUci::default();
+                        let result = mcts(&pos, &mut mcts_state, limit, debug, ct, strat);
+                        result.expect("");
+                    }
+                    Command::Ponder => {
+                        unimplemented!("todo");
+                    }
+                    Command::AdvanceState(mov) => {
+                        mcts_state.tree.advance_to(|b| b.mov() == mov);
+                    }
+                    Command::ResetState => {
+                        mcts_state.tree = Tree::default();
+                    }
                 }
             }
-        }
-    });
+        })
+        .expect("Failed to spawn search thread.");
     Thread { tx }
 }
 

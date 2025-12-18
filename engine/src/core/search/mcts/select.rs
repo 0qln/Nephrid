@@ -39,9 +39,26 @@ pub trait Selector {
     /// cap_n_i: The number of times that the parent node has been visited.
     fn score(&self, branch: &Branch, cap_n_i: u32) -> Self::Score;
 
+    /// Initializes and returns a reference to the root selection node.
+    fn init(&mut self, root_node: Rc<RefCell<Node>>, turn: Turn) -> Rc<RefCell<SelectionNode>>;
+
     fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) -> ();
 
     fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>>;
+}
+
+pub struct Selection<const X: usize> {
+    root: Option<Rc<RefCell<SelectionNode>>>,
+    leafs: [Option<Rc<RefCell<SelectionNode>>>; X],
+}
+
+impl<const X: usize> Default for Selection<X> {
+    fn default() -> Self {
+        Self {
+            root: None,
+            leafs: [const { None }; X],
+        }
+    }
 }
 
 pub struct PuctSelector<const X: usize> {
@@ -49,7 +66,7 @@ pub struct PuctSelector<const X: usize> {
     c: f32,
 
     /// Stack of nodes that were selected during the selection phase, for each principal line.
-    selection: [Option<Rc<RefCell<SelectionNode>>>; X],
+    selection: Selection<X>,
 }
 
 impl<const X: usize> PuctSelector<X> {
@@ -62,7 +79,7 @@ impl<const X: usize> Default for PuctSelector<X> {
     fn default() -> Self {
         Self {
             c: f32::sqrt(2.0),
-            selection: [const { None }; X],
+            selection: Default::default(),
         }
     }
 }
@@ -99,10 +116,21 @@ impl<const X: usize> Selector for PuctSelector<X> {
     }
 
     fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) -> () {
-        self.selection[index] = Some(item);
+        self.selection.leafs[index] = Some(item);
     }
 
     fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>> {
-        self.selection.iter().cloned()
+        self.selection.leafs.iter().cloned()
+    }
+
+    fn init(&mut self, root_node: Rc<RefCell<Node>>, turn: Turn) -> Rc<RefCell<SelectionNode>> {
+        let root = Rc::new(RefCell::new(SelectionNode::new_root(SelectionItem {
+            leaf: root_node,
+            depth: Depth::MIN,
+            turn,
+        })));
+
+        self.selection.root = Some(root.clone());
+        root
     }
 }

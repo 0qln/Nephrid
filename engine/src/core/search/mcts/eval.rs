@@ -72,6 +72,9 @@ pub trait Evaluator<const X: usize> {
 
     /// Get the evaluation at a specific index.
     fn get_eval(&self, index: usize) -> Option<&Evaluation>;
+
+    /// Initializes and returns a reference to the root eval info node.
+    fn init(&mut self) -> Rc<RefCell<EvalInfoNode>>;
 }
 
 #[derive(Debug, PartialEq)]
@@ -92,7 +95,7 @@ pub struct EvalInfo {
     turn: Turn,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum EvalState {
     OnBatch(Rc<RefCell<EvalInfoNode>>),
     Evaluated(Evaluation),
@@ -101,16 +104,15 @@ pub enum EvalState {
 
 pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
 
+pub struct EvaluationInfos<const X: usize> {
+    root: Option<Rc<RefCell<EvalInfoNode>>>,
+    evals: [EvalState; X],
+}
+
 /// X: batch size
 pub struct NNEvaluator<'a, 'b, B: Backend, const X: usize> {
-    /// Eval info root
-    // eval_info_root: EvalInfoNode,
-
-    // todo: i think if we don't hold onto the root, the parent's will be dropped since the
-    // children just have weak references to them...
-
     /// Eval infos
-    eval_infos: [EvalState; X],
+    eval_infos: EvaluationInfos<X>,
 
     /// NN Model
     model: &'a Model<B>,
@@ -124,7 +126,10 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
         Self {
             model,
             device,
-            eval_infos: [const { EvalState::None }; X],
+            eval_infos: EvaluationInfos {
+                evals: [const { EvalState::None }; X],
+                root: None,
+            },
         }
     }
 
@@ -143,7 +148,7 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
                     let padding_len = BOARD_INPUT_HISTORY - history.len();
                     let padding_tensor = BoardInputTensor::<B>::zeros(
                         [
-                            X,
+                            1,
                             padding_len * BOARD_INPUT_CHANNELS,
                             ranks::N_VARIANTS,
                             files::N_VARIANTS,
@@ -222,7 +227,7 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
     }
 
     fn iter_batch(&self) -> impl Iterator<Item = Rc<RefCell<EvalInfoNode>>> {
-        self.eval_infos.iter().filter_map(|x| {
+        self.eval_infos.evals.iter().filter_map(|x| {
             if let EvalState::OnBatch(eval_info) = x {
                 Some(eval_info.clone())
             } else {
@@ -233,6 +238,12 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
 }
 
 impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B, X> {
+    fn init(&mut self) -> Rc<RefCell<EvalInfoNode>> {
+        let root = Rc::new(RefCell::new(EvalInfoNode::new_root(None)));
+        self.eval_infos.root = Some(root.clone());
+        root
+    }
+
     /// Push the eval info as to be guessed.
     fn prepare_node(
         &mut self,
@@ -251,7 +262,7 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
         };
         eval_node.borrow_mut().set_data(Some(data));
 
-        if let Some(x) = self.eval_infos.get_mut(index) {
+        if let Some(x) = self.eval_infos.evals.get_mut(index) {
             *x = EvalState::OnBatch(eval_node);
         } else {
             panic!("Out of range");
@@ -259,7 +270,7 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
     }
 
     fn get_eval(&self, index: usize) -> Option<&Evaluation> {
-        if let Some(x) = self.eval_infos.get(index) {
+        if let Some(x) = self.eval_infos.evals.get(index) {
             if let EvalState::Evaluated(eval) = x {
                 return Some(eval);
             }
@@ -268,24 +279,32 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
     }
 
     fn set_eval(&mut self, index: usize, eval: Evaluation) {
-        if let Some(x) = self.eval_infos.get_mut(index) {
+        if let Some(x) = self.eval_infos.evals.get_mut(index) {
             *x = EvalState::Evaluated(eval);
         }
     }
 
     fn clear_eval(&mut self, index: usize) {
-        if let Some(x) = self.eval_infos.get_mut(index) {
+        if let Some(x) = self.eval_infos.evals.get_mut(index) {
             *x = EvalState::None;
         }
     }
 
     fn eval_guesses(&mut self) {
+        let batch_size = self.iter_batch().count();
+        if batch_size <= 0 {
+            return;
+        }
+
         let board_batch = self.build_board_batch();
         let state_batch = self.build_state_batch();
         let (values, raw_policies) = self.model.forward(board_batch, state_batch);
 
-        assert_eq!(values.shape(), Shape::new([X, VALUE_OUTPUTS]));
-        assert_eq!(raw_policies.shape(), Shape::new([X, POLICY_OUTPUTS]));
+        assert_eq!(values.shape(), Shape::new([batch_size, VALUE_OUTPUTS]));
+        assert_eq!(
+            raw_policies.shape(),
+            Shape::new([batch_size, POLICY_OUTPUTS])
+        );
 
         let values = values.into_data();
         let values = values
@@ -304,6 +323,7 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
         // Enumerate all eval_infos, which have not yet been assigned and assign them a their guess.
         for (index, eval_info, value, raw_policy) in self
             .eval_infos
+            .evals
             .iter()
             .enumerate()
             .filter_map(|(i, x)| {
@@ -335,7 +355,7 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
                 quality: value[0],
                 policy: raw_policy,
             });
-            self.eval_infos[index] = EvalState::Evaluated(eval);
+            self.eval_infos.evals[index] = EvalState::Evaluated(eval);
         }
     }
 }

@@ -91,8 +91,11 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
     TreeSearcher<'a, MPV, E, L, S, B>
 {
     pub fn grow(&mut self) -> () {
+        println!("select");
         self.select_lines();
+        println!("eval");
         self.eval_leafes_();
+        println!("backup");
         self.backup_evals();
     }
 
@@ -105,13 +108,9 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         let node = self.tree.get_root();
         let depth = Depth::MIN;
         let turn = self.position.get_turn();
-        let eval_node = Rc::new(RefCell::new(EvalInfoNode::new_root(None)));
-        let sel_node = Rc::new(RefCell::new(SelectionNode::new_root(SelectionItem {
-            leaf: node.clone(),
-            depth,
-            turn,
-        })));
-        self.process_node(MPV, 0, depth, node, eval_node, sel_node);
+        let eval_node = self.evaluator.init();
+        let sel_root = self.selector.init(node.clone(), turn);
+        self.process_node(MPV, 0, depth, node, eval_node, sel_root);
     }
 
     /// Follows a branch and decides what to do depending on the current state of the branch's

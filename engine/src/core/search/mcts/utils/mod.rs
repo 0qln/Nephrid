@@ -6,6 +6,7 @@ use std::rc::Weak;
 #[cfg(test)]
 pub mod test;
 
+#[derive(Debug)]
 pub struct DoubleLinkedNode<T> {
     data: T,
     children: Vec<Rc<RefCell<Self>>>,

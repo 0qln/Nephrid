@@ -29,7 +29,7 @@ pub mod utils;
 pub mod test;
 
 pub fn mcts<S: MctsStrategy, B: Backend>(
-    pos: Position,
+    pos: &Position,
     state: &mut MctsState<B>,
     limit: Limit,
     _debug: DebugMode,
@@ -82,7 +82,7 @@ pub struct MctsState<B: Backend> {
     pub tree: Tree,
 
     /// NN Model
-    pub nn: Model<B>,
+    pub nn: Box<Model<B>>,
 
     /// Hardware abstraction for the nn model
     pub device: B::Device,
@@ -105,7 +105,7 @@ impl<B: Backend> MctsState<B> {
     }
 
     pub fn new(tree: Tree, nn: Model<B>, device: B::Device) -> Self {
-        Self { tree, nn, device }
+        Self { tree, nn: Box::new(nn), device }
     }
 }
 

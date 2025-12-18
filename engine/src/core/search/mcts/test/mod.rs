@@ -79,6 +79,10 @@ impl<const X: usize> Evaluator<X> for DummyEvaluator<X> {
             None
         }
     }
+
+    fn init(&mut self) -> Rc<RefCell<EvalInfoNode>> {
+        Rc::new(RefCell::new(EvalInfoNode::new_root(None)))
+    }
 }
 
 impl<const X: usize> Default for DummyEvaluator<X> {
