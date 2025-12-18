@@ -15,7 +15,6 @@ use crate::core::search::mcts::select::PuctSelector;
 use crate::core::search::mcts::select::SelectionItem;
 use crate::core::search::mcts::select::SelectionNode;
 use crate::core::search::mcts::select::Selector;
-use std::assert_matches::assert_matches;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
@@ -164,8 +163,6 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         node: Rc<RefCell<SelectionNode>>,
         depth: Depth,
     ) -> () {
-        assert_matches!(leaf.borrow().state(), NodeState::Terminal | NodeState::Leaf);
-
         let pos = &self.position;
 
         // Check if the board has a terminal evaluation
@@ -274,10 +271,10 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
             });
 
             // If the eval was a guess make sure to also set the policies of the selected leaf.
-            if let Evaluation::Guess(Guess { policies, .. }) = eval {
+            if let Evaluation::Guess(Guess { policy, .. }) = eval {
                 let leaf_sel = leaf.borrow_mut();
                 let leaf_node = &mut leaf_sel.data().leaf.borrow_mut();
-                leaf_node.set_policies(&policies);
+                leaf_node.set_policy_raw(&policy);
             }
         }
     }

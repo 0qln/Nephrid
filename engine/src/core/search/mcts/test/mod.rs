@@ -1,7 +1,10 @@
 use crate::core::{
     color::colors,
     position::Position,
-    search::mcts::{eval::Evaluator, nn::POLICY_OUTPUTS},
+    search::mcts::{
+        eval::{Evaluator, RawPolicy},
+        nn::POLICY_OUTPUTS,
+    },
 };
 use std::{cell::RefCell, rc::Rc};
 
@@ -28,17 +31,17 @@ impl<const X: usize> DummyEvaluator<X> {
         for i in 0..X {
             let quality = rng.random_range(-1.0..=1.0);
 
-            let policies: [f32; POLICY_OUTPUTS] = {
+            let raw_policy = RawPolicy::new({
                 let mut p = [0.2; POLICY_OUTPUTS];
                 let policy_idx = rng.random_range(0..POLICY_OUTPUTS);
                 p[policy_idx] = 1.0;
                 p
-            };
+            });
 
             self.1[i] = Some(Evaluation::Guess(Guess {
                 relative_to: colors::WHITE,
                 quality,
-                policies: policies.into(),
+                policy: raw_policy,
             }));
         }
     }

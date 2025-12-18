@@ -114,7 +114,7 @@ fn test_node_expand_from_stalemate_position_becomes_terminal() {
 }
 
 #[test]
-fn test_node_set_policies_with_correct_length() {
+fn test_node_set_policy_with_correct_length() {
     zobrist::init();
     magics::init();
 
@@ -124,8 +124,8 @@ fn test_node_set_policies_with_correct_length() {
     node.expand(&pos);
     let num_branches = node.branches.len();
 
-    let policies: Vec<f32> = (0..num_branches).map(|i| i as f32 * 0.1).collect();
-    node.set_policies(&policies);
+    let policy: Vec<f32> = (0..num_branches).map(|i| i as f32 * 0.1).collect();
+    node.set_policy(&Policy::new(policy));
 
     for (i, branch) in node.branches.iter().enumerate() {
         assert_eq!(branch.policy(), i as f32 * 0.1);

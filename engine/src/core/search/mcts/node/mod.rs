@@ -3,6 +3,8 @@ use itertools::Itertools;
 use crate::core::Move;
 use crate::core::Position;
 use crate::core::move_iter::fold_legal_moves;
+use crate::core::search::mcts::eval::Policy;
+use crate::core::search::mcts::eval::RawPolicy;
 use crate::core::search::mcts::node::ops::ControlFlow;
 use std::assert_matches::assert_matches;
 use std::cell::RefCell;
@@ -300,15 +302,25 @@ impl Node {
     }
 
     /// Sets the policies of the branches.
-    pub fn set_policies(&mut self, policies: &[f32]) {
-        assert!(
-            self.branches.len() == policies.len(),
+    pub fn set_policy(&mut self, policy: &Policy) {
+        assert_eq!(
+            self.branches.len(),
+            policy.len(),
             "There has to be exactly one policy for each branch."
         );
 
         for (i, branch) in self.branches.iter_mut().enumerate() {
-            branch.policy = policies[i];
+            branch.policy = policy.get(i).unwrap();
         }
+    }
+
+    /// Sets the policies of the branches.
+    pub fn set_policy_raw(&mut self, raw_policy: &RawPolicy) {
+        let moves = self.branches.iter().map(|b| usize::from(b.mov()));
+        let policy = Policy::from_raw(raw_policy, moves)
+            .expect("Shouldn't be None, since the moves are correct for this node.");
+
+        self.set_policy(&policy);
     }
 
     pub fn visits(&self) -> u32 {

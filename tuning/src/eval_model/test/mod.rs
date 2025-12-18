@@ -27,7 +27,7 @@ use engine::core::search::limit::Limit;
 use engine::core::search::mcts::Evaluation;
 use engine::core::search::mcts::Limiter;
 use engine::core::search::mcts::NoopLimiter;
-use engine::core::search::mcts::eval::model::ModelConfig;
+use engine::core::search::mcts::nn::ModelConfig;
 use engine::core::search::mcts::test::DummyEvaluator;
 use engine::core::zobrist;
 use engine::misc::DebugMode;

@@ -555,7 +555,7 @@ struct Stats {
 
 impl Stats {
     pub fn new(guess: Guess) -> Self {
-        let policy_values = guess.policies();
+        let policy_values = guess.policy();
 
         let policy_avg = policy_values.iter().sum::<f32>() / policy_values.len() as f32;
 

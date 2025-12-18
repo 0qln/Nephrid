@@ -291,11 +291,15 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
         let values = values
             .as_slice::<f32>()
             .expect("Qualities could not be converted to vec.");
+        let values = values.chunks(VALUE_OUTPUTS);
 
         let raw_policies = raw_policies.into_data();
         let raw_policies = raw_policies
             .as_slice::<f32>()
             .expect("Policy could not be converted to vec.");
+        let raw_policies = raw_policies
+            .chunks(POLICY_OUTPUTS)
+            .map(|raw_policy| RawPolicy(raw_policy.try_into().unwrap()));
 
         // Enumerate all eval_infos, which have not yet been assigned and assign them a their guess.
         for (index, eval_info, value, raw_policy) in self
@@ -316,8 +320,8 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
             .collect_vec()
             .into_iter()
             // ---
-            .zip(values.chunks(VALUE_OUTPUTS))
-            .zip(raw_policies.chunks(POLICY_OUTPUTS))
+            .zip(values)
+            .zip(raw_policies)
             .map(|(((a, b), c), d)| (a, b, c, d))
         {
             let eval_info = eval_info.borrow();
@@ -326,38 +330,74 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
                 .as_ref()
                 .expect("This should be a leaf and leafes should have data.");
 
-            let mut policies = Vec::<f32>::new();
-            for branch in eval_info.node.borrow().iter_branches() {
-                policies.push(raw_policy[usize::from(branch.mov())]);
-            }
-
-            // Renormalize the policy to a sum of 1, since not all of the probabilities
-            // were assigned to moves that are actually playable in this position:
-
-            let policy_sum = {
-                let sum = policies.iter().sum();
-                if sum == 0.0 {
-                    // Fallback to uniform distribution
-                    policies.len() as f32
-                } else {
-                    sum
-                }
-            };
-            for policy in &mut policies {
-                *policy /= policy_sum;
-            }
-
-            // Evaluator should return a probability distribution.
-            let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
-            debug_assert!(f32_eq(policies.iter().sum::<f32>(), 1., 0.001));
-
             let eval = Evaluation::Guess(Guess {
                 relative_to: eval_info.turn,
                 quality: value[0],
-                policies,
+                policy: raw_policy,
             });
             self.eval_infos[index] = EvalState::Evaluated(eval);
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct RawPolicy([f32; POLICY_OUTPUTS]);
+
+impl RawPolicy {
+    pub fn get(&self, i: usize) -> Option<f32> {
+        self.0.get(i).cloned()
+    }
+
+    pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
+        Self(p)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Policy(Vec<f32>);
+
+impl Policy {
+    pub fn get(&self, i: usize) -> Option<f32> {
+        self.0.get(i).cloned()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn from_raw<I>(raw_policy: &RawPolicy, indeces_of_interest: I) -> Option<Self>
+    where
+        I: Iterator<Item = usize>,
+    {
+        let mut policy = Vec::<f32>::new();
+        for index in indeces_of_interest {
+            policy.push(raw_policy.get(index)?);
+        }
+
+        Some(Self::new(policy))
+    }
+
+    pub fn new(mut policy: Vec<f32>) -> Self {
+        // Renormalize the policy to a sum of 1, since not all of the probabilities
+        // were assigned to moves that are actually playable in this position:
+        let policy_sum = {
+            let sum = policy.iter().sum();
+            if sum == 0.0 {
+                // Fallback to uniform distribution
+                policy.len() as f32
+            } else {
+                sum
+            }
+        };
+        for policy in &mut policy {
+            *policy /= policy_sum;
+        }
+
+        // Evaluator should return a probability distribution.
+        let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
+        debug_assert!(f32_eq(policy.iter().sum::<f32>(), 1., 0.001));
+
+        Self(policy)
     }
 }
 
@@ -371,12 +411,12 @@ pub enum GameResult {
 pub struct Guess {
     pub relative_to: Color,
     pub quality: f32,
-    pub policies: Vec<f32>,
+    pub policy: RawPolicy,
 }
 
 impl Guess {
-    pub fn policies(&self) -> &[f32] {
-        &self.policies
+    pub fn policy(&self) -> &RawPolicy {
+        &self.policy
     }
 }
 
@@ -428,11 +468,7 @@ impl Evaluation {
         match self {
             Self::Terminal(result) => result.to_value(turn),
             Self::Nope => GameResult::draw_value(),
-            Self::Guess(Guess {
-                quality,
-                relative_to,
-                policies: _policies,
-            }) => {
+            Self::Guess(Guess { quality, relative_to, policy: _p }) => {
                 // The quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
                 let quality = (quality + 1.0) / 2.0;
                 if *relative_to == turn { quality } else { 1.0 - quality }
