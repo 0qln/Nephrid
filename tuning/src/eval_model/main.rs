@@ -372,7 +372,7 @@ pub fn train<B: AutodiffBackend>(
                 let playouts_batch =
                     generate_batch(&model, &device, &fens_batch).expect("Failed to generate batch");
 
-                let result: _ = TrainStep::step(&model, playouts_batch.clone());
+                let result = TrainStep::step(&model, playouts_batch.clone());
 
                 let msg = format!(
                     "[Train - Epoch {} - Iteration {}] Loss {:.5} (Value: {:.5}, Policy: {:.5})",
@@ -498,7 +498,7 @@ fn generate_batch<B: AutodiffBackend>(
         })
         .collect::<Vec<_>>();
 
-    let batcher = PlayoutBatcher::default();
+    let batcher = PlayoutBatcher;
     Ok(batcher.batch(playout_items, device))
 }
 
