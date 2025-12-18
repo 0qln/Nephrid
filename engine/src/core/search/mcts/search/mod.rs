@@ -1,7 +1,10 @@
+use itertools::Itertools;
+
 use crate::core::Position;
 use crate::core::search::mcts::back::Backpropagater;
 use crate::core::search::mcts::back::DefaultBackuper;
 use crate::core::search::mcts::eval::EvalInfoNode;
+use crate::core::search::mcts::eval::EvalState;
 use crate::core::search::mcts::eval::Evaluation;
 use crate::core::search::mcts::eval::Evaluator;
 use crate::core::search::mcts::limiter;
@@ -20,6 +23,9 @@ use std::ops::ControlFlow;
 use std::rc::Rc;
 
 use crate::core::depth::Depth;
+
+#[cfg(test)]
+pub mod test;
 
 /// # Tree searcher
 ///
@@ -85,12 +91,33 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
     TreeSearcher<'a, MPV, E, L, S, B>
 {
     pub fn grow(&mut self) {
-        println!("select");
         self.select_lines();
-        println!("eval");
+        println!(
+            "selected: {:?}",
+            self.selector
+                .iter()
+                .enumerate()
+                .filter_map(|(i, x)| Some((i, x?)))
+                .map(|(i, x)| i)
+                .collect_vec()
+        );
+
         self.eval_leafes_();
-        println!("backup");
+        println!(
+            "evaluated: {:?}",
+            self.evaluator
+                .iter()
+                .enumerate()
+                .filter_map(|(i, x)| match x {
+                    EvalState::None => None,
+                    x => Some((i, x)),
+                })
+                .map(|(i, x)| i)
+                .collect_vec()
+        );
+
         self.backup_evals();
+        println!("backpropagated.");
     }
 
     //
@@ -121,7 +148,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         // Push evaluation info for this node to the eval infos tree.
         // The info is written to this eval_node.
         self.evaluator
-            .prepare_node(line_index, eval_node.clone(), node.clone(), &self.position);
+            .register_info(eval_node.clone(), node.clone(), &self.position);
 
         let state = node.borrow().state();
         match state {
@@ -141,11 +168,11 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 node.borrow_mut().expand(&self.position);
 
                 // select the node.
-                self.select_leaf(line_index, node, sel_node, depth);
+                self.select_leaf(line_index, node, sel_node, eval_node, depth);
             }
             NodeState::Terminal => {
                 // select the node.
-                self.select_leaf(line_index, node, sel_node, depth);
+                self.select_leaf(line_index, node, sel_node, eval_node, depth);
             }
         }
     }
@@ -155,6 +182,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         line_index: usize,
         leaf: Rc<RefCell<Node>>,
         node: Rc<RefCell<SelectionNode>>,
+        eval: Rc<RefCell<EvalInfoNode>>,
         depth: Depth,
     ) {
         let pos = &self.position;
@@ -169,7 +197,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
             self.evaluator.set_eval(line_index, Evaluation::Nope);
         } else {
             // Note down that we need to guess this node's evaluation.
-            self.evaluator.clear_eval(line_index);
+            self.evaluator.batch_eval(line_index, eval);
         }
 
         self.selector.set(line_index, node);

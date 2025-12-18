@@ -29,9 +29,8 @@ pub mod test;
 
 pub trait Evaluator<const X: usize> {
     // Prepare an eval_info_node with the required info for this evaluator.
-    fn prepare_node(
+    fn register_info(
         &mut self,
-        index: usize,
         eval_node: Rc<RefCell<EvalInfoNode>>,
         node: Rc<RefCell<Node>>,
         pos: &Position,
@@ -70,15 +69,16 @@ pub trait Evaluator<const X: usize> {
     /// Set the evaluation at a specific index.
     fn set_eval(&mut self, index: usize, eval: Evaluation);
 
-    /// Clear the evaluation at a specific index.
-    /// (Mark the node at `index` to be evaluated by `eval_guesses`.)
-    fn clear_eval(&mut self, index: usize);
+    /// Mark the node at `index` to be evaluated when doing `eval_guesses`.
+    fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<EvalInfoNode>>);
 
     /// Get the evaluation at a specific index.
     fn get_eval(&self, index: usize) -> Option<&Evaluation>;
 
     /// Initializes and returns a reference to the root eval info node.
     fn init(&mut self) -> Rc<RefCell<EvalInfoNode>>;
+
+    fn iter(&self) -> impl Iterator<Item = &EvalState>;
 }
 
 #[derive(Debug, PartialEq)]
@@ -238,10 +238,8 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
         root
     }
 
-    /// Push the eval info as to be guessed.
-    fn prepare_node(
+    fn register_info(
         &mut self,
-        index: usize,
         eval_node: Rc<RefCell<EvalInfoNode>>,
         node: Rc<RefCell<Node>>,
         pos: &Position,
@@ -255,12 +253,6 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
             turn: pos.get_turn(),
         };
         eval_node.borrow_mut().set_data(Some(data));
-
-        if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            *x = EvalState::OnBatch(eval_node);
-        } else {
-            panic!("Out of range");
-        }
     }
 
     fn get_eval(&self, index: usize) -> Option<&Evaluation> {
@@ -279,14 +271,18 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
         }
     }
 
-    fn clear_eval(&mut self, index: usize) {
+    fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<EvalInfoNode>>) {
         if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            *x = EvalState::None;
+            println!("prepare batch index: {index}");
+            *x = EvalState::OnBatch(eval_node);
+        } else {
+            panic!("Out of range");
         }
     }
 
     fn eval_guesses(&mut self) {
         let batch_size = self.iter_batch().count();
+        println!("batchsize: {batch_size}");
         if batch_size == 0 {
             return;
         }
@@ -352,6 +348,10 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B,
             }));
             self.eval_infos.evals[index] = EvalState::Evaluated(eval);
         }
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &EvalState> {
+        self.eval_infos.evals.iter()
     }
 }
 

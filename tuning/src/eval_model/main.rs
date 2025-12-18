@@ -642,7 +642,7 @@ fn self_play<B: Backend>(
             let model = &mcts_state.nn;
             let device = &mcts_state.device;
             let mut evaluator = NNEvaluator::<_, 1>::new(model, device);
-            evaluator.prepare_node(
+            evaluator.register_info(
                 0,
                 Rc::new(RefCell::new(EvalInfoNode::new_root(None))),
                 tree.get_root(),

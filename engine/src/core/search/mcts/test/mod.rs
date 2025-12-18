@@ -15,9 +15,6 @@ use super::{
     node::Node,
 };
 
-#[cfg(test)]
-pub mod fuzz;
-
 #[derive(Clone)]
 pub struct DummyEvaluator<const X: usize>(RefCell<SmallRng>, [Option<Evaluation>; X]);
 
@@ -46,9 +43,8 @@ impl<const X: usize> DummyEvaluator<X> {
 
 impl<const X: usize> Evaluator<X> for DummyEvaluator<X> {
     // Prepare an eval_info_node with the required info for this evaluator.
-    fn prepare_node(
+    fn register_info(
         &mut self,
-        _index: usize,
         _eval_node: Rc<RefCell<EvalInfoNode>>,
         _node: Rc<RefCell<Node>>,
         _pos: &Position,
@@ -65,7 +61,7 @@ impl<const X: usize> Evaluator<X> for DummyEvaluator<X> {
 
     /// Clear the evaluation at a specific index.
     /// (Mark the node at `index` to be evaluated by `eval_guesses`.)
-    fn clear_eval(&mut self, _index: usize) {}
+    fn batch_eval(&mut self, _index: usize, _eval_node: Rc<RefCell<EvalInfoNode>>) {}
 
     /// Get the evaluation at a specific index.
     /// (Dummy Code: returns a random value)
@@ -79,6 +75,10 @@ impl<const X: usize> Evaluator<X> for DummyEvaluator<X> {
 
     fn init(&mut self) -> Rc<RefCell<EvalInfoNode>> {
         Rc::new(RefCell::new(EvalInfoNode::new_root(None)))
+    }
+
+    fn iter(&self) -> impl Iterator<Item = &super::eval::EvalState> {
+        [].iter()
     }
 }
 
