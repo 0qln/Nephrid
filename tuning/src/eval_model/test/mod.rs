@@ -1,5 +1,3 @@
-use engine::core::search::mcts::eval::model::EvalModel;
-use std::assert_matches::assert_matches;
 use std::env::var;
 use std::path::PathBuf;
 
@@ -17,18 +15,14 @@ use burn::record::Recorder;
 use burn_cuda::Cuda;
 use burn_cuda::CudaDevice;
 use engine::core::coordinates::squares;
-use engine::core::depth::Depth;
 use engine::core::r#move::Move;
 use engine::core::r#move::move_flags;
 use engine::core::move_iter::sliding_piece::magics;
 use engine::core::position::Position;
-use engine::core::search;
 use engine::core::search::limit::Limit;
-use engine::core::search::mcts::Evaluation;
-use engine::core::search::mcts::Limiter;
-use engine::core::search::mcts::NoopLimiter;
+use engine::core::search::mcts::MctsState;
+use engine::core::search::mcts::mcts;
 use engine::core::search::mcts::nn::ModelConfig;
-use engine::core::search::mcts::test::DummyEvaluator;
 use engine::core::zobrist;
 use engine::misc::DebugMode;
 use engine::uci::sync::CancellationToken;
@@ -92,7 +86,7 @@ pub fn learn_mate_in_1() {
             .init::<Backend>(&device)
             .load_record(record);
 
-        let mut model = EvalModel::new(model, &device);
+        let mut mcts_state = MctsState::new(Default::default(), model, device);
 
         let limit = Limit {
             is_active: true,
@@ -105,12 +99,13 @@ pub fn learn_mate_in_1() {
         let debug = DebugMode::default();
         let ct = CancellationToken::new();
 
-        search::mcts::<MctsTrain, _>(
-            pos.clone(),
-            &mut model,
+        mcts(
+            &pos,
+            &mut mcts_state,
             limit.clone(),
             debug.clone(),
             ct.clone(),
+            MctsTrain::default(),
         )
     };
     println!("{:#?}", result);
@@ -177,8 +172,6 @@ pub fn learn_mate_in_2() {
             .init::<Backend>(&device)
             .load_record(record);
 
-        let mut model = EvalModel::new(model, &device);
-
         let limit = Limit {
             is_active: true,
             winc: 100,
@@ -187,46 +180,53 @@ pub fn learn_mate_in_2() {
             btime: 0,
             ..Default::default()
         };
-        let limiter = NoopLimiter;
         let debug = DebugMode::default();
         let ct = CancellationToken::new();
 
+        let mut mcts_state = MctsState::new(Default::default(), model, device);
+
         // us/mov-1
-        let result = search::mcts::<MctsTrain, _>(
-            pos.clone(),
-            &mut model,
+        let result = mcts(
+            &pos,
+            &mut mcts_state,
             limit.clone(),
             debug.clone(),
             ct.clone(),
+            MctsTrain::default(),
         );
-        pos.make_move(result.0.expect("Search should have completed by now"));
+        let mov = result.0.expect("Search should have completed by now");
+        pos.make_move(mov);
+        mcts_state.tree.advance_to(|b| b.mov() == mov);
 
         // them/mov-1
-        let result = search::mcts::<MctsTrain, _>(
-            pos.clone(),
-            &mut model,
+        let result = mcts(
+            &pos,
+            &mut mcts_state,
             limit.clone(),
             debug.clone(),
             ct.clone(),
+            MctsTrain::default(),
         );
-        pos.make_move(result.0.expect("Search should have completed by now"));
+        let mov = result.0.expect("Search should have completed by now");
+        pos.make_move(mov);
+        mcts_state.tree.advance_to(|b| b.mov() == mov);
 
         // us/mov-2
-        let result = search::mcts::<MctsTrain, _>(
-            pos.clone(),
-            &mut model,
+        let result = mcts(
+            &pos,
+            &mut mcts_state,
             limit.clone(),
             debug.clone(),
             ct.clone(),
+            MctsTrain::default(),
         );
+        let mov = result.0.expect("Search should have completed by now");
+        pos.make_move(mov);
+        mcts_state.tree.advance_to(|b| b.mov() == mov);
 
-        let evaluator = DummyEvaluator::default();
-        result
-            .1
-            .get_root()
-            .eval(&pos, &evaluator, &limiter, Depth::MIN)
+        result.1.get_root().borrow().iter_branches().count()
     };
-    println!("{:#?}", result);
 
-    assert_matches!(result, Evaluation::Terminal(_))
+    // result should be a mating position
+    assert_eq!(0, result)
 }

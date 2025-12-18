@@ -547,7 +547,7 @@ struct State {
 
 // Some interesting stats about the decision.
 #[derive(Debug)]
-struct Stats {
+pub struct Stats {
     pub policy_avg: f32,
     pub policy_variance: f32,
     pub policy_entropy: f32,
@@ -660,6 +660,7 @@ fn self_play<B: Backend>(
 
             let mov = mov.expect("");
             pos.make_move(mov);
+            mcts_state.tree.advance_to(|b| b.mov() == mov);
 
             let state = State { mov, moving_color: turn };
             let input = Input { board_in: b_in, state_in: s_in };
