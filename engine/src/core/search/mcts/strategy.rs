@@ -47,7 +47,11 @@ impl MctsStrategy for MctsUci {
     type Step = <MctsFindBest as MctsStrategy>::Step;
 
     fn result(&mut self, tree: &mut Tree) -> Self::Result {
-        self.find_best.result(tree)
+        let result = self.find_best.result(tree);
+        if let Some(best_move) = result {
+            sync::out(&format!("bestmove {best_move}"));
+        }
+        result
     }
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {

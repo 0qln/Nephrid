@@ -148,8 +148,11 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
                 .map(|eval_node| Self::get_node_history(eval_node))
                 // concatenate the board inputs along the channel dimension.
                 .map(|history| {
+                    let history_len = history.len();
+                    let padding_len = BOARD_INPUT_HISTORY - history_len;
+                    debug_assert_eq!(padding_len + history_len, BOARD_INPUT_HISTORY);
+
                     // pad missing history info with zeroes.
-                    let padding_len = BOARD_INPUT_HISTORY - history.len();
                     let padding_tensor = BoardInputTensor::<B>::zeros(
                         [
                             1,
@@ -170,7 +173,25 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
                     );
 
                     // concat padding with history
-                    Tensor::cat(vec![padding_tensor, history_tensor], 1)
+                    // burn throws error "assertion failed: divisor != 0" if padding is empty, so
+                    // we branch here manually.
+                    if padding_len == 0 {
+                        debug_assert_eq!(
+                            history_tensor.shape()[1],
+                            BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
+                            "if we need no padding the history tensor should be full"
+                        );
+                        history_tensor
+                    } else if history_len == 0 {
+                        debug_assert_eq!(
+                            padding_tensor.shape()[1],
+                            BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
+                            "if we have no history the padding tensor should be full"
+                        );
+                        padding_tensor
+                    } else {
+                        Tensor::cat(vec![padding_tensor, history_tensor], 1)
+                    }
                 })
                 .collect_vec(),
             0,
@@ -184,6 +205,10 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
         let mut vec: Vec<BoardInputFloats> = vec![];
 
         _ = EvalInfoNode::try_fold_up_mut(eval_info.clone(), (), |_, eval_info| {
+            if vec.len() == BOARD_INPUT_HISTORY {
+                return ControlFlow::Break(());
+            }
+
             let board_input = eval_info
                 .borrow()
                 .data()

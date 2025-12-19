@@ -190,8 +190,6 @@ pub fn execute_uci(
 
             //             engine.search_state = Somewhere::Here(state);
             //             let result = result.expect("search did not complete");
-
-            //             sync::out(&format!("bestmove {result}"));
             //         }
             //         _ => unimplemented!(),
             //     };

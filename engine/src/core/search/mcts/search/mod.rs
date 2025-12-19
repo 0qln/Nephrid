@@ -18,6 +18,7 @@ use crate::core::search::mcts::select::SelectionItem;
 use crate::core::search::mcts::select::SelectionNode;
 use crate::core::search::mcts::select::Selector;
 use std::cell::RefCell;
+use std::cmp::max;
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 use std::rc::Rc;
@@ -99,7 +100,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 .enumerate()
                 .filter_map(|(i, x)| Some((i, x?)))
                 .map(|(i, x)| i)
-                .collect_vec()
+                .count() // .collect_vec()
         );
 
         self.eval_leafes_();
@@ -113,7 +114,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                     x => Some((i, x)),
                 })
                 .map(|(i, x)| i)
-                .collect_vec()
+                .count() // .collect_vec()
         );
 
         self.backup_evals();
@@ -188,7 +189,8 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         let pos = &self.position;
 
         // Check if the board has a terminal evaluation
-        if let Some(terminal_eval) = E::eval_terminal(&leaf.borrow(), pos) {
+        let terminal_eval = E::eval_terminal(&leaf.borrow(), pos);
+        if let Some(terminal_eval) = terminal_eval {
             leaf.borrow_mut().set_state(NodeState::Terminal);
             self.evaluator.set_eval(line_index, terminal_eval);
         }
@@ -229,7 +231,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 // todo: be careful when we dereference the selection, there might be collisions in the
                 // tree if you switch up the way that the nodes are selected.
                 //
-                let current_budget = (budget as f32 * 0.3) as usize;
+                let current_budget = max(1, (budget as f32 * 0.3) as usize);
 
                 // make the move of the current branch, such that we can follow the line.
                 self.position.make_move(branch.mov());
