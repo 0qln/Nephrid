@@ -1,9 +1,6 @@
-use itertools::Itertools;
-
 use crate::core::Position;
 use crate::core::search::mcts::back::Backpropagater;
 use crate::core::search::mcts::back::DefaultBackuper;
-use crate::core::search::mcts::eval::EvalInfoNode;
 use crate::core::search::mcts::eval::EvalState;
 use crate::core::search::mcts::eval::Evaluation;
 use crate::core::search::mcts::eval::Evaluator;
@@ -19,8 +16,6 @@ use crate::core::search::mcts::select::SelectionNode;
 use crate::core::search::mcts::select::Selector;
 use std::cell::RefCell;
 use std::cmp::max;
-use std::marker::PhantomData;
-use std::ops::ControlFlow;
 use std::rc::Rc;
 
 use crate::core::depth::Depth;
@@ -43,7 +38,7 @@ pub mod test;
 pub struct TreeSearcher<
     'a,
     const MPV: usize,
-    E: Evaluator<MPV>,
+    E: Evaluator,
     L: Limiter = DefaultLimiter,
     S: Selector = PuctSelector<MPV>,
     B: Backpropagater = DefaultBackuper,
@@ -61,34 +56,37 @@ pub struct TreeSearcher<
     evaluator: E,
 
     /// Backpropagater
-    backpropagater: PhantomData<B>,
+    backpropagater: B,
 
     /// The tree to be searched.
     tree: &'a mut Tree,
+
+    debug_arr: [usize; MPV],
 }
 
-impl<
-    'a,
-    const MPV: usize,
-    E: Evaluator<MPV>,
-    L: Limiter + Default,
-    S: Selector + Default,
-    B: Backpropagater + Default,
-> TreeSearcher<'a, MPV, E, L, S, B>
+impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater + Default>
+    TreeSearcher<'a, MPV, E, L, S, B>
 {
-    pub fn new(tree: &'a mut Tree, position: Position, limiter: L, evaluator: E) -> Self {
+    pub fn new(
+        tree: &'a mut Tree,
+        position: Position,
+        selector: S,
+        limiter: L,
+        evaluator: E,
+    ) -> Self {
         Self {
             tree,
             position,
-            selector: S::default(),
+            selector,
             limiter,
             evaluator,
             backpropagater: Default::default(),
+            debug_arr: [const { 0 }; MPV],
         }
     }
 }
 
-impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpropagater>
+impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater>
     TreeSearcher<'a, MPV, E, L, S, B>
 {
     pub fn grow(&mut self) {
@@ -130,7 +128,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         let node = self.tree.get_root();
         let depth = Depth::MIN;
         let turn = self.position.get_turn();
-        let eval_node = self.evaluator.init();
+        let eval_node = self.evaluator.init(node.clone(), &self.position);
         let sel_root = self.selector.init(node.clone(), turn);
         self.process_node(MPV, 0, depth, node, eval_node, sel_root);
     }
@@ -143,14 +141,9 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         line_index: usize,
         depth: Depth,
         node: Rc<RefCell<Node>>,
-        eval_node: Rc<RefCell<EvalInfoNode>>,
+        eval_node: Rc<RefCell<E::Node>>,
         sel_node: Rc<RefCell<SelectionNode>>,
     ) {
-        // Push evaluation info for this node to the eval infos tree.
-        // The info is written to this eval_node.
-        self.evaluator
-            .register_info(eval_node.clone(), node.clone(), &self.position);
-
         let state = node.borrow().state();
         match state {
             // Only if the node is already expanded we want to follow the branch.
@@ -169,40 +162,49 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 node.borrow_mut().expand(&self.position);
 
                 // select the node.
-                self.select_leaf(line_index, node, sel_node, eval_node, depth);
+                self.select_node(line_index, node, sel_node, eval_node, depth);
             }
             NodeState::Terminal => {
                 // select the node.
-                self.select_leaf(line_index, node, sel_node, eval_node, depth);
+                self.select_node(line_index, node, sel_node, eval_node, depth);
             }
         }
     }
 
-    fn select_leaf(
+    fn select_node(
         &mut self,
         line_index: usize,
-        leaf: Rc<RefCell<Node>>,
-        node: Rc<RefCell<SelectionNode>>,
-        eval: Rc<RefCell<EvalInfoNode>>,
+        node: Rc<RefCell<Node>>,
+        slct: Rc<RefCell<SelectionNode>>,
+        eval: Rc<RefCell<E::Node>>,
         depth: Depth,
     ) {
         let pos = &self.position;
 
+        if self.debug_arr[line_index] >= 1 {
+            panic!("Each node should only be selected once atmost.");
+        }
+
         // Check if the board has a terminal evaluation
-        let terminal_eval = E::eval_terminal(&leaf.borrow(), pos);
+        let terminal_eval = E::eval_terminal(&node.borrow(), pos);
         if let Some(terminal_eval) = terminal_eval {
-            leaf.borrow_mut().set_state(NodeState::Terminal);
+            println!("[{line_index}] terminal");
+            node.borrow_mut().set_state(NodeState::Terminal);
             self.evaluator.set_eval(line_index, terminal_eval);
         }
         // Check if we are even interested in searching this line any further.
         else if self.limiter.should_stop(limiter::Params { pos, depth }) {
             self.evaluator.set_eval(line_index, Evaluation::Nope);
-        } else {
-            // Note down that we need to guess this node's evaluation.
+        }
+        // Else note down that we need to guess this node's evaluation.
+        else {
+            println!("[{line_index}] batched");
             self.evaluator.batch_eval(line_index, eval);
         }
 
-        self.selector.set(line_index, node);
+        self.selector.set(line_index, slct);
+
+        self.debug_arr[line_index] += 1;
     }
 
     fn pick_branches(
@@ -211,7 +213,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
         line_index: usize,
         depth: Depth,
         parent_node: Rc<RefCell<Node>>,
-        mut eval_node_parent: Rc<RefCell<EvalInfoNode>>,
+        mut eval_node_parent: Rc<RefCell<E::Node>>,
         mut sel_node_parent: Rc<RefCell<SelectionNode>>,
     ) {
         // Split the budget up between this and the subsequent best nodes.
@@ -239,8 +241,7 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 let depth = depth + 1;
                 let node = branch.node();
 
-                let eval_info = EvalInfoNode::append(&mut eval_node_parent, None);
-                let sel_info = SelectionNode::append(
+                let selc_info = SelectionNode::append(
                     &mut sel_node_parent,
                     SelectionItem {
                         depth,
@@ -249,13 +250,31 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                     },
                 );
 
-                self.process_node(current_budget, line_index, depth, node, eval_info, sel_info);
+                let eval_info = self.evaluator.register_info(
+                    &mut eval_node_parent,
+                    node.clone(),
+                    &self.position,
+                );
+
+                self.process_node(
+                    current_budget,
+                    line_index,
+                    depth,
+                    node,
+                    eval_info,
+                    selc_info,
+                );
 
                 // undo the move again
                 self.position.unmake_move(branch.mov());
 
-                budget -= current_budget;
+                // `process_node` should have used `current_budget` nodes. Thus we increase the
+                // line_index by that amount.
+                // todo: this is a bug. as seen below, the budget is not always used 100%. idk if
+                // these gaps actually create problems, but better fix the indexing increment here
+                // before it does.
                 line_index += current_budget;
+                budget -= current_budget;
                 branch_index += 1;
             } else {
                 // in this case there are no more branches to distribute the budget to.
@@ -286,22 +305,9 @@ impl<'a, const MPV: usize, E: Evaluator<MPV>, L: Limiter, S: Selector, B: Backpr
                 .get_eval(index)
                 .unwrap_or_else(|| panic!("Evaluation missing for index {index}"));
 
-            // Traverse the selected node in reverse, updating the parents along the way.
-            _ = SelectionNode::try_fold_up_mut(leaf.clone(), (), |_, node| {
-                let turn = node.borrow().data().turn;
-                let value = eval.to_value(turn);
-                B::update(&mut node.borrow_mut().data().leaf.borrow_mut(), value);
+            println!("[{index}] backup: {eval}");
 
-                ControlFlow::Continue::<(), ()>(())
-            });
-
-            // If the eval was a guess make sure to also set the policies of the selected leaf.
-            if let Evaluation::Guess(guess) = eval {
-                let policy = &guess.policy;
-                let leaf_sel = leaf.borrow_mut();
-                let leaf_node = &mut leaf_sel.data().leaf.borrow_mut();
-                leaf_node.set_policy_raw(policy);
-            }
+            self.backpropagater.backpropagate(leaf, eval);
         }
     }
 }

@@ -100,6 +100,56 @@ pub fn board_input(pos: &Position) -> BoardInputFloats {
     ]
 }
 
+pub fn board_history_input<B: Backend>(
+    history: &[BoardInputFloats],
+    device: &B::Device,
+) -> BoardInputTensor<B> {
+    let history_len = history.len();
+    let padding_len = BOARD_INPUT_HISTORY - history_len;
+    debug_assert_eq!(padding_len + history_len, BOARD_INPUT_HISTORY);
+
+    // pad missing history info with zeroes.
+    let padding_tensor = BoardInputTensor::<B>::zeros(
+        [
+            1,
+            padding_len * BOARD_INPUT_CHANNELS,
+            ranks::N_VARIANTS,
+            files::N_VARIANTS,
+        ],
+        device,
+    );
+
+    // convert input floats to tensors
+    let history_tensor = Tensor::cat(
+        history
+            .into_iter()
+            .map(|b| Tensor::from_floats([*b], device))
+            .collect_vec(),
+        1,
+    );
+
+    // concat padding with history
+    // burn throws error "assertion failed: divisor != 0" if padding is empty, so
+    // we branch here manually.
+    if padding_len == 0 {
+        debug_assert_eq!(
+            history_tensor.shape()[1],
+            BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
+            "if we need no padding the history tensor should be full"
+        );
+        history_tensor
+    } else if history_len == 0 {
+        debug_assert_eq!(
+            padding_tensor.shape()[1],
+            BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
+            "if we have no history the padding tensor should be full"
+        );
+        padding_tensor
+    } else {
+        Tensor::cat(vec![padding_tensor, history_tensor], 1)
+    }
+}
+
 pub type StateInputTensor<B> = Tensor<B, 2>;
 
 pub type StateInputFloats = [f32; STATE_INPUT_LEN];

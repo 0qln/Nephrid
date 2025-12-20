@@ -48,8 +48,8 @@ pub trait Selector {
 }
 
 pub struct Selection<const X: usize> {
-    root: Option<Rc<RefCell<SelectionNode>>>,
-    leafs: [Option<Rc<RefCell<SelectionNode>>>; X],
+    pub root: Option<Rc<RefCell<SelectionNode>>>,
+    pub leafs: [Option<Rc<RefCell<SelectionNode>>>; X],
 }
 
 impl<const X: usize> Default for Selection<X> {

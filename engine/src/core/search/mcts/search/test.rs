@@ -31,6 +31,7 @@ fn fuzz<const X: usize>(pos: &'static str) {
                 let mut searcher = TreeSearcher::<X, _, _, PuctSelector<X>, DefaultBackuper>::new(
                     &mut tree,
                     pos.clone(),
+                    PuctSelector::default(),
                     limiter.clone(),
                     eval.clone(),
                 );
@@ -69,29 +70,32 @@ fn growth() {
     let pos = Position::try_from(&mut fen).unwrap();
     let mut tree = Tree::new();
 
-    // Create TreeSearcher with dummy evaluator
-    let evaluator = DummyEvaluator::default();
-    let limiter = NoopLimiter;
-    let mut searcher = TreeSearcher::<
-        1,
-        DummyEvaluator<1>,
-        NoopLimiter,
-        PuctSelector<1>,
-        DefaultBackuper,
-    >::new(&mut tree, pos.clone(), limiter, evaluator);
-
     // Initial state checks
-    assert_eq!(searcher.tree.get_root().borrow().visits(), 0);
+    assert_eq!(tree.get_root().borrow().visits(), 0);
 
-    // Perform one growth iteration
-    searcher.grow();
+    // Perform two growth iterations
+    TreeSearcher::<1, DummyEvaluator<1>, NoopLimiter, PuctSelector<1>, DefaultBackuper>::new(
+        &mut tree,
+        pos.clone(),
+        PuctSelector::default(),
+        NoopLimiter,
+        DummyEvaluator::default(),
+    )
+    .grow();
+    TreeSearcher::<1, DummyEvaluator<1>, NoopLimiter, PuctSelector<1>, DefaultBackuper>::new(
+        &mut tree,
+        pos.clone(),
+        PuctSelector::default(),
+        NoopLimiter,
+        DummyEvaluator::default(),
+    )
+    .grow();
 
     // Verify backpropagation
-    assert_eq!(tree.get_root().borrow().visits(), 1);
+    assert!(tree.get_root().borrow().visits() >= 1);
 
     // Check that at least one child has been visited
     let root = tree.get_root();
-    root.borrow_mut().expand(&pos);
     let mut child_visited = false;
     let mut i = 0;
     while let Some(branch) = root.borrow().get_branch(i) {

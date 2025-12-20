@@ -2,17 +2,30 @@
 
 //todo: derichlet noise
 
-use engine::core::search::mcts::MctsState;
-use engine::core::search::mcts::eval::EvalInfoNode;
+use engine::core::depth::Depth;
+use engine::core::search::mcts::NNState;
+use engine::core::search::mcts::SearchState;
+use engine::core::search::mcts::eval::nn::EvalInfoNode;
 use engine::core::search::mcts::eval::Evaluation;
 use engine::core::search::mcts::eval::Evaluator;
 use engine::core::search::mcts::eval::GameResult;
 use engine::core::search::mcts::eval::Guess;
-use engine::core::search::mcts::eval::NNEvaluator;
+use engine::core::search::mcts::eval::nn::NNEvaluator;
 use engine::core::search::mcts::mcts;
+use engine::core::search::mcts::nn::BOARD_INPUT_HISTORY;
+use engine::core::search::mcts::nn::board_history_input;
+use engine::core::search::mcts::node::Branch;
+use engine::core::search::mcts::node::Node;
+use engine::core::search::mcts::select::PuctScore;
+use engine::core::search::mcts::select::Selection;
+use engine::core::search::mcts::select::SelectionItem;
+use engine::core::search::mcts::select::SelectionNode;
+use engine::core::search::mcts::select::Selector;
 use engine::core::search::mcts::strategy::MctsFindBest;
 use engine::core::search::mcts::strategy::MctsStrategy;
+use engine::core::turn::Turn;
 use std::cell::RefCell;
+use std::cmp::max;
 
 use burn::prelude::Module;
 use burn::record::CompactRecorder;
@@ -120,7 +133,7 @@ impl FenItemRaw {
 #[derive(Clone, Debug)]
 pub struct PlayoutItem {
     /// Board info
-    pub board_input: BoardInputFloats,
+    pub board_input: Vec<BoardInputFloats>,
 
     /// State info
     pub state_input: StateInputFloats,
@@ -426,8 +439,7 @@ impl<B: Backend> Batcher<B, PlayoutItem, PlayoutBatch<B>> for PlayoutBatcher {
     fn batch(&self, items: Vec<PlayoutItem>, device: &B::Device) -> PlayoutBatch<B> {
         let boards = items
             .iter()
-            .map(|x| TensorData::from([x.board_input]))
-            .map(|x| Tensor::from_data(x, device))
+            .map(|x| board_history_input(&x.board_input, device))
             .collect();
 
         let states = items
@@ -523,7 +535,7 @@ impl MctsStrategy for MctsTrain {
 }
 
 // The inputs to the model.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Input {
     board_in: BoardInputFloats,
     state_in: StateInputFloats,
@@ -531,7 +543,7 @@ struct Input {
 
 // Info to help find the training target.
 // 0: Most visited move / best_move.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Target {
     mov: Move,
 }
@@ -539,14 +551,14 @@ struct Target {
 // Some state info at the time of the move.
 // 0: The move that was made
 // 1: The color of the moving player.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct State {
     mov: Move,
     moving_color: Color,
 }
 
 // Some interesting stats about the decision.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Stats {
     pub policy_avg: f32,
     pub policy_variance: f32,
@@ -580,7 +592,7 @@ impl Stats {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Decision {
     input: Input,
     target: Target,
@@ -601,8 +613,8 @@ fn self_play<B: Backend>(
 ) -> Result<Vec<SelfPlayResult>, Box<dyn Error>> {
     let limit = Limit {
         is_active: true,
-        winc: 10000,
-        binc: 10000,
+        winc: 100000,
+        binc: 100000,
         wtime: 0,
         btime: 0,
         ..Default::default()
@@ -614,14 +626,24 @@ fn self_play<B: Backend>(
     let mut pos: Position = tok.try_into()?;
 
     let mut decisions = Vec::<Decision>::new();
-    let mut mcts_state = MctsState::new(Default::default(), model, device);
+    let nn_state = NNState::new(model, device);
+    let mut mcts_state = SearchState::default();
+
+    println!("{pos:?}");
 
     let eval: GameResult = {
+        let mut x = 0;
         let game_result;
         loop {
+            x += 1;
+            if x > 5 {
+                game_result = GameResult::Draw;
+                break;
+            }
             let turn = pos.get_turn();
             let result = mcts(
                 &pos,
+                &nn_state,
                 &mut mcts_state,
                 limit.clone(),
                 debug.clone(),
@@ -639,15 +661,12 @@ fn self_play<B: Backend>(
                 break;
             }
 
-            let model = &mcts_state.nn;
-            let device = &mcts_state.device;
+            let model = &nn_state.nn;
+            let device = &nn_state.device;
             let mut evaluator = NNEvaluator::<_, 1>::new(model, device);
-            evaluator.register_info(
-                0,
-                Rc::new(RefCell::new(EvalInfoNode::new_root(None))),
-                tree.get_root(),
-                &pos,
-            );
+            let eval_node = Rc::new(RefCell::new(EvalInfoNode::new_root(None)));
+            evaluator.register_info(&mut eval_node.clone(), tree.get_root(), &pos);
+            evaluator.batch_eval(0, eval_node);
             evaluator.eval_guesses();
             let guess = evaluator.get_eval(0);
             let guess = guess.expect("The evaluator should have generated the guess");
@@ -660,6 +679,9 @@ fn self_play<B: Backend>(
 
             let mov = mov.expect("");
             pos.make_move(mov);
+
+            println!("{pos:?}");
+
             mcts_state.tree.advance_to(|b| b.mov() == mov);
 
             let state = State { mov, moving_color: turn };
@@ -673,7 +695,7 @@ fn self_play<B: Backend>(
 
     let mut result = Vec::<SelfPlayResult>::new();
 
-    for decision in decisions {
+    for (index, decision) in decisions.iter().enumerate() {
         let value_target = match eval {
             GameResult::Draw => VALUE_DRAW,
             GameResult::Win { relative_to } => {
@@ -688,14 +710,81 @@ fn self_play<B: Backend>(
         log::debug!(target: "reports::train", "Train item: {:?}, value_target: {:?}", decision, value_target);
 
         let playout_item = PlayoutItem {
-            board_input: decision.input.board_in,
+            board_input: decisions
+                [max(0, index as i32 - BOARD_INPUT_HISTORY as i32) as usize..=index]
+                .iter()
+                .map(|d| d.input.board_in)
+                .collect_vec(),
             state_input: decision.input.state_in,
             value_target,
             policy_target: usize::from(decision.target.mov),
         };
 
-        result.push(SelfPlayResult { playout_item, decision });
+        result.push(SelfPlayResult {
+            playout_item,
+            decision: decision.clone(),
+        });
     }
 
     Ok(result)
+}
+
+pub struct TrainPuctSelector<const X: usize> {
+    c: f32,
+
+    /// Stack of nodes that were selected during the selection phase, for each principal line.
+    selection: Selection<X>,
+}
+
+impl<const X: usize> TrainPuctSelector<X> {
+    pub fn new(c: f32) -> Self {
+        Self { c, ..Default::default() }
+    }
+}
+
+impl<const X: usize> Default for TrainPuctSelector<X> {
+    fn default() -> Self {
+        Self {
+            c: f32::sqrt(2.0),
+            selection: Default::default(),
+        }
+    }
+}
+
+impl<const X: usize> Selector for TrainPuctSelector<X> {
+    type Score = PuctScore;
+
+    fn score(&self, branch: &Branch, cap_n_i: u32) -> PuctScore {
+        let n_i = branch.visits() as f32;
+
+        // The quality is updated incrementally as the tree is explored.
+        // Because of this, we have to divide by the number of playouts
+        // to get the average quality of this node.
+        // If this node has not yet been visited, we set the quality to 0.
+        let value = branch.node().borrow().value();
+        let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
+
+        let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1f32 + n_i);
+
+        PuctScore(exploitation + exploration)
+    }
+
+    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) {
+        self.selection.leafs[index] = Some(item);
+    }
+
+    fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>> {
+        self.selection.leafs.iter().cloned()
+    }
+
+    fn init(&mut self, root_node: Rc<RefCell<Node>>, turn: Turn) -> Rc<RefCell<SelectionNode>> {
+        let root = Rc::new(RefCell::new(SelectionNode::new_root(SelectionItem {
+            leaf: root_node,
+            depth: Depth::MIN,
+            turn,
+        })));
+
+        self.selection.root = Some(root.clone());
+        root
+    }
 }

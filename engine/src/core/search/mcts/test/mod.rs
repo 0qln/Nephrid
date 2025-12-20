@@ -2,7 +2,10 @@ use crate::core::{
     color::colors,
     position::Position,
     search::mcts::{
-        eval::{Evaluator, RawPolicy},
+        eval::{
+            Evaluator, RawPolicy,
+            nn::{self, EvalInfoNode},
+        },
         nn::POLICY_OUTPUTS,
     },
 };
@@ -11,7 +14,7 @@ use std::{cell::RefCell, rc::Rc};
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 
 use super::{
-    eval::{EvalInfoNode, Evaluation, Guess},
+    eval::{Evaluation, Guess},
     node::Node,
 };
 
@@ -32,23 +35,28 @@ impl<const X: usize> DummyEvaluator<X> {
                 p
             });
 
-            self.1[i] = Some(Evaluation::Guess(Box::new(Guess {
-                relative_to: colors::WHITE,
-                quality,
-                policy: raw_policy,
-            })));
+            if self.get_eval(i).is_none() {
+                self.1[i] = Some(Evaluation::Guess(Box::new(Guess {
+                    relative_to: colors::WHITE,
+                    quality,
+                    policy: raw_policy,
+                })));
+            }
         }
     }
 }
 
-impl<const X: usize> Evaluator<X> for DummyEvaluator<X> {
+impl<const X: usize> Evaluator for DummyEvaluator<X> {
+    type Node = nn::EvalInfoNode;
+
     // Prepare an eval_info_node with the required info for this evaluator.
     fn register_info(
         &mut self,
-        _eval_node: Rc<RefCell<EvalInfoNode>>,
+        parent: &mut Rc<RefCell<Self::Node>>,
         _node: Rc<RefCell<Node>>,
         _pos: &Position,
-    ) {
+    ) -> Rc<RefCell<Self::Node>> {
+        Self::Node::append(parent, None)
     }
 
     /// Evluate all the nodes in the batch.
@@ -57,7 +65,9 @@ impl<const X: usize> Evaluator<X> for DummyEvaluator<X> {
     }
 
     /// Set the evaluation at a specific index.
-    fn set_eval(&mut self, _index: usize, _eval: Evaluation) {}
+    fn set_eval(&mut self, index: usize, eval: Evaluation) {
+        self.1[index] = Some(eval);
+    }
 
     /// Clear the evaluation at a specific index.
     /// (Mark the node at `index` to be evaluated by `eval_guesses`.)
@@ -73,11 +83,11 @@ impl<const X: usize> Evaluator<X> for DummyEvaluator<X> {
         }
     }
 
-    fn init(&mut self) -> Rc<RefCell<EvalInfoNode>> {
+    fn init(&mut self, _node: Rc<RefCell<Node>>, _pos: &Position) -> Rc<RefCell<Self::Node>> {
         Rc::new(RefCell::new(EvalInfoNode::new_root(None)))
     }
 
-    fn iter(&self) -> impl Iterator<Item = &super::eval::EvalState> {
+    fn iter(&self) -> impl Iterator<Item = &super::eval::EvalState<Self::Node>> {
         [].iter()
     }
 }

@@ -20,7 +20,8 @@ use engine::core::r#move::move_flags;
 use engine::core::move_iter::sliding_piece::magics;
 use engine::core::position::Position;
 use engine::core::search::limit::Limit;
-use engine::core::search::mcts::MctsState;
+use engine::core::search::mcts::NNState;
+use engine::core::search::mcts::SearchState;
 use engine::core::search::mcts::mcts;
 use engine::core::search::mcts::nn::ModelConfig;
 use engine::core::zobrist;
@@ -86,7 +87,8 @@ pub fn learn_mate_in_1() {
             .init::<Backend>(&device)
             .load_record(record);
 
-        let mut mcts_state = MctsState::new(Default::default(), model, device);
+        let mut mcts_state = SearchState::default();
+        let nn_state = NNState::new(model, device);
 
         let limit = Limit {
             is_active: true,
@@ -101,6 +103,7 @@ pub fn learn_mate_in_1() {
 
         mcts(
             &pos,
+            &nn_state,
             &mut mcts_state,
             limit.clone(),
             debug.clone(),
@@ -183,11 +186,13 @@ pub fn learn_mate_in_2() {
         let debug = DebugMode::default();
         let ct = CancellationToken::new();
 
-        let mut mcts_state = MctsState::new(Default::default(), model, device);
+        let mut mcts_state = SearchState::default();
+        let nn_state = NNState::new(model, device);
 
         // us/mov-1
         let result = mcts(
             &pos,
+            &nn_state,
             &mut mcts_state,
             limit.clone(),
             debug.clone(),
@@ -201,6 +206,7 @@ pub fn learn_mate_in_2() {
         // them/mov-1
         let result = mcts(
             &pos,
+            &nn_state,
             &mut mcts_state,
             limit.clone(),
             debug.clone(),
@@ -214,6 +220,7 @@ pub fn learn_mate_in_2() {
         // us/mov-2
         let result = mcts(
             &pos,
+            &nn_state,
             &mut mcts_state,
             limit.clone(),
             debug.clone(),

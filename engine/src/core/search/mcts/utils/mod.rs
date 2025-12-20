@@ -70,3 +70,17 @@ impl<T> DoubleLinkedNode<T> {
         R::from_output(init)
     }
 }
+
+pub trait IDoubleLinkedNode {
+    type Data;
+
+    fn append(parent: &mut Rc<RefCell<Self>>, data: Self::Data) -> Rc<RefCell<Self>>;
+}
+
+impl<T> IDoubleLinkedNode for DoubleLinkedNode<T> {
+    type Data = T;
+
+    fn append(parent: &mut Rc<RefCell<Self>>, data: Self::Data) -> Rc<RefCell<Self>> {
+        Self::append(parent, data)
+    }
+}

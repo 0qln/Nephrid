@@ -1,25 +1,25 @@
 use super::utils::*;
 use crate::core::Position;
 use crate::core::color::Color;
-use crate::core::coordinates::files;
-use crate::core::coordinates::ranks;
 use crate::core::position::CheckState;
-use crate::core::search::mcts::nn::BOARD_INPUT_CHANNELS;
 use crate::core::search::mcts::nn::BOARD_INPUT_HISTORY;
 use crate::core::search::mcts::nn::BoardInputFloats;
-use crate::core::search::mcts::nn::BoardInputTensor;
 use crate::core::search::mcts::nn::Model;
 use crate::core::search::mcts::nn::POLICY_OUTPUTS;
 use crate::core::search::mcts::nn::StateInputFloats;
 use crate::core::search::mcts::nn::VALUE_OUTPUTS;
+use crate::core::search::mcts::nn::board_history_input;
 use crate::core::search::mcts::nn::board_input;
 use crate::core::search::mcts::nn::state_input;
 use crate::core::search::mcts::node::Node;
+use crate::core::search::mcts::node::NodeState;
 use crate::core::turn::Turn;
 use burn::Tensor;
 use burn::tensor::Shape;
 use burn::tensor::backend::Backend;
+use core::fmt;
 use itertools::Itertools;
+use std::assert_matches::assert_matches;
 use std::cell::RefCell;
 use std::ops::ControlFlow;
 use std::rc::Rc;
@@ -27,14 +27,21 @@ use std::rc::Rc;
 #[cfg(test)]
 pub mod test;
 
-pub trait Evaluator<const X: usize> {
-    // Prepare an eval_info_node with the required info for this evaluator.
+pub mod static_anal;
+
+pub mod nn;
+
+pub trait Evaluator {
+    type Node: IDoubleLinkedNode;
+
+    // Prepare an eval_info_node with the required info for this evaluator under `parent` and
+    // return the newly create eval info.
     fn register_info(
         &mut self,
-        eval_node: Rc<RefCell<EvalInfoNode>>,
+        parent: &mut Rc<RefCell<Self::Node>>,
         node: Rc<RefCell<Node>>,
         pos: &Position,
-    );
+    ) -> Rc<RefCell<Self::Node>>;
 
     /// Evluate all the nodes in the batch.
     /// (Which is, all the nodes that are eval `None`)
@@ -43,6 +50,12 @@ pub trait Evaluator<const X: usize> {
     /// Evaluate a node's terminal state. If the node is terminal, return the evaluation, else
     /// return None.
     fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation> {
+        assert_matches!(
+            node.state(),
+            NodeState::Terminal | NodeState::Expanded,
+            "We need a terminal or expanded node for proper evaluation."
+        );
+
         // First check if the position is a normal game ending.
         if !node.has_branches() {
             Some(if pos.get_check_state() != CheckState::None {
@@ -70,388 +83,27 @@ pub trait Evaluator<const X: usize> {
     fn set_eval(&mut self, index: usize, eval: Evaluation);
 
     /// Mark the node at `index` to be evaluated when doing `eval_guesses`.
-    fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<EvalInfoNode>>);
+    fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<Self::Node>>);
 
     /// Get the evaluation at a specific index.
     fn get_eval(&self, index: usize) -> Option<&Evaluation>;
 
     /// Initializes and returns a reference to the root eval info node.
-    fn init(&mut self) -> Rc<RefCell<EvalInfoNode>>;
+    fn init(&mut self, node: Rc<RefCell<Node>>, pos: &Position) -> Rc<RefCell<Self::Node>>;
 
-    fn iter(&self) -> impl Iterator<Item = &EvalState>;
-}
-
-#[derive(Debug, PartialEq)]
-pub struct InputFloats {
-    board: BoardInputFloats,
-    state: StateInputFloats,
-}
-
-#[derive(PartialEq, Debug)]
-pub struct EvalInfo {
-    /// Input floats for the eval model.
-    inputs: InputFloats,
-
-    /// The node that this eval info is for.
-    node: Rc<RefCell<Node>>,
-
-    /// Turn of the current player.
-    turn: Turn,
+    fn iter(&self) -> impl Iterator<Item = &EvalState<Self::Node>>;
 }
 
 #[derive(Clone, Debug)]
-pub enum EvalState {
-    OnBatch(Rc<RefCell<EvalInfoNode>>),
+pub enum EvalState<N> {
+    OnBatch(Rc<RefCell<N>>),
     Evaluated(Evaluation),
     None,
 }
 
-pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
-
-pub struct EvaluationInfos<const X: usize> {
-    root: Option<Rc<RefCell<EvalInfoNode>>>,
-    evals: [EvalState; X],
-}
-
-/// X: batch size
-pub struct NNEvaluator<'a, 'b, B: Backend, const X: usize> {
-    /// Eval infos
-    eval_infos: EvaluationInfos<X>,
-
-    /// NN Model
-    model: &'a Model<B>,
-
-    // Device on which the nn will run.
-    device: &'b B::Device,
-}
-
-impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
-    pub fn new(model: &'a Model<B>, device: &'b B::Device) -> Self {
-        Self {
-            model,
-            device,
-            eval_infos: EvaluationInfos {
-                evals: [const { EvalState::None }; X],
-                root: None,
-            },
-        }
-    }
-
-    fn device(&self) -> &B::Device {
-        self.device
-    }
-
-    fn build_board_batch(&self) -> Tensor<B, 4> {
-        // concatenate the board inputs along the batch dimension.
-        Tensor::cat(
-            self.iter_batch()
-                .map(|eval_node| Self::get_node_history(eval_node))
-                // concatenate the board inputs along the channel dimension.
-                .map(|history| {
-                    let history_len = history.len();
-                    let padding_len = BOARD_INPUT_HISTORY - history_len;
-                    debug_assert_eq!(padding_len + history_len, BOARD_INPUT_HISTORY);
-
-                    // pad missing history info with zeroes.
-                    let padding_tensor = BoardInputTensor::<B>::zeros(
-                        [
-                            1,
-                            padding_len * BOARD_INPUT_CHANNELS,
-                            ranks::N_VARIANTS,
-                            files::N_VARIANTS,
-                        ],
-                        self.device(),
-                    );
-
-                    // convert input floats to tensors
-                    let history_tensor = Tensor::cat(
-                        history
-                            .into_iter()
-                            .map(|b| Tensor::from_floats([b], self.device()))
-                            .collect_vec(),
-                        1,
-                    );
-
-                    // concat padding with history
-                    // burn throws error "assertion failed: divisor != 0" if padding is empty, so
-                    // we branch here manually.
-                    if padding_len == 0 {
-                        debug_assert_eq!(
-                            history_tensor.shape()[1],
-                            BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
-                            "if we need no padding the history tensor should be full"
-                        );
-                        history_tensor
-                    } else if history_len == 0 {
-                        debug_assert_eq!(
-                            padding_tensor.shape()[1],
-                            BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
-                            "if we have no history the padding tensor should be full"
-                        );
-                        padding_tensor
-                    } else {
-                        Tensor::cat(vec![padding_tensor, history_tensor], 1)
-                    }
-                })
-                .collect_vec(),
-            0,
-        )
-    }
-
-    /// return the history where:
-    /// the oldest board state is the first index
-    /// the youngest board state is the last index
-    fn get_node_history(eval_info: Rc<RefCell<EvalInfoNode>>) -> Vec<BoardInputFloats> {
-        let mut vec: Vec<BoardInputFloats> = vec![];
-
-        _ = EvalInfoNode::try_fold_up_mut(eval_info.clone(), (), |_, eval_info| {
-            if vec.len() == BOARD_INPUT_HISTORY {
-                return ControlFlow::Break(());
-            }
-
-            let board_input = eval_info
-                .borrow()
-                .data()
-                .as_ref()
-                .expect("Eval info is missing")
-                .inputs
-                .board;
-
-            vec.insert(0, board_input);
-
-            ControlFlow::Continue::<(), ()>(())
-        });
-
-        vec
-    }
-
-    fn build_state_batch(&self) -> Tensor<B, 2> {
-        // concatenate the state inputs along the batch dimension.
-        Tensor::cat(
-            self.iter_batch()
-                .map(|eval_info| {
-                    let state_input = eval_info
-                        .borrow()
-                        .data()
-                        .as_ref()
-                        .expect("Eval info is missing")
-                        .inputs
-                        .state;
-
-                    Tensor::from_floats([state_input], self.device())
-                })
-                .collect_vec(),
-            0,
-        )
-    }
-
-    fn iter_batch(&self) -> impl Iterator<Item = Rc<RefCell<EvalInfoNode>>> {
-        self.eval_infos.evals.iter().filter_map(|x| {
-            if let EvalState::OnBatch(eval_info) = x {
-                Some(eval_info.clone())
-            } else {
-                None
-            }
-        })
-    }
-}
-
-impl<'a, 'b, B: Backend, const X: usize> Evaluator<X> for NNEvaluator<'a, 'b, B, X> {
-    fn init(&mut self) -> Rc<RefCell<EvalInfoNode>> {
-        let root = Rc::new(RefCell::new(EvalInfoNode::new_root(None)));
-        self.eval_infos.root = Some(root.clone());
-        root
-    }
-
-    fn register_info(
-        &mut self,
-        eval_node: Rc<RefCell<EvalInfoNode>>,
-        node: Rc<RefCell<Node>>,
-        pos: &Position,
-    ) {
-        let board = board_input(pos);
-        let state = state_input(pos);
-        let input = InputFloats { board, state };
-        let data = EvalInfo {
-            inputs: input,
-            node,
-            turn: pos.get_turn(),
-        };
-        eval_node.borrow_mut().set_data(Some(data));
-    }
-
-    fn get_eval(&self, index: usize) -> Option<&Evaluation> {
-        if let Some(x) = self.eval_infos.evals.get(index)
-            && let EvalState::Evaluated(eval) = x
-        {
-            Some(eval)
-        } else {
-            None
-        }
-    }
-
-    fn set_eval(&mut self, index: usize, eval: Evaluation) {
-        if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            *x = EvalState::Evaluated(eval);
-        }
-    }
-
-    fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<EvalInfoNode>>) {
-        if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            println!("prepare batch index: {index}");
-            *x = EvalState::OnBatch(eval_node);
-        } else {
-            panic!("Out of range");
-        }
-    }
-
-    fn eval_guesses(&mut self) {
-        let batch_size = self.iter_batch().count();
-        println!("batchsize: {batch_size}");
-        if batch_size == 0 {
-            return;
-        }
-
-        let board_batch = self.build_board_batch();
-        let state_batch = self.build_state_batch();
-        let (values, raw_policies) = self.model.forward(board_batch, state_batch);
-
-        assert_eq!(values.shape(), Shape::new([batch_size, VALUE_OUTPUTS]));
-        assert_eq!(
-            raw_policies.shape(),
-            Shape::new([batch_size, POLICY_OUTPUTS])
-        );
-
-        let values = values.into_data();
-        let values = values
-            .as_slice::<f32>()
-            .expect("Qualities could not be converted to vec.");
-        let values = values.chunks(VALUE_OUTPUTS);
-
-        let raw_policies = raw_policies.into_data();
-        let raw_policies = raw_policies
-            .as_slice::<f32>()
-            .expect("Policy could not be converted to vec.");
-        let raw_policies = raw_policies
-            .chunks(POLICY_OUTPUTS)
-            .map(|raw_policy| RawPolicy(raw_policy.try_into().unwrap()));
-
-        // Enumerate all eval_infos, which have not yet been assigned and assign them a their guess.
-        for (index, eval_info, value, raw_policy) in self
-            .eval_infos
-            .evals
-            .iter()
-            .enumerate()
-            .filter_map(|(i, x)| {
-                if let EvalState::OnBatch(eval_info) = x {
-                    Some((i, eval_info.clone()))
-                } else {
-                    None
-                }
-            })
-            // ---
-            // todo: we allocate here bc if we borrow above, we cannot borrow mutably in the
-            // for loop to set the eval_infos...
-            // find a better solution
-            .collect_vec()
-            .into_iter()
-            // ---
-            .zip(values)
-            .zip(raw_policies)
-            .map(|(((a, b), c), d)| (a, b, c, d))
-        {
-            let eval_info = eval_info.borrow();
-            let eval_info = eval_info
-                .data()
-                .as_ref()
-                .expect("This should be a leaf and leafes should have data.");
-
-            let eval = Evaluation::Guess(Box::new(Guess {
-                relative_to: eval_info.turn,
-                quality: value[0],
-                policy: raw_policy,
-            }));
-            self.eval_infos.evals[index] = EvalState::Evaluated(eval);
-        }
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &EvalState> {
-        self.eval_infos.evals.iter()
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct RawPolicy([f32; POLICY_OUTPUTS]);
-
-impl RawPolicy {
-    pub fn get(&self, i: usize) -> Option<f32> {
-        self.0.get(i).cloned()
-    }
-
-    pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
-        Self(p)
-    }
-
-    pub fn sum(&self) -> f32 {
-        self.0.iter().sum::<f32>()
-    }
-
-    pub fn len(&self) -> usize {
-        debug_assert_eq!(POLICY_OUTPUTS, self.0.len());
-        POLICY_OUTPUTS
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = f32> {
-        self.0.iter().cloned()
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Policy(Vec<f32>);
-
-impl Policy {
-    pub fn get(&self, i: usize) -> Option<f32> {
-        self.0.get(i).cloned()
-    }
-
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn from_raw<I>(raw_policy: &RawPolicy, indeces_of_interest: I) -> Option<Self>
-    where
-        I: Iterator<Item = usize>,
-    {
-        let mut policy = Vec::<f32>::new();
-        for index in indeces_of_interest {
-            policy.push(raw_policy.get(index)?);
-        }
-
-        Some(Self::new(policy))
-    }
-
-    pub fn new(mut policy: Vec<f32>) -> Self {
-        // Renormalize the policy to a sum of 1, since not all of the probabilities
-        // were assigned to moves that are actually playable in this position:
-        let policy_sum = {
-            let sum = policy.iter().sum();
-            if sum == 0.0 {
-                // Fallback to uniform distribution
-                policy.len() as f32
-            } else {
-                sum
-            }
-        };
-        for policy in &mut policy {
-            *policy /= policy_sum;
-        }
-
-        // Evaluator should return a probability distribution.
-        let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
-        debug_assert!(f32_eq(policy.iter().sum::<f32>(), 1., 0.001));
-
-        Self(policy)
-    }
+pub struct EvaluationInfos<const X: usize, N> {
+    root: Option<Rc<RefCell<N>>>,
+    evals: [EvalState<N>; X],
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -481,6 +133,16 @@ pub enum Evaluation {
     Terminal(GameResult),
     /// we don't feel like going any further.
     Nope,
+}
+
+impl fmt::Display for Evaluation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Guess(_) => write!(f, "Evaluation::Guess(...)"),
+            Self::Terminal(result) => write!(f, "Evaluation::Terminal({result:?})"),
+            Self::Nope => write!(f, "Evaluation::Nope"),
+        }
+    }
 }
 
 impl GameResult {
@@ -545,5 +207,81 @@ impl Evaluation {
             Self::Terminal(x) => Some(x),
             _ => None,
         }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct RawPolicy([f32; POLICY_OUTPUTS]);
+
+impl RawPolicy {
+    pub fn get(&self, i: usize) -> Option<f32> {
+        self.0.get(i).cloned()
+    }
+
+    pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
+        Self(p)
+    }
+
+    pub fn sum(&self) -> f32 {
+        self.0.iter().sum::<f32>()
+    }
+
+    pub fn len(&self) -> usize {
+        debug_assert_eq!(POLICY_OUTPUTS, self.0.len());
+        POLICY_OUTPUTS
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = f32> {
+        self.0.iter().cloned()
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Policy(Vec<f32>);
+
+impl Policy {
+    pub fn get(&self, i: usize) -> Option<f32> {
+        self.0.get(i).cloned()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn from_raw<I>(raw_policy: &RawPolicy, indeces_of_interest: I) -> Option<Self>
+    where
+        I: Iterator<Item = usize>,
+    {
+        let mut policy = Vec::<f32>::new();
+        for index in indeces_of_interest {
+            policy.push(raw_policy.get(index)?);
+        }
+
+        Some(Self::new(policy))
+    }
+
+    pub fn new(mut policy: Vec<f32>) -> Self {
+        debug_assert!(policy.len() >= 1, "Should have atleast one policy item");
+
+        // Renormalize the policy to a sum of 1, since not all of the probabilities
+        // were assigned to moves that are actually playable in this position:
+        let policy_sum = {
+            let sum = policy.iter().sum();
+            if sum == 0.0 {
+                // Fallback to uniform distribution
+                policy.len() as f32
+            } else {
+                sum
+            }
+        };
+        for policy in &mut policy {
+            *policy /= policy_sum;
+        }
+
+        // Evaluator should return a probability distribution.
+        let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
+        debug_assert!(f32_eq(policy.iter().sum::<f32>(), 1., 0.001));
+
+        Self(policy)
     }
 }

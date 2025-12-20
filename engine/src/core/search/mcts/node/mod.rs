@@ -7,6 +7,7 @@ use crate::core::search::mcts::eval::Policy;
 use crate::core::search::mcts::eval::RawPolicy;
 use crate::core::search::mcts::node::ops::ControlFlow;
 use std::assert_matches::assert_matches;
+use std::assert_matches::debug_assert_matches;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::fmt;
@@ -320,6 +321,12 @@ impl Node {
 
     /// Sets the policies of the branches.
     pub fn set_policy_raw(&mut self, raw_policy: &RawPolicy) {
+        debug_assert_matches!(
+            self.state(),
+            NodeState::Expanded,
+            "Node has to be expanded. Terminal nodes do not have a policy."
+        );
+
         let moves = self.branches.iter().map(|b| usize::from(b.mov()));
         let policy = Policy::from_raw(raw_policy, moves)
             .expect("Shouldn't be None, since the moves are correct for this node.");

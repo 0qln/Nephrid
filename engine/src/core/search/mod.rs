@@ -10,7 +10,7 @@ use crate::{
         position::Position,
         search::{
             limit::Limit,
-            mcts::{MctsState, mcts, strategy::MctsUci},
+            mcts::{NNState, mcts, strategy::MctsUci},
             perft::perft,
         },
     },
@@ -32,7 +32,8 @@ pub fn init() -> Thread {
     thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            let mut mcts_state = MctsState::<mcts::config::Backend>::default();
+            let mut mcts_state = mcts::SearchState::default();
+            let mcts_nn = NNState::<mcts::config::Backend>::default();
             loop {
                 let cmd = rx.recv().expect("Should be able to receive data");
                 match cmd {
@@ -41,7 +42,7 @@ pub fn init() -> Thread {
                     }
                     Command::Normal(pos, limit, ct, debug) => {
                         let strat = MctsUci::default();
-                        let result = mcts(&pos, &mut mcts_state, limit, debug, ct, strat);
+                        let result = mcts(&pos, &mcts_nn, &mut mcts_state, limit, debug, ct, strat);
                         result.expect("");
                     }
                     Command::Ponder => {
