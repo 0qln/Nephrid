@@ -3,20 +3,20 @@
 //todo: derichlet noise
 
 use engine::core::depth::Depth;
-use engine::core::search::mcts::NNState;
+use engine::core::search::mcts::NNParts;
 use engine::core::search::mcts::SearchState;
-use engine::core::search::mcts::eval::nn::EvalInfoNode;
 use engine::core::search::mcts::eval::Evaluation;
 use engine::core::search::mcts::eval::Evaluator;
 use engine::core::search::mcts::eval::GameResult;
 use engine::core::search::mcts::eval::Guess;
+use engine::core::search::mcts::eval::nn::EvalInfoNode;
 use engine::core::search::mcts::eval::nn::NNEvaluator;
 use engine::core::search::mcts::mcts;
 use engine::core::search::mcts::nn::BOARD_INPUT_HISTORY;
 use engine::core::search::mcts::nn::board_history_input;
 use engine::core::search::mcts::node::Branch;
 use engine::core::search::mcts::node::Node;
-use engine::core::search::mcts::select::PuctScore;
+use engine::core::search::mcts::select::Score;
 use engine::core::search::mcts::select::Selection;
 use engine::core::search::mcts::select::SelectionItem;
 use engine::core::search::mcts::select::SelectionNode;
@@ -626,7 +626,7 @@ fn self_play<B: Backend>(
     let mut pos: Position = tok.try_into()?;
 
     let mut decisions = Vec::<Decision>::new();
-    let nn_state = NNState::new(model, device);
+    let nn_state = NNParts::new(model, device);
     let mut mcts_state = SearchState::default();
 
     println!("{pos:?}");
@@ -752,9 +752,9 @@ impl<const X: usize> Default for TrainPuctSelector<X> {
 }
 
 impl<const X: usize> Selector for TrainPuctSelector<X> {
-    type Score = PuctScore;
+    type Score = Score;
 
-    fn score(&self, branch: &Branch, cap_n_i: u32) -> PuctScore {
+    fn score(&self, branch: &Branch, cap_n_i: u32) -> Score {
         let n_i = branch.visits() as f32;
 
         // The quality is updated incrementally as the tree is explored.
@@ -766,7 +766,7 @@ impl<const X: usize> Selector for TrainPuctSelector<X> {
 
         let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1f32 + n_i);
 
-        PuctScore(exploitation + exploration)
+        Score(exploitation + exploration)
     }
 
     fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) {

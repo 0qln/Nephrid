@@ -5,14 +5,14 @@ use crate::core::position::Position;
 use crate::core::search::mcts::back::DefaultBackuper;
 use crate::core::search::mcts::eval::Evaluator;
 use crate::core::search::mcts::eval::nn::NNEvaluator;
-use crate::core::search::mcts::eval::static_anal::StaticEvaluator;
+use crate::core::search::mcts::eval::r#static::StaticEvaluator;
 use crate::core::search::mcts::limiter::DefaultLimiter;
 use crate::core::search::mcts::nn::Model;
 use crate::core::search::mcts::nn::ModelConfig;
 use crate::core::search::mcts::node::Tree;
 use crate::core::search::mcts::search::TreeSearcher;
-use crate::core::search::mcts::select::PuctSelector;
 use crate::core::search::mcts::select::Selector;
+use crate::core::search::mcts::select::{PuctSelector, UcbSelector};
 use crate::core::search::mcts::strategy::MctsStrategy;
 use crate::misc::DebugMode;
 use crate::uci::sync::CancellationToken;
@@ -107,8 +107,9 @@ impl MctsState for SearchState {
     }
 }
 
+/// Mcts parts for mcts with puct + nn analysis.
 #[derive(Debug)]
-pub struct NNState<B: Backend> {
+pub struct NNParts<B: Backend> {
     /// NN Model
     pub nn: Box<Model<B>>,
 
@@ -116,7 +117,7 @@ pub struct NNState<B: Backend> {
     pub device: B::Device,
 }
 
-impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNState<B> {
+impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
     type Selector = PuctSelector<X>;
 
     type Evaluator = NNEvaluator<'a, 'a, B, X>;
@@ -130,19 +131,16 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNState<B> {
     }
 }
 
-impl<B: Backend> Default for NNState<B> {
+impl<B: Backend> Default for NNParts<B> {
     fn default() -> Self {
         Self::from_path("./weights")
     }
 }
 
-impl<B: Backend> NNState<B> {
+impl<B: Backend> NNParts<B> {
     pub fn from_path(_nn_path: &str) -> Self {
         let device = B::Device::default();
-
-        // todo: read from nn_path
-        let nn = ModelConfig::new().init(&device);
-
+        let nn = ModelConfig::new().init(&device); // todo: read from nn_path
         Self::new(nn, device)
     }
 
@@ -151,10 +149,11 @@ impl<B: Backend> NNState<B> {
     }
 }
 
+/// Mcts parts for mcts with puct + static analysis.
 #[derive(Debug, Default)]
-pub struct StaticAnalState;
+pub struct StaticParts;
 
-impl<const X: usize> MctsParts<X> for &StaticAnalState {
+impl<const X: usize> MctsParts<X> for &StaticParts {
     type Selector = PuctSelector<X>;
     type Evaluator = StaticEvaluator<X>;
 
@@ -167,15 +166,66 @@ impl<const X: usize> MctsParts<X> for &StaticAnalState {
     }
 }
 
-#[cfg(feature = "nn-backend-cuda")]
-pub mod config {
-    pub type Backend = burn_cuda::Cuda<f32>;
-    pub type Device = <self::Backend as burn::prelude::Backend>::Device;
-    pub const MPV: usize = 32;
-}
+// todo:
+// maybe we can use the puct TreeSearcher for this, but that might be a big performance debuff,
+// since we would have to skip growth-cycles until we reach a terminal node and then propagate that
+// evaluation up the tree...
+//
+/// Mcts parts for pure mcts.
+// #[derive(Debug, Default)]
+// pub struct PureParts;
 
-#[cfg(feature = "nn-backend-ndarray")]
+// impl<const X: usize> MctsParts<X> for &PureParts {
+//     type Selector = UcbSelector<X>;
+//     type Evaluator = NoneEvaluator<X>;
+
+//     fn selector(&self) -> Self::Selector {
+//         Default::default()
+//     }
+
+//     fn evaluator(&self) -> Self::Evaluator {
+//         Default::default()
+//     }
+// }
+
 pub mod config {
-    type Backend = NdArray;
+    #[cfg(feature = "mcts-pure")]
+    pub const MPV: usize = 1;
+
+    #[cfg(feature = "nn-backend-cuda")]
+    pub const MPV: usize = 32;
+
+    #[cfg(feature = "nn-backend-ndarray")]
     pub const MPV: usize = 4;
+
+    #[cfg(feature = "nn-backend-cuda")]
+    pub mod nn_backend {
+        pub type Backend = burn_cuda::Cuda<f32>;
+        pub type Device = <self::Backend as burn::prelude::Backend>::Device;
+    }
+
+    #[cfg(feature = "nn-backend-ndarray")]
+    pub mod nn_backend {
+        use burn::backend::NdArray;
+        type Backend = NdArray;
+        pub type Device = <self::Backend as burn::prelude::Backend>::Device;
+    }
+
+    #[cfg(feature = "mcts-nn")]
+    pub mod mcts {
+        use crate::core::search::mcts::NNParts;
+        pub type Parts = NNParts<super::nn_backend::Backend>;
+    }
+
+    #[cfg(feature = "mcts-sa")]
+    pub mod mcts {
+        use crate::core::search::mcts::StaticParts;
+        pub type Parts = StaticParts;
+    }
+
+    #[cfg(feature = "mcts-pure")]
+    pub mod mcts {
+        use crate::core::search::mcts::PureParts;
+        pub type Parts = PureParts;
+    }
 }

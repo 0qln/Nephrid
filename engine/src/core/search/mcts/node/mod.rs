@@ -141,6 +141,10 @@ impl Branch {
         self.node.borrow().visits()
     }
 
+    pub fn value(&self) -> Value {
+        self.node.borrow().value()
+    }
+
     pub fn node_state(&self) -> NodeState {
         self.node.borrow().state()
     }

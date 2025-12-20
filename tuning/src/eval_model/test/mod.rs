@@ -20,7 +20,7 @@ use engine::core::r#move::move_flags;
 use engine::core::move_iter::sliding_piece::magics;
 use engine::core::position::Position;
 use engine::core::search::limit::Limit;
-use engine::core::search::mcts::NNState;
+use engine::core::search::mcts::NNParts;
 use engine::core::search::mcts::SearchState;
 use engine::core::search::mcts::mcts;
 use engine::core::search::mcts::nn::ModelConfig;
@@ -88,7 +88,7 @@ pub fn learn_mate_in_1() {
             .load_record(record);
 
         let mut mcts_state = SearchState::default();
-        let nn_state = NNState::new(model, device);
+        let nn_state = NNParts::new(model, device);
 
         let limit = Limit {
             is_active: true,
@@ -187,7 +187,7 @@ pub fn learn_mate_in_2() {
         let ct = CancellationToken::new();
 
         let mut mcts_state = SearchState::default();
-        let nn_state = NNState::new(model, device);
+        let nn_state = NNParts::new(model, device);
 
         // us/mov-1
         let result = mcts(

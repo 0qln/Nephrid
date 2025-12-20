@@ -16,7 +16,11 @@ ndarray = "0.17.1"
 ringbuf = "0.4.8"
 
 [features]
-default = ["nn-backend-cuda"]
+default = []
 
 nn-backend-cuda = []
 nn-backend-ndarray = []
+
+mcts-pure = []
+mcts-nn = []
+mcts-sa = []

@@ -1,5 +1,5 @@
 use crate::core::search::mcts::node::Tree;
-use crate::core::{Move, search::mcts::StaticAnalState};
+use crate::core::{Move, search::mcts::StaticParts};
 use std::{
     sync::mpsc::{Sender, channel},
     thread,
@@ -10,7 +10,7 @@ use crate::{
         position::Position,
         search::{
             limit::Limit,
-            mcts::{NNState, mcts, strategy::MctsUci},
+            mcts::{NNParts, mcts, strategy::MctsUci},
             perft::perft,
         },
     },
@@ -34,7 +34,7 @@ pub fn init() -> Thread {
         .spawn(move || {
             let mut mcts_state = mcts::SearchState::default();
             // let mcts_parts = NNState::<mcts::config::Backend>::default();
-            let mcts_parts = StaticAnalState::default();
+            let mcts_parts = mcts::config::mcts::Parts::default();
             loop {
                 let cmd = rx.recv().expect("Should be able to receive data");
                 match cmd {

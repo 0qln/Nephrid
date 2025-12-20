@@ -27,7 +27,7 @@ use std::rc::Rc;
 #[cfg(test)]
 pub mod test;
 
-pub mod static_anal;
+pub mod r#static;
 
 pub mod nn;
 

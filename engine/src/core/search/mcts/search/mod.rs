@@ -1,7 +1,6 @@
 use crate::core::Position;
 use crate::core::search::mcts::back::Backpropagater;
 use crate::core::search::mcts::back::DefaultBackuper;
-use crate::core::search::mcts::eval::EvalState;
 use crate::core::search::mcts::eval::Evaluation;
 use crate::core::search::mcts::eval::Evaluator;
 use crate::core::search::mcts::limiter;
@@ -135,6 +134,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
 
     /// Follows a branch and decides what to do depending on the current state of the branch's
     /// node.
+    /// Returns: how much of the budget was used.
     fn process_node(
         &mut self,
         budget: usize,
@@ -143,13 +143,13 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         node: Rc<RefCell<Node>>,
         eval_node: Rc<RefCell<E::Node>>,
         sel_node: Rc<RefCell<SelectionNode>>,
-    ) {
+    ) -> usize {
         let state = node.borrow().state();
         match state {
             // Only if the node is already expanded we want to follow the branch.
             NodeState::Expanded => {
                 // If the node is expanded, pick branches and follow the lines.
-                self.pick_branches(budget, line_index, depth, node, eval_node, sel_node);
+                self.pick_branches(budget, line_index, depth, node, eval_node, sel_node)
             }
             NodeState::Leaf => {
                 // If the node is a leaf, expand the node's branches for future mcts iterations.
@@ -163,10 +163,12 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
 
                 // select the node.
                 self.select_node(line_index, node, sel_node, eval_node, depth);
+                1
             }
             NodeState::Terminal => {
                 // select the node.
                 self.select_node(line_index, node, sel_node, eval_node, depth);
+                1
             }
         }
     }
@@ -207,6 +209,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         self.debug_arr[line_index] += 1;
     }
 
+    /// Returns: how much of the budget was used.
     fn pick_branches(
         &mut self,
         budget: usize,
@@ -215,7 +218,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         parent_node: Rc<RefCell<Node>>,
         mut eval_node_parent: Rc<RefCell<E::Node>>,
         mut sel_node_parent: Rc<RefCell<SelectionNode>>,
-    ) {
+    ) -> usize {
         // Split the budget up between this and the subsequent best nodes.
         let root_visits = parent_node.borrow().visits();
         parent_node
@@ -223,6 +226,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
             .sort_by(|b| -self.selector.score(b, root_visits));
 
         let mut budget = budget;
+        let mut used_budget = 0;
         let mut line_index = line_index;
         let mut branch_index = 0;
         while budget >= 1 {
@@ -256,7 +260,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
                     &self.position,
                 );
 
-                self.process_node(
+                let used = self.process_node(
                     current_budget,
                     line_index,
                     depth,
@@ -268,14 +272,13 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
                 // undo the move again
                 self.position.unmake_move(branch.mov());
 
-                // `process_node` should have used `current_budget` nodes. Thus we increase the
-                // line_index by that amount.
-                // todo: this is a bug. as seen below, the budget is not always used 100%. idk if
-                // these gaps actually create problems, but better fix the indexing increment here
-                // before it does.
-                line_index += current_budget;
                 budget -= current_budget;
                 branch_index += 1;
+
+                // `process_node` should have used `used` nodes. Thus we increase the
+                // line_index by that amount.
+                line_index += used;
+                used_budget += used;
             } else {
                 // in this case there are no more branches to distribute the budget to.
                 // todo:
@@ -285,6 +288,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
                 break;
             }
         }
+        used_budget
     }
 
     fn eval_leafes_(&mut self) {

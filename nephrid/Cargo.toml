@@ -4,4 +4,4 @@ version = "25.11.22+b4b7c55"
 edition = "2024"
 
 [dependencies]
-engine = { version = "*", path = "../engine" }
+engine = { version = "*", path = "../engine", features = [ "mcts-sa", "nn-backend-ndarray"] }
