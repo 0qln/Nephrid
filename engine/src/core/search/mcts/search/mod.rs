@@ -91,32 +91,32 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
 {
     pub fn grow(&mut self) {
         self.select_lines();
-        println!(
-            "selected: {:?}",
-            self.selector
-                .iter()
-                .enumerate()
-                .filter_map(|(i, x)| Some((i, x?)))
-                .map(|(i, x)| i)
-                .count() // .collect_vec()
-        );
+        // println!(
+        //     "selected: {:?}",
+        //     self.selector
+        //         .iter()
+        //         .enumerate()
+        //         .filter_map(|(i, x)| Some((i, x?)))
+        //         .map(|(i, x)| i)
+        //         .count() // .collect_vec()
+        // );
 
         self.eval_leafes_();
-        println!(
-            "evaluated: {:?}",
-            self.evaluator
-                .iter()
-                .enumerate()
-                .filter_map(|(i, x)| match x {
-                    EvalState::None => None,
-                    x => Some((i, x)),
-                })
-                .map(|(i, x)| i)
-                .count() // .collect_vec()
-        );
+        // println!(
+        //     "evaluated: {:?}",
+        //     self.evaluator
+        //         .iter()
+        //         .enumerate()
+        //         .filter_map(|(i, x)| match x {
+        //             EvalState::None => None,
+        //             x => Some((i, x)),
+        //         })
+        //         .map(|(i, x)| i)
+        //         .count() // .collect_vec()
+        // );
 
         self.backup_evals();
-        println!("backpropagated.");
+        // println!("backpropagated.");
     }
 
     //
@@ -188,7 +188,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         // Check if the board has a terminal evaluation
         let terminal_eval = E::eval_terminal(&node.borrow(), pos);
         if let Some(terminal_eval) = terminal_eval {
-            println!("[{line_index}] terminal");
+            // println!("[{line_index}] terminal");
             node.borrow_mut().set_state(NodeState::Terminal);
             self.evaluator.set_eval(line_index, terminal_eval);
         }
@@ -198,7 +198,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         }
         // Else note down that we need to guess this node's evaluation.
         else {
-            println!("[{line_index}] batched");
+            // println!("[{line_index}] batched");
             self.evaluator.batch_eval(line_index, eval);
         }
 
@@ -305,7 +305,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
                 .get_eval(index)
                 .unwrap_or_else(|| panic!("Evaluation missing for index {index}"));
 
-            println!("[{index}] backup: {eval}");
+            // println!("[{index}] backup: {eval}");
 
             self.backpropagater.backpropagate(leaf, eval);
         }

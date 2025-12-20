@@ -5,6 +5,7 @@ use crate::core::position::Position;
 use crate::core::search::mcts::back::DefaultBackuper;
 use crate::core::search::mcts::eval::Evaluator;
 use crate::core::search::mcts::eval::nn::NNEvaluator;
+use crate::core::search::mcts::eval::static_anal::StaticEvaluator;
 use crate::core::search::mcts::limiter::DefaultLimiter;
 use crate::core::search::mcts::nn::Model;
 use crate::core::search::mcts::nn::ModelConfig;
@@ -147,6 +148,22 @@ impl<B: Backend> NNState<B> {
 
     pub fn new(nn: Model<B>, device: B::Device) -> Self {
         Self { nn: Box::new(nn), device }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct StaticAnalState;
+
+impl<const X: usize> MctsParts<X> for &StaticAnalState {
+    type Selector = PuctSelector<X>;
+    type Evaluator = StaticEvaluator<X>;
+
+    fn selector(&self) -> Self::Selector {
+        Default::default()
+    }
+
+    fn evaluator(&self) -> Self::Evaluator {
+        Default::default()
     }
 }
 

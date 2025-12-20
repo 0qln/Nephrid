@@ -94,16 +94,32 @@ pub trait Evaluator {
     fn iter(&self) -> impl Iterator<Item = &EvalState<Self::Node>>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub enum EvalState<N> {
     OnBatch(Rc<RefCell<N>>),
     Evaluated(Evaluation),
+    #[default]
     None,
+}
+
+impl<N> EvalState<N> {
+    pub const fn new_none() -> Self {
+        Self::None
+    }
 }
 
 pub struct EvaluationInfos<const X: usize, N> {
     root: Option<Rc<RefCell<N>>>,
     evals: [EvalState<N>; X],
+}
+
+impl<const X: usize, N> Default for EvaluationInfos<X, N> {
+    fn default() -> Self {
+        Self {
+            root: Default::default(),
+            evals: [const { EvalState::new_none() }; X],
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -115,6 +131,7 @@ pub enum GameResult {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Guess {
     pub relative_to: Color,
+    // value in the range from -1 to 1
     pub quality: f32,
     pub policy: RawPolicy,
 }
@@ -216,6 +233,10 @@ pub struct RawPolicy([f32; POLICY_OUTPUTS]);
 impl RawPolicy {
     pub fn get(&self, i: usize) -> Option<f32> {
         self.0.get(i).cloned()
+    }
+
+    pub fn null() -> Self {
+        Self::new([0.0; POLICY_OUTPUTS])
     }
 
     pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {

@@ -175,7 +175,6 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
 
     fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<Self::Node>>) {
         if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            println!("[{index} prepare batch");
             *x = EvalState::OnBatch(eval_node);
         } else {
             panic!("Out of range");
@@ -184,7 +183,6 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
 
     fn eval_guesses(&mut self) {
         let batch_size = self.iter_batch().count();
-        // println!("batchsize: {batch_size}");
         if batch_size == 0 {
             return;
         }
@@ -249,7 +247,6 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
                 policy: raw_policy,
             }));
 
-            println!("[{index}] save guess: {eval}");
             self.eval_infos.evals[index] = EvalState::Evaluated(eval);
         }
     }

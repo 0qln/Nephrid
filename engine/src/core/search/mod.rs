@@ -1,5 +1,5 @@
-use crate::core::Move;
 use crate::core::search::mcts::node::Tree;
+use crate::core::{Move, search::mcts::StaticAnalState};
 use std::{
     sync::mpsc::{Sender, channel},
     thread,
@@ -33,7 +33,8 @@ pub fn init() -> Thread {
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
             let mut mcts_state = mcts::SearchState::default();
-            let mcts_nn = NNState::<mcts::config::Backend>::default();
+            // let mcts_parts = NNState::<mcts::config::Backend>::default();
+            let mcts_parts = StaticAnalState::default();
             loop {
                 let cmd = rx.recv().expect("Should be able to receive data");
                 match cmd {
@@ -42,7 +43,8 @@ pub fn init() -> Thread {
                     }
                     Command::Normal(pos, limit, ct, debug) => {
                         let strat = MctsUci::default();
-                        let result = mcts(&pos, &mcts_nn, &mut mcts_state, limit, debug, ct, strat);
+                        let result =
+                            mcts(&pos, &mcts_parts, &mut mcts_state, limit, debug, ct, strat);
                         result.expect("");
                     }
                     Command::Ponder => {

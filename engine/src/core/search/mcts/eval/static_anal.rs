@@ -1,9 +1,31 @@
+use std::cmp::max;
+
+use crate::core::color::colors;
+
 use super::*;
+
+#[derive(Debug, PartialEq, Default)]
+pub struct QualityInput {
+    w_q: u32,
+    b_q: u32,
+}
+
+impl QualityInput {
+    fn new(pos: &Position) -> Self {
+        Self {
+            w_q: pos.get_color_bb(colors::WHITE).pop_cnt(),
+            b_q: pos.get_color_bb(colors::BLACK).pop_cnt(),
+        }
+    }
+}
 
 #[derive(PartialEq, Debug)]
 pub struct EvalInfo {
     /// The node that this eval info is for.
     node: Rc<RefCell<Node>>,
+
+    /// Quality info for static evaluation
+    q_input: QualityInput,
 
     /// Turn of the current player.
     turn: Turn,
@@ -11,13 +33,18 @@ pub struct EvalInfo {
 
 impl EvalInfo {
     pub fn new(node: Rc<RefCell<Node>>, pos: &Position) -> Self {
-        Self { node, turn: pos.get_turn() }
+        Self {
+            node,
+            turn: pos.get_turn(),
+            q_input: QualityInput::new(pos),
+        }
     }
 }
 
 pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
 
 /// X: batch size
+#[derive(Default)]
 pub struct StaticEvaluator<const X: usize> {
     /// Eval infos
     eval_infos: EvaluationInfos<X, EvalInfoNode>,
@@ -60,7 +87,7 @@ impl<const X: usize> Evaluator for StaticEvaluator<X> {
         node: Rc<RefCell<Node>>,
         pos: &Position,
     ) -> Rc<RefCell<Self::Node>> {
-        let data = EvalInfo { node, turn: pos.get_turn() };
+        let data = EvalInfo::new(node, pos);
         Self::Node::append(parent, Some(data))
     }
 
@@ -82,7 +109,6 @@ impl<const X: usize> Evaluator for StaticEvaluator<X> {
 
     fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<Self::Node>>) {
         if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            println!("[{index} prepare batch");
             *x = EvalState::OnBatch(eval_node);
         } else {
             panic!("Out of range");
@@ -91,7 +117,6 @@ impl<const X: usize> Evaluator for StaticEvaluator<X> {
 
     fn eval_guesses(&mut self) {
         let batch_size = self.iter_batch().count();
-        // println!("batchsize: {batch_size}");
         if batch_size == 0 {
             return;
         }
@@ -125,11 +150,18 @@ impl<const X: usize> Evaluator for StaticEvaluator<X> {
 
             let eval = Evaluation::Guess(Box::new(Guess {
                 relative_to: eval_info.turn,
-                quality: todo!("Static quality analysis"),
-                policy: todo!("Static policy analysis"),
+                quality: {
+                    // use piece count as quality
+                    let w_q = eval_info.q_input.w_q;
+                    let b_q = eval_info.q_input.b_q;
+                    let d = w_q as i32 - b_q as i32;
+                    let m = max(w_q, b_q);
+                    let q = d as f32 / m as f32;
+                    if eval_info.turn == colors::WHITE { q } else { -q }
+                },
+                policy: RawPolicy::null(),
             }));
 
-            println!("[{index}] save guess: {eval}");
             self.eval_infos.evals[index] = EvalState::Evaluated(eval);
         }
     }

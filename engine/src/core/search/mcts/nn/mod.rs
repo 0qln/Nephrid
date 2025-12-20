@@ -378,8 +378,6 @@ impl<B: Backend> Model<B> {
 
         let x = x.flatten(1, 3);
 
-        // println!("{:?}", x.shape());
-
         // todo: should we always use a dropout layer?
         // let x = self.dropout.forward(x);
 
