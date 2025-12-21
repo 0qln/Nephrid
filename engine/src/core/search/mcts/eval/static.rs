@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use crate::core::color::colors;
+use crate::core::{color::colors, piece::piece_type};
 
 use super::*;
 
@@ -11,12 +11,33 @@ pub struct QualityInput {
 }
 
 impl QualityInput {
+    fn material(pos: &Position, color: Color) -> u32 {
+        const PIECE_VALUES: [u32; piece_type::N_VARIANTS] = [0, 1, 3, 3, 5, 8, 0];
+        (piece_type::PAWN..piece_type::KING)
+            .map(|p| pos.get_bitboard(p, color).pop_cnt() * PIECE_VALUES[p.v() as usize])
+            .sum()
+    }
+
+    fn psqt(_pos: &Position, _color: Color) -> u32 {
+        // todo
+        0
+    }
+
+    fn value(pos: &Position, color: Color) -> u32 {
+        Self::material(pos, color) + Self::psqt(pos, color)
+    }
+
     fn new(pos: &Position) -> Self {
         Self {
-            w_q: pos.get_color_bb(colors::WHITE).pop_cnt(),
-            b_q: pos.get_color_bb(colors::BLACK).pop_cnt(),
+            w_q: Self::value(pos, colors::WHITE),
+            b_q: Self::value(pos, colors::BLACK),
         }
     }
+}
+
+#[derive(Debug, PartialEq, Default)]
+pub struct PolicyInput {
+    p: RawPolicy,
 }
 
 #[derive(PartialEq, Debug)]
@@ -26,6 +47,9 @@ pub struct EvalInfo {
 
     /// Quality info for static evaluation
     q_input: QualityInput,
+
+    /// Policy for static evaluation
+    p_input: PolicyInput,
 
     /// Turn of the current player.
     turn: Turn,
@@ -37,6 +61,7 @@ impl EvalInfo {
             node,
             turn: pos.get_turn(),
             q_input: QualityInput::new(pos),
+            p_input: PolicyInput::default(),
         }
     }
 }
@@ -151,15 +176,15 @@ impl<const X: usize> Evaluator for StaticEvaluator<X> {
             let eval = Evaluation::Guess(Box::new(Guess {
                 relative_to: eval_info.turn,
                 quality: {
-                    // use piece count as quality
+                    // squish into a range from -1 to +1
                     let w_q = eval_info.q_input.w_q;
                     let b_q = eval_info.q_input.b_q;
                     let d = w_q as i32 - b_q as i32;
                     let m = max(w_q, b_q);
-                    let q = d as f32 / m as f32;
+                    let q = if m == 0 { 0. } else { d as f32 / m as f32 };
                     if eval_info.turn == colors::WHITE { q } else { -q }
                 },
-                policy: RawPolicy::null(),
+                policy: eval_info.p_input.p.to_owned(),
             }));
 
             self.eval_infos.evals[index] = EvalState::Evaluated(eval);

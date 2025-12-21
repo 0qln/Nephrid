@@ -230,6 +230,12 @@ impl Evaluation {
 #[derive(Debug, PartialEq, Clone)]
 pub struct RawPolicy([f32; POLICY_OUTPUTS]);
 
+impl Default for RawPolicy {
+    fn default() -> Self {
+        Self::null()
+    }
+}
+
 impl RawPolicy {
     pub fn get(&self, i: usize) -> Option<f32> {
         self.0.get(i).cloned()
