@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+engine1="$1"
+engine2="$2"
+openings="$3"
+out="$4"
+
+cutechess-cli \
+    -engine cmd="$engine1" \
+    -engine cmd="$engine2" \
+    -each proto=uci tc=40/100 \
+    -rounds 500 \
+    -concurrency 4 \
+    -openings file="$openings" \
+    -pgnout "$out"

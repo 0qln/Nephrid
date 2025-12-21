@@ -108,6 +108,8 @@
               # bash
               ''
                 echo "yo! o/"
+
+                export PATH="$PWD/benchmarking/bin:$PATH"
               '';
           };
         };
