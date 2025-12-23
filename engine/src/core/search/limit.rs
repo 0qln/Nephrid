@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::time::Duration;
 
 use crate::core::depth::Depth;
@@ -49,7 +50,22 @@ impl Limit {
             _ => unreachable!(),
         };
 
-        Duration::from_millis(time / 50 + inc)
+        let lag_buf = 500;
+
+        let time_per_move = time / 50 + inc;
+        let time_per_move = min(time_per_move, self.movetime);
+
+        let result = if time_per_move > lag_buf {
+            time_per_move - lag_buf
+        } else {
+            0
+        };
+
+        println!("{result}");
+        println!("{lag_buf}");
+        println!("{time_per_move}");
+
+        Duration::from_millis(result)
     }
 }
 

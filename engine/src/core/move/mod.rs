@@ -255,14 +255,11 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                 flag = match abs_dist {
                     16 => f::DOUBLE_PAWN_PUSH,
                     7 | 9 if !captures => f::EN_PASSANT,
-                    _ => {
-                        let promo_piece = PromoPieceType::try_from(&mut *move_notation.tokens)
-                            .map_err(MoveParseError::InvalidPromoPieceType)?;
-
-                        MoveFlag::from((promo_piece, captures))
-                        // move_notation.tokens.next_char().map_or(Ok(flag), |c|
-                        // { Ok() })?
-                    }
+                    _ => match PromoPieceType::try_from(move_notation.tokens) {
+                        Ok(promo_piece) => MoveFlag::from((promo_piece, captures)),
+                        Err(PromoPieceTokenizationError::MissingToken) => flag,
+                        Err(error) => return Err(MoveParseError::InvalidPromoPieceType(error)),
+                    },
                 }
             }
             piece_type::KING if abs_dist == 2 => {
