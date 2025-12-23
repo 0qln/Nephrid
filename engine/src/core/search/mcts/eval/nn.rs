@@ -94,7 +94,7 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
                 .borrow()
                 .data()
                 .as_ref()
-                .expect("Eval info is missing")
+                .expect("Eval info is missing. Did you forget to call `init()`?")
                 .inputs
                 .board;
 

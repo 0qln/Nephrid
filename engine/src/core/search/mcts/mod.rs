@@ -207,7 +207,7 @@ pub mod config {
     #[cfg(feature = "nn-backend-ndarray")]
     pub mod nn_backend {
         use burn::backend::NdArray;
-        type Backend = NdArray;
+        pub type Backend = NdArray;
         pub type Device = <self::Backend as burn::prelude::Backend>::Device;
     }
 

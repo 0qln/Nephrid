@@ -241,6 +241,10 @@ impl RawPolicy {
         self.0.get(i).cloned()
     }
 
+    pub fn set(&mut self, i: usize, val: f32) {
+        self.0[i] = val;
+    }
+
     pub fn null() -> Self {
         Self::new([0.0; POLICY_OUTPUTS])
     }
@@ -260,6 +264,25 @@ impl RawPolicy {
 
     pub fn iter(&self) -> impl Iterator<Item = f32> {
         self.0.iter().cloned()
+    }
+
+    pub fn normalize(&mut self) {
+        let policy_sum = {
+            let sum = self.iter().sum();
+            if sum == 0.0 {
+                // Fallback to uniform distribution
+                self.len() as f32
+            } else {
+                sum
+            }
+        };
+        for policy in &mut self.0 {
+            *policy /= policy_sum;
+        }
+
+        // Evaluator should return a probability distribution.
+        let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
+        debug_assert!(f32_eq(self.iter().sum::<f32>(), 1., 0.001));
     }
 }
 
@@ -287,28 +310,33 @@ impl Policy {
         Some(Self::new(policy))
     }
 
-    pub fn new(mut policy: Vec<f32>) -> Self {
-        debug_assert!(policy.len() >= 1, "Should have atleast one policy item");
+    pub fn iter(&self) -> impl Iterator<Item = f32> {
+        self.0.iter().cloned()
+    }
 
-        // Renormalize the policy to a sum of 1, since not all of the probabilities
-        // were assigned to moves that are actually playable in this position:
+    pub fn normalize(&mut self) {
         let policy_sum = {
-            let sum = policy.iter().sum();
+            let sum = self.iter().sum();
             if sum == 0.0 {
                 // Fallback to uniform distribution
-                policy.len() as f32
+                self.len() as f32
             } else {
                 sum
             }
         };
-        for policy in &mut policy {
+        for policy in &mut self.0 {
             *policy /= policy_sum;
         }
 
         // Evaluator should return a probability distribution.
         let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
-        debug_assert!(f32_eq(policy.iter().sum::<f32>(), 1., 0.001));
+        debug_assert!(f32_eq(self.iter().sum::<f32>(), 1., 0.001));
+    }
 
-        Self(policy)
+    pub fn new(policy: Vec<f32>) -> Self {
+        debug_assert!(policy.len() >= 1, "Should have atleast one policy item");
+        let mut result = Self(policy);
+        result.normalize();
+        result
     }
 }

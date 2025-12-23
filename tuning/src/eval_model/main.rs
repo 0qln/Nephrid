@@ -2,6 +2,8 @@
 
 //todo: derichlet noise
 
+use burn::nn::loss::BinaryCrossEntropyLossConfig;
+use burn::train::MultiLabelClassificationOutput;
 use engine::core::depth::Depth;
 use engine::core::search::mcts::NNParts;
 use engine::core::search::mcts::SearchState;
@@ -9,13 +11,15 @@ use engine::core::search::mcts::eval::Evaluation;
 use engine::core::search::mcts::eval::Evaluator;
 use engine::core::search::mcts::eval::GameResult;
 use engine::core::search::mcts::eval::Guess;
-use engine::core::search::mcts::eval::nn::EvalInfoNode;
+use engine::core::search::mcts::eval::RawPolicy;
 use engine::core::search::mcts::eval::nn::NNEvaluator;
 use engine::core::search::mcts::mcts;
 use engine::core::search::mcts::nn::BOARD_INPUT_HISTORY;
+use engine::core::search::mcts::nn::POLICY_OUTPUTS;
 use engine::core::search::mcts::nn::board_history_input;
 use engine::core::search::mcts::node::Branch;
 use engine::core::search::mcts::node::Node;
+use engine::core::search::mcts::node::Value;
 use engine::core::search::mcts::select::Score;
 use engine::core::search::mcts::select::Selection;
 use engine::core::search::mcts::select::SelectionItem;
@@ -27,8 +31,10 @@ use engine::core::turn::Turn;
 use std::cell::RefCell;
 use std::cmp::max;
 
+use burn::module::{Content, DisplaySettings, ModuleDisplay};
 use burn::prelude::Module;
 use burn::record::CompactRecorder;
+use burn::tensor::{Tensor, backend::Backend};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use std::env::var;
@@ -51,10 +57,9 @@ use burn::{
         dataset::{Dataset, InMemDataset},
     },
     nn::loss::{CrossEntropyLossConfig, MseLoss, Reduction},
-    prelude::Backend,
-    tensor::{Int, Tensor, TensorData},
+    tensor::{Float, Int, TensorData},
     train::{
-        ClassificationOutput, RegressionOutput, TrainOutput, TrainStep, ValidStep,
+        ClassificationOutput, RegressionOutput, TrainOutput, TrainStep,
         metric::{Adaptor, LossInput},
     },
 };
@@ -70,8 +75,8 @@ use engine::{
             limit::Limit,
             mcts::nn::{
                 BOARD_INPUT_TENSOR_DIM, BoardInputFloats, Model, ModelConfig,
-                POLICY_TARGET_TENSOR_DIM, STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW,
-                VALUE_LOSE, VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
+                STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW, VALUE_LOSE,
+                VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
             },
         },
         zobrist,
@@ -111,11 +116,27 @@ fn main() {
 }
 
 #[derive(Clone, Debug)]
-pub struct PlayoutBatch<B: Backend> {
+pub struct SLCPlayoutBatch<B: Backend> {
     pub board_inputs: Tensor<B, BOARD_INPUT_TENSOR_DIM>,
     pub state_inputs: Tensor<B, STATE_INPUT_TENSOR_DIM>,
     pub value_targets: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
-    pub policy_targets: Tensor<B, POLICY_TARGET_TENSOR_DIM, Int>,
+    pub policy_targets: Tensor<B, 1, Int>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MLCPlayoutBatch<B: Backend> {
+    pub board_inputs: Tensor<B, BOARD_INPUT_TENSOR_DIM>,
+    pub state_inputs: Tensor<B, STATE_INPUT_TENSOR_DIM>,
+    pub value_targets: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
+    pub policy_targets: Tensor<B, 2, Int>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExactLossPlayoutBatch<B: Backend> {
+    pub board_inputs: Tensor<B, BOARD_INPUT_TENSOR_DIM>,
+    pub state_inputs: Tensor<B, STATE_INPUT_TENSOR_DIM>,
+    pub value_targets: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
+    pub policy_targets: Tensor<B, 2, Float>,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -131,18 +152,117 @@ impl FenItemRaw {
 }
 
 #[derive(Clone, Debug)]
-pub struct PlayoutItem {
-    /// Board info
-    pub board_input: Vec<BoardInputFloats>,
+pub struct BoardInput(pub Vec<BoardInputFloats>);
 
-    /// State info
-    pub state_input: StateInputFloats,
+impl<'a, T: Target> From<&'a [Decision<T>]> for BoardInput {
+    fn from(decisions: &'a [Decision<T>]) -> Self {
+        Self(decisions.iter().map(|d| d.input.board_in).collect_vec())
+    }
+}
 
-    /// Target Value
-    pub value_target: f32,
+#[derive(Clone, Debug)]
+pub struct StateInput(pub StateInputFloats);
 
-    /// Target Move index
+impl<'a, T: Target> From<&'a Decision<T>> for StateInput {
+    fn from(decision: &'a Decision<T>) -> Self {
+        Self(decision.input.state_in)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ValueTarget(f32);
+
+impl From<(GameResult, Turn)> for ValueTarget {
+    /// value target depending on the game result and the current moving player.
+    fn from((result, moving_color): (GameResult, Turn)) -> Self {
+        match result {
+            GameResult::Draw => Self(VALUE_DRAW),
+            GameResult::Win { relative_to } => {
+                if relative_to == moving_color {
+                    Self(VALUE_WIN)
+                } else {
+                    Self(VALUE_LOSE)
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct SLCPlayoutItem {
+    pub board_input: BoardInput,
+    pub state_input: StateInput,
+    pub value_target: ValueTarget,
     pub policy_target: usize,
+}
+
+impl<'a> From<(GameResult, &'a [Decision<SLCTarget>])> for SLCPlayoutItem {
+    fn from((result, decisions): (GameResult, &'a [Decision<SLCTarget>])) -> Self {
+        let decision = &decisions[decisions.len() - 1];
+        let player = decision.state.moving_color;
+        Self {
+            board_input: BoardInput::from(decisions),
+            state_input: StateInput::from(decision),
+            value_target: ValueTarget::from((result, player)),
+            policy_target: usize::from(decision.target.mov),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MLCPlayoutItem {
+    pub board_input: BoardInput,
+    pub state_input: StateInput,
+    pub value_target: ValueTarget,
+    pub policy_target: Vec<usize>,
+}
+
+impl<'a> From<(GameResult, &'a [Decision<MLCTarget>])> for MLCPlayoutItem {
+    fn from((result, decisions): (GameResult, &'a [Decision<MLCTarget>])) -> Self {
+        let decision = &decisions[decisions.len() - 1];
+        let player = decision.state.moving_color;
+        Self {
+            board_input: BoardInput::from(decisions),
+            state_input: StateInput::from(decision),
+            value_target: ValueTarget::from((result, player)),
+            policy_target: decision
+                .target
+                .moves
+                .iter()
+                .cloned()
+                .map(usize::from)
+                .collect_vec(),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ExactLossPlayoutItem {
+    pub board_input: BoardInput,
+    pub state_input: StateInput,
+    pub value_target: ValueTarget,
+    pub policy_target: Vec<f32>,
+}
+
+impl<'a> From<(GameResult, &'a [Decision<ExactLossTarget>])> for ExactLossPlayoutItem {
+    fn from((result, decisions): (GameResult, &'a [Decision<ExactLossTarget>])) -> Self {
+        let decision = &decisions[decisions.len() - 1];
+        let player = decision.state.moving_color;
+        Self {
+            board_input: BoardInput::from(decisions),
+            state_input: StateInput::from(decision),
+            value_target: ValueTarget::from((result, player)),
+            policy_target: decision.target.raw_policy.iter().collect_vec(),
+        }
+    }
+}
+
+impl PlayoutItem for ExactLossPlayoutItem {
+    type Target = ExactLossTarget;
+}
+
+trait PlayoutItem: for<'a> From<(GameResult, &'a [Decision<Self::Target>])> {
+    type Target: Target;
 }
 
 pub struct FenDataset {
@@ -216,6 +336,7 @@ impl FenDataset {
     }
 }
 
+/// label loss output
 pub struct LossOutput<B: Backend> {
     pub loss: Tensor<B, 1>,
     // Value output
@@ -225,12 +346,18 @@ pub struct LossOutput<B: Backend> {
 }
 
 impl<B: Backend> LossOutput<B> {
-    pub fn new(value_output: RegressionOutput<B>, policy_output: ClassificationOutput<B>) -> Self {
+    pub fn new(value_loss: Tensor<B, 1>, policy_loss: Tensor<B, 1>) -> Self {
         Self {
-            loss: value_output.loss.clone() + policy_output.loss.clone(),
-            value_loss: value_output.loss,
-            policy_loss: policy_output.loss,
+            loss: value_loss.clone() + policy_loss.clone(),
+            value_loss,
+            policy_loss,
         }
+    }
+}
+
+impl<B: Backend> Adaptor<LossInput<B>> for LossOutput<B> {
+    fn adapt(&self) -> LossInput<B> {
+        LossInput::new(self.loss.clone())
     }
 }
 
@@ -245,21 +372,16 @@ impl<B: Backend> LossOutput<B> {
 //     }
 // }
 
-impl<B: Backend> Adaptor<LossInput<B>> for LossOutput<B> {
-    fn adapt(&self) -> LossInput<B> {
-        LossInput::new(self.loss.clone())
-    }
-}
-
 type BoardInputTensor<B> = Tensor<B, BOARD_INPUT_TENSOR_DIM>;
 type StateInputTensor<B> = Tensor<B, STATE_INPUT_TENSOR_DIM>;
 
-pub fn forward_with_loss<B: Backend>(
+/// Foward with loss. (Policy loss: single label classification)
+pub fn forward_with_loss_slc<B: Backend>(
     this: &Model<B>,
     board_input: BoardInputTensor<B>,
     state_input: StateInputTensor<B>,
     target_value: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
-    target_policy: Tensor<B, POLICY_TARGET_TENSOR_DIM, Int>,
+    target_policy: Tensor<B, 1, Int>,
 ) -> LossOutput<B> {
     let (value_output, policy_output) = this.forward(board_input, state_input);
 
@@ -271,14 +393,96 @@ pub fn forward_with_loss<B: Backend>(
         .forward(policy_output.clone(), target_policy.clone());
 
     LossOutput::new(
-        RegressionOutput::new(value_loss, value_output, target_value),
-        ClassificationOutput::new(policy_loss, policy_output, target_policy),
+        RegressionOutput::new(value_loss, value_output, target_value).loss,
+        ClassificationOutput::new(policy_loss, policy_output, target_policy).loss,
     )
 }
 
-impl<B: AutodiffBackend> TrainStep<PlayoutBatch<B>, LossOutput<B>> for Model<B> {
-    fn step(&self, batch: PlayoutBatch<B>) -> TrainOutput<LossOutput<B>> {
-        let item = forward_with_loss(
+/// Foward with loss. (Policy loss: multi label classification)
+pub fn forward_with_loss_mlc<B: Backend>(
+    this: &Model<B>,
+    board_input: BoardInputTensor<B>,
+    state_input: StateInputTensor<B>,
+    target_value: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
+    target_policy: Tensor<B, 2, Int>,
+) -> LossOutput<B> {
+    let (value_output, policy_output) = this.forward(board_input, state_input);
+
+    let value_loss =
+        MseLoss::new().forward(value_output.clone(), target_value.clone(), Reduction::Auto);
+
+    let policy_loss = BinaryCrossEntropyLossConfig::new()
+        .init(&policy_output.device())
+        .forward(policy_output.clone(), target_policy.clone());
+
+    LossOutput::new(
+        RegressionOutput::new(value_loss, value_output, target_value).loss,
+        MultiLabelClassificationOutput::new(policy_loss, policy_output, target_policy).loss,
+    )
+}
+
+/// Multi-label classification output adapted for multiple metrics.
+// pub struct ExactProbsClassificationOutput<B: Backend> {
+//     /// The loss.
+//     pub loss: Tensor<B, 1>,
+
+//     /// The output.
+//     pub output: Tensor<B, 2>,
+
+//     /// The targets.
+//     pub targets: Tensor<B, 2>,
+// }
+
+// impl<B: Backend> ExactProbsClassificationOutput<B> {
+//     pub fn new
+// }
+// impl<B: Backend> ItemLazy for MultiLabelClassificationOutput<B> {
+//     type ItemSync = MultiLabelClassificationOutput<NdArray>;
+
+//     fn sync(self) -> Self::ItemSync {
+//         let [output, loss, targets] = Transaction::default()
+//             .register(self.output)
+//             .register(self.loss)
+//             .register(self.targets)
+//             .execute()
+//             .try_into()
+//             .expect("Correct amount of tensor data");
+
+//         let device = &Default::default();
+
+//         MultiLabelClassificationOutput {
+//             output: Tensor::from_data(output, device),
+//             loss: Tensor::from_data(loss, device),
+//             targets: Tensor::from_data(targets, device),
+//         }
+//     }
+// }
+
+/// Foward with loss. (Policy loss: exact probabilities)
+pub fn forward_with_loss_exact_loss<B: Backend>(
+    this: &Model<B>,
+    board_input: BoardInputTensor<B>,
+    state_input: StateInputTensor<B>,
+    target_value: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
+    target_policy: Tensor<B, 2, Float>,
+) -> LossOutput<B> {
+    let (value_output, policy_output) = this.forward(board_input, state_input);
+
+    let value_loss =
+        MseLoss::new().forward(value_output.clone(), target_value.clone(), Reduction::Auto);
+
+    let policy_loss = KLDivergenceLoss::new().forward(policy_output.clone(), target_policy.clone());
+
+    LossOutput::new(
+        RegressionOutput::new(value_loss, value_output, target_value).loss,
+        // ExactProbsClassificationOutput::new(policy_loss, policy_output, target_policy).loss,
+        policy_loss,
+    )
+}
+
+impl<B: AutodiffBackend> TrainStep<MLCPlayoutBatch<B>, LossOutput<B>> for Model<B> {
+    fn step(&self, batch: MLCPlayoutBatch<B>) -> TrainOutput<LossOutput<B>> {
+        let item = forward_with_loss_mlc(
             self,
             batch.board_inputs,
             batch.state_inputs,
@@ -290,17 +494,45 @@ impl<B: AutodiffBackend> TrainStep<PlayoutBatch<B>, LossOutput<B>> for Model<B> 
     }
 }
 
-impl<B: Backend> ValidStep<PlayoutBatch<B>, LossOutput<B>> for Model<B> {
-    fn step(&self, batch: PlayoutBatch<B>) -> LossOutput<B> {
-        forward_with_loss(
+impl<B: AutodiffBackend> TrainStep<SLCPlayoutBatch<B>, LossOutput<B>> for Model<B> {
+    fn step(&self, batch: SLCPlayoutBatch<B>) -> TrainOutput<LossOutput<B>> {
+        let item = forward_with_loss_slc(
             self,
             batch.board_inputs,
             batch.state_inputs,
             batch.value_targets,
             batch.policy_targets,
-        )
+        );
+
+        TrainOutput::new(self, item.loss.backward(), item)
     }
 }
+
+impl<B: AutodiffBackend> TrainStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for Model<B> {
+    fn step(&self, batch: ExactLossPlayoutBatch<B>) -> TrainOutput<LossOutput<B>> {
+        let item = forward_with_loss_exact_loss(
+            self,
+            batch.board_inputs,
+            batch.state_inputs,
+            batch.value_targets,
+            batch.policy_targets,
+        );
+
+        TrainOutput::new(self, item.loss.backward(), item)
+    }
+}
+
+// impl<B: Backend> ValidStep<PlayoutBatch<B>, MLCLossOutput<B>> for Model<B> {
+//     fn step(&self, batch: PlayoutBatch<B>) -> MLCLossOutput<B> {
+//         forward_with_loss_mlc(
+//             self,
+//             batch.board_inputs,
+//             batch.state_inputs,
+//             batch.value_targets,
+//             batch.policy_targets,
+//         )
+//     }
+// }
 
 #[derive(Config, Debug)]
 pub struct TrainingConfig {
@@ -435,22 +667,22 @@ pub fn train<B: AutodiffBackend>(
 #[derive(Clone, Default)]
 pub struct PlayoutBatcher;
 
-impl<B: Backend> Batcher<B, PlayoutItem, PlayoutBatch<B>> for PlayoutBatcher {
-    fn batch(&self, items: Vec<PlayoutItem>, device: &B::Device) -> PlayoutBatch<B> {
+impl<B: Backend> Batcher<B, SLCPlayoutItem, SLCPlayoutBatch<B>> for PlayoutBatcher {
+    fn batch(&self, items: Vec<SLCPlayoutItem>, device: &B::Device) -> SLCPlayoutBatch<B> {
         let boards = items
             .iter()
-            .map(|x| board_history_input(&x.board_input, device))
+            .map(|x| board_history_input(&x.board_input.0, device))
             .collect();
 
         let states = items
             .iter()
-            .map(|x| TensorData::from([x.state_input]))
+            .map(|x| TensorData::from([x.state_input.0]))
             .map(|x| Tensor::from_data(x, device))
             .collect();
 
         let values = items
             .iter()
-            .map(|x| TensorData::from([[x.value_target]]))
+            .map(|x| TensorData::from([[x.value_target.0]]))
             .map(|x| Tensor::from_data(x, device))
             .collect();
 
@@ -460,7 +692,83 @@ impl<B: Backend> Batcher<B, PlayoutItem, PlayoutBatch<B>> for PlayoutBatcher {
             .map(|x| Tensor::from_data(x, device))
             .collect();
 
-        PlayoutBatch {
+        SLCPlayoutBatch {
+            board_inputs: Tensor::cat(boards, 0),
+            state_inputs: Tensor::cat(states, 0),
+            value_targets: Tensor::cat(values, 0),
+            policy_targets: Tensor::cat(policies, 0),
+        }
+    }
+}
+
+impl<B: Backend> Batcher<B, MLCPlayoutItem, MLCPlayoutBatch<B>> for PlayoutBatcher {
+    fn batch(&self, items: Vec<MLCPlayoutItem>, device: &B::Device) -> MLCPlayoutBatch<B> {
+        let boards = items
+            .iter()
+            .map(|x| board_history_input(&x.board_input.0, device))
+            .collect();
+
+        let states = items
+            .iter()
+            .map(|x| TensorData::from([x.state_input.0]))
+            .map(|x| Tensor::from_data(x, device))
+            .collect();
+
+        let values = items
+            .iter()
+            .map(|x| TensorData::from([[x.value_target.0]]))
+            .map(|x| Tensor::from_data(x, device))
+            .collect();
+
+        let policies = items
+            .iter()
+            .map(|x| TensorData::from(&x.policy_target[..]))
+            .map(|x| Tensor::from_data(x, device))
+            .collect();
+
+        MLCPlayoutBatch {
+            board_inputs: Tensor::cat(boards, 0),
+            state_inputs: Tensor::cat(states, 0),
+            value_targets: Tensor::cat(values, 0),
+            policy_targets: Tensor::cat(policies, 0),
+        }
+    }
+}
+
+impl<B: Backend> Batcher<B, ExactLossPlayoutItem, ExactLossPlayoutBatch<B>> for PlayoutBatcher {
+    fn batch(
+        &self,
+        items: Vec<ExactLossPlayoutItem>,
+        device: &B::Device,
+    ) -> ExactLossPlayoutBatch<B> {
+        let boards = items
+            .iter()
+            .map(|x| board_history_input(&x.board_input.0, device))
+            .collect();
+
+        let states = items
+            .iter()
+            .map(|x| TensorData::from([x.state_input.0]))
+            .map(|x| Tensor::from_data(x, device))
+            .collect();
+
+        let values = items
+            .iter()
+            .map(|x| TensorData::from([[x.value_target.0]]))
+            .map(|x| Tensor::from_data(x, device))
+            .collect();
+
+        let policies = items
+            .into_iter()
+            .map(|x| {
+                TensorData::from([
+                    TryInto::<[f32; POLICY_OUTPUTS]>::try_into(x.policy_target).expect("")
+                ])
+            })
+            .map(|x| Tensor::from_data(x, device))
+            .collect();
+
+        ExactLossPlayoutBatch {
             board_inputs: Tensor::cat(boards, 0),
             state_inputs: Tensor::cat(states, 0),
             value_targets: Tensor::cat(values, 0),
@@ -473,7 +781,7 @@ fn generate_batch<B: AutodiffBackend>(
     model: &Model<B>,
     device: &B::Device,
     fens: &[FenItemRaw],
-) -> Result<PlayoutBatch<B>, Box<dyn Error>> {
+) -> Result<ExactLossPlayoutBatch<B>, Box<dyn Error>> {
     let mutex = Mutex::new(model.to_owned());
     let playout_items = fens
         .par_iter()
@@ -487,7 +795,7 @@ fn generate_batch<B: AutodiffBackend>(
 
             let device = B::Device::default();
 
-            match self_play(&fen, model, device) {
+            match self_play::<_, ExactLossPlayoutItem>(&fen, model, device) {
                 Ok(result) => {
                     // todo: replace this with printing the game in PGN format
                     // log::debug!(target: "games", "[Fen {fen}] {moves}");
@@ -517,6 +825,7 @@ fn generate_batch<B: AutodiffBackend>(
 #[derive(Default, Debug)]
 pub struct MctsTrain {
     infer: MctsFindBest,
+    steps: usize,
 }
 
 impl MctsStrategy for MctsTrain {
@@ -526,10 +835,13 @@ impl MctsStrategy for MctsTrain {
     fn result(&mut self, tree: &mut Tree) -> Self::Result {
         let inference_result = self.infer.result(tree);
         let tree = tree.to_owned();
+        log::info!(target: "games", "Completed MCTS Iterations: {}", self.steps);
+        log::info!(target: "games", "Base Policy: {:#?}", tree.get_root().borrow().iter_branches().map(|b| format!("[{}] p: {}, WDL found: {}", b.mov(), b.policy(), todo!("Gather how many w/d/l we have found in the game tree during mcts"))).collect_vec());
         (inference_result, tree)
     }
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
+        self.steps += 1;
         (self.infer.step(tree),)
     }
 }
@@ -544,9 +856,58 @@ struct Input {
 // Info to help find the training target.
 // 0: Most visited move / best_move.
 #[derive(Debug, Clone)]
-struct Target {
+struct SLCTarget {
     mov: Move,
 }
+
+impl<'a> From<&'a Tree> for SLCTarget {
+    fn from(tree: &'a Tree) -> Self {
+        Self {
+            mov: tree.best_move().expect("Tree should have a bestmove"),
+        }
+    }
+}
+
+impl Target for SLCTarget {}
+
+#[derive(Debug, Clone)]
+struct MLCTarget {
+    moves: Vec<Move>,
+}
+
+impl<'a> From<&'a Tree> for MLCTarget {
+    fn from(tree: &'a Tree) -> Self {
+        Self {
+            moves: tree.best_moves(Value(0.5)),
+        }
+    }
+}
+
+impl Target for MLCTarget {}
+
+#[derive(Debug, Clone)]
+struct ExactLossTarget {
+    raw_policy: RawPolicy,
+}
+
+impl<'a> From<&'a Tree> for ExactLossTarget {
+    fn from(tree: &'a Tree) -> Self {
+        Self {
+            raw_policy: {
+                let mut raw_policy = RawPolicy::null();
+                for branch in tree.get_root().borrow().iter_branches() {
+                    raw_policy.set(usize::from(branch.mov()), branch.visits() as f32);
+                }
+                raw_policy.normalize();
+                raw_policy
+            },
+        }
+    }
+}
+
+impl Target for ExactLossTarget {}
+
+trait Target: for<'a> From<&'a Tree> {}
 
 // Some state info at the time of the move.
 // 0: The move that was made
@@ -593,28 +954,31 @@ impl Stats {
 }
 
 #[derive(Debug, Clone)]
-struct Decision {
+struct Decision<T: Target> {
     input: Input,
-    target: Target,
+    target: T,
     state: State,
     stats: Stats,
 }
 
 #[derive(Debug)]
-struct SelfPlayResult {
-    playout_item: PlayoutItem,
-    decision: Decision,
+struct SelfPlayResult<P: PlayoutItem> {
+    playout_item: P,
+    decision: Decision<P::Target>,
 }
 
-fn self_play<B: Backend>(
+fn self_play<B: Backend, P: PlayoutItem>(
     pos: &str,
     model: Model<B>,
     device: B::Device,
-) -> Result<Vec<SelfPlayResult>, Box<dyn Error>> {
+) -> Result<Vec<SelfPlayResult<P>>, Box<dyn Error>>
+where
+    P::Target: Clone,
+{
     let limit = Limit {
         is_active: true,
-        winc: 100000,
-        binc: 100000,
+        winc: 10000,
+        binc: 10000,
         wtime: 0,
         btime: 0,
         ..Default::default()
@@ -625,7 +989,7 @@ fn self_play<B: Backend>(
     let tok = &mut Tokenizer::new(pos);
     let mut pos: Position = tok.try_into()?;
 
-    let mut decisions = Vec::<Decision>::new();
+    let mut decisions = Vec::<Decision<P::Target>>::new();
     let nn_state = NNParts::new(model, device);
     let mut mcts_state = SearchState::default();
 
@@ -664,8 +1028,7 @@ fn self_play<B: Backend>(
             let model = &nn_state.nn;
             let device = &nn_state.device;
             let mut evaluator = NNEvaluator::<_, 1>::new(model, device);
-            let eval_node = Rc::new(RefCell::new(EvalInfoNode::new_root(None)));
-            evaluator.register_info(&mut eval_node.clone(), tree.get_root(), &pos);
+            let eval_node = evaluator.init(tree.get_root(), &pos);
             evaluator.batch_eval(0, eval_node);
             evaluator.eval_guesses();
             let guess = evaluator.get_eval(0);
@@ -674,6 +1037,8 @@ fn self_play<B: Backend>(
                 "We specifically told the evaluator to make a guess and not a terminal evaluation.",
             );
 
+            // todo: also gather inputs from deeper nodes, such that we can also train the history
+            // input nodes.
             let b_in = board_input(&pos);
             let s_in = state_input(&pos);
 
@@ -686,39 +1051,20 @@ fn self_play<B: Backend>(
 
             let state = State { mov, moving_color: turn };
             let input = Input { board_in: b_in, state_in: s_in };
-            let target = Target { mov };
+            let target = P::Target::from(&tree);
             let stats = Stats::new(guess.clone());
             decisions.push(Decision { input, target, state, stats });
         }
         game_result
     };
 
-    let mut result = Vec::<SelfPlayResult>::new();
+    let mut result = Vec::<SelfPlayResult<_>>::new();
 
     for (index, decision) in decisions.iter().enumerate() {
-        let value_target = match eval {
-            GameResult::Draw => VALUE_DRAW,
-            GameResult::Win { relative_to } => {
-                if relative_to == decision.state.moving_color {
-                    VALUE_WIN
-                } else {
-                    VALUE_LOSE
-                }
-            }
-        };
-
-        log::debug!(target: "reports::train", "Train item: {:?}, value_target: {:?}", decision, value_target);
-
-        let playout_item = PlayoutItem {
-            board_input: decisions
-                [max(0, index as i32 - BOARD_INPUT_HISTORY as i32) as usize..=index]
-                .iter()
-                .map(|d| d.input.board_in)
-                .collect_vec(),
-            state_input: decision.input.state_in,
-            value_target,
-            policy_target: usize::from(decision.target.mov),
-        };
+        let decisions_begin = max(0, index as i32 - BOARD_INPUT_HISTORY as i32) as usize;
+        let decisions_end = index;
+        let decisions = &decisions[decisions_begin..=decisions_end];
+        let playout_item = P::from((eval, decisions));
 
         result.push(SelfPlayResult {
             playout_item,
@@ -751,6 +1097,7 @@ impl<const X: usize> Default for TrainPuctSelector<X> {
     }
 }
 
+// todo: give less weight to the policy
 impl<const X: usize> Selector for TrainPuctSelector<X> {
     type Score = Score;
 
@@ -786,5 +1133,58 @@ impl<const X: usize> Selector for TrainPuctSelector<X> {
 
         self.selection.root = Some(root.clone());
         root
+    }
+}
+
+/// Calculate the KL divergence loss from predictions and probabilistic targets.
+#[derive(Module, Debug, Clone)]
+#[module(custom_display)]
+pub struct KLDivergenceLoss {}
+
+impl ModuleDisplay for KLDivergenceLoss {
+    fn custom_settings(&self) -> Option<DisplaySettings> {
+        DisplaySettings::new()
+            .with_new_line_after_attribute(false)
+            .optional()
+    }
+
+    fn custom_content(&self, content: Content) -> Option<Content> {
+        content.optional()
+    }
+}
+
+impl KLDivergenceLoss {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    /// Compute the KL divergence loss.
+    ///
+    /// `predictions` is expected to be a probability distribution.
+    ///
+    /// # Shapes
+    ///
+    /// - predictions: `[batch_size]` or `[batch_size, num_classes]`
+    /// - targets: `[batch_size]` or `[batch_size, num_classes]` (probabilities)
+    pub fn forward<B: Backend, const D: usize>(
+        &self,
+        predictions: Tensor<B, D>,
+        targets: Tensor<B, D>,
+    ) -> Tensor<B, 1> {
+        // For numerical stability, clamp values to avoid log(0)
+        let epsilon = 1e-8;
+        let predictions_clamped = predictions.clone().clamp(epsilon, 1.0);
+        let targets_clamped = targets.clone().clamp(epsilon, 1.0);
+
+        // KL(P||Q) = sum[ P * log(P) - P * log(Q) ]
+        // where P = targets, Q = predictions
+        let kl_div = targets_clamped.clone() * targets_clamped.clone().log()
+            - targets_clamped * predictions_clamped.log();
+
+        // Sum over class dimension if multi-dimensional
+        let loss_per_sample = if D > 1 { kl_div.sum_dim(D - 1) } else { kl_div };
+
+        // Average over batch
+        loss_per_sample.mean()
     }
 }

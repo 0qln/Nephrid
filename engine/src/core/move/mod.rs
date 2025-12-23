@@ -275,21 +275,41 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
 }
 
 impl From<Move> for usize {
-    /// Converts a move to a index, such that in any given position, no two moves will have the same index and there are no gaps.
+    /// Converts a move to a index, such that in any given position, no two moves will have the same index and there are few gaps.
     fn from(mov: Move) -> Self {
-        let from_file = File::from_c(mov.get_from());
-        let promo_bias = Move::MASK_SQ + 1 + from_file.v() as u16;
-        (match mov.get_flag() {
+        let flag = mov.get_flag();
+        let result = if flag.is_promo() {
             // Promotions are special cases:
             // 1. Since promotions have multiple moves for the same from-to combination, we add a variance for different promotions.
             // 2. We need to bias, such that we don't collide with valid from-to indeces. (SQ_MASK)
             // 3. We also need to bias by the file of the from square, such that we don't collide with other promotions.
-            f if f.is_promo() => promo_bias + f.v() as u16 - 2,
-            // For most moves, we can just use the from and to squares.
-            _ => mov.v & Move::MASK_SQ,
-        }) as usize
+            let min_index = Move::MASK_SQ + 1;
+            let min_promo_flag = move_flags::PROMOTION_KNIGHT.v() as u16;
+            let flag_off = flag.v() as u16 - min_promo_flag;
+            let file_off = File::from_c(mov.get_from()).v() as u16;
+            min_index + flag_off + file_off
+        } else {
+            // For most moves, we can just use the from and to squares to get a unique index for
+            // any set of moves of any position.
+            mov.v & Move::MASK_SQ
+        };
+        result as usize
     }
 }
+
+// todo
+// impl TryFrom<(usize, &Position)> for Move {
+//     type Error = ValueOutOfRangeError<usize>;
+
+//     /// Inverse of the above...
+//     fn try_from(value: (usize, &Position)) -> Result<Self, Self::Error> {
+//         if value > Move::MASK_SQ {
+//             // promo
+//         } else {
+//             // normal
+//         }
+//     }
+// }
 
 /// A list of moves in a single position.
 /// Since the 218 is the maximum number of moves in a single position,

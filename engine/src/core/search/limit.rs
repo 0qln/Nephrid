@@ -61,10 +61,6 @@ impl Limit {
             0
         };
 
-        println!("{result}");
-        println!("{lag_buf}");
-        println!("{time_per_move}");
-
         Duration::from_millis(result)
     }
 }

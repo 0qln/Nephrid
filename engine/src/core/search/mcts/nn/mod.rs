@@ -8,7 +8,10 @@ use burn::{
         pool::{MaxPool2d, MaxPool2dConfig},
     },
     prelude::Backend,
-    tensor::{Tensor, activation::softmax},
+    tensor::{
+        Tensor,
+        activation::{sigmoid, softmax},
+    },
 };
 use itertools::Itertools;
 
@@ -61,11 +64,15 @@ pub const POLICY_OUTPUT_TENSOR_DIM: usize = {
     1
 };
 
-pub const POLICY_TARGET_TENSOR_DIM: usize = {
+/// Policy target dimension for single-label-classification.
+pub const POLICY_SLC_TARGET_TENSOR_DIM: usize = {
     POLICY_OUTPUT_TENSOR_DIM -
     // Just use the index, no need to bring all the zeros.
     1
 };
+
+/// Policy target dimension for multi-label-classification.
+pub const POLICY_MLC_TARGET_TENSOR_DIM: usize = POLICY_OUTPUT_TENSOR_DIM;
 
 pub const VALUE_OUTPUT_TENSOR_DIM: usize = {
     // Batch
@@ -332,7 +339,6 @@ pub struct Model<B: Backend> {
 
     policy_dense: Linear<B>,
     policy_out: Linear<B>,
-    // (softmax)
 }
 
 impl<B: Backend> Model<B> {

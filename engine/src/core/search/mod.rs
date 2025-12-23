@@ -1,5 +1,5 @@
+use crate::core::Move;
 use crate::core::search::mcts::node::Tree;
-use crate::core::{Move, search::mcts::StaticParts};
 use std::{
     sync::mpsc::{Sender, channel},
     thread,
@@ -10,7 +10,7 @@ use crate::{
         position::Position,
         search::{
             limit::Limit,
-            mcts::{NNParts, mcts, strategy::MctsUci},
+            mcts::{mcts, strategy::MctsUci},
             perft::perft,
         },
     },

@@ -59,6 +59,14 @@ impl Tree {
         Some(best.mov())
     }
 
+    pub fn best_moves(&self, threshold: Value) -> Vec<Move> {
+        let root = self.root.borrow();
+        root.iter_branches()
+            .filter(|b| b.value() > threshold)
+            .map(|b| b.mov())
+            .collect_vec()
+    }
+
     /// Returns the current principal variation.
     pub fn principal_variation(&self) -> Vec<Branch> {
         let mut buf = Vec::new();
