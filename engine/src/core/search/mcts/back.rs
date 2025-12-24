@@ -10,6 +10,7 @@ pub trait Backpropagater {
     /// Update the node with the result of an evaluation.
     fn update(node: &mut Node, value: f32);
 
+    /// Backpropagate the [eval].
     fn backpropagate(&self, leaf: Rc<RefCell<SelectionNode>>, eval: &Evaluation);
 }
 
@@ -47,7 +48,5 @@ impl Backpropagater for DefaultBackuper {
             let leaf_node = &mut leaf_sel.data().leaf.borrow_mut();
             leaf_node.set_policy_raw(policy);
         }
-
-        // If the eval was terminal, set the node to terminal.
     }
 }

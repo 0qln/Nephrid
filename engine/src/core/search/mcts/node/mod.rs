@@ -186,6 +186,10 @@ pub struct Node {
     /// The value of this node. (~sums all the values of it's children)
     pub value: Value,
 
+    // todo: put this behind a generic PAYLOAD parameter or something, this is currently only used
+    // for training and should thus not be here in production.
+    // /// win/draw/loss count
+    // pub terminal_wdl: WDL,
     /// The current state of this node.
     state: NodeState,
 
@@ -361,4 +365,33 @@ impl Node {
     pub fn set_state(&mut self, state: NodeState) {
         self.state = state
     }
+
+    // /// The amount of wins in this and all subtrees.
+    // pub fn wins(&self) -> usize {
+    //     match self.state() {
+    //         NodeState::Terminal => {
+    //             let game_result = Evaluator::eval_terminal(self, pos)
+    //         }
+    //         NodeState::Expanded => self.iter_branches().map(
+    //             |b| b.node().wins()
+    //         ).sum()
+    //     }
+    // }
+
+    ///// Applies `f` to this and all child nodes, until no more child is found or `f` returns
+    ///// residual.
+    //pub fn try_fold_down<B, F, R>(this: Rc<RefCell<Self>>, mut init: B, mut f: F) -> R
+    //where
+    //    F: FnMut(B, Rc<RefCell<Self>>) -> R,
+    //    R: Try<Output = B>,
+    //{
+    //    init = f(init, this.clone())?;
+    //    self.iter_branches()
+    //        .try_fold(init, f);
+    //    //while let Some(parent) = { this.borrow_mut().parent() } {
+    //    //        this = parent;
+    //    //        init = f(init, this.clone())?;
+    //    //}
+    //    R::from_output(init)
+    //}
 }

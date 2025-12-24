@@ -5,8 +5,11 @@
 use burn::nn::loss::BinaryCrossEntropyLossConfig;
 use burn::train::MultiLabelClassificationOutput;
 use engine::core::depth::Depth;
+use engine::core::search::mcts::MctsParts;
 use engine::core::search::mcts::NNParts;
 use engine::core::search::mcts::SearchState;
+use engine::core::search::mcts::back::Backpropagater;
+use engine::core::search::mcts::back::DefaultBackuper;
 use engine::core::search::mcts::eval::Evaluation;
 use engine::core::search::mcts::eval::Evaluator;
 use engine::core::search::mcts::eval::GameResult;
@@ -19,6 +22,7 @@ use engine::core::search::mcts::nn::POLICY_OUTPUTS;
 use engine::core::search::mcts::nn::board_history_input;
 use engine::core::search::mcts::node::Branch;
 use engine::core::search::mcts::node::Node;
+use engine::core::search::mcts::node::NodeState;
 use engine::core::search::mcts::node::Value;
 use engine::core::search::mcts::select::Score;
 use engine::core::search::mcts::select::Selection;
@@ -31,13 +35,13 @@ use engine::core::turn::Turn;
 use std::cell::RefCell;
 use std::cmp::max;
 
-use burn::module::{Content, DisplaySettings, ModuleDisplay};
 use burn::prelude::Module;
 use burn::record::CompactRecorder;
 use burn::tensor::{Tensor, backend::Backend};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::iter::ParallelIterator;
 use std::env::var;
+use std::ops::ControlFlow;
 use std::rc::Rc;
 use std::sync::Mutex;
 use std::{error::Error, fs, marker::PhantomData};
@@ -990,7 +994,7 @@ where
     let mut pos: Position = tok.try_into()?;
 
     let mut decisions = Vec::<Decision<P::Target>>::new();
-    let nn_state = NNParts::new(model, device);
+    let nn_state = TrainParts::new(model, device);
     let mut mcts_state = SearchState::default();
 
     println!("{pos:?}");
@@ -1037,8 +1041,6 @@ where
                 "We specifically told the evaluator to make a guess and not a terminal evaluation.",
             );
 
-            // todo: also gather inputs from deeper nodes, such that we can also train the history
-            // input nodes.
             let b_in = board_input(&pos);
             let s_in = state_input(&pos);
 
@@ -1075,44 +1077,79 @@ where
     Ok(result)
 }
 
-pub struct TrainPuctSelector<const X: usize> {
-    c: f32,
-
-    /// Stack of nodes that were selected during the selection phase, for each principal line.
-    selection: Selection<X>,
+#[derive(Debug)]
+pub struct TrainParts<B: Backend> {
+    pub nn: Box<Model<B>>,
+    pub device: B::Device,
 }
 
-impl<const X: usize> TrainPuctSelector<X> {
-    pub fn new(c: f32) -> Self {
-        Self { c, ..Default::default() }
+impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a TrainParts<B> {
+    type Selector = TrainSelector<X>;
+    type Backprop = TrainBackprop;
+    type Evaluator = NNEvaluator<'a, 'a, B, X>;
+
+    fn selector(&self) -> Self::Selector {
+        Default::default()
+    }
+
+    fn evaluator(&self) -> Self::Evaluator {
+        NNEvaluator::<_, X>::new(&self.nn, &self.device)
+    }
+
+    fn backprop(&self) -> Self::Backprop {
+        Default::default()
     }
 }
 
-impl<const X: usize> Default for TrainPuctSelector<X> {
+impl<B: Backend> TrainParts<B> {
+    pub fn new(nn: Model<B>, device: B::Device) -> Self {
+        Self { nn: Box::new(nn), device }
+    }
+}
+
+pub struct TrainSelector<const X: usize> {
+    c: f32,
+    policy_weight: f32,
+    selection: Selection<X>,
+}
+
+impl<const X: usize> TrainSelector<X> {
+    pub fn new(c: f32, policy_weight: f32) -> Self {
+        Self {
+            c,
+            policy_weight,
+            ..Default::default()
+        }
+    }
+
+    /// Weighted policy, where
+    ///     w,p,p_hat \el [0;1]
+    ///     w=0 => p_hat=1
+    ///     w=1 => p_hat=p
+    fn weighted_policy(p: f32, w: f32) -> f32 {
+        1.0 - w + p * w
+    }
+}
+
+impl<const X: usize> Default for TrainSelector<X> {
     fn default() -> Self {
         Self {
             c: f32::sqrt(2.0),
+            policy_weight: 1.0,
             selection: Default::default(),
         }
     }
 }
 
-// todo: give less weight to the policy
-impl<const X: usize> Selector for TrainPuctSelector<X> {
+impl<const X: usize> Selector for TrainSelector<X> {
     type Score = Score;
 
     fn score(&self, branch: &Branch, cap_n_i: u32) -> Score {
         let n_i = branch.visits() as f32;
-
-        // The quality is updated incrementally as the tree is explored.
-        // Because of this, we have to divide by the number of playouts
-        // to get the average quality of this node.
-        // If this node has not yet been visited, we set the quality to 0.
         let value = branch.node().borrow().value();
+        let policy = Self::weighted_policy(branch.policy(), self.policy_weight);
         let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
-
-        let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1f32 + n_i);
-
+        let exploration = self.c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);
         Score(exploitation + exploration)
     }
 
@@ -1136,22 +1173,28 @@ impl<const X: usize> Selector for TrainPuctSelector<X> {
     }
 }
 
-/// Calculate the KL divergence loss from predictions and probabilistic targets.
-#[derive(Module, Debug, Clone)]
-#[module(custom_display)]
-pub struct KLDivergenceLoss {}
+#[derive(Default)]
+pub struct TrainBackprop {
+    default: DefaultBackuper,
+}
 
-impl ModuleDisplay for KLDivergenceLoss {
-    fn custom_settings(&self) -> Option<DisplaySettings> {
-        DisplaySettings::new()
-            .with_new_line_after_attribute(false)
-            .optional()
+impl Backpropagater for TrainBackprop {
+    fn update(_node: &mut Node, _value: f32) {
+        ()
     }
 
-    fn custom_content(&self, content: Content) -> Option<Content> {
-        content.optional()
+    fn backpropagate(&self, leaf: Rc<RefCell<SelectionNode>>, eval: &Evaluation) {
+        // default backup
+        self.default.backpropagate(leaf.clone(), eval);
+
+        // update our diagnostics or something ...
+        if let Evaluation::Terminal(result) = eval {}
     }
 }
+
+/// Calculate the KL divergence loss from predictions and probabilistic targets.
+#[derive(Module, Debug, Clone)]
+pub struct KLDivergenceLoss {}
 
 impl KLDivergenceLoss {
     pub fn new() -> Self {

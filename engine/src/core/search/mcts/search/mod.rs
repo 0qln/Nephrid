@@ -55,15 +55,13 @@ pub struct TreeSearcher<
     evaluator: E,
 
     /// Backpropagater
-    backpropagater: B,
+    backprop: B,
 
     /// The tree to be searched.
     tree: &'a mut Tree,
-
-    debug_arr: [usize; MPV],
 }
 
-impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater + Default>
+impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater>
     TreeSearcher<'a, MPV, E, L, S, B>
 {
     pub fn new(
@@ -72,6 +70,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         selector: S,
         limiter: L,
         evaluator: E,
+        backprop: B,
     ) -> Self {
         Self {
             tree,
@@ -79,8 +78,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
             selector,
             limiter,
             evaluator,
-            backpropagater: Default::default(),
-            debug_arr: [const { 0 }; MPV],
+            backprop,
         }
     }
 }
@@ -90,32 +88,8 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
 {
     pub fn grow(&mut self) {
         self.select_lines();
-        // println!(
-        //     "selected: {:?}",
-        //     self.selector
-        //         .iter()
-        //         .enumerate()
-        //         .filter_map(|(i, x)| Some((i, x?)))
-        //         .map(|(i, x)| i)
-        //         .count() // .collect_vec()
-        // );
-
         self.eval_leafes_();
-        // println!(
-        //     "evaluated: {:?}",
-        //     self.evaluator
-        //         .iter()
-        //         .enumerate()
-        //         .filter_map(|(i, x)| match x {
-        //             EvalState::None => None,
-        //             x => Some((i, x)),
-        //         })
-        //         .map(|(i, x)| i)
-        //         .count() // .collect_vec()
-        // );
-
         self.backup_evals();
-        // println!("backpropagated.");
     }
 
     //
@@ -183,10 +157,6 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
     ) {
         let pos = &self.position;
 
-        if self.debug_arr[line_index] >= 1 {
-            panic!("Each node should only be selected once atmost.");
-        }
-
         // Check if the board has a terminal evaluation
         let terminal_eval = E::eval_terminal(&node.borrow(), pos);
         if let Some(terminal_eval) = terminal_eval {
@@ -200,13 +170,10 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         }
         // Else note down that we need to guess this node's evaluation.
         else {
-            // println!("[{line_index}] batched");
             self.evaluator.batch_eval(line_index, eval);
         }
 
         self.selector.set(line_index, slct);
-
-        self.debug_arr[line_index] += 1;
     }
 
     /// Returns: how much of the budget was used.
@@ -231,13 +198,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         let mut branch_index = 0;
         while budget >= 1 {
             if let Some(branch) = parent_node.borrow().get_branch(branch_index) {
-                //
-                // todo: maybe make this relative to the branch's puct score.
-                //
-                // todo: be careful when we dereference the selection, there might be collisions in the
-                // tree if you switch up the way that the nodes are selected.
-                //
-                let current_budget = max(1, (budget as f32 * 0.3) as usize);
+                let current_budget = self.selector.budget(budget);
 
                 // make the move of the current branch, such that we can follow the line.
                 self.position.make_move(branch.mov());
@@ -309,9 +270,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
                 .get_eval(index)
                 .unwrap_or_else(|| panic!("Evaluation missing for index {index}"));
 
-            // println!("[{index}] backup: {eval}");
-
-            self.backpropagater.backpropagate(leaf, eval);
+            self.backprop.backpropagate(leaf, eval);
         }
     }
 }

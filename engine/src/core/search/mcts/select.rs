@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops, rc::Rc};
+use std::{cell::RefCell, cmp::max, ops, rc::Rc};
 
 use crate::core::{
     depth::Depth,
@@ -45,8 +45,12 @@ pub trait Selector {
     fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>);
 
     fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>>;
+
+    fn budget(&self, remaining_budget: usize) -> usize;
 }
 
+// todo: be careful when we dereference the selection, there might be collisions in the
+// tree if you switch up the way that the nodes are selected.
 pub struct Selection<const X: usize> {
     pub root: Option<Rc<RefCell<SelectionNode>>>,
     pub leafs: [Option<Rc<RefCell<SelectionNode>>>; X],
@@ -119,6 +123,11 @@ impl<const X: usize> Selector for PuctSelector<X> {
 
         self.selection.root = Some(root.clone());
         root
+    }
+
+    fn budget(&self, remaining_budget: usize) -> usize {
+        // todo: maybe make this relative to the branch's puct score.
+        max(1, (remaining_budget as f32 * 0.3) as usize)
     }
 }
 

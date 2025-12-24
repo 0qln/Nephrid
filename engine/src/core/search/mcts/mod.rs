@@ -2,6 +2,7 @@ use burn::prelude::Backend;
 
 use crate::core::Limit;
 use crate::core::position::Position;
+use crate::core::search::mcts::back::Backpropagater;
 use crate::core::search::mcts::back::DefaultBackuper;
 use crate::core::search::mcts::eval::Evaluator;
 use crate::core::search::mcts::eval::nn::NNEvaluator;
@@ -52,13 +53,15 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     while !ct.is_cancelled() && (!limit.is_active || Instant::now() < time_limit) {
         let evaluator = parts.evaluator();
         let selector = parts.selector();
+        let backprop = parts.backprop();
 
-        let mut searcher = TreeSearcher::<{ config::MPV }, _, _, _, DefaultBackuper>::new(
+        let mut searcher = TreeSearcher::<{ config::MPV }, _, _, _, _>::new(
             tree,
             pos.clone(),
             selector,
             limiter.clone(),
             evaluator,
+            backprop,
         );
 
         searcher.grow();
@@ -71,9 +74,11 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
 pub trait MctsParts<const X: usize = { config::MPV }> {
     type Selector: Selector;
     type Evaluator: Evaluator;
+    type Backprop: Backpropagater;
 
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
+    fn backprop(&self) -> Self::Backprop;
 }
 
 pub trait MctsState {
@@ -119,8 +124,8 @@ pub struct NNParts<B: Backend> {
 
 impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
     type Selector = PuctSelector<X>;
-
     type Evaluator = NNEvaluator<'a, 'a, B, X>;
+    type Backprop = DefaultBackuper;
 
     fn selector(&self) -> Self::Selector {
         PuctSelector::<X>::default()
@@ -128,6 +133,10 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
 
     fn evaluator(&self) -> Self::Evaluator {
         NNEvaluator::<_, X>::new(&self.nn, &self.device)
+    }
+
+    fn backprop(&self) -> Self::Backprop {
+        Default::default()
     }
 }
 
@@ -156,12 +165,17 @@ pub struct StaticParts;
 impl<const X: usize> MctsParts<X> for &StaticParts {
     type Selector = PuctSelector<X>;
     type Evaluator = StaticEvaluator<X>;
+    type Backprop = DefaultBackuper;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
     }
 
     fn evaluator(&self) -> Self::Evaluator {
+        Default::default()
+    }
+
+    fn backprop(&self) -> Self::Backprop {
         Default::default()
     }
 }
