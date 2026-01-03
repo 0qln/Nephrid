@@ -1,7 +1,7 @@
 use crate::core::{
     bitboard::Bitboard,
-    color::{colors, Color},
-    coordinates::{compass_rose, ranks, CompassRose, Rank},
+    color::{Color, colors},
+    coordinates::{CompassRose, Rank, compass_rose, ranks},
 };
 
 #[inline]
@@ -18,6 +18,16 @@ pub(super) const fn start_rank(c: Color) -> Rank {
     match c {
         colors::WHITE => ranks::_2,
         colors::BLACK => ranks::_7,
+        _ => unreachable!(),
+    }
+}
+
+/// Double pawn push rank
+#[inline]
+pub(super) const fn dpp_rank(c: Color) -> Rank {
+    match c {
+        colors::WHITE => ranks::_2,
+        colors::BLACK => ranks::_6,
         _ => unreachable!(),
     }
 }

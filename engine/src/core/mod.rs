@@ -6,7 +6,7 @@ use crate::{
         config::{ConfigOptionType, Configuration},
         depth::Depth,
         r#move::Move,
-        position::Position,
+        position::{FenImport, PgnExport, Position},
         search::{Command, Thread},
     },
     misc::trim_newline,
@@ -35,6 +35,43 @@ pub mod search;
 pub mod turn;
 pub mod zobrist;
 
+#[derive(Debug, Default, Clone)]
+pub struct Game {
+    /// The moves that have been made.
+    history: Vec<Move>,
+
+    /// The currently set position of the engine. Changing this during a search should not
+    /// immediatly affect the search tree.
+    position: Position,
+}
+
+impl Game {
+    pub fn new(position: Position) -> Self {
+        Self { position, ..Default::default() }
+    }
+
+    pub fn moves(&self) -> &[Move] {
+        &self.history
+    }
+
+    pub fn position(&self) -> &Position {
+        &self.position
+    }
+
+    pub fn position_mut(&mut self) -> &mut Position {
+        &mut self.position
+    }
+
+    pub fn push_move(&mut self, mov: Move) {
+        self.history.push(mov);
+        self.position.make_move(mov);
+    }
+
+    pub fn to_pgn(&self) -> PgnExport {
+        PgnExport::from_current_pos(self.position.clone(), &self.history[..])
+    }
+}
+
 /// Stores relevant information of the chess engine.
 pub struct Engine {
     /// Current engine configuration.
@@ -46,9 +83,8 @@ pub struct Engine {
     /// Whether the engine runs in debug mode.
     debug: DebugMode,
 
-    /// The currently set position of the engine. Changing this during a search should not
-    /// immediatly affect the search tree.
-    position: Position,
+    /// Current game state.
+    game: Game,
 
     /// Cached position source string to improve position decoding speed.
     _pos_src: String,
@@ -61,7 +97,7 @@ impl Engine {
             config: Default::default(),
             search_t,
             debug: Default::default(),
-            position: Default::default(),
+            game: Default::default(),
             _pos_src: Default::default(),
         }
     }
@@ -82,12 +118,20 @@ pub fn execute_uci(
     let mut tokenizer = Tokenizer::new(command.as_str());
     match tokenizer.next_token() {
         Some("d") | Some("print") => {
-            let pos = &engine.position;
+            let pos = &engine.game.position();
             let str = if engine.debug.get() {
                 format!("{pos:?}")
             } else {
                 format!("{pos}")
             };
+
+            sync::out(&str);
+
+            Ok(())
+        }
+        Some("pgn") => {
+            let pgn = engine.game.to_pgn();
+            let str = format!("{pgn}");
 
             sync::out(&str);
 
@@ -100,13 +144,11 @@ pub fn execute_uci(
             // signal the thread the finish safely.
             cancellation_token.cancel();
 
-            // engine.search_t.tx;
-
             Ok(())
         }
         Some("go") => {
             let token = cancellation_token.clone();
-            let position = engine.position.clone();
+            let position = engine.game.position().clone();
             let debug = engine.debug.clone();
 
             macro_rules! collect_and_parse {
@@ -154,11 +196,6 @@ pub fn execute_uci(
                 (mode, limit)
             };
 
-            // todo: <Send> the self.tree to the thread. Maybe copy since we can't garantee that
-            // the thread will finish and return ownership? Or just capture the <thread> and safe
-            // it in the <self as Engine> state machine thingy and regain ownership when we cancel
-            // the thread, e.g. with a UCI "stop" command?
-
             let cmd = match mode {
                 Mode::Normal => Command::Normal(position, limit, token, debug),
                 Mode::Ponder => Command::Ponder,
@@ -167,83 +204,60 @@ pub fn execute_uci(
 
             engine.search_t.tx.send(cmd).expect("Could not send");
 
-            // let thread = thread::spawn(move || {
-            //     match mode {
-            //         Mode::Perft => {
-            //             let nodes = search::perft(position.clone(), limit, token, debug);
-            //             sync::out(&format!("\nNodes searched: {nodes}"));
-            //         }
-            //         Mode::Normal => {
-            //             let state = engine
-            //                 .search_state
-            //                 .take_here()
-            //                 .expect("Another thread is currently using the search state.");
-
-            //             let (result, state) = search::mcts::mcts(
-            //                 position,
-            //                 state,
-            //                 limit,
-            //                 debug,
-            //                 token,
-            //                 MctsUci::default(),
-            //             );
-
-            //             engine.search_state = Somewhere::Here(state);
-            //             let result = result.expect("search did not complete");
-            //         }
-            //         _ => unimplemented!(),
-            //     };
-            // });
-
             Ok(())
         }
         Some("position") => {
-            if command.len() > engine._pos_src.len()
+            let process_move = |engine: &mut Engine, mov| -> Result<(), Box<dyn Error>> {
+                // decode move
+                let mov = Move::from_lan(mov, engine.game.position())?;
+
+                // advance the position
+                engine.game.push_move(mov);
+
+                // also advance the mcts game tree
+                engine.search_t.tx.send(Command::AdvanceState(mov))?;
+
+                Ok(())
+            };
+
+            let cached = command.len() > engine._pos_src.len()
                 && !engine._pos_src.is_empty()
-                && command[..engine._pos_src.len()] == engine._pos_src
-            {
+                && command[..engine._pos_src.len()] == engine._pos_src;
+
+            // First, try to simply update the current position with new moves.
+            if cached {
                 let new_moves = &command[engine._pos_src.len()..];
                 for tok in Tokenizer::new(new_moves).tokens() {
                     if tok == "moves" {
                         continue;
                     }
-                    let tok = &mut Tokenizer::new(tok);
-                    let mov = LongAlgebraicUciNotation::new(tok, &engine.position);
-                    let mov = Move::try_from(mov)?;
-
-                    // advance the position
-                    engine.position.make_move(mov);
-
-                    // also advance the mcts game tree
-                    engine
-                        .search_t
-                        .tx
-                        .send(Command::AdvanceState(mov))
-                        .expect("that's bad idk");
-                }
-                engine._pos_src = command;
-                return Ok(());
-            }
-            match tokenizer.next_token() {
-                Some("fen") => engine.position = Position::try_from(&mut tokenizer)?,
-                Some("startpos") => engine.position = Position::start_position(),
-                None => return Err(UciError::MissingArgument("value").into()),
-                Some(x) => {
-                    return Err(UciError::InvalidValue(
-                        x.to_string(),
-                        vec!["fen".to_string(), "startpos".to_string()],
-                    )
-                    .into());
-                }
-            };
-            if tokenizer.next_token() == Some("moves") {
-                for tok in tokenizer.tokens() {
-                    let tok = &mut Tokenizer::new(tok);
-                    let mov = LongAlgebraicUciNotation::new(tok, &engine.position);
-                    engine.position.make_move(Move::try_from(mov)?);
+                    process_move(engine, tok)?;
                 }
             }
+            // Otherwise build a new position
+            else {
+                engine.game = Game::new(match tokenizer.next_token() {
+                    Some("fen") => Position::try_from(FenImport(&mut tokenizer))?,
+                    Some("startpos") => Position::start_position(),
+                    None => return Err(UciError::MissingArgument("value").into()),
+                    Some(x) => {
+                        return Err(UciError::InvalidValue(
+                            x.to_string(),
+                            vec!["fen".to_string(), "startpos".to_string()],
+                        )
+                        .into());
+                    }
+                });
+
+                if tokenizer.next_token() == Some("moves") {
+                    for tok in tokenizer.tokens() {
+                        process_move(engine, tok)?;
+                    }
+                }
+            }
+
             engine._pos_src = command;
+
             Ok(())
         }
         Some("ucinewgame") => {

@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{fmt::Write, ptr::NonNull};
+use std::{fmt::Write, ops::ControlFlow, ptr::NonNull};
 
 use thiserror::Error;
 
@@ -12,10 +12,11 @@ use crate::{
             EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, ranks,
             squares,
         },
-        r#move::{Move, move_flags},
-        move_iter::{bishop, king, knight, pawn, rook},
+        r#move::{Move, SAN, move_flags},
+        move_iter::{bishop, fold_legal_moves, king, knight, pawn, rook},
         piece::{Piece, PieceParseError, PieceType, PromoPieceType, piece_type},
         ply::{FullMoveCountTokenizationError, PlyTokenizationError},
+        search::mcts::eval::GameResult,
         turn::Turn,
         zobrist,
     },
@@ -403,6 +404,43 @@ impl Position {
         self.plys_50() >= Ply { v: 100 }
     }
 
+    /// has_moves: Whether this position has subsequent moves.
+    pub fn game_result_with(&self, has_moves: bool) -> Option<GameResult> {
+        let stm = self.get_turn();
+        let check_state = self.get_check_state();
+
+        // First check if the position is a normal game ending.
+        if !has_moves {
+            Some(if check_state != CheckState::None {
+                // If in check and no moves, it's a loss for the current player
+                GameResult::Win { relative_to: !stm }
+            } else {
+                // Stalemate
+                GameResult::Draw
+            })
+        }
+        // Then check if the position has reached some of the extra-rule endings.
+        else if self.has_threefold_repetition()
+            || self.fifty_move_rule()
+            || self.is_insufficient_material()
+        {
+            Some(GameResult::Draw)
+        }
+        // Otherwise no game result.
+        else {
+            None
+        }
+    }
+
+    pub fn game_result(&self) -> Option<GameResult> {
+        let has_moves = self.has_legal_moves();
+        self.game_result_with(has_moves)
+    }
+
+    pub fn has_legal_moves(&self) -> bool {
+        fold_legal_moves(self, false, |_, _| ControlFlow::Break(true)).into_value()
+    }
+
     /// Returns the X-Ray checkers for the given king.
     /// X-Ray checkers are pieces which attack a king
     /// through zero or more pieces.
@@ -700,12 +738,14 @@ impl Position {
 
     pub fn start_position() -> Self {
         // Safety: This FEN string is valid
-        unsafe {
-            Position::try_from(&mut Tokenizer::new(
-                "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            ))
-            .unwrap_unchecked()
-        }
+        let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let fen = FenImport(&mut Tokenizer::new(fen));
+        unsafe { Self::try_from(fen).unwrap_unchecked() }
+    }
+
+    /// Convenience wrapper
+    pub fn from_fen(fen: &str) -> Result<Self, FenParseError> {
+        Self::try_from(FenImport(&mut Tokenizer::new(fen)))
     }
 }
 
@@ -749,9 +789,9 @@ impl<'a> fmt::Display for PiecePlacementInfo<'a> {
     }
 }
 
-pub struct FenInfo<'a>(&'a Position);
+pub struct FenExport<'a>(&'a Position);
 
-impl<'a> fmt::Display for FenInfo<'a> {
+impl<'a> fmt::Display for FenExport<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let pos = &self.0;
 
@@ -765,6 +805,275 @@ impl<'a> fmt::Display for FenInfo<'a> {
             pos.plys_50(),
             pos.full_move()
         )
+    }
+}
+
+/// 3.2.4: Reduced export format
+pub struct PgnExport(PgnTagPairSection, PgnMoveTextSection);
+
+impl PgnExport {
+    /// From<(Current Position, Subsequent Moves)>
+    pub fn from_current_pos(mut pos: Position, moves: &[Move]) -> Self {
+        let (move_tokens, game_result) = {
+            let mut xs: Vec<PgnMoveInfo> = vec![];
+
+            let game_result = PgnResultValue(pos.game_result());
+            xs.insert(0, PgnMoveInfo::GameTerminationMarker(game_result));
+
+            for mov in moves.iter().rev().cloned() {
+                pos.unmake_move(mov);
+
+                let stm = pos.get_turn();
+                let fmc = pos.full_move();
+
+                let san = format!("{}", SAN { context: &pos, mov });
+                xs.insert(0, PgnMoveInfo::Move(san));
+
+                if stm == colors::WHITE || xs[0].is_annotation() {
+                    xs.insert(0, PgnMoveInfo::MoveNumberIndication(fmc, stm));
+                }
+            }
+
+            let stm = pos.get_turn();
+            let fmc = pos.full_move();
+            if stm == colors::BLACK {
+                xs.insert(0, PgnMoveInfo::MoveNumberIndication(fmc, stm));
+            }
+
+            (xs, game_result)
+        };
+
+        let fen = format!("{}", FenExport(&pos));
+
+        let moves_sec = PgnMoveTextSection(move_tokens);
+        let tags_sec = PgnTagPairSection(vec![
+            PgnTagPair("FEN", Box::new(fen)),
+            PgnTagPair("Result", Box::new(game_result)),
+        ]);
+
+        Self(tags_sec, moves_sec)
+    }
+
+    /// From<(Initial Position, Subsequent Moves)>
+    pub fn from_initial_pos<'a, 'b>(pos: &'a mut Position, moves: &'b [Move]) -> Self {
+        let (move_tokens, game_result) = {
+            let mut xs: Vec<PgnMoveInfo> = vec![];
+            for mov in moves.iter().cloned() {
+                let stm = pos.get_turn();
+                let fmc = pos.full_move();
+
+                // 8.2.2.2: Export format move number indications
+                //
+                // [...]
+                //
+                // All white move elements have a preceding move number indication.  A black move
+                // element has a preceding move number indication only in two cases: first, if
+                // there is intervening annotation or commentary between the black move and the
+                // previous white move; and second, if there is no previous white move in the
+                // special case where a game starts from a position where Black is the active
+                // player.
+                // There are no other cases where move number indications appear in PGN export
+                // format.
+                if stm == colors::WHITE || xs.is_empty() || xs[xs.len() - 1].is_annotation() {
+                    xs.push(PgnMoveInfo::MoveNumberIndication(fmc, stm));
+                }
+
+                let san = format!("{}", SAN { context: &pos, mov });
+                xs.push(PgnMoveInfo::Move(san));
+
+                pos.make_move(mov);
+            }
+
+            let game_result = PgnResultValue(pos.game_result());
+            xs.push(PgnMoveInfo::GameTerminationMarker(game_result));
+
+            (xs, game_result)
+        };
+
+        for mov in moves.iter().rev().cloned() {
+            pos.unmake_move(mov);
+        }
+
+        let fen = format!("{}", FenExport(pos));
+
+        let moves_sec = PgnMoveTextSection(move_tokens);
+        let tags_sec = PgnTagPairSection(vec![
+            PgnTagPair("FEN", Box::new(fen)),
+            PgnTagPair("Result", Box::new(game_result)),
+        ]);
+
+        Self(tags_sec, moves_sec)
+    }
+}
+
+impl fmt::Display for PgnExport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)?;
+        self.1.fmt(f)
+    }
+}
+
+// For PGN export format, there are no white space characters between the left
+// bracket and the tag name, there are no white space characters between the tag
+// value and the right bracket, and there is a single space character between the
+// tag name and the tag value.
+pub struct PgnTagPair<A, B>(pub A, pub B);
+
+impl<A: fmt::Display, B: fmt::Display> fmt::Display for PgnTagPair<A, B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // todo: we could check the length of fmt(self.a) or fmt(self.b), and introduce a
+        // linebreak if that would overflow the 255 char limit.
+        write!(f, "[{} \"{}\"]", self.0, self.1)
+    }
+}
+
+// 8.1.1.7: The Result tag
+//
+// The Result field value is the result of the game.  It is always exactly the
+// same as the game termination marker that concludes the associated movetext.  It
+// is always one of four possible values: "1-0" (White wins), "0-1" (Black wins),
+// "1/2-1/2" (drawn game), and "*" (game still in progress, game abandoned, or
+// result otherwise unknown).  Note that the digit zero is used in both of the
+// first two cases; not the letter "O".
+//
+// All possible examples:
+//
+// [Result "0-1"]
+// [Result "1-0"]
+// [Result "1/2-1/2"]
+// [Result "*"]
+#[derive(Clone, Copy)]
+pub struct PgnResultValue(pub Option<GameResult>);
+
+impl fmt::Display for PgnResultValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self.0 {
+            Some(GameResult::Win { relative_to: colors::WHITE }) => "1-0",
+            Some(GameResult::Win { relative_to: colors::BLACK }) => "0-1",
+            Some(GameResult::Draw) => "1/2-1/2",
+            None => "*",
+            _ => unreachable!(),
+        })
+    }
+}
+
+// Some tag values may be composed of a sequence of items.  For example, a
+// consultation game may have more than one player for a given side.  When this
+// occurs, the single character ":" (colon) appears between adjacent items.
+// Because of this use as an internal separator in strings, the colon should not
+// otherwise appear in a string.
+pub struct ColonSeparated<T>(pub T);
+
+impl<I> fmt::Display for ColonSeparated<I>
+where
+    for<'a> &'a I: IntoIterator<Item: fmt::Display>,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut iter = self.0.into_iter();
+
+        if let Some(first) = iter.next() {
+            write!(f, "{first}")?;
+        }
+
+        for item in iter {
+            write!(f, ":{item}")?;
+        }
+
+        f.write_char(']')
+    }
+}
+
+/// 8.1: Tag pair section
+///
+/// The tag pair section is composed of a series of zero or more tag pairs.
+pub struct PgnTagPairSection(pub Vec<PgnTagPair<&'static str, Box<dyn fmt::Display>>>);
+
+impl fmt::Display for PgnTagPairSection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // PGN import format may have multiple tag pairs on the same line and may even
+        // have a tag pair spanning more than a single line.  Export format requires each
+        // tag pair to appear left justified on a line by itself; a single empty line
+        // follows the last tag pair.
+        for tag_pair in self.0.iter() {
+            write!(f, "{}\n", tag_pair)?;
+        }
+        write!(f, "\n")
+    }
+}
+
+/// The move and a optional annotation.
+pub enum PgnMoveInfo {
+    /// The fullmove number and the current player.
+    MoveNumberIndication(FullMoveCount, Color),
+
+    /// The move in standard algebraic notation (SAN).
+    Move(String),
+
+    /// An annotation.
+    Annotation(String),
+
+    /// The game termination marker.
+    GameTerminationMarker(PgnResultValue),
+}
+
+impl PgnMoveInfo {
+    pub fn is_annotation(&self) -> bool {
+        match self {
+            Self::Annotation(_) => true,
+            _ => false,
+        }
+    }
+}
+
+impl fmt::Display for PgnMoveInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MoveNumberIndication(fmc, stm) => match *stm {
+                colors::WHITE => write!(f, "{fmc}."),
+                colors::BLACK => write!(f, "{fmc}..."),
+                _ => unreachable!(),
+            },
+            Self::Move(san) => write!(f, "{san}"),
+            Self::Annotation(text) => write!(f, "({text})"),
+            Self::GameTerminationMarker(result) => write!(f, "{result}"),
+        }
+    }
+}
+
+/// 8.2: Movetext section
+///
+/// The movetext section is composed of chess moves, move number indications,
+/// optional annotations, and a single concluding game termination marker.
+pub struct PgnMoveTextSection(pub Vec<PgnMoveInfo>);
+
+impl<'a> fmt::Display for PgnMoveTextSection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // In PGN export format, tokens in the movetext are placed left justified on
+        // successive text lines each of which has less than 80 printing characters.  As
+        // many tokens as possible are placed on a line with the remainder appearing on
+        // successive lines.  A single space character appears between any two adjacent
+        // symbol tokens on the same line in the movetext.  As with the tag pair section,
+        // a single empty line follows the last line of data to conclude the movetext
+        // section.
+        let mut width = 0;
+        let mut append_text = |text: &str| {
+            width += text.len();
+            if width >= 80 {
+                width = 0;
+                f.write_char('\n')?;
+            }
+            f.write_str(text)
+        };
+
+        let mut iter = self.0.iter();
+        if let Some(first) = iter.next() {
+            append_text(&format!("{first}"))?;
+        }
+        for token in iter {
+            append_text(&format!(" {token}"))?;
+        }
+
+        write!(f, "\n")
     }
 }
 
@@ -803,8 +1112,23 @@ impl From<&Position> for String {
     }
 }
 
+// pub struct PgnImport<'a, 'b>(&'a mut Tokenizer<'b>);
+
+// #[derive(Debug, Error)]
+// pub enum PgnParseError {}
+
+// impl<'a, 'b> TryFrom<PgnImport<'a, 'b>> for Position {
+//     type Error = PgnParseError;
+
+//     fn try_from(value: PgnImport<'a, 'b>) -> Result<Self, Self::Error> {
+//         todo!()
+//     }
+// }
+
+pub struct FenImport<'a, 'b>(pub &'a mut Tokenizer<'b>);
+
 #[derive(Debug, Error)]
-pub enum PositionTokenizationError {
+pub enum FenParseError {
     #[error("Invalid rank: {0}")]
     InvalidRank(RankParseError<char>),
 
@@ -830,10 +1154,11 @@ pub enum PositionTokenizationError {
     FullMoveCountPart(FullMoveCountTokenizationError),
 }
 
-impl TryFrom<&mut Tokenizer<'_>> for Position {
-    type Error = PositionTokenizationError;
+impl<'a, 'b> TryFrom<FenImport<'a, 'b>> for Position {
+    type Error = FenParseError;
 
-    fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
+    fn try_from(fen: FenImport<'a, 'b>) -> Result<Self, Self::Error> {
+        let fen = fen.0;
         let mut position = Position::default();
         let mut sq = squares::H8.v() as i8;
 

@@ -1,7 +1,7 @@
 use crate::{
     core::{
         move_iter::sliding_piece::magics,
-        position::Position,
+        position::{FenImport, Position},
         search::mcts::{
             back::DefaultBackuper, limiter::NoopLimiter, node::Tree, search::TreeSearcher,
             select::PuctSelector, test::DummyEvaluator,
@@ -20,8 +20,7 @@ fn fuzz<const X: usize>(pos: &'static str) {
     thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            let mut fen = Tokenizer::new(pos);
-            let pos = Position::try_from(&mut fen).unwrap();
+            let pos = Position::from_fen(pos).unwrap();
 
             let eval = DummyEvaluator::<X>::default();
             let limiter = NoopLimiter::default();
@@ -67,8 +66,8 @@ fn growth() {
     magics::init();
     zobrist::init();
 
-    let mut fen = Tokenizer::new("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-    let pos = Position::try_from(&mut fen).unwrap();
+    let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    let pos = Position::from_fen(fen).unwrap();
     let mut tree = Tree::new();
 
     // Initial state checks

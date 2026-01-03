@@ -1,13 +1,10 @@
-use crate::{
-    core::{
-        coordinates::squares,
-        r#move::move_flags,
-        move_iter::sliding_piece::magics,
-        position::Position,
-        search::mcts::node::{Node, NodeState},
-        zobrist,
-    },
-    uci::tokens::Tokenizer,
+use crate::core::{
+    coordinates::squares,
+    r#move::move_flags,
+    move_iter::sliding_piece::magics,
+    position::Position,
+    search::mcts::node::{Node, NodeState},
+    zobrist,
 };
 
 use super::*;
@@ -20,8 +17,8 @@ fn test_terminal_expansion() {
     zobrist::init();
 
     // Checkmate position
-    let mut fen = Tokenizer::new("2k2R2/4R3/K7/8/8/8/8/8 b - - 0 1");
-    let pos = Position::try_from(&mut fen).unwrap();
+    let fen = "2k2R2/4R3/K7/8/8/8/8/8 b - - 0 1";
+    let pos = Position::from_fen(fen).unwrap();
 
     let mut node = Node::leaf();
     node.expand(&pos);
@@ -34,8 +31,7 @@ fn create_position(fen: &str) -> Position {
     zobrist::init();
     magics::init();
 
-    let mut fen = Tokenizer::new(fen);
-    Position::try_from(&mut fen).unwrap()
+    Position::from_fen(fen).unwrap()
 }
 
 #[test]

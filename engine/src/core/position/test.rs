@@ -1,12 +1,9 @@
 use super::*;
-use crate::misc::ConstFrom;
-use crate::{
-    core::{
-        bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics,
-        piece::piece_type, ply::Ply, zobrist,
-    },
-    uci::tokens::Tokenizer,
+use crate::core::{
+    bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics,
+    piece::piece_type, ply::Ply, zobrist,
 };
+use crate::misc::ConstFrom;
 
 #[test]
 fn cloning() {
@@ -16,7 +13,7 @@ fn cloning() {
     magics::init();
 
     for fen in fens {
-        let pos = Position::try_from(&mut Tokenizer::new(fen)).unwrap();
+        let pos = Position::from_fen(fen).unwrap();
         let cloned = pos.clone();
         assert_eq!(pos, cloned);
     }
@@ -28,7 +25,7 @@ fn fen_decoding() {
     magics::init();
 
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    let pos = Position::try_from(&mut Tokenizer::new(fen)).expect("Should not fail.");
+    let pos = Position::from_fen(fen).expect("Should not fail.");
 
     assert_eq!(pos.get_turn(), colors::WHITE);
     assert_eq!(pos.plys_50(), Ply { v: 0 });
@@ -44,13 +41,12 @@ fn test_fen_encoding(expected_fen: &str, fen: &str, moves: Vec<Move>) {
     zobrist::init();
     magics::init();
 
-    let tok = &mut Tokenizer::new(fen);
-    let mut pos = Position::try_from(tok).expect("Should not fail.");
+    let mut pos = Position::from_fen(fen).expect("Should not fail.");
     for mov in moves.into_iter() {
         pos.make_move(mov);
     }
 
-    assert_eq!(format!("{}", FenInfo(&pos)), expected_fen);
+    assert_eq!(format!("{}", FenExport(&pos)), expected_fen);
 }
 
 #[test]

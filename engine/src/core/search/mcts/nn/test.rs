@@ -1,7 +1,6 @@
 use super::*;
-use burn_cuda::{Cuda, CudaDevice};
 
-use crate::core::{move_iter::sliding_piece::magics, zobrist};
+use crate::core::{move_iter::sliding_piece::magics, search::mcts, zobrist};
 
 fn make_input<B: Backend>(
     batch_size: usize,
@@ -27,10 +26,10 @@ fn inference() {
     zobrist::init();
     magics::init();
 
-    let device = CudaDevice::default();
+    let device = mcts::config::nn_backend::Device::default();
     println!("Device: {:?}", device);
 
-    type Backend = Cuda<f32>;
+    type Backend = mcts::config::nn_backend::Backend;
     let model = ModelConfig::new().init::<Backend>(&device);
 
     for i in [1, 2, 4, 8, 16, 32, 64] {

@@ -1,26 +1,22 @@
-use crate::{
-    core::{
-        color::colors,
-        coordinates::squares,
-        r#move::{Move, move_flags},
-        move_iter::sliding_piece::magics,
-        position::Position,
-        search::mcts::{
-            eval::{Evaluation, Evaluator, GameResult},
-            node::Node,
-            test::DummyEvaluator,
-        },
-        zobrist,
+use crate::core::{
+    color::colors,
+    coordinates::squares,
+    r#move::{Move, move_flags},
+    move_iter::sliding_piece::magics,
+    position::Position,
+    search::mcts::{
+        eval::{Evaluation, Evaluator, GameResult},
+        node::Node,
+        test::DummyEvaluator,
     },
-    uci::tokens::Tokenizer,
+    zobrist,
 };
 
 fn test(fen: &str, expected_result: Option<GameResult>) {
     magics::init();
     zobrist::init();
 
-    let mut fen = Tokenizer::new(fen);
-    let pos = Position::try_from(&mut fen).unwrap();
+    let pos = Position::from_fen(fen).unwrap();
 
     let mut node = Node::leaf();
     node.expand(&pos);
@@ -85,8 +81,7 @@ fn three_fold_repetition() {
     magics::init();
     zobrist::init();
 
-    let mut fen = Tokenizer::new(fen);
-    let mut pos = Position::try_from(&mut fen).unwrap();
+    let mut pos = Position::from_fen(fen).unwrap();
 
     let mov_w0 = Move::new(squares::G1, squares::F3, move_flags::QUIET);
     let mov_w1 = Move::new(squares::F3, squares::G1, move_flags::QUIET);

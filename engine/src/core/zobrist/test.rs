@@ -19,8 +19,7 @@ fn same_position_same_key() {
     magics::init();
     zobrist::init();
 
-    let mut fen = Tokenizer::new(fen);
-    let mut pos = Position::try_from(&mut fen).unwrap();
+    let mut pos = Position::from_fen(fen).unwrap();
 
     use move_flags::*;
     use squares::*;
@@ -47,8 +46,7 @@ fn move_piece_back_and_forth() {
     magics::init();
     zobrist::init();
 
-    let mut fen = Tokenizer::new(fen);
-    let mut pos = Position::try_from(&mut fen).unwrap();
+    let mut pos = Position::from_fen(fen).unwrap();
 
     use move_flags::*;
     use squares::*;
@@ -74,8 +72,7 @@ fn move_piece_back_and_forth_hash_only() {
     use squares::*;
 
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    let mut fen = Tokenizer::new(fen);
-    let pos = Position::try_from(&mut fen).unwrap();
+    let pos = Position::from_fen(fen).unwrap();
     let key_begin = pos.get_key();
 
     let piece = Piece::from_c((colors::WHITE, piece_type::KNIGHT));
@@ -96,8 +93,7 @@ fn place_piece_and_remove_hash_only() {
     use squares::*;
 
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    let mut fen = Tokenizer::new(fen);
-    let pos = Position::try_from(&mut fen).unwrap();
+    let pos = Position::from_fen(fen).unwrap();
     let key_begin = pos.get_key();
 
     let piece = Piece::from_c((colors::WHITE, piece_type::KNIGHT));
@@ -118,8 +114,7 @@ fn place_piece_and_remove_nested_hash_only() {
     use squares::*;
 
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    let mut fen = Tokenizer::new(fen);
-    let pos = Position::try_from(&mut fen).unwrap();
+    let pos = Position::from_fen(fen).unwrap();
     let key_begin = pos.get_key();
 
     let piece = Piece::from_c((colors::WHITE, piece_type::KNIGHT));
@@ -145,8 +140,7 @@ fn place_piece_and_remove_out_of_order_hash_only() {
     use squares::*;
 
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    let mut fen = Tokenizer::new(fen);
-    let pos = Position::try_from(&mut fen).unwrap();
+    let pos = Position::from_fen(fen).unwrap();
     let key_begin = pos.get_key();
 
     let piece = Piece::from_c((colors::WHITE, piece_type::KNIGHT));

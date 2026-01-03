@@ -1,14 +1,13 @@
 use std::ops::ControlFlow;
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use engine::core::coordinates::squares;
-use engine::core::move_iter::king::{compute_attacks, lookup_attacks, King};
-use engine::core::move_iter::sliding_piece::magics;
-use engine::core::move_iter::{king, FoldMoves, NoCheck, SingleCheck};
-use engine::core::position::Position;
 use engine::core::r#move::Move;
+use engine::core::move_iter::king::{King, compute_attacks, lookup_attacks};
+use engine::core::move_iter::sliding_piece::magics;
+use engine::core::move_iter::{FoldMoves, NoCheck, SingleCheck, king};
+use engine::core::position::Position;
 use engine::core::zobrist;
-use engine::uci::tokens::Tokenizer;
 
 pub fn king_attacks(c: &mut Criterion) {
     let king = squares::E4;
@@ -28,8 +27,8 @@ pub fn king_move_iter_check_none(c: &mut Criterion) {
     magics::init();
     zobrist::init();
 
-    let mut fen = Tokenizer::new("7k/8/8/8/8/7b/5n2/4K3 w - - 0 1");
-    let pos = Position::try_from(&mut fen).unwrap();
+    let fen = "7k/8/8/8/8/7b/5n2/4K3 w - - 0 1";
+    let pos = Position::from_fen(fen).unwrap();
 
     c.bench_function("king::move_iter::check_none", |b| {
         b.iter(|| {
@@ -46,8 +45,8 @@ pub fn king_move_iter_check_some(c: &mut Criterion) {
     magics::init();
     zobrist::init();
 
-    let mut fen = Tokenizer::new("4r2k/8/8/8/8/5b2/4K3/8 w - - 0 1");
-    let pos = Position::try_from(&mut fen).unwrap();
+    let fen = "4r2k/8/8/8/8/5b2/4K3/8 w - - 0 1";
+    let pos = Position::from_fen(fen).unwrap();
 
     c.bench_function("king::move_iter::check_some", |b| {
         b.iter(|| {
@@ -71,8 +70,7 @@ pub fn king_move_iter_castling(c: &mut Criterion) {
     ];
 
     for &input in &mut inputs.iter() {
-        let mut fen = Tokenizer::new(input);
-        let pos = Position::try_from(&mut fen).unwrap();
+        let pos = Position::from_fen(input).unwrap();
         c.bench_with_input(
             BenchmarkId::new("king::move_iter::castling", input),
             &pos,

@@ -1,14 +1,27 @@
 use core::fmt;
 use move_flags as f;
-use std::ops::{Index, IndexMut};
+use std::{
+    fmt::Write,
+    ops::{ControlFlow, Index, IndexMut},
+};
 use thiserror::Error;
 
 use crate::{
     core::{
+        bitboard::Bitboard,
         castling::{CastlingSideParseError, castling_sides},
-        coordinates::{File, Square, SquareTokenizationError},
-        piece::{PromoPieceTokenizationError, piece_type},
-        position::Position,
+        color::colors,
+        coordinates::{File, Rank, Square, SquareTokenizationError},
+        move_iter::{
+            bishop::Bishop,
+            fold_legal_moves,
+            king::{self},
+            knight, pawn,
+            rook::Rook,
+            sliding_piece::SlidingAttacks,
+        },
+        piece::{Piece, PromoPieceTokenizationError, piece_type},
+        position::{CheckState, Position},
     },
     impl_variants,
     misc::{ConstFrom, ValueOutOfRangeError},
@@ -188,6 +201,14 @@ impl Move {
             MoveFlag::try_from(val as u8).unwrap_unchecked()
         }
     }
+
+    /// Convenience wrapper.
+    #[inline]
+    pub fn from_lan(lan: &str, context: &Position) -> Result<Move, MoveParseError> {
+        let tok = &mut Tokenizer::new(lan);
+        let mov = LongAlgebraicUciNotation::new(tok, context);
+        Move::try_from(mov)
+    }
 }
 
 impl From<Move> for (Square, Square, MoveFlag) {
@@ -216,6 +237,125 @@ impl fmt::Debug for Move {
             .field("to", &self.get_to())
             .field("flag", &self.get_flag())
             .finish()
+    }
+}
+
+pub struct SAN<'a> {
+    pub context: &'a Position,
+    pub mov: Move,
+}
+
+impl<'a> fmt::Display for SAN<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let flag = self.mov.get_flag();
+
+        match flag {
+            move_flags::KING_CASTLE => return write!(f, "O-O"),
+            move_flags::QUEEN_CASTLE => return write!(f, "O-O-O"),
+            _ => (),
+        };
+
+        let from = self.mov.get_from();
+        let from_bb = Bitboard::from_c(from);
+        let from_file = File::from_c(from);
+        let from_rank = Rank::from_c(from);
+        let to = self.mov.get_to();
+        let piece = self.context.get_piece(from);
+        let piece_type = piece.piece_type();
+        let stm = self.context.get_turn();
+        let nstm = !stm;
+
+        if piece_type != piece_type::PAWN {
+            // Convert to a white piece such that we print as uppercase
+            let piece = Piece::from_c((colors::WHITE, piece_type));
+            write!(f, "{piece}")?;
+        }
+
+        // 8.2.3.4: Disambiguation
+        {
+            let occupancy = self.context.get_occupancy();
+            let candidates = match piece_type {
+                piece_type::PAWN => pawn::lookup_froms(to, nstm),
+                piece_type::KNIGHT => knight::lookup_attacks(to),
+                piece_type::BISHOP => Bishop::lookup_attacks(to, occupancy),
+                piece_type::ROOK => Rook::lookup_attacks(to, occupancy),
+                piece_type::QUEEN => Rook::lookup_attacks(to, occupancy),
+                piece_type::KING => king::lookup_attacks(to),
+                piece_type::NONE => Bitboard::empty(),
+                _ => unreachable!(),
+            };
+
+            if !candidates.pop_cnt_eq_1() {
+                // Only investigate legality of the candidates once we found a pseudo legal
+                // candidate.
+                let legal_mask =
+                    fold_legal_moves(self.context, Bitboard::empty(), |mut acc, mov| {
+                        // Accumilate all from-squares, where there exists a legal move that
+                        // has our to-square as destination.
+                        if mov.get_to() == to {
+                            acc |= Bitboard::from_c(mov.get_from())
+                        }
+                        ControlFlow::Continue::<(), _>(acc)
+                    })
+                    .continue_value()
+                    .unwrap();
+
+                let candidates = candidates & legal_mask;
+
+                if !candidates.pop_cnt_eq_1() {
+                    // First, if the moving pieces can be distinguished by their originating files,
+                    // the originating file letter of the moving piece is inserted immediately after
+                    // the moving piece letter.
+                    if candidates & Bitboard::from_c(from_file) == from_bb {
+                        write!(f, "{from_file}")?;
+                    }
+                    // Second (when the first step fails), if the moving pieces can be distinguished
+                    // by their originating ranks, the originating rank digit of the moving piece is
+                    // inserted immediately after the moving piece letter.
+                    else if candidates & Bitboard::from_c(from_rank) == from_bb {
+                        write!(f, "{from_rank}")?;
+                    }
+                    // Third (when both the first and the second steps fail), the two character square
+                    // coordinate of the originating square of the moving piece is inserted
+                    // immediately after the moving piece letter.
+                    else {
+                        write!(f, "{from}")?;
+                    }
+                }
+            }
+        };
+
+        // Captures
+        if flag.is_capture() {
+            write!(f, "x")?;
+        }
+
+        // Destination Square
+        write!(f, "{to}")?;
+
+        // Promotions
+        if flag.is_promo() {
+            // Convert to a white piece such that we print as uppercase
+            let promo = PromoPieceType::try_from(flag);
+            let promo = promo.expect("We only go here if it actually is a promo");
+            let promo = Piece::from_c((colors::WHITE, promo));
+            write!(f, "={promo}")?;
+        }
+
+        // 8.2.3.5: Check and checkmate indication characters
+        {
+            // todo: find a more efficient way to check this instead of cloning
+            let mut pos = self.context.clone();
+            pos.make_move(self.mov);
+            if pos.get_check_state() != CheckState::None {
+                // If the move is a checking move, the plus sign "+" is appended as a suffix to
+                // the basic SAN move notation; if the move is a checkmating move, the octothorpe
+                // sign "#" is appended instead.
+                f.write_char(if pos.has_legal_moves() { '+' } else { '#' })?;
+            }
+        }
+
+        Ok(())
     }
 }
 

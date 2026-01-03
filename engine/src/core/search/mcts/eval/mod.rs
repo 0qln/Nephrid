@@ -1,7 +1,6 @@
 use super::utils::*;
 use crate::core::Position;
 use crate::core::color::Color;
-use crate::core::position::CheckState;
 use crate::core::search::mcts::nn::BOARD_INPUT_HISTORY;
 use crate::core::search::mcts::nn::BoardInputFloats;
 use crate::core::search::mcts::nn::Model;
@@ -17,9 +16,9 @@ use crate::core::turn::Turn;
 use burn::Tensor;
 use burn::tensor::Shape;
 use burn::tensor::backend::Backend;
-use rand::rngs::SmallRng;
 use core::fmt;
 use itertools::Itertools;
+use rand::rngs::SmallRng;
 use std::assert_matches::assert_matches;
 use std::cell::RefCell;
 use std::ops::ControlFlow;
@@ -57,27 +56,9 @@ pub trait Evaluator {
             "We need a terminal or expanded node for proper evaluation."
         );
 
-        // First check if the position is a normal game ending.
-        if !node.has_branches() {
-            Some(if pos.get_check_state() != CheckState::None {
-                // If in check and no moves, it's a loss for the current player
-                Evaluation::Terminal(GameResult::Win { relative_to: !pos.get_turn() })
-            } else {
-                // Stalemate
-                Evaluation::Terminal(GameResult::Draw)
-            })
-        }
-        // Then check if the position has reached some of the extra-rule endings.
-        else if pos.has_threefold_repetition()
-            || pos.fifty_move_rule()
-            || pos.is_insufficient_material()
-        {
-            Some(Evaluation::Terminal(GameResult::Draw))
-        }
-        // Otherwise not a terminal evaluation.
-        else {
-            None
-        }
+        let has_moves = node.has_branches();
+        let game_result = pos.game_result_with(has_moves);
+        game_result.map(Evaluation::Terminal)
     }
 
     /// Set the evaluation at a specific index.
@@ -344,6 +325,5 @@ impl Policy {
     // todo
     pub fn dirichlet_noise(&mut self, alpha: f32, rng: &mut SmallRng) {
         let cap_h = &mut self.0;
-
     }
 }

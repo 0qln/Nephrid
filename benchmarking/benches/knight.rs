@@ -1,12 +1,12 @@
 use std::ops::ControlFlow;
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use engine::core::coordinates::squares;
-use engine::core::move_iter::knight::{compute_attacks, lookup_attacks, Knight};
+use engine::core::r#move::Move;
+use engine::core::move_iter::knight::{Knight, compute_attacks, lookup_attacks};
 use engine::core::move_iter::sliding_piece::magics;
 use engine::core::move_iter::{FoldMoves, NoCheck, SingleCheck};
 use engine::core::position::Position;
-use engine::core::r#move::Move;
 use engine::core::zobrist;
 use engine::uci::tokens::Tokenizer;
 
@@ -34,8 +34,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
     ];
 
     for &input in &mut inputs.iter() {
-        let mut fen = Tokenizer::new(input);
-        let pos = Position::try_from(&mut fen).unwrap();
+        let pos = Position::from_fen(input).unwrap();
         c.bench_with_input(
             BenchmarkId::new("knight::move_iter::check_none", input),
             &pos,
@@ -61,8 +60,7 @@ pub fn move_iter_check_single(c: &mut Criterion) {
     let inputs = ["N7/6p1/1pp2p2/5r2/8/3b1N1k/8/2N2K2 w - - 0 1"];
 
     for &input in &mut inputs.iter() {
-        let mut fen = Tokenizer::new(input);
-        let pos = Position::try_from(&mut fen).unwrap();
+        let pos = Position::from_fen(input).unwrap();
         c.bench_with_input(
             BenchmarkId::new("knight::move_iter::check_single", input),
             &pos,
