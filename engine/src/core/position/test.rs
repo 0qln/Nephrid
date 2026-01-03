@@ -1,8 +1,9 @@
+use super::*;
 use crate::misc::ConstFrom;
 use crate::{
     core::{
         bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics,
-        piece::piece_type, ply::Ply, position::Position, zobrist,
+        piece::piece_type, ply::Ply, zobrist,
     },
     uci::tokens::Tokenizer,
 };
@@ -35,5 +36,68 @@ fn fen_decoding() {
     assert_eq!(
         pos.get_bitboard(piece_type::PAWN, colors::WHITE),
         Bitboard::from_c(ranks::_2)
+    );
+}
+
+// relies on fen_decoding working
+fn test_fen_encoding(expected_fen: &str, fen: &str, moves: Vec<Move>) {
+    zobrist::init();
+    magics::init();
+
+    let mut tok = &mut Tokenizer::new(fen);
+    let mut pos = Position::try_from(tok).expect("Should not fail.");
+    for mov in moves.into_iter() {
+        pos.make_move(mov);
+    }
+
+    assert_eq!(format!("{}", FenInfo(&pos)), expected_fen);
+}
+
+#[test]
+fn fen_encoding_0() {
+    test_fen_encoding(
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        vec![],
+    );
+}
+
+#[test]
+fn fen_encoding_1() {
+    use move_flags::*;
+    use squares::*;
+    test_fen_encoding(
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        vec![Move::new(E2, E4, DOUBLE_PAWN_PUSH)],
+    );
+}
+
+#[test]
+fn fen_encoding_2() {
+    use move_flags::*;
+    use squares::*;
+    test_fen_encoding(
+        "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2",
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        vec![
+            Move::new(E2, E4, DOUBLE_PAWN_PUSH),
+            Move::new(C7, C5, DOUBLE_PAWN_PUSH),
+        ],
+    );
+}
+
+#[test]
+fn fen_encoding_3() {
+    use move_flags::*;
+    use squares::*;
+    test_fen_encoding(
+        "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2 ",
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        vec![
+            Move::new(E2, E4, DOUBLE_PAWN_PUSH),
+            Move::new(C7, C5, DOUBLE_PAWN_PUSH),
+            Move::new(G1, F3, QUIET),
+        ],
     );
 }

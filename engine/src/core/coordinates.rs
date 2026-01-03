@@ -4,8 +4,8 @@ use crate::{
     uci::tokens::Tokenizer,
 };
 use core::{fmt, panic};
-use std::ops;
 use std::{any::type_name, error::Error, fmt::Debug, iter::Step, marker::PhantomData};
+use std::{fmt::Write, ops};
 
 use super::color::Color;
 use compass_rose::*;
@@ -270,6 +270,16 @@ impl TryFrom<&mut Tokenizer<'_>> for EpTargetSquare {
                 }
             },
         })
+    }
+}
+
+impl fmt::Display for EpTargetSquare {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.v() {
+            Some(sq) => write!(f, "{sq}"),
+            None => f.write_char('-'),
+        };
+        Ok(())
     }
 }
 

@@ -1,5 +1,5 @@
 use core::fmt;
-use std::ptr::NonNull;
+use std::{fmt::Write, ptr::NonNull};
 
 use thiserror::Error;
 
@@ -9,7 +9,8 @@ use crate::{
         castling::{CastlingRights, CastlingSideTokenizationError, castling_sides},
         color::{Color, ColorTokenizationError, colors},
         coordinates::{
-            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, squares,
+            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, ranks,
+            squares,
         },
         r#move::{Move, move_flags},
         move_iter::{bishop, king, knight, pawn, rook},
@@ -311,6 +312,12 @@ impl Position {
     }
 
     #[inline]
+    pub fn get_ep_target_square(&self) -> EpTargetSquare {
+        // the last ep capture was the last players turn, so we invert the turn...
+        EpTargetSquare::from((self.get_ep_capture_square(), !self.get_turn()))
+    }
+
+    #[inline]
     pub fn get_ep_capture_bitboard(&self, c: Color) -> Bitboard {
         if let Some(sq) = self.get_ep_capture_square().v()
             && self.get_turn() == c
@@ -382,8 +389,13 @@ impl Position {
         self.state.get_current().plys50
     }
 
+    #[inline]
     pub fn ply(&self) -> Ply {
         self.state.get_current().ply
+    }
+
+    pub fn full_move(&self) -> FullMoveCount {
+        self.ply().into()
     }
 
     #[inline]
@@ -694,6 +706,73 @@ impl Position {
             ))
             .unwrap_unchecked()
         }
+    }
+}
+
+pub struct PiecePlacementInfo<'a>(&'a Position);
+
+impl<'a> fmt::Display for PiecePlacementInfo<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let pos = &self.0;
+
+        // 1. Piece Placement
+        // ranks in big-endian order
+        for rank in (ranks::_1_C..ranks::_8_C).rev() {
+            let rank = unsafe { Rank::from_v(rank) };
+
+            // files in little-endian order from A to H
+            let mut nones = 0;
+            for file in files::A_C..files::H_C {
+                let file = unsafe { File::from_v(file) };
+                let square = Square::from_c((file, rank));
+                let piece = pos.get_piece(square);
+
+                if piece.piece_type() == piece_type::NONE {
+                    nones += 1;
+                    continue;
+                }
+                if nones != 0 {
+                    f.write_char(nones.into())?;
+                }
+                f.write_char(piece.into())?;
+            }
+            if nones != 0 {
+                f.write_char(nones.into())?;
+            }
+            if rank != ranks::_1 {
+                f.write_char('/')?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+pub struct FenInfo<'a>(&'a Position);
+
+impl<'a> fmt::Display for FenInfo<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let pos = &self.0;
+
+        // 1. Piece placement
+        PiecePlacementInfo(pos).fmt(f)?;
+
+        // 2. Side to move
+        pos.get_turn().fmt(f)?;
+
+        // 3. Castling availability
+        pos.get_castling().fmt(f)?;
+
+        // 4. En passant target square
+        pos.get_ep_target_square().fmt(f)?;
+
+        // 5. Halfmove Clock
+        pos.plys_50().fmt(f)?;
+
+        // 6. Fullmove counter
+        pos.full_move().fmt(f)?;
+
+        Ok(())
     }
 }
 
