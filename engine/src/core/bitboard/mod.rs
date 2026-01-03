@@ -294,8 +294,10 @@ impl Bitboard {
 
     #[inline]
     pub fn pop_cnt_gt_1(&self) -> bool {
-        let this = self.to_owned();
-        !(this & (this - 1_u64)).is_empty()
+        let this = *self;
+        let result = !(this & Self { v: (this.v.overflowing_sub(1).0) }).is_empty();
+        debug_assert_eq!(result, self.pop_cnt() > 1);
+        result
     }
 
     pub const fn edges() -> Self {

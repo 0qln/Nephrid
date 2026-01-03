@@ -340,48 +340,46 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
     }
 }
 
-const fn compute_froms<const C: TColor>(pawns: Bitboard) -> Bitboard {
+const fn compute_moves<const C: TColor>(pawns: Bitboard) -> Bitboard {
     Color::assert_variant(C); // Safety
     let color = unsafe { Color::from_v(C) };
 
     // double step
-    let dpp_moves = forward(pawns, double_step(color));
+    let dpp_pawns = Bitboard {
+        v: Bitboard::from_c(dpp_rank(color)).v & pawns.v,
+    };
+    let dpp_moves = forward(dpp_pawns, double_step(color));
 
     // single step
     let moves = forward(pawns, single_step(color));
 
-    // attacks
-    let attacks = compute_attacks::<{ C }>(pawns);
-
-    Bitboard {
-        v: dpp_moves.v | moves.v | attacks.v,
-    }
+    Bitboard { v: dpp_moves.v | moves.v }
 }
 
 #[inline(always)]
-pub fn lookup_froms(sq: Square, color: Color) -> Bitboard {
-    static FROMS_W: [Bitboard; 64] = {
+pub fn lookup_moves(sq: Square, color: Color) -> Bitboard {
+    static MOVES_W: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
-            result[sq.v() as usize] = compute_froms::<{ colors::WHITE_C }>(pawn);
+            result[sq.v() as usize] = compute_moves::<{ colors::WHITE_C }>(pawn);
         });
         result
     };
-    static FROMS_B: [Bitboard; 64] = {
+    static MOVES_B: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
-            result[sq.v() as usize] = compute_froms::<{ colors::BLACK_C }>(pawn);
+            result[sq.v() as usize] = compute_moves::<{ colors::BLACK_C }>(pawn);
         });
         result
     };
-    static FROMS: [[Bitboard; 64]; 2] = [FROMS_W, FROMS_B];
+    static MOVES: [[Bitboard; 64]; 2] = [MOVES_W, MOVES_B];
     unsafe {
         // Safety: sq is in range 0..64 and color is in range 0..2
-        *FROMS
+        *MOVES
             .get_unchecked(color.v() as usize)
             .get_unchecked(sq.v() as usize)
     }

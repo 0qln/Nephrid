@@ -16,7 +16,7 @@ use crate::{
             bishop::Bishop,
             fold_legal_moves,
             king::{self},
-            knight, pawn,
+            knight,
             rook::Rook,
             sliding_piece::SlidingAttacks,
         },
@@ -263,7 +263,6 @@ impl<'a> fmt::Display for SAN<'a> {
         let piece = self.context.get_piece(from);
         let piece_type = piece.piece_type();
         let stm = self.context.get_turn();
-        let nstm = !stm;
 
         if piece_type != piece_type::PAWN {
             // Convert to a white piece such that we print as uppercase
@@ -274,8 +273,9 @@ impl<'a> fmt::Display for SAN<'a> {
         // 8.2.3.4: Disambiguation
         {
             let occupancy = self.context.get_occupancy();
-            let candidates = match piece_type {
-                piece_type::PAWN => pawn::lookup_froms(to, nstm),
+            let pieces = self.context.get_bitboard(piece_type, stm);
+            let froms = match piece_type {
+                piece_type::PAWN => Bitboard::empty(), // pawn disambiguation is handled below
                 piece_type::KNIGHT => knight::lookup_attacks(to),
                 piece_type::BISHOP => Bishop::lookup_attacks(to, occupancy),
                 piece_type::ROOK => Rook::lookup_attacks(to, occupancy),
@@ -284,8 +284,9 @@ impl<'a> fmt::Display for SAN<'a> {
                 piece_type::NONE => Bitboard::empty(),
                 _ => unreachable!(),
             };
+            let candidates = froms & pieces;
 
-            if !candidates.pop_cnt_eq_1() {
+            if candidates.pop_cnt_gt_1() {
                 // Only investigate legality of the candidates once we found a pseudo legal
                 // candidate.
                 let legal_mask =
@@ -302,7 +303,7 @@ impl<'a> fmt::Display for SAN<'a> {
 
                 let candidates = candidates & legal_mask;
 
-                if !candidates.pop_cnt_eq_1() {
+                if candidates.pop_cnt_gt_1() {
                     // First, if the moving pieces can be distinguished by their originating files,
                     // the originating file letter of the moving piece is inserted immediately after
                     // the moving piece letter.
@@ -327,6 +328,9 @@ impl<'a> fmt::Display for SAN<'a> {
 
         // Captures
         if flag.is_capture() {
+            if piece_type == piece_type::PAWN {
+                write!(f, "{from_file}")?;
+            }
             write!(f, "x")?;
         }
 

@@ -809,7 +809,7 @@ impl<'a> fmt::Display for FenExport<'a> {
 }
 
 /// 3.2.4: Reduced export format
-pub struct PgnExport(PgnTagPairSection, PgnMoveTextSection);
+pub struct PgnExport(pub PgnTagPairSection, pub PgnMoveTextSection);
 
 impl PgnExport {
     /// From<(Current Position, Subsequent Moves)>
