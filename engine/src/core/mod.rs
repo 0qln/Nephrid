@@ -185,10 +185,9 @@ pub fn execute_uci(
                             }
                             break;
                         }
-                        // to be compatible with stockfish
-                        depth if Depth::try_from(depth).is_ok() => {
-                            limit.depth = depth.try_into().unwrap()
-                        }
+                        // to be compatible with stockfish syntax
+                        // e.g. "go 7" is interpreted as "go depth 7"
+                        depth if let Ok(depth) = Depth::try_from(depth) => limit.depth = depth,
                         o => return Err(UciError::UnknownOption(o.to_owned()).into()),
                     };
                 }
@@ -202,7 +201,7 @@ pub fn execute_uci(
                 Mode::Perft => Command::Perft(position, limit, token, debug),
             };
 
-            engine.search_t.tx.send(cmd).expect("Could not send");
+            engine.search_t.tx.send(cmd)?;
 
             Ok(())
         }
@@ -264,11 +263,7 @@ pub fn execute_uci(
             engine._pos_src = "".to_string();
 
             // also advance the mcts game tree
-            engine
-                .search_t
-                .tx
-                .send(Command::ResetState)
-                .expect("oh oh :(");
+            engine.search_t.tx.send(Command::ResetState)?;
 
             Ok(())
         }

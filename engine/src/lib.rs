@@ -8,6 +8,7 @@
 #![allow(clippy::len_without_is_empty)]
 // nightly features
 #![allow(incomplete_features)]
+#![feature(if_let_guard)]
 #![feature(const_trait_impl)]
 #![feature(debug_closure_helpers)]
 #![feature(macro_metavar_expr)]
