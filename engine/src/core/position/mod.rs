@@ -808,6 +808,8 @@ impl<'a> fmt::Display for FenExport<'a> {
     }
 }
 
+// pgn spec: https://www.thechessdrum.net/PGN_Reference.txt
+
 /// 3.2.4: Reduced export format
 pub struct PgnExport(pub PgnTagPairSection, pub PgnMoveTextSection);
 
