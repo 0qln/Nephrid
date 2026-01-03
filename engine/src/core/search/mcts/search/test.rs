@@ -28,12 +28,13 @@ fn fuzz<const X: usize>(pos: &'static str) {
             let mut tree = Tree::new();
 
             for _i in 0..(50_000 / X) {
-                let mut searcher = TreeSearcher::<X, _, _, PuctSelector<X>, DefaultBackuper>::new(
+                let mut searcher = TreeSearcher::<X, _, _, PuctSelector<X>, _>::new(
                     &mut tree,
                     pos.clone(),
                     PuctSelector::default(),
                     limiter.clone(),
                     eval.clone(),
+                    DefaultBackuper::default(),
                 );
                 searcher.grow();
             }
@@ -80,6 +81,7 @@ fn growth() {
         PuctSelector::default(),
         NoopLimiter,
         DummyEvaluator::default(),
+        DefaultBackuper::default(),
     )
     .grow();
     TreeSearcher::<1, DummyEvaluator<1>, NoopLimiter, PuctSelector<1>, DefaultBackuper>::new(
@@ -88,6 +90,7 @@ fn growth() {
         PuctSelector::default(),
         NoopLimiter,
         DummyEvaluator::default(),
+        DefaultBackuper::default(),
     )
     .grow();
 
