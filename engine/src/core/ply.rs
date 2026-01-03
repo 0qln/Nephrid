@@ -3,11 +3,17 @@ use thiserror::Error;
 use super::turn::Turn;
 use crate::{core::color::colors, uci::tokens::Tokenizer};
 use core::fmt;
-use std::{fmt::Display, num::ParseIntError, ops};
+use std::{num::ParseIntError, ops};
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct FullMoveCount {
     pub v: u16,
+}
+
+impl fmt::Display for FullMoveCount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.v)
+    }
 }
 
 pub type FullMoveCountParseError = ParseIntError;

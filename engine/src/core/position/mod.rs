@@ -717,12 +717,12 @@ impl<'a> fmt::Display for PiecePlacementInfo<'a> {
 
         // 1. Piece Placement
         // ranks in big-endian order
-        for rank in (ranks::_1_C..ranks::_8_C).rev() {
+        for rank in (ranks::_1_C..=ranks::_8_C).rev() {
             let rank = unsafe { Rank::from_v(rank) };
 
             // files in little-endian order from A to H
             let mut nones = 0;
-            for file in files::A_C..files::H_C {
+            for file in files::A_C..=files::H_C {
                 let file = unsafe { File::from_v(file) };
                 let square = Square::from_c((file, rank));
                 let piece = pos.get_piece(square);
@@ -732,12 +732,13 @@ impl<'a> fmt::Display for PiecePlacementInfo<'a> {
                     continue;
                 }
                 if nones != 0 {
-                    f.write_char(nones.into())?;
+                    write!(f, "{nones}")?;
+                    nones = 0;
                 }
-                f.write_char(piece.into())?;
+                write!(f, "{piece}")?;
             }
             if nones != 0 {
-                f.write_char(nones.into())?;
+                write!(f, "{nones}")?;
             }
             if rank != ranks::_1 {
                 f.write_char('/')?;
@@ -754,25 +755,16 @@ impl<'a> fmt::Display for FenInfo<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let pos = &self.0;
 
-        // 1. Piece placement
-        PiecePlacementInfo(pos).fmt(f)?;
-
-        // 2. Side to move
-        pos.get_turn().fmt(f)?;
-
-        // 3. Castling availability
-        pos.get_castling().fmt(f)?;
-
-        // 4. En passant target square
-        pos.get_ep_target_square().fmt(f)?;
-
-        // 5. Halfmove Clock
-        pos.plys_50().fmt(f)?;
-
-        // 6. Fullmove counter
-        pos.full_move().fmt(f)?;
-
-        Ok(())
+        write!(
+            f,
+            "{} {} {} {} {} {}",
+            PiecePlacementInfo(pos),
+            pos.get_turn(),
+            pos.get_castling(),
+            pos.get_ep_target_square(),
+            pos.plys_50(),
+            pos.full_move()
+        )
     }
 }
 

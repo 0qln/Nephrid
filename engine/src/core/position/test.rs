@@ -44,7 +44,7 @@ fn test_fen_encoding(expected_fen: &str, fen: &str, moves: Vec<Move>) {
     zobrist::init();
     magics::init();
 
-    let mut tok = &mut Tokenizer::new(fen);
+    let tok = &mut Tokenizer::new(fen);
     let mut pos = Position::try_from(tok).expect("Should not fail.");
     for mov in moves.into_iter() {
         pos.make_move(mov);
@@ -92,7 +92,7 @@ fn fen_encoding_3() {
     use move_flags::*;
     use squares::*;
     test_fen_encoding(
-        "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2 ",
+        "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         vec![
             Move::new(E2, E4, DOUBLE_PAWN_PUSH),

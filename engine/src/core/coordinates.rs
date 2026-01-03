@@ -278,8 +278,7 @@ impl fmt::Display for EpTargetSquare {
         match self.v() {
             Some(sq) => write!(f, "{sq}"),
             None => f.write_char('-'),
-        };
-        Ok(())
+        }
     }
 }
 
