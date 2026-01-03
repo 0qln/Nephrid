@@ -1,6 +1,6 @@
 #![feature(assert_matches)]
 
-//todo: derichlet noise
+//todo: derichlet noise to root node
 
 use burn::nn::loss::BinaryCrossEntropyLossConfig;
 use burn::train::MultiLabelClassificationOutput;

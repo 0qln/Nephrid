@@ -31,12 +31,8 @@ use engine::uci::tokens::Tokenizer;
 
 const OUT_DIR: &'static str = "tuning/out/eval_model/test";
 
-#[test]
-pub fn learn_mate_in_1() {
-    magics::init();
-    zobrist::init();
-
-    {
+pub mod logs {
+    pub fn init() {
         let mut buf = PathBuf::new();
         buf.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
         buf.push("tuning/src/eval_model/test/log4rs.yml");
@@ -44,6 +40,58 @@ pub fn learn_mate_in_1() {
         println!("{:?}", config);
         log4rs::init_file(config, Default::default()).unwrap();
     }
+}
+
+// todo
+// #[test]
+// pub fn can_approximate_policy() {
+//     magics::init();
+//     zobrist::init();
+
+//     // This is the policy that we want to learn. e.g. if we pretend that this policy was the
+//     // result of the selfplay phase, training the enging toward this should result in very
+//     // mminimal loss.
+//     let target_move = Move::new(squares::B5, squares::A5, move_flags::QUIET);
+//     let target_policy = {
+//         let mut pol = RawPolicy::null();
+//         pol.set(usize::from(target_move), 1.0_f32);
+//         pol
+//     };
+
+//     type Backend = Cuda<f32>;
+//     type AutodiffBackend = Autodiff<Backend>;
+
+//     let device = CudaDevice::default();
+//     log::info!("Device: {:?}", device);
+
+//     let result_weights = {
+//         let mut config_path = PathBuf::new();
+//         config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
+//         config_path.push("tuning/src/eval_model/test/config.json");
+
+//         let config = TrainingConfig::load(&config_path).expect(&format!(
+//             "Couldn't load config.json at {:?}",
+//             config_path.to_str()
+//         ));
+
+//         config
+//             .save(&format!("{OUT_DIR}/config.json"))
+//             .expect("Failed to save config.");
+
+//         train::<AutodiffBackend>(
+//             &format!("{OUT_DIR}/learn_mate_in_1"),
+//             config,
+//             device.clone(),
+//         )
+//         .expect("No epoch was completed")
+//     };
+// }
+
+#[test]
+pub fn learn_mate_in_1() {
+    logs::init();
+    magics::init();
+    zobrist::init();
 
     type Backend = Cuda<f32>;
     type AutodiffBackend = Autodiff<Backend>;
@@ -123,15 +171,6 @@ pub fn learn_mate_in_1() {
 pub fn learn_mate_in_2() {
     magics::init();
     zobrist::init();
-
-    {
-        let mut buf = PathBuf::new();
-        buf.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
-        buf.push("tuning/src/eval_model/test/log4rs.yml");
-        let config = buf.to_str().unwrap();
-        println!("{:?}", config);
-        log4rs::init_file(config, Default::default()).unwrap();
-    }
 
     type Backend = Cuda<f32>;
     type AutodiffBackend = Autodiff<Backend>;

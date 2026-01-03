@@ -14,7 +14,6 @@ use crate::core::search::mcts::select::SelectionItem;
 use crate::core::search::mcts::select::SelectionNode;
 use crate::core::search::mcts::select::Selector;
 use std::cell::RefCell;
-use std::cmp::max;
 use std::rc::Rc;
 
 use crate::core::depth::Depth;
@@ -88,13 +87,138 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
 {
     pub fn grow(&mut self) {
         self.select_lines();
-        self.eval_leafes_();
+        self.evaluator.eval_guesses();
         self.backup_evals();
     }
 
-    //
-    // # Select the leafes.
-    //
+    fn select_lines_iter(&mut self) {
+        let node = self.tree.get_root();
+        let depth = Depth::MIN;
+        let turn = self.position.get_turn();
+        let eval_node = self.evaluator.init(node.clone(), &self.position);
+        let sel_root = self.selector.init(node.clone(), turn);
+
+        struct StackItem {
+            node: Rc<RefCell<Node>>,
+            line_index: usize,
+        }
+
+        impl StackItem {
+            pub fn node_state(&self) -> NodeState {
+                let node = self.node.borrow();
+                node.state()
+            }
+        }
+
+        let stack: Vec<StackItem> = vec![ StackItem { line_index: 0, node: self.tree.get_root() }];
+
+        while !stack.is_empty()
+        {
+            let current = stack.pop().expect("We only enter if stack is not empty");
+            let state = current.node_state();
+            let line_index = current.line_index;
+
+            let _used_budget = match state {
+                // Only if the node is already expanded we want to follow the branch.
+                NodeState::Expanded => {
+                    // If the node is expanded, pick branches and follow the lines.
+                    {
+                        let mut eval_node_parent = eval_node;
+                        let mut sel_node_parent = sel_root;
+                        // Split the budget up between this and the subsequent best nodes.
+                        let root_visits = node.borrow().visits();
+                        node
+                            .borrow_mut()
+                            .sort_by(|b| -self.selector.score(b, root_visits));
+
+                        let mut budget = MPV;
+                        let mut used_budget = 0;
+                        let mut line_index = line_index;
+                        let mut branch_index = 0;
+                        while budget >= 1 {
+                            if let Some(branch) = node.borrow().get_branch(branch_index) {
+                                let current_budget = self.selector.budget(budget);
+
+                                // make the move of the current branch, such that we can follow the line.
+                                self.position.make_move(branch.mov());
+
+                                let depth = depth + 1;
+                                let node = branch.node();
+
+                                let selc_info = SelectionNode::append(
+                                    &mut sel_node_parent,
+                                    SelectionItem {
+                                        depth,
+                                        leaf: node.clone(),
+                                        turn: self.position.get_turn(),
+                                    },
+                                );
+
+                                let eval_info = self.evaluator.register_info(
+                                    &mut eval_node_parent,
+                                    node.clone(),
+                                    &self.position,
+                                );
+
+                                // let used = self.process_node(
+                                //     current_budget,
+                                //     line_index,
+                                //     depth,
+                                //     node,
+                                //     eval_info,
+                                //     selc_info,
+                                // );
+                                stack.push(StackItem {
+                                    node,
+                                    line_index,
+                                });
+
+                                // undo the move again
+                                self.position.unmake_move(branch.mov());
+
+                                budget -= current_budget;
+                                branch_index += 1;
+
+                                // `process_node` should have used `used` nodes. Thus we increase the
+                                // line_index by that amount.
+                                line_index += used;
+                                used_budget += used;
+                            } else {
+                                // in this case there are no more branches to distribute the budget to.
+                                // todo:
+                                // this currently wastes some remaining budget, fix that.
+                                // or later if we make the selection and eval parallel, just go select as many
+                                // lines as possible, until we have a full (X==MPV) batch.
+                                break;
+                            }
+                        }
+                        used_budget
+                    }
+                }
+                NodeState::Leaf => {
+                    // If the node is a leaf, expand the node's branches for future mcts iterations.
+                    // And select it for mcts evaluation.
+                    //
+                    // this is fine to do now, since we split above and in the fn `select_branches` we
+                    // immidieatly increment the branch_index and thus during a single selection phase, this
+                    // match block is only reached once per node in a mcts iteration. Altough we should probably
+                    // unit test this somehow.
+                    node.borrow_mut().expand(&self.position);
+
+                    // select the node.
+                    this.select_node(line_index, node, sel_root, eval_node, depth);
+                    1
+                }
+                NodeState::Terminal => {
+                    // select the node.
+                    self.select_node(line_index, node, sel_root, eval_node, depth);
+                    1
+                }
+            }
+        };
+    }
+
+    // Select the root leafes.
     fn select_lines(&mut self) {
         // todo: convert to iterative approach -- or not if the stack frame is
         // small with this one ._.
@@ -160,7 +284,6 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         // Check if the board has a terminal evaluation
         let terminal_eval = E::eval_terminal(&node.borrow(), pos);
         if let Some(terminal_eval) = terminal_eval {
-            // println!("[{line_index}] terminal");
             node.borrow_mut().set_state(NodeState::Terminal);
             self.evaluator.set_eval(line_index, terminal_eval);
         }
@@ -250,12 +373,6 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
             }
         }
         used_budget
-    }
-
-    fn eval_leafes_(&mut self) {
-        // For all nodes in the batch buffer, build the input tensors and evaluate them using
-        // the eval model.
-        self.evaluator.eval_guesses()
     }
 
     fn backup_evals(&mut self) {
