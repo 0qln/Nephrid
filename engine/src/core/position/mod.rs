@@ -1020,10 +1020,7 @@ pub enum PgnMoveInfo {
 
 impl PgnMoveInfo {
     pub fn is_annotation(&self) -> bool {
-        match self {
-            Self::Annotation(_) => true,
-            _ => false,
-        }
+        matches!(self, Self::Annotation(_))
     }
 }
 
@@ -1048,7 +1045,7 @@ impl fmt::Display for PgnMoveInfo {
 /// optional annotations, and a single concluding game termination marker.
 pub struct PgnMoveTextSection(pub Vec<PgnMoveInfo>);
 
-impl<'a> fmt::Display for PgnMoveTextSection {
+impl fmt::Display for PgnMoveTextSection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // In PGN export format, tokens in the movetext are placed left justified on
         // successive text lines each of which has less than 80 printing characters.  As

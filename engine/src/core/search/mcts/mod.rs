@@ -206,7 +206,7 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
 // since we would have to skip growth-cycles until we reach a terminal node and then propagate that
 // evaluation up the tree...
 //
-/// Mcts parts for pure mcts.
+// /// Mcts parts for pure mcts.
 // #[derive(Debug, Default)]
 // pub struct PureParts;
 
