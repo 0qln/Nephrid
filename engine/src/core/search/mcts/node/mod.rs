@@ -156,6 +156,10 @@ impl Branch {
     pub fn node_state(&self) -> NodeState {
         self.node.borrow().state()
     }
+
+    pub fn set_policy(&mut self, policy: f32) {
+        self.policy = policy;
+    }
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
@@ -216,7 +220,7 @@ impl fmt::Debug for Node {
 }
 
 impl Node {
-    // Sort the branches in ascending order.
+    /// Sort the branches in ascending order.
     pub fn sort_by<T: Ord>(&mut self, f: impl Fn(&Branch) -> T) {
         // todo: the sorting can be done a lot more efficiently:
         // The puct score does not change very often later on, only as we start the search.
@@ -228,8 +232,26 @@ impl Node {
         self.branches.get(index)
     }
 
+    pub fn set_branches(&mut self, branches: Vec<Branch>) {
+        self.branches = branches;
+    }
+
     pub fn iter_branches(&self) -> impl Iterator<Item = &Branch> {
         self.branches.iter()
+    }
+
+    pub fn iter_branches_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut Branch> {
+        self.branches.iter_mut()
+    }
+
+    /// Whether this node has branches.
+    pub fn has_branches(&self) -> bool {
+        !self.branches.is_empty()
+    }
+
+    /// The number of branches this node has
+    pub fn num_branches(&self) -> usize {
+        self.branches.len()
     }
 
     /// Create a new leaf node.
@@ -240,11 +262,6 @@ impl Node {
             visits: 0,
             value: Value(0.0),
         }
-    }
-
-    /// Whether this node has branches.
-    pub fn has_branches(&self) -> bool {
-        !self.branches.is_empty()
     }
 
     /// Select the branch with the most visits.

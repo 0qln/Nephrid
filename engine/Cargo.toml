@@ -14,6 +14,8 @@ burn = { version = "0.19.1", features = ["ndarray"] }
 burn-cuda = "0.19.1"
 ndarray = "0.17.1"
 ringbuf = "0.4.8"
+rand_distr = "0.5.1"
+approx = "0.5.1"
 
 [features]
 default = []

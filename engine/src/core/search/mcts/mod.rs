@@ -1,4 +1,6 @@
 use burn::prelude::Backend;
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
 
 use crate::core::Limit;
 use crate::core::position::Position;
@@ -11,6 +13,9 @@ use crate::core::search::mcts::limiter::DefaultLimiter;
 use crate::core::search::mcts::nn::Model;
 use crate::core::search::mcts::nn::ModelConfig;
 use crate::core::search::mcts::node::Tree;
+use crate::core::search::mcts::noise::DirichletNoiser;
+use crate::core::search::mcts::noise::Noiser;
+use crate::core::search::mcts::noise::NullNoiser;
 use crate::core::search::mcts::search::TreeSearcher;
 use crate::core::search::mcts::select::PuctSelector;
 use crate::core::search::mcts::select::Selector;
@@ -25,6 +30,7 @@ pub mod eval;
 pub mod limiter;
 pub mod nn;
 pub mod node;
+pub mod noise;
 pub mod search;
 pub mod select;
 pub mod strategy;
@@ -54,14 +60,16 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
         let evaluator = parts.evaluator();
         let selector = parts.selector();
         let backprop = parts.backprop();
+        let noiser = parts.noiser();
 
-        let mut searcher = TreeSearcher::<{ config::MPV }, _, _, _, _>::new(
+        let mut searcher = TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new(
             tree,
             pos.clone(),
             selector,
             limiter.clone(),
             evaluator,
             backprop,
+            noiser,
         );
 
         searcher.grow();
@@ -75,10 +83,12 @@ pub trait MctsParts<const X: usize = { config::MPV }> {
     type Selector: Selector;
     type Evaluator: Evaluator;
     type Backprop: Backpropagater;
+    type Noiser: Noiser;
 
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
     fn backprop(&self) -> Self::Backprop;
+    fn noiser(&self) -> Self::Noiser;
 }
 
 pub trait MctsState {
@@ -126,6 +136,7 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
     type Selector = PuctSelector<X>;
     type Evaluator = NNEvaluator<'a, 'a, B, X>;
     type Backprop = DefaultBackuper;
+    type Noiser = DirichletNoiser;
 
     fn selector(&self) -> Self::Selector {
         PuctSelector::<X>::default()
@@ -137,6 +148,11 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
 
     fn backprop(&self) -> Self::Backprop {
         Default::default()
+    }
+
+    fn noiser(&self) -> Self::Noiser {
+        let rng = SmallRng::from_os_rng();
+        DirichletNoiser::new(0.3, 0.25, rng)
     }
 }
 
@@ -166,6 +182,7 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
     type Selector = PuctSelector<X>;
     type Evaluator = StaticEvaluator<X>;
     type Backprop = DefaultBackuper;
+    type Noiser = NullNoiser;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -177,6 +194,10 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
 
     fn backprop(&self) -> Self::Backprop {
         Default::default()
+    }
+
+    fn noiser(&self) -> Self::Noiser {
+        NullNoiser
     }
 }
 

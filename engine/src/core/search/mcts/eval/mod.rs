@@ -18,7 +18,6 @@ use burn::tensor::Shape;
 use burn::tensor::backend::Backend;
 use core::fmt;
 use itertools::Itertools;
-use rand::rngs::SmallRng;
 use std::assert_matches::assert_matches;
 use std::cell::RefCell;
 use std::ops::ControlFlow;
@@ -296,6 +295,10 @@ impl Policy {
         self.0.iter().cloned()
     }
 
+    pub fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut f32> {
+        self.0.iter_mut()
+    }
+
     pub fn normalize(&mut self) {
         let policy_sum = {
             let sum = self.iter().sum();
@@ -320,10 +323,5 @@ impl Policy {
         let mut result = Self(policy);
         result.normalize();
         result
-    }
-
-    // todo
-    pub fn dirichlet_noise(&mut self, alpha: f32, rng: &mut SmallRng) {
-        let cap_h = &mut self.0;
     }
 }

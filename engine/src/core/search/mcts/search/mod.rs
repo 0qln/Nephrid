@@ -9,6 +9,8 @@ use crate::core::search::mcts::limiter::Limiter;
 use crate::core::search::mcts::node::Node;
 use crate::core::search::mcts::node::NodeState;
 use crate::core::search::mcts::node::Tree;
+use crate::core::search::mcts::noise::DirichletNoiser;
+use crate::core::search::mcts::noise::Noiser;
 use crate::core::search::mcts::select::PuctSelector;
 use crate::core::search::mcts::select::SelectionItem;
 use crate::core::search::mcts::select::SelectionNode;
@@ -40,6 +42,7 @@ pub struct TreeSearcher<
     L: Limiter = DefaultLimiter,
     S: Selector = PuctSelector<MPV>,
     B: Backpropagater = DefaultBackuper,
+    N: Noiser = DirichletNoiser,
 > {
     /// The position that will be edited during the selection and backpropagatation.
     position: Position,
@@ -56,12 +59,18 @@ pub struct TreeSearcher<
     /// Backpropagater
     backprop: B,
 
+    /// Noiser
+    noiser: N,
+
     /// The tree to be searched.
     tree: &'a mut Tree,
+
+    /// Number of compeleted iterations.
+    iterations: usize,
 }
 
-impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater>
-    TreeSearcher<'a, MPV, E, L, S, B>
+impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
+    TreeSearcher<'a, MPV, E, L, S, B, N>
 {
     pub fn new(
         tree: &'a mut Tree,
@@ -70,6 +79,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         limiter: L,
         evaluator: E,
         backprop: B,
+        noiser: N,
     ) -> Self {
         Self {
             tree,
@@ -78,17 +88,21 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
             limiter,
             evaluator,
             backprop,
+            noiser,
+            iterations: 0,
         }
     }
 }
 
-impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater>
-    TreeSearcher<'a, MPV, E, L, S, B>
+impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
+    TreeSearcher<'a, MPV, E, L, S, B, N>
 {
     pub fn grow(&mut self) {
         self.select_lines();
         self.evaluator.eval_guesses();
         self.backup_evals();
+        self.apply_noise();
+        self.iterations += 1;
     }
 
     // fn select_lines_iter(&mut self) {
@@ -389,5 +403,15 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
 
             self.backprop.backpropagate(leaf, eval);
         }
+    }
+
+    fn apply_noise(&mut self) {
+        // Only apply noise once
+        if self.iterations > 0 {
+            return;
+        }
+
+        let root = self.tree.get_root();
+        _ = self.noiser.apply_noise(&mut root.borrow_mut());
     }
 }

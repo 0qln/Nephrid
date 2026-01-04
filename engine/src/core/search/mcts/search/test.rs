@@ -1,14 +1,11 @@
-use crate::{
-    core::{
-        move_iter::sliding_piece::magics,
-        position::{FenImport, Position},
-        search::mcts::{
-            back::DefaultBackuper, limiter::NoopLimiter, node::Tree, search::TreeSearcher,
-            select::PuctSelector, test::DummyEvaluator,
-        },
-        zobrist,
+use crate::core::{
+    move_iter::sliding_piece::magics,
+    position::Position,
+    search::mcts::{
+        back::DefaultBackuper, limiter::NoopLimiter, node::Tree, noise::NullNoiser,
+        search::TreeSearcher, select::PuctSelector, test::DummyEvaluator,
     },
-    uci::tokens::Tokenizer,
+    zobrist,
 };
 
 use std::{error::Error, thread};
@@ -27,13 +24,14 @@ fn fuzz<const X: usize>(pos: &'static str) {
             let mut tree = Tree::new();
 
             for _i in 0..(50_000 / X) {
-                let mut searcher = TreeSearcher::<X, _, _, PuctSelector<X>, _>::new(
+                let mut searcher = TreeSearcher::<X, _, _, PuctSelector<X>, _, _>::new(
                     &mut tree,
                     pos.clone(),
                     PuctSelector::default(),
                     limiter.clone(),
                     eval.clone(),
                     DefaultBackuper::default(),
+                    NullNoiser,
                 );
                 searcher.grow();
             }
@@ -74,22 +72,24 @@ fn growth() {
     assert_eq!(tree.get_root().borrow().visits(), 0);
 
     // Perform two growth iterations
-    TreeSearcher::<1, DummyEvaluator<1>, NoopLimiter, PuctSelector<1>, DefaultBackuper>::new(
+    TreeSearcher::<1, DummyEvaluator<1>, NoopLimiter, PuctSelector<1>, DefaultBackuper, _>::new(
         &mut tree,
         pos.clone(),
         PuctSelector::default(),
         NoopLimiter,
         DummyEvaluator::default(),
         DefaultBackuper::default(),
+        NullNoiser,
     )
     .grow();
-    TreeSearcher::<1, DummyEvaluator<1>, NoopLimiter, PuctSelector<1>, DefaultBackuper>::new(
+    TreeSearcher::<1, DummyEvaluator<1>, NoopLimiter, PuctSelector<1>, DefaultBackuper, _>::new(
         &mut tree,
         pos.clone(),
         PuctSelector::default(),
         NoopLimiter,
         DummyEvaluator::default(),
         DefaultBackuper::default(),
+        NullNoiser,
     )
     .grow();
 
