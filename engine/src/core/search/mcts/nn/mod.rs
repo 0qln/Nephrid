@@ -10,7 +10,7 @@ use burn::{
     prelude::Backend,
     tensor::{
         Tensor,
-        activation::{sigmoid, softmax},
+        activation::softmax,
     },
 };
 use itertools::Itertools;
@@ -129,7 +129,7 @@ pub fn board_history_input<B: Backend>(
     // convert input floats to tensors
     let history_tensor = Tensor::cat(
         history
-            .into_iter()
+            .iter()
             .map(|b| Tensor::from_floats([*b], device))
             .collect_vec(),
         1,

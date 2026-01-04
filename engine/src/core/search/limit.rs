@@ -55,11 +55,7 @@ impl Limit {
         let time_per_move = time / 50 + inc;
         let time_per_move = min(time_per_move, self.movetime);
 
-        let result = if time_per_move > lag_buf {
-            time_per_move - lag_buf
-        } else {
-            0
-        };
+        let result = time_per_move.saturating_sub(lag_buf);
 
         Duration::from_millis(result)
     }

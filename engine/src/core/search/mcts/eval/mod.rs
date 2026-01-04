@@ -295,7 +295,7 @@ impl Policy {
         self.0.iter().cloned()
     }
 
-    pub fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut f32> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {
         self.0.iter_mut()
     }
 
@@ -319,7 +319,7 @@ impl Policy {
     }
 
     pub fn new(policy: Vec<f32>) -> Self {
-        debug_assert!(policy.len() >= 1, "Should have atleast one policy item");
+        debug_assert!(!policy.is_empty(), "Should have atleast one policy item");
         let mut result = Self(policy);
         result.normalize();
         result

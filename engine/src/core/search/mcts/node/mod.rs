@@ -240,7 +240,7 @@ impl Node {
         self.branches.iter()
     }
 
-    pub fn iter_branches_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut Branch> {
+    pub fn iter_branches_mut(&mut self) -> impl Iterator<Item = &mut Branch> {
         self.branches.iter_mut()
     }
 

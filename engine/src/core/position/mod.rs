@@ -857,7 +857,7 @@ impl PgnExport {
     }
 
     /// From<(Initial Position, Subsequent Moves)>
-    pub fn from_initial_pos<'a, 'b>(pos: &'a mut Position, moves: &'b [Move]) -> Self {
+    pub fn from_initial_pos(pos: &mut Position, moves: &[Move]) -> Self {
         let (move_tokens, game_result) = {
             let mut xs: Vec<PgnMoveInfo> = vec![];
             for mov in moves.iter().cloned() {
@@ -880,7 +880,7 @@ impl PgnExport {
                     xs.push(PgnMoveInfo::MoveNumberIndication(fmc, stm));
                 }
 
-                let san = format!("{}", SAN { context: &pos, mov });
+                let san = format!("{}", SAN { context: pos, mov });
                 xs.push(PgnMoveInfo::Move(san));
 
                 pos.make_move(mov);
@@ -997,9 +997,9 @@ impl fmt::Display for PgnTagPairSection {
         // tag pair to appear left justified on a line by itself; a single empty line
         // follows the last tag pair.
         for tag_pair in self.0.iter() {
-            write!(f, "{}\n", tag_pair)?;
+            writeln!(f, "{}", tag_pair)?;
         }
-        write!(f, "\n")
+        writeln!(f)
     }
 }
 
@@ -1075,7 +1075,7 @@ impl<'a> fmt::Display for PgnMoveTextSection {
             append_text(&format!(" {token}"))?;
         }
 
-        write!(f, "\n")
+        writeln!(f)
     }
 }
 
