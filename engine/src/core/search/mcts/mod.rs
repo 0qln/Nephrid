@@ -19,6 +19,7 @@ use crate::core::search::mcts::noise::NullNoiser;
 use crate::core::search::mcts::search::TreeSearcher;
 use crate::core::search::mcts::select::PuctSelector;
 use crate::core::search::mcts::select::Selector;
+use crate::core::search::mcts::select::UcbSelector;
 use crate::core::search::mcts::strategy::MctsStrategy;
 use crate::misc::DebugMode;
 use crate::uci::sync::CancellationToken;
@@ -201,27 +202,32 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
     }
 }
 
-// todo:
-// maybe we can use the puct TreeSearcher for this, but that might be a big performance debuff,
-// since we would have to skip growth-cycles until we reach a terminal node and then propagate that
-// evaluation up the tree...
-//
-// /// Mcts parts for pure mcts.
-// #[derive(Debug, Default)]
-// pub struct PureParts;
+/// Mcts parts for pure mcts.
+#[derive(Debug, Default)]
+pub struct PureParts;
 
-// impl<const X: usize> MctsParts<X> for &PureParts {
-//     type Selector = UcbSelector<X>;
-//     type Evaluator = NoneEvaluator<X>;
+impl<const X: usize> MctsParts<X> for &PureParts {
+    type Selector = UcbSelector<X>;
+    type Evaluator = NoneEvaluator<X>;
+    type Backprop = DefaultBackuper;
+    type Noiser = NullNoiser;
 
-//     fn selector(&self) -> Self::Selector {
-//         Default::default()
-//     }
+    fn selector(&self) -> Self::Selector {
+        Default::default()
+    }
 
-//     fn evaluator(&self) -> Self::Evaluator {
-//         Default::default()
-//     }
-// }
+    fn evaluator(&self) -> Self::Evaluator {
+        Default::default()
+    }
+
+    fn backprop(&self) -> Self::Backprop {
+        Default::default()
+    }
+
+    fn noiser(&self) -> Self::Noiser {
+        Default::default()
+    }
+}
 
 pub mod config {
     #[cfg(feature = "mcts-pure")]

@@ -248,7 +248,7 @@ impl RawPolicy {
     }
 
     pub fn normalize(&mut self) {
-        let policy_sum = {
+        let policy_sum = {ta] mcts p
             let sum = self.iter().sum();
             if sum == 0.0 {
                 // Fallback to uniform distribution
