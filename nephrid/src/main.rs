@@ -1,6 +1,7 @@
-use engine::core::move_iter::sliding_piece::magics;
-use engine::core::{Engine, execute_uci, zobrist};
-use engine::uci::sync::{self, CancellationToken};
+use engine::{
+    core::{Engine, execute_uci, move_iter::sliding_piece::magics, zobrist},
+    uci::sync::{self, CancellationToken},
+};
 use std::io::stdin;
 
 fn main() {
