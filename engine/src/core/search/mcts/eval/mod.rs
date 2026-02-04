@@ -27,8 +27,8 @@ use std::rc::Rc;
 pub mod test;
 
 pub mod r#static;
-
 pub mod nn;
+pub mod none;
 
 pub trait Evaluator {
     type Node: IDoubleLinkedNode;
@@ -248,7 +248,7 @@ impl RawPolicy {
     }
 
     pub fn normalize(&mut self) {
-        let policy_sum = {ta] mcts p
+        let policy_sum = {
             let sum = self.iter().sum();
             if sum == 0.0 {
                 // Fallback to uniform distribution

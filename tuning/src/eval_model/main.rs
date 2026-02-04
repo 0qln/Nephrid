@@ -1,50 +1,30 @@
 #![feature(assert_matches)]
 
-//todo: derichlet noise to root node
+// use std::env::var;
+use burn::{nn::loss::BinaryCrossEntropyLossConfig, train::MultiLabelClassificationOutput};
+use engine::core::{
+    depth::Depth,
+    search::mcts::{
+        MctsParts, NNParts, SearchState,
+        back::{Backpropagater, DefaultBackuper},
+        eval::{Evaluation, Evaluator, GameResult, Guess, RawPolicy, nn::NNEvaluator},
+        mcts,
+        nn::{BOARD_INPUT_HISTORY, POLICY_OUTPUTS, board_history_input},
+        node::{Branch, Node, NodeState, Value},
+        select::{Score, Selection, SelectionItem, SelectionNode, Selector},
+        strategy::{MctsFindBest, MctsStrategy},
+    },
+    turn::Turn,
+};
+use std::{cell::RefCell, cmp::max};
 
-use burn::nn::loss::BinaryCrossEntropyLossConfig;
-use burn::train::MultiLabelClassificationOutput;
-use engine::core::depth::Depth;
-use engine::core::search::mcts::MctsParts;
-use engine::core::search::mcts::NNParts;
-use engine::core::search::mcts::SearchState;
-use engine::core::search::mcts::back::Backpropagater;
-use engine::core::search::mcts::back::DefaultBackuper;
-use engine::core::search::mcts::eval::Evaluation;
-use engine::core::search::mcts::eval::Evaluator;
-use engine::core::search::mcts::eval::GameResult;
-use engine::core::search::mcts::eval::Guess;
-use engine::core::search::mcts::eval::RawPolicy;
-use engine::core::search::mcts::eval::nn::NNEvaluator;
-use engine::core::search::mcts::mcts;
-use engine::core::search::mcts::nn::BOARD_INPUT_HISTORY;
-use engine::core::search::mcts::nn::POLICY_OUTPUTS;
-use engine::core::search::mcts::nn::board_history_input;
-use engine::core::search::mcts::node::Branch;
-use engine::core::search::mcts::node::Node;
-use engine::core::search::mcts::node::NodeState;
-use engine::core::search::mcts::node::Value;
-use engine::core::search::mcts::select::Score;
-use engine::core::search::mcts::select::Selection;
-use engine::core::search::mcts::select::SelectionItem;
-use engine::core::search::mcts::select::SelectionNode;
-use engine::core::search::mcts::select::Selector;
-use engine::core::search::mcts::strategy::MctsFindBest;
-use engine::core::search::mcts::strategy::MctsStrategy;
-use engine::core::turn::Turn;
-use std::cell::RefCell;
-use std::cmp::max;
-
-use burn::prelude::Module;
-use burn::record::CompactRecorder;
-use burn::tensor::{Tensor, backend::Backend};
-use rayon::iter::IntoParallelRefIterator;
-use rayon::iter::ParallelIterator;
-use std::env::var;
-use std::ops::ControlFlow;
-use std::rc::Rc;
-use std::sync::Mutex;
-use std::{error::Error, fs, marker::PhantomData};
+use burn::{
+    prelude::Module,
+    record::CompactRecorder,
+    tensor::{Tensor, backend::Backend},
+};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::{env::var, error::Error, fs, marker::PhantomData, ops::ControlFlow, rc::Rc, sync::Mutex};
 
 use burn::{
     data::dataloader::DataLoaderBuilder,
@@ -68,7 +48,6 @@ use burn::{
     },
 };
 use burn_cuda::{Cuda, CudaDevice};
-use engine::core::search::mcts::node::Tree;
 use engine::{
     core::{
         color::Color,
@@ -77,10 +56,13 @@ use engine::{
         position::Position,
         search::{
             limit::Limit,
-            mcts::nn::{
-                BOARD_INPUT_TENSOR_DIM, BoardInputFloats, Model, ModelConfig,
-                STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW, VALUE_LOSE,
-                VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
+            mcts::{
+                nn::{
+                    BOARD_INPUT_TENSOR_DIM, BoardInputFloats, Model, ModelConfig,
+                    STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW, VALUE_LOSE,
+                    VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
+                },
+                node::Tree,
             },
         },
         zobrist,
@@ -184,7 +166,8 @@ impl From<(GameResult, Turn)> for ValueTarget {
             GameResult::Win { relative_to } => {
                 if relative_to == moving_color {
                     Self(VALUE_WIN)
-                } else {
+                }
+                else {
                     Self(VALUE_LOSE)
                 }
             }
@@ -601,7 +584,8 @@ pub fn train<B: AutodiffBackend>(
             .build(FenDataset::train(&config.edp_dataset_path));
 
     // let dataloader_test =
-    //     DataLoaderBuilder::<B, _, _>::new(IdentityBatcher::<FenItemRaw>::default())
+    //     DataLoaderBuilder::<B, _,
+    // _>::new(IdentityBatcher::<FenItemRaw>::default())
     //         .batch_size(config.batch_size)
     //         .shuffle(config.seed)
     //         .num_workers(0)
@@ -667,6 +651,9 @@ pub fn train<B: AutodiffBackend>(
 
     result_weights
 }
+
+/// Train a net to approximate a specific policy while performing mcts.
+pub fn learn_batch() {}
 
 #[derive(Clone, Default)]
 pub struct PlayoutBatcher;
@@ -840,7 +827,7 @@ impl MctsStrategy for MctsTrain {
         let inference_result = self.infer.result(tree);
         let tree = tree.to_owned();
         log::info!(target: "games", "Completed MCTS Iterations: {}", self.steps);
-        log::info!(target: "games", "Base Policy: {:#?}", tree.get_root().borrow().iter_branches().map(|b| format!("[{}] p: {}, WDL found: {}", b.mov(), b.policy(), todo!("Gather how many w/d/l we have found in the game tree during mcts"))).collect_vec());
+        (); // log::info!(target: "games", "Base Policy: {:#?}", tree.get_root().borrow().iter_branches().map(|b| format!("[{}] p: {}, WDL found: {}", b.mov(), b.policy(), todo!("Gather how many w/d/l we have found in the game tree during mcts"))).collect_vec());
         (inference_result, tree)
     }
 
@@ -990,8 +977,7 @@ where
     let debug = DebugMode::default();
     let ct = CancellationToken::new();
 
-    let tok = &mut Tokenizer::new(pos);
-    let mut pos: Position = tok.try_into()?;
+    let mut pos = Position::from_fen(pos)?;
 
     let mut decisions = Vec::<Decision<P::Target>>::new();
     let nn_state = TrainParts::new(model, device);
@@ -1087,6 +1073,7 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a TrainParts<B> {
     type Selector = TrainSelector<X>;
     type Backprop = TrainBackprop;
     type Evaluator = NNEvaluator<'a, 'a, B, X>;
+    type Noiser = DirichletNoiser;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -1098,6 +1085,11 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a TrainParts<B> {
 
     fn backprop(&self) -> Self::Backprop {
         Default::default()
+    }
+
+    fn noiser(&self) -> Self::Noiser {
+        let rng = SmallRng::from_os_rng();
+        DirichletNoiser::new(0.3, 0.25, rng)
     }
 }
 
@@ -1170,6 +1162,11 @@ impl<const X: usize> Selector for TrainSelector<X> {
 
         self.selection.root = Some(root.clone());
         root
+    }
+
+    fn budget(&self, remaining_budget: usize) -> usize {
+        // todo: maybe make this relative to the branch's puct score.
+        max(1, (remaining_budget as f32 * 0.3) as usize)
     }
 }
 

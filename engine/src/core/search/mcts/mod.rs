@@ -1,28 +1,25 @@
 use burn::prelude::Backend;
-use rand::SeedableRng;
-use rand::rngs::SmallRng;
+use rand::{SeedableRng, rngs::SmallRng};
 
-use crate::core::Limit;
-use crate::core::position::Position;
-use crate::core::search::mcts::back::Backpropagater;
-use crate::core::search::mcts::back::DefaultBackuper;
-use crate::core::search::mcts::eval::Evaluator;
-use crate::core::search::mcts::eval::nn::NNEvaluator;
-use crate::core::search::mcts::eval::r#static::StaticEvaluator;
-use crate::core::search::mcts::limiter::DefaultLimiter;
-use crate::core::search::mcts::nn::Model;
-use crate::core::search::mcts::nn::ModelConfig;
-use crate::core::search::mcts::node::Tree;
-use crate::core::search::mcts::noise::DirichletNoiser;
-use crate::core::search::mcts::noise::Noiser;
-use crate::core::search::mcts::noise::NullNoiser;
-use crate::core::search::mcts::search::TreeSearcher;
-use crate::core::search::mcts::select::PuctSelector;
-use crate::core::search::mcts::select::Selector;
-use crate::core::search::mcts::select::UcbSelector;
-use crate::core::search::mcts::strategy::MctsStrategy;
-use crate::misc::DebugMode;
-use crate::uci::sync::CancellationToken;
+use crate::{
+    core::{
+        Limit,
+        position::Position,
+        search::mcts::{
+            back::{Backpropagater, DefaultBackuper},
+            eval::{Evaluator, nn::NNEvaluator, none::NoneEvaluator, r#static::StaticEvaluator},
+            limiter::DefaultLimiter,
+            nn::{Model, ModelConfig},
+            node::Tree,
+            noise::{DirichletNoiser, Noiser, NullNoiser},
+            search::TreeSearcher,
+            select::{PuctSelector, Selector, UcbSelector},
+            strategy::MctsStrategy,
+        },
+    },
+    misc::DebugMode,
+    uci::sync::CancellationToken,
+};
 
 use std::time::Instant;
 
@@ -39,9 +36,9 @@ pub mod utils;
 
 pub mod test;
 
-// todo: add ability to specify custom selector, e.g. for training try to use a selector that
-// weighs the actualy game results higher than the value estimations... maybe that will help idk
-// though
+// todo: add ability to specify custom selector, e.g. for training try to use a
+// selector that weighs the actualy game results higher than the value
+// estimations... maybe that will help idk though
 pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     pos: &Position,
     parts: P,
@@ -97,20 +94,23 @@ pub trait MctsState {
 }
 
 // todo:
-// instead of storing the gametree in between moves, try using bump-allocation to allocate all the
-// nodes. Maybe the speed up is better than storing the compute? (We can't do both, since with bump
-// allocation we either would have to move the subtree to a new `Bump`, or we would just not be
-// able to deallocate the unused nodes. If our search is *that* slow that we aren't even using that
-// much memory for the Tree, maybe just risc having a huge memory leak for each `ucinewgame` then
-// :3 idk) or copy all the used nodes to a new bump arena... you'd have to do that node by node
-// which could be really slow. <todo:benchmark />
+// instead of storing the gametree in between moves, try using bump-allocation
+// to allocate all the nodes. Maybe the speed up is better than storing the
+// compute? (We can't do both, since with bump allocation we either would have
+// to move the subtree to a new `Bump`, or we would just not be
+// able to deallocate the unused nodes. If our search is *that* slow that we
+// aren't even using that much memory for the Tree, maybe just risc having a
+// huge memory leak for each `ucinewgame` then :3 idk) or copy all the used
+// nodes to a new bump arena... you'd have to do that node by node which could
+// be really slow. <todo:benchmark />
 //
 /// # The search state.
 ///
-/// Either we have ownership of a search-tree, or we have the join handle of the thread that
-/// will give us back the ownership of the search-tree.
+/// Either we have ownership of a search-tree, or we have the join handle of the
+/// thread that will give us back the ownership of the search-tree.
 ///
-/// (An option because maybe we just started something else like perft or some sht)
+/// (An option because maybe we just started something else like perft or some
+/// sht)
 #[derive(Default, Debug)]
 pub struct SearchState {
     /// The game tree.
@@ -233,10 +233,10 @@ pub mod config {
     #[cfg(feature = "mcts-pure")]
     pub const MPV: usize = 1;
 
-    #[cfg(feature = "nn-backend-cuda")]
+    #[cfg(all(feature = "nn-backend-cuda", not(feature = "mcts-pure")))]
     pub const MPV: usize = 32;
 
-    #[cfg(feature = "nn-backend-ndarray")]
+    #[cfg(all(feature = "nn-backend-ndarray", not(feature = "mcts-pure")))]
     pub const MPV: usize = 4;
 
     #[cfg(feature = "nn-backend-cuda")]
