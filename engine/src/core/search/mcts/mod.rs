@@ -36,9 +36,6 @@ pub mod utils;
 
 pub mod test;
 
-// todo: add ability to specify custom selector, e.g. for training try to use a
-// selector that weighs the actualy game results higher than the value
-// estimations... maybe that will help idk though
 pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     pos: &Position,
     parts: P,

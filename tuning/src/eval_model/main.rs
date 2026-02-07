@@ -1099,6 +1099,8 @@ impl<B: Backend> TrainParts<B> {
     }
 }
 
+// todo: for training try to use a selector that weighs the actualy game results
+// higher than the value estimations... maybe that will help idk though
 pub struct TrainSelector<const X: usize> {
     c: f32,
     policy_weight: f32,
