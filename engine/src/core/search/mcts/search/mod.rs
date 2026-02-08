@@ -1,50 +1,103 @@
-use crate::core::Position;
-use crate::core::search::mcts::back::Backpropagater;
-use crate::core::search::mcts::back::DefaultBackuper;
-use crate::core::search::mcts::eval::Evaluation;
-use crate::core::search::mcts::eval::Evaluator;
-use crate::core::search::mcts::limiter;
-use crate::core::search::mcts::limiter::DefaultLimiter;
-use crate::core::search::mcts::limiter::Limiter;
-use crate::core::search::mcts::node::Node;
-use crate::core::search::mcts::node::NodeState;
-use crate::core::search::mcts::node::Tree;
-use crate::core::search::mcts::noise::DirichletNoiser;
-use crate::core::search::mcts::noise::Noiser;
-use crate::core::search::mcts::select::PuctSelector;
-use crate::core::search::mcts::select::SelectionItem;
-use crate::core::search::mcts::select::SelectionNode;
-use crate::core::search::mcts::select::Selector;
-use std::cell::RefCell;
-use std::rc::Rc;
+use crate::core::{
+    Position,
+    search::mcts::{
+        back::{Backpropagater, DefaultBackuper},
+        eval::{Evaluation, Evaluator},
+        limiter::{self, DefaultLimiter, Limiter},
+        node::{Node, NodeState, Tree},
+        noise::{DirichletNoiser, Noiser},
+        select::{PuctSelector, Selector},
+        utils::DoubleLinkedNode,
+    },
+    turn::Turn,
+};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::core::depth::Depth;
 
 #[cfg(test)]
 pub mod test;
 
+pub struct SelectionItem<T> {
+    /// The selected node.
+    pub leaf: Rc<RefCell<Node>>,
+
+    /// Depth from root
+    pub depth: Depth,
+
+    /// Current player's turn
+    pub turn: Turn,
+
+    /// Context specific data.
+    pub trace_data: T,
+}
+
+pub type SelectionNode<T> = DoubleLinkedNode<SelectionItem<T>>;
+pub type SelectionNodeRef<T> = Rc<RefCell<SelectionNode<T>>>;
+
+pub struct Selection<const X: usize, T> {
+    pub root: Option<SelectionNodeRef<T>>,
+    pub leafs: [Option<SelectionNodeRef<T>>; X],
+}
+
+impl<const X: usize, T> Default for Selection<X, T> {
+    fn default() -> Self {
+        const fn empty_leaf<T>() -> Option<SelectionNodeRef<T>> {
+            None
+        }
+        Self {
+            root: None,
+            leafs: [const { empty_leaf() }; X],
+        }
+    }
+}
+
+impl<const X: usize, T> Selection<X, T> {
+    pub fn init_root(
+        &mut self,
+        root_node: Rc<RefCell<Node>>,
+        turn: Turn,
+        trace_data: T,
+    ) -> SelectionNodeRef<T> {
+        let root = Rc::new(RefCell::new(SelectionNode::new_root(SelectionItem {
+            leaf: root_node,
+            depth: Depth::MIN,
+            turn,
+            trace_data,
+        })));
+
+        self.root = Some(root.clone());
+        root
+    }
+
+    pub fn set(&mut self, index: usize, item: SelectionNodeRef<T>) {
+        self.leafs[index] = Some(item);
+    }
+}
+
 /// # Tree searcher
 ///
 /// This statemachine should hold all the info that is required to search.
 ///
-/// This is the implementation for the nn-backed eval model searcher. (e.g. lc0, a0)
+/// This is the implementation for the nn-backed eval model searcher. (e.g. lc0,
+/// a0)
 ///
 /// ## Multi pv.
 ///
-/// Use multi pv lines with batched evaluation, if we have access to GPU and can parallelize. If we
-/// don't have access to hardware accell, resort to using a backend like WebGPU, or NdArray, and just do
-/// TreeSearcher<MPV=1>.
-/// )
+/// Use multi pv lines with batched evaluation, if we have access to GPU and can
+/// parallelize. If we don't have access to hardware accell, resort to using a
+/// backend like WebGPU, or NdArray, and just do TreeSearcher<MPV=1>.
 pub struct TreeSearcher<
     'a,
     const MPV: usize,
     E: Evaluator,
     L: Limiter = DefaultLimiter,
-    S: Selector = PuctSelector<MPV>,
+    S: Selector = PuctSelector,
     B: Backpropagater = DefaultBackuper,
     N: Noiser = DirichletNoiser,
 > {
-    /// The position that will be edited during the selection and backpropagatation.
+    /// The position that will be edited during the selection and
+    /// backpropagatation.
     position: Position,
 
     /// Selector to select the leafes.
@@ -67,6 +120,10 @@ pub struct TreeSearcher<
 
     /// Number of compeleted iterations.
     iterations: usize,
+
+    /// Stack of nodes that were selected during the selection phase, for each
+    /// principal line.
+    selection: Selection<MPV, E::TraceData>,
 }
 
 impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
@@ -90,6 +147,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
             backprop,
             noiser,
             iterations: 0,
+            selection: Default::default(),
         }
     }
 }
@@ -110,15 +168,14 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         // todo: convert to iterative approach -- or not if the stack frame is
         // small with this one ._.
         let node = self.tree.get_root();
-        let depth = Depth::MIN;
         let turn = self.position.get_turn();
-        let eval_node = self.evaluator.init(node.clone(), &self.position);
-        let sel_root = self.selector.init(node.clone(), turn);
-        self.process_node(MPV, 0, depth, node, eval_node, sel_root);
+        let eval_data = self.evaluator.create_data(node.clone(), &self.position);
+        let sel_root = self.selection.init_root(node.clone(), turn, eval_data);
+        self.process_node(MPV, 0, Depth::MIN, node, sel_root);
     }
 
-    /// Follows a branch and decides what to do depending on the current state of the branch's
-    /// node.
+    /// Follows a branch and decides what to do depending on the current state
+    /// of the branch's node.
     /// Returns: how much of the budget was used.
     fn process_node(
         &mut self,
@@ -126,46 +183,44 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         line_index: usize,
         depth: Depth,
         node: Rc<RefCell<Node>>,
-        eval_node: Rc<RefCell<E::Node>>,
-        sel_node: Rc<RefCell<SelectionNode>>,
+        sel_node: SelectionNodeRef<E::TraceData>,
     ) -> usize {
         let state = node.borrow().state();
         match state {
             // Only if the node is already expanded we want to follow the branch.
             NodeState::Expanded => {
                 // If the node is expanded, pick branches and follow the lines.
-                self.pick_branches(budget, line_index, depth, node, eval_node, sel_node)
+                self.pick_branches(budget, line_index, depth, node, sel_node)
             }
             NodeState::Leaf => {
                 // If the node is a leaf, expand the node's branches for future mcts iterations.
                 // And select it for mcts evaluation.
                 //
-                // this is fine to do now, since we split above and in the fn `select_branches` we
-                // immidieatly increment the branch_index and thus during a single selection phase, this
-                // match block is only reached once per node in a mcts iteration. Altough we should probably
-                // unit test this somehow.
+                // this is fine to do now, since we split above and in the fn `select_branches`
+                // we immidieatly increment the branch_index and thus during a
+                // single selection phase, this match block is only reached once
+                // per node in a mcts iteration. Altough we should probably unit
+                // test this somehow.
                 node.borrow_mut().expand(&self.position);
 
                 // select the node.
-                self.select_node(line_index, node, sel_node, eval_node, depth);
-                1
+                self.select_node(line_index, node, sel_node, depth)
             }
             NodeState::Terminal => {
                 // select the node.
-                self.select_node(line_index, node, sel_node, eval_node, depth);
-                1
+                self.select_node(line_index, node, sel_node, depth)
             }
         }
     }
 
+    /// Returns: how much of the budget was used.
     fn select_node(
         &mut self,
         line_index: usize,
         node: Rc<RefCell<Node>>,
-        slct: Rc<RefCell<SelectionNode>>,
-        eval: Rc<RefCell<E::Node>>,
+        sel_node: SelectionNodeRef<E::TraceData>,
         depth: Depth,
-    ) {
+    ) -> usize {
         let pos = &self.position;
 
         // Check if the board has a terminal evaluation
@@ -180,10 +235,12 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         }
         // Else note down that we need to guess this node's evaluation.
         else {
-            self.evaluator.batch_eval(line_index, eval);
+            self.evaluator.batch_eval(line_index, eval_node);
         }
 
-        self.selector.set(line_index, slct);
+        self.selection.set(line_index, sel_node);
+
+        1
     }
 
     /// Returns: how much of the budget was used.
@@ -193,8 +250,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         line_index: usize,
         depth: Depth,
         parent_node: Rc<RefCell<Node>>,
-        mut eval_node_parent: Rc<RefCell<E::Node>>,
-        mut sel_node_parent: Rc<RefCell<SelectionNode>>,
+        mut sel_node_parent: SelectionNodeRef<E::TraceData>,
     ) -> usize {
         // Split the budget up between this and the subsequent best nodes.
         let root_visits = parent_node.borrow().visits();
@@ -222,23 +278,11 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
                         depth,
                         leaf: node.clone(),
                         turn: self.position.get_turn(),
+                        trace_data: self.evaluator.create_data(node.clone(), &self.position),
                     },
                 );
 
-                let eval_info = self.evaluator.register_info(
-                    &mut eval_node_parent,
-                    node.clone(),
-                    &self.position,
-                );
-
-                let used = self.process_node(
-                    current_budget,
-                    line_index,
-                    depth,
-                    node,
-                    eval_info,
-                    selc_info,
-                );
+                let used = self.process_node(current_budget, line_index, depth, node, selc_info);
 
                 // undo the move again
                 self.position.unmake_move(branch.mov());
@@ -250,7 +294,8 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
                 // line_index by that amount.
                 line_index += used;
                 used_budget += used;
-            } else {
+            }
+            else {
                 // in this case there are no more branches to distribute the budget to.
                 // todo:
                 // this currently wastes some remaining budget, fix that.

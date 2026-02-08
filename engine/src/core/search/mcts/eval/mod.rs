@@ -1,53 +1,44 @@
 use super::utils::*;
-use crate::core::Position;
-use crate::core::color::Color;
-use crate::core::search::mcts::nn::BOARD_INPUT_HISTORY;
-use crate::core::search::mcts::nn::BoardInputFloats;
-use crate::core::search::mcts::nn::Model;
-use crate::core::search::mcts::nn::POLICY_OUTPUTS;
-use crate::core::search::mcts::nn::StateInputFloats;
-use crate::core::search::mcts::nn::VALUE_OUTPUTS;
-use crate::core::search::mcts::nn::board_history_input;
-use crate::core::search::mcts::nn::board_input;
-use crate::core::search::mcts::nn::state_input;
-use crate::core::search::mcts::node::Node;
-use crate::core::search::mcts::node::NodeState;
-use crate::core::turn::Turn;
-use burn::Tensor;
-use burn::tensor::Shape;
-use burn::tensor::backend::Backend;
+use crate::core::{
+    Position,
+    color::Color,
+    search::mcts::{
+        nn::{
+            BOARD_INPUT_HISTORY, BoardInputFloats, Model, POLICY_OUTPUTS, StateInputFloats,
+            VALUE_OUTPUTS, board_history_input, board_input, state_input,
+        },
+        node::{Node, NodeState},
+    },
+    turn::Turn,
+};
+use burn::{
+    Tensor,
+    tensor::{Shape, backend::Backend},
+};
 use core::fmt;
 use itertools::Itertools;
-use std::assert_matches::assert_matches;
-use std::cell::RefCell;
-use std::ops::ControlFlow;
-use std::rc::Rc;
+use std::{assert_matches::assert_matches, cell::RefCell, ops::ControlFlow, rc::Rc};
 
 #[cfg(test)]
 pub mod test;
 
-pub mod r#static;
 pub mod nn;
 pub mod none;
+pub mod r#static;
 
 pub trait Evaluator {
-    type Node: IDoubleLinkedNode;
+    type TraceData;
 
-    // Prepare an eval_info_node with the required info for this evaluator under `parent` and
-    // return the newly create eval info.
-    fn register_info(
-        &mut self,
-        parent: &mut Rc<RefCell<Self::Node>>,
-        node: Rc<RefCell<Node>>,
-        pos: &Position,
-    ) -> Rc<RefCell<Self::Node>>;
+    // Prepare an eval_info_node with the required info for this evaluator under
+    // `parent` and return the newly create eval info.
+    fn create_data(&self, node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData;
 
     /// Evluate all the nodes in the batch.
     /// (Which is, all the nodes that are eval `None`)
     fn eval_guesses(&mut self);
 
-    /// Evaluate a node's terminal state. If the node is terminal, return the evaluation, else
-    /// return None.
+    /// Evaluate a node's terminal state. If the node is terminal, return the
+    /// evaluation, else return None.
     fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation> {
         assert_matches!(
             node.state(),
@@ -60,47 +51,10 @@ pub trait Evaluator {
         game_result.map(Evaluation::Terminal)
     }
 
-    /// Set the evaluation at a specific index.
-    fn set_eval(&mut self, index: usize, eval: Evaluation);
-
     /// Mark the node at `index` to be evaluated when doing `eval_guesses`.
-    fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<Self::Node>>);
+    fn batch_eval(&mut self, index: usize, eval_node: Self::NodeRef);
 
-    /// Get the evaluation at a specific index.
-    fn get_eval(&self, index: usize) -> Option<&Evaluation>;
-
-    /// Initializes and returns a reference to the root eval info node.
-    fn init(&mut self, node: Rc<RefCell<Node>>, pos: &Position) -> Rc<RefCell<Self::Node>>;
-
-    fn iter(&self) -> impl Iterator<Item = &EvalState<Self::Node>>;
-}
-
-#[derive(Default, Clone, Debug)]
-pub enum EvalState<N> {
-    OnBatch(Rc<RefCell<N>>),
-    Evaluated(Evaluation),
-    #[default]
-    None,
-}
-
-impl<N> EvalState<N> {
-    pub const fn new_none() -> Self {
-        Self::None
-    }
-}
-
-pub struct EvaluationInfos<const X: usize, N> {
-    root: Option<Rc<RefCell<N>>>,
-    evals: [EvalState<N>; X],
-}
-
-impl<const X: usize, N> Default for EvaluationInfos<X, N> {
-    fn default() -> Self {
-        Self {
-            root: Default::default(),
-            evals: [const { EvalState::new_none() }; X],
-        }
-    }
+    // fn iter(&self) -> impl Iterator<Item = &EvalInfo<Self::NodeRef>>;
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -150,7 +104,8 @@ impl GameResult {
             Self::Win { relative_to } => {
                 if relative_to.v() == turn.v() {
                     Self::win_value()
-                } else {
+                }
+                else {
                     Self::loss_value()
                 }
             }
@@ -158,8 +113,8 @@ impl GameResult {
         }
     }
 
-    // these are functions, because maybe later we want to have different values for e.g. a
-    // win that is close to the root node or further.
+    // these are functions, because maybe later we want to have different values for
+    // e.g. a win that is close to the root node or further.
 
     pub const fn draw_value() -> f32 {
         0.5
@@ -186,7 +141,8 @@ impl Evaluation {
                 let quality = (guess.quality + 1.0) / 2.0;
                 if guess.relative_to == turn {
                     quality
-                } else {
+                }
+                else {
                     1.0 - quality
                 }
             }
@@ -253,7 +209,8 @@ impl RawPolicy {
             if sum == 0.0 {
                 // Fallback to uniform distribution
                 self.len() as f32
-            } else {
+            }
+            else {
                 sum
             }
         };
@@ -305,7 +262,8 @@ impl Policy {
             if sum == 0.0 {
                 // Fallback to uniform distribution
                 self.len() as f32
-            } else {
+            }
+            else {
                 sum
             }
         };

@@ -1,5 +1,5 @@
-use std::iter;
 use super::*;
+use std::iter;
 
 #[derive(Default)]
 pub struct NoneEvaluator<const X: usize>;
@@ -12,18 +12,19 @@ impl<const X: usize> NoneEvaluator<X> {
 
 impl<const X: usize> Evaluator for NoneEvaluator<X> {
     type Node = DoubleLinkedNode<()>;
+    type NodeRef = DoubleLinkedNode<()>;
 
-    fn init(&mut self, _node: Rc<RefCell<Node>>, _pos: &Position) -> Rc<RefCell<Self::Node>> {
-        Rc::new(RefCell::new(Default::default()))
+    fn init(&mut self, _node: Rc<RefCell<Node>>, _pos: &Position) -> Self::NodeRef {
+        Default::default()
     }
 
-    fn register_info(
+    fn create_data(
         &mut self,
-        _parent: &mut Rc<RefCell<Self::Node>>,
+        _parent: &mut Self::NodeRef,
         _node: Rc<RefCell<Node>>,
         _pos: &Position,
-    ) -> Rc<RefCell<Self::Node>> {
-        Rc::new(RefCell::new(Default::default()))
+    ) -> Self::NodeRef {
+        Default::default()
     }
 
     fn get_eval(&self, _index: usize) -> Option<&Evaluation> {
@@ -32,11 +33,11 @@ impl<const X: usize> Evaluator for NoneEvaluator<X> {
 
     fn set_eval(&mut self, _index: usize, _eval: Evaluation) {}
 
-    fn batch_eval(&mut self, _index: usize, _eval_node: Rc<RefCell<Self::Node>>) {}
+    fn batch_eval(&mut self, _index: usize, _eval_node: Self::NodeRef) {}
 
     fn eval_guesses(&mut self) {}
 
-    fn iter(&self) -> impl Iterator<Item = &EvalState<Self::Node>> {
+    fn iter(&self) -> impl Iterator<Item = &EvalInfo<Self::Node>> {
         iter::empty()
     }
 }

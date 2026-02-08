@@ -72,14 +72,14 @@ pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
 #[derive(Default)]
 pub struct StaticEvaluator<const X: usize> {
     /// Eval infos
-    eval_infos: EvaluationInfos<X, EvalInfoNode>,
+    eval_infos: EvaluationInfos<X, Rc<RefCell<EvalInfoNode>>>,
 }
 
 impl<const X: usize> StaticEvaluator<X> {
     pub fn new() -> Self {
         Self {
             eval_infos: EvaluationInfos {
-                evals: [const { EvalState::None }; X],
+                evals: [const { EvalInfo::None }; X],
                 root: None,
             },
         }
@@ -87,9 +87,10 @@ impl<const X: usize> StaticEvaluator<X> {
 
     fn iter_batch(&self) -> impl Iterator<Item = Rc<RefCell<EvalInfoNode>>> {
         self.eval_infos.evals.iter().filter_map(|x| {
-            if let EvalState::OnBatch(eval_info) = x {
+            if let EvalInfo::OnBatch(eval_info) = x {
                 Some(eval_info.clone())
-            } else {
+            }
+            else {
                 None
             }
         })
@@ -98,6 +99,7 @@ impl<const X: usize> StaticEvaluator<X> {
 
 impl<const X: usize> Evaluator for StaticEvaluator<X> {
     type Node = EvalInfoNode;
+    type NodeRef = Rc<RefCell<Self::Node>>;
 
     fn init(&mut self, node: Rc<RefCell<Node>>, pos: &Position) -> Rc<RefCell<Self::Node>> {
         let data = EvalInfo::new(node, pos);
@@ -106,7 +108,7 @@ impl<const X: usize> Evaluator for StaticEvaluator<X> {
         root
     }
 
-    fn register_info(
+    fn create_data(
         &mut self,
         parent: &mut Rc<RefCell<Self::Node>>,
         node: Rc<RefCell<Node>>,
@@ -118,24 +120,26 @@ impl<const X: usize> Evaluator for StaticEvaluator<X> {
 
     fn get_eval(&self, index: usize) -> Option<&Evaluation> {
         if let Some(x) = self.eval_infos.evals.get(index)
-            && let EvalState::Evaluated(eval) = x
+            && let EvalInfo::Evaluated(eval) = x
         {
             Some(eval)
-        } else {
+        }
+        else {
             None
         }
     }
 
     fn set_eval(&mut self, index: usize, eval: Evaluation) {
         if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            *x = EvalState::Evaluated(eval);
+            *x = EvalInfo::Evaluated(eval);
         }
     }
 
     fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<Self::Node>>) {
         if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            *x = EvalState::OnBatch(eval_node);
-        } else {
+            *x = EvalInfo::OnBatch(eval_node);
+        }
+        else {
             panic!("Out of range");
         }
     }
@@ -146,16 +150,18 @@ impl<const X: usize> Evaluator for StaticEvaluator<X> {
             return;
         }
 
-        // Enumerate all eval_infos, which have not yet been assigned and assign them a their guess.
+        // Enumerate all eval_infos, which have not yet been assigned and assign them a
+        // their guess.
         for (index, eval_info) in self
             .eval_infos
             .evals
             .iter()
             .enumerate()
             .filter_map(|(i, x)| {
-                if let EvalState::OnBatch(eval_info) = x {
+                if let EvalInfo::OnBatch(eval_info) = x {
                     Some((i, eval_info.clone()))
-                } else {
+                }
+                else {
                     None
                 }
             })
@@ -187,11 +193,11 @@ impl<const X: usize> Evaluator for StaticEvaluator<X> {
                 policy: eval_info.p_input.p.to_owned(),
             }));
 
-            self.eval_infos.evals[index] = EvalState::Evaluated(eval);
+            self.eval_infos.evals[index] = EvalInfo::Evaluated(eval);
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = &EvalState<Self::Node>> {
+    fn iter(&self) -> impl Iterator<Item = &EvalInfo<Self::NodeRef>> {
         self.eval_infos.evals.iter()
     }
 }

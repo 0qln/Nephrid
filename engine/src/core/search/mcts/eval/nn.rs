@@ -15,8 +15,22 @@ impl InputFloats {
     }
 }
 
+#[derive(Default, Debug)]
+pub enum EvalInfo {
+    OnBatch(BatchInfo),
+    Evaluated(Evaluation),
+    #[default]
+    None,
+}
+
+impl EvalInfo {
+    pub const fn new_none() -> Self {
+        Self::None
+    }
+}
+
 #[derive(PartialEq, Debug)]
-pub struct EvalInfo {
+pub struct BatchInfo {
     /// Input floats for the eval model.
     inputs: InputFloats,
 
@@ -27,7 +41,7 @@ pub struct EvalInfo {
     turn: Turn,
 }
 
-impl EvalInfo {
+impl BatchInfo {
     pub fn new(node: Rc<RefCell<Node>>, pos: &Position) -> Self {
         Self {
             inputs: InputFloats::new(pos),
@@ -37,13 +51,8 @@ impl EvalInfo {
     }
 }
 
-pub type EvalInfoNode = DoubleLinkedNode<Option<EvalInfo>>;
-
 /// X: batch size
 pub struct NNEvaluator<'a, 'b, B: Backend, const X: usize> {
-    /// Eval infos
-    eval_infos: EvaluationInfos<X, EvalInfoNode>,
-
     /// NN Model
     model: &'a Model<B>,
 
@@ -53,14 +62,7 @@ pub struct NNEvaluator<'a, 'b, B: Backend, const X: usize> {
 
 impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
     pub fn new(model: &'a Model<B>, device: &'b B::Device) -> Self {
-        Self {
-            model,
-            device,
-            eval_infos: EvaluationInfos {
-                evals: [const { EvalState::None }; X],
-                root: None,
-            },
-        }
+        Self { model, device }
     }
 
     fn device(&self) -> &B::Device {
@@ -128,9 +130,10 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
 
     fn iter_batch(&self) -> impl Iterator<Item = Rc<RefCell<EvalInfoNode>>> {
         self.eval_infos.evals.iter().filter_map(|x| {
-            if let EvalState::OnBatch(eval_info) = x {
+            if let EvalInfo::OnBatch(eval_info) = x {
                 Some(eval_info.clone())
-            } else {
+            }
+            else {
                 None
             }
         })
@@ -138,45 +141,35 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
 }
 
 impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X> {
-    type Node = EvalInfoNode;
+    type TraceData = EvalInfo;
 
-    fn init(&mut self, node: Rc<RefCell<Node>>, pos: &Position) -> Rc<RefCell<Self::Node>> {
-        let data = EvalInfo::new(node, pos);
-        let root = Rc::new(RefCell::new(EvalInfoNode::new_root(Some(data))));
-        self.eval_infos.root = Some(root.clone());
-        root
-    }
-
-    fn register_info(
-        &mut self,
-        parent: &mut Rc<RefCell<Self::Node>>,
-        node: Rc<RefCell<Node>>,
-        pos: &Position,
-    ) -> Rc<RefCell<Self::Node>> {
-        let data = EvalInfo::new(node, pos);
-        Self::Node::append(parent, Some(data))
+    fn create_data(&mut self, node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData {
+        let data = BatchInfo::new(node, pos);
+        EvalInfo::OnBatch(data)
     }
 
     fn get_eval(&self, index: usize) -> Option<&Evaluation> {
         if let Some(x) = self.eval_infos.evals.get(index)
-            && let EvalState::Evaluated(eval) = x
+            && let EvalInfo::Evaluated(eval) = x
         {
             Some(eval)
-        } else {
+        }
+        else {
             None
         }
     }
 
     fn set_eval(&mut self, index: usize, eval: Evaluation) {
         if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            *x = EvalState::Evaluated(eval);
+            *x = EvalInfo::Evaluated(eval);
         }
     }
 
     fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<Self::Node>>) {
         if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            *x = EvalState::OnBatch(eval_node);
-        } else {
+            *x = EvalInfo::OnBatch(eval_node);
+        }
+        else {
             panic!("Out of range");
         }
     }
@@ -211,16 +204,18 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
             .chunks(POLICY_OUTPUTS)
             .map(|raw_policy| RawPolicy(raw_policy.try_into().unwrap()));
 
-        // Enumerate all eval_infos, which have not yet been assigned and assign them a their guess.
+        // Enumerate all eval_infos, which have not yet been assigned and assign them a
+        // their guess.
         for (index, eval_info, value, raw_policy) in self
             .eval_infos
             .evals
             .iter()
             .enumerate()
             .filter_map(|(i, x)| {
-                if let EvalState::OnBatch(eval_info) = x {
+                if let EvalInfo::OnBatch(eval_info) = x {
                     Some((i, eval_info.clone()))
-                } else {
+                }
+                else {
                     None
                 }
             })
@@ -247,11 +242,11 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
                 policy: raw_policy,
             }));
 
-            self.eval_infos.evals[index] = EvalState::Evaluated(eval);
+            self.eval_infos.evals[index] = EvalInfo::Evaluated(eval);
         }
     }
 
-    fn iter(&self) -> impl Iterator<Item = &EvalState<Self::Node>> {
+    fn iter(&self) -> impl Iterator<Item = &EvalInfo<Rc<RefCell<Self::Node>>>> {
         self.eval_infos.evals.iter()
     }
 }

@@ -50,7 +50,7 @@ impl<const X: usize> Evaluator for DummyEvaluator<X> {
     type Node = nn::EvalInfoNode;
 
     // Prepare an eval_info_node with the required info for this evaluator.
-    fn register_info(
+    fn create_data(
         &mut self,
         parent: &mut Rc<RefCell<Self::Node>>,
         _node: Rc<RefCell<Node>>,
@@ -78,7 +78,8 @@ impl<const X: usize> Evaluator for DummyEvaluator<X> {
     fn get_eval(&self, index: usize) -> Option<&Evaluation> {
         if let Some(x) = self.1.get(index) {
             x.as_ref()
-        } else {
+        }
+        else {
             None
         }
     }
@@ -87,7 +88,7 @@ impl<const X: usize> Evaluator for DummyEvaluator<X> {
         Rc::new(RefCell::new(EvalInfoNode::new_root(None)))
     }
 
-    fn iter(&self) -> impl Iterator<Item = &super::eval::EvalState<Self::Node>> {
+    fn iter(&self) -> impl Iterator<Item = &super::eval::EvalInfo<Self::Node>> {
         [].iter()
     }
 }

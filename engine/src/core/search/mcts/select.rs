@@ -1,33 +1,14 @@
-use std::{cell::RefCell, cmp::max, ops, rc::Rc};
+use std::{cmp::max, ops};
 
-use crate::core::{
-    depth::Depth,
-    search::mcts::{
-        node::{Branch, Node},
-        utils::DoubleLinkedNode,
-    },
-    turn::Turn,
-};
-
-pub struct SelectionItem {
-    /// The selected node.
-    pub leaf: Rc<RefCell<Node>>,
-
-    /// Depth from root
-    pub depth: Depth,
-
-    /// Current player's turn
-    pub turn: Turn,
-}
-
-pub type SelectionNode = DoubleLinkedNode<SelectionItem>;
+use crate::core::search::mcts::node::Branch;
 
 pub trait Selector {
     type Score: Ord + ops::Neg<Output = Self::Score>;
 
     // note: we take the policy as an argument, because if we later convert this
-    // tree structure to a graph, we have to consider different policies from different parents.
-    // same reason that we have different struct for node and branch.
+    // tree structure to a graph, we have to consider different policies from
+    // different parents. same reason that we have different struct for node and
+    // branch.
 
     /// # Selector::score
     ///
@@ -39,56 +20,27 @@ pub trait Selector {
     /// cap_n_i: The number of times that the parent node has been visited.
     fn score(&self, branch: &Branch, cap_n_i: u32) -> Self::Score;
 
-    /// Initializes and returns a reference to the root selection node.
-    fn init(&mut self, root_node: Rc<RefCell<Node>>, turn: Turn) -> Rc<RefCell<SelectionNode>>;
-
-    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>);
-
-    fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>>;
-
     fn budget(&self, remaining_budget: usize) -> usize;
 }
 
-// todo: be careful when we dereference the selection, there might be collisions in the
-// tree if you switch up the way that the nodes are selected.
-pub struct Selection<const X: usize> {
-    pub root: Option<Rc<RefCell<SelectionNode>>>,
-    pub leafs: [Option<Rc<RefCell<SelectionNode>>>; X],
-}
-
-impl<const X: usize> Default for Selection<X> {
-    fn default() -> Self {
-        Self {
-            root: None,
-            leafs: [const { None }; X],
-        }
-    }
-}
-
-pub struct PuctSelector<const X: usize> {
+pub struct PuctSelector {
     // todo: fine tune c. or make a uci option out of it idk
     c: f32,
-
-    /// Stack of nodes that were selected during the selection phase, for each principal line.
-    selection: Selection<X>,
 }
 
-impl<const X: usize> PuctSelector<X> {
+impl PuctSelector {
     pub fn new(c: f32) -> Self {
         Self { c, ..Default::default() }
     }
 }
 
-impl<const X: usize> Default for PuctSelector<X> {
+impl Default for PuctSelector {
     fn default() -> Self {
-        Self {
-            c: f32::sqrt(2.0),
-            selection: Default::default(),
-        }
+        Self { c: f32::sqrt(2.0) }
     }
 }
 
-impl<const X: usize> Selector for PuctSelector<X> {
+impl Selector for PuctSelector {
     type Score = Score;
 
     fn score(&self, branch: &Branch, cap_n_i: u32) -> Score {
@@ -106,52 +58,29 @@ impl<const X: usize> Selector for PuctSelector<X> {
         Score(exploitation + exploration)
     }
 
-    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) {
-        self.selection.leafs[index] = Some(item);
-    }
-
-    fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>> {
-        self.selection.leafs.iter().cloned()
-    }
-
-    fn init(&mut self, root_node: Rc<RefCell<Node>>, turn: Turn) -> Rc<RefCell<SelectionNode>> {
-        let root = Rc::new(RefCell::new(SelectionNode::new_root(SelectionItem {
-            leaf: root_node,
-            depth: Depth::MIN,
-            turn,
-        })));
-
-        self.selection.root = Some(root.clone());
-        root
-    }
-
     fn budget(&self, remaining_budget: usize) -> usize {
         // todo: maybe make this relative to the branch's puct score.
         max(1, (remaining_budget as f32 * 0.3) as usize)
     }
 }
 
-pub struct UcbSelector<const X: usize> {
+pub struct UcbSelector {
     c: f32,
-    selection: Selection<X>,
 }
 
-impl<const X: usize> UcbSelector<X> {
+impl UcbSelector {
     pub fn new(c: f32) -> Self {
-        Self { c, ..Default::default() }
+        Self { c }
     }
 }
 
-impl<const X: usize> Default for UcbSelector<X> {
+impl Default for UcbSelector {
     fn default() -> Self {
-        Self {
-            c: f32::sqrt(2.0),
-            selection: Default::default(),
-        }
+        Self { c: f32::sqrt(2.0) }
     }
 }
 
-impl<const X: usize> Selector for UcbSelector<X> {
+impl Selector for UcbSelector {
     type Score = Score;
 
     fn score(&self, branch: &Branch, cap_n_i: u32) -> Score {
@@ -165,25 +94,6 @@ impl<const X: usize> Selector for UcbSelector<X> {
                 Score(exploitation + exploration)
             }
         }
-    }
-
-    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) {
-        self.selection.leafs[index] = Some(item);
-    }
-
-    fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>> {
-        self.selection.leafs.iter().cloned()
-    }
-
-    fn init(&mut self, root_node: Rc<RefCell<Node>>, turn: Turn) -> Rc<RefCell<SelectionNode>> {
-        let root = Rc::new(RefCell::new(SelectionNode::new_root(SelectionItem {
-            leaf: root_node,
-            depth: Depth::MIN,
-            turn,
-        })));
-
-        self.selection.root = Some(root.clone());
-        root
     }
 
     fn budget(&self, remaining_budget: usize) -> usize {
