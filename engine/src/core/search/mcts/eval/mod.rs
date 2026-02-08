@@ -33,7 +33,7 @@ pub trait Evaluator {
     // `parent` and return the newly create eval info.
     fn create_data(&self, node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData;
 
-    /// Evluate all the nodes in the batch.
+    /// Evaluate all the nodes in the batch.
     /// (Which is, all the nodes that are eval `None`)
     fn eval_guesses(&mut self);
 
@@ -53,8 +53,6 @@ pub trait Evaluator {
 
     /// Mark the node at `index` to be evaluated when doing `eval_guesses`.
     fn batch_eval(&mut self, index: usize, eval_node: Self::NodeRef);
-
-    // fn iter(&self) -> impl Iterator<Item = &EvalInfo<Self::NodeRef>>;
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

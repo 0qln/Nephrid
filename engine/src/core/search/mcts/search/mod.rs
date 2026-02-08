@@ -11,16 +11,15 @@ use crate::core::{
     },
     turn::Turn,
 };
-use std::{cell::RefCell, rc::Rc};
-
 use crate::core::depth::Depth;
+use std::{cell::RefCell, rc::Rc};
 
 #[cfg(test)]
 pub mod test;
 
 pub struct SelectionItem<T> {
     /// The selected node.
-    pub leaf: Rc<RefCell<Node>>,
+    pub node: Rc<RefCell<Node>>,
 
     /// Depth from root
     pub depth: Depth,
@@ -60,7 +59,7 @@ impl<const X: usize, T> Selection<X, T> {
         trace_data: T,
     ) -> SelectionNodeRef<T> {
         let root = Rc::new(RefCell::new(SelectionNode::new_root(SelectionItem {
-            leaf: root_node,
+            node: root_node,
             depth: Depth::MIN,
             turn,
             trace_data,
@@ -78,9 +77,6 @@ impl<const X: usize, T> Selection<X, T> {
 /// # Tree searcher
 ///
 /// This statemachine should hold all the info that is required to search.
-///
-/// This is the implementation for the nn-backed eval model searcher. (e.g. lc0,
-/// a0)
 ///
 /// ## Multi pv.
 ///
@@ -223,24 +219,35 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
     ) -> usize {
         let pos = &self.position;
 
-        // Check if the board has a terminal evaluation
+        //
+        // Check if the board has a terminal evaluation.
+        //
         let terminal_eval = E::eval_terminal(&node.borrow(), pos);
-        if let Some(terminal_eval) = terminal_eval {
+        let used_budget = if let Some(terminal_eval) = terminal_eval {
             node.borrow_mut().set_state(NodeState::Terminal);
             self.evaluator.set_eval(line_index, terminal_eval);
+            1
         }
+        //
         // Check if we are even interested in searching this line any further.
+        //
         else if self.limiter.should_stop(limiter::Params { pos, depth }) {
+            // todo: maybe it's better to return 0 (skip this node) instead of using a Nope (draw
+            // evaluation).
             self.evaluator.set_eval(line_index, Evaluation::Nope);
+            1
         }
+        //
         // Else note down that we need to guess this node's evaluation.
+        //
         else {
             self.evaluator.batch_eval(line_index, eval_node);
+            1
         }
 
         self.selection.set(line_index, sel_node);
 
-        1
+        return used_budget;
     }
 
     /// Returns: how much of the budget was used.
@@ -276,7 +283,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
                     &mut sel_node_parent,
                     SelectionItem {
                         depth,
-                        leaf: node.clone(),
+                        node: node.clone(),
                         turn: self.position.get_turn(),
                         trace_data: self.evaluator.create_data(node.clone(), &self.position),
                     },

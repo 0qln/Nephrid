@@ -69,10 +69,10 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
         self.device
     }
 
-    fn build_board_batch(&self) -> Tensor<B, 4> {
+    fn build_board_batch<B: Iterator<Item = Rc<RefCell<EvalInfoNode>>>>(&self, batch: B) -> Tensor<B, 4> {
         // concatenate the board inputs along the batch dimension.
         Tensor::cat(
-            self.iter_batch()
+            batch
                 .map(|eval_node| Self::get_node_history(eval_node))
                 // concatenate the board inputs along the channel dimension.
                 .map(|history| nn::board_history_input(&history, self.device()))
@@ -81,9 +81,9 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
         )
     }
 
-    /// return the history where:
-    /// the oldest board state is the first index
-    /// the youngest board state is the last index
+    /// Returns the history in following order:
+    /// - the oldest board state is the first index
+    /// - the youngest board state is the last index
     fn get_node_history(eval_info: Rc<RefCell<EvalInfoNode>>) -> Vec<BoardInputFloats> {
         let mut vec: Vec<BoardInputFloats> = vec![];
 
@@ -108,11 +108,10 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
         vec
     }
 
-    fn build_state_batch(&self) -> Tensor<B, 2> {
+    fn build_state_batch<B: Iterator<Item = Rc<RefCell<EvalInfoNode>>>>(&self, batch: B) -> Tensor<B, 2> {
         // concatenate the state inputs along the batch dimension.
         Tensor::cat(
-            self.iter_batch()
-                .map(|eval_info| {
+            batch.map(|eval_info| {
                     let state_input = eval_info
                         .borrow()
                         .data()
@@ -126,17 +125,6 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
                 .collect_vec(),
             0,
         )
-    }
-
-    fn iter_batch(&self) -> impl Iterator<Item = Rc<RefCell<EvalInfoNode>>> {
-        self.eval_infos.evals.iter().filter_map(|x| {
-            if let EvalInfo::OnBatch(eval_info) = x {
-                Some(eval_info.clone())
-            }
-            else {
-                None
-            }
-        })
     }
 }
 
@@ -174,7 +162,7 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
         }
     }
 
-    fn eval_guesses(&mut self) {
+    fn eval_batch(&mut self, ) {
         let batch_size = self.iter_batch().count();
         if batch_size == 0 {
             return;
