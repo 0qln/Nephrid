@@ -10,12 +10,14 @@ use super::*;
 
 /// Evaluator that performs random playouts (rollouts) to determine the value of
 /// a position. Suitable for pure MCTS approaches.
-#[derive(Default, Debug)]
-pub struct PlayoutEvaluator;
+#[derive(Debug)]
+pub struct PlayoutEvaluator {
+    rng: SmallRng,
+}
 
 impl PlayoutEvaluator {
-    pub fn new() -> Self {
-        Self
+    pub fn new(rng: SmallRng) -> Self {
+        Self { rng }
     }
 
     /// Determines the result based on the current position state.
@@ -49,8 +51,7 @@ impl PlayoutEvaluator {
     /// Executes a random playout from the given position until a terminal state
     /// or depth limit. Returns the score from White's perspective (1.0 win,
     /// -1.0 loss, 0.0 draw).
-    fn playout(mut pos: Position) -> GameResult {
-        let mut rng = rand::thread_rng();
+    fn playout(&mut self, mut pos: Position) -> GameResult {
         let mut depth = 0;
         const MAX_DEPTH: usize = 256; // Cutoff to prevent infinite loops
 
@@ -58,7 +59,7 @@ impl PlayoutEvaluator {
             // Generate legal moves for the current position
             let moves = {
                 let mut moves = Vec::new();
-                fold_legal_moves(&pos, &mut moves, |acc, m| {
+                _ = fold_legal_moves(&pos, &mut moves, |acc, m| {
                     ControlFlow::Continue::<(), _>({
                         acc.push(m);
                         acc
@@ -79,17 +80,11 @@ impl PlayoutEvaluator {
             }
 
             // 3. Make a random move
-            if let Some(mv) = moves.as_slice().choose(&mut rng) {
-                pos.make_move(*mv);
-            }
-            else {
-                break;
-            }
+            let mov = moves[self.rng.random_range(0..move_cnt)];
+            pos.make_move(mov);
 
             depth += 1;
         }
-
-        GameResult::Draw
     }
 }
 
@@ -120,7 +115,7 @@ impl Evaluator for PlayoutEvaluator {
                 let data = leaf_borrow.data();
                 let info = &data.trace_data;
 
-                let result = Self::playout(info.start_pos.clone());
+                let result = self.playout(info.start_pos.clone());
 
                 Evaluation::Terminal(result)
             })

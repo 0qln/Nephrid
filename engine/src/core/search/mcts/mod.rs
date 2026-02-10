@@ -216,7 +216,8 @@ impl<const X: usize> MctsParts<X> for &PureParts {
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        Default::default()
+        let rng = SmallRng::seed_from_u64(0x_dead_beef_u64);
+        PlayoutEvaluator::new(rng)
     }
 
     fn backprop(&self) -> Self::Backprop {
