@@ -79,12 +79,14 @@ impl MctsStrategy for MctsUci {
         if let Some(mov) = step {
             sync::out(&format!("currmove {mov}"));
 
-            let nps = self.nps(tree.size()).map(|x| format!("nps {x}"));
+            let tree_size = tree.size();
+            let nodes = Some(format!("nodes {}", tree_size));
+            let nps = self.nps(tree_size).map(|x| format!("nps {x}"));
             let depth = Some(format!("depth {}", tree.mindepth()));
             let seldepth = Some(format!("seldepth {}", tree.maxdepth()));
             let pv = Some(format!("pv {}", tree.principal_variation()));
 
-            let args = [nps, depth, seldepth, pv]
+            let args = [nodes, nps, depth, seldepth, pv]
                 .into_iter()
                 .flatten()
                 .collect_vec()

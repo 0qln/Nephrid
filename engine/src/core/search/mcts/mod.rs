@@ -15,7 +15,7 @@ use crate::{
             node::Tree,
             noise::{DirichletNoiser, Noiser, NullNoiser},
             search::TreeSearcher,
-            select::{puct::PuctSelector, Selector, ucb::UcbSelector},
+            select::{Selector, puct::PuctSelector, ucb::UcbSelector},
             strategy::MctsStrategy,
         },
     },
@@ -69,7 +69,8 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
             evaluator,
             backprop,
             noiser,
-        ).grow();
+        )
+        .grow();
 
         strategy.step(tree);
     }
@@ -183,7 +184,7 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
     type Selector = PuctSelector;
     type Evaluator = StaticEvaluator;
     type Backprop = DefaultBackuper;
-    type Noiser = NullNoiser;
+    type Noiser = DirichletNoiser;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -198,7 +199,8 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
     }
 
     fn noiser(&self) -> Self::Noiser {
-        NullNoiser
+        let rng = SmallRng::from_os_rng();
+        DirichletNoiser::new(0.3, 0.25, rng)
     }
 }
 
