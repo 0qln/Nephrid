@@ -404,6 +404,7 @@ impl Position {
         self.plys_50() >= Ply { v: 100 }
     }
 
+    /// Returns the game result if the position is in a terminal state, else None.
     /// has_moves: Whether this position has subsequent moves.
     pub fn game_result_with(&self, has_moves: bool) -> Option<GameResult> {
         let stm = self.get_turn();

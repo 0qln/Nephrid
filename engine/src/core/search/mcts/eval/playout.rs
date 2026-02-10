@@ -2,9 +2,7 @@ use itertools::Itertools;
 use rand::prelude::*;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::core::{
-    move_iter::fold_legal_moves, piece::piece_type, search::mcts::search::SelectionNodeRef,
-};
+use crate::core::{move_iter::fold_legal_moves, search::mcts::search::SelectionNodeRef};
 
 use super::*;
 
@@ -20,43 +18,13 @@ impl PlayoutEvaluator {
         Self { rng }
     }
 
-    /// Determines the result based on the current position state.
-    pub fn check_terminal(pos: &Position, move_cnt: usize) -> Option<GameResult> {
-        // Check for Draw by Repetition or 50-Move Rule
-        if pos.has_threefold_repetition() || pos.fifty_move_rule() {
-            return Some(GameResult::Draw);
-        }
-
-        // Check for Terminal State (Checkmate / Stalemate)
-        if move_cnt == 0 {
-            let us = pos.get_turn();
-            // Use piece_type::KING (assuming it maps to King::ID from reference)
-            let king = pos.get_bitboard(piece_type::KING, us);
-            let nstm_attacks = pos.get_nstm_attacks();
-            let in_check = !(king & nstm_attacks).is_empty();
-
-            return Some(if in_check {
-                // If in check and no moves, it's a loss for the current player
-                GameResult::Win { relative_to: !us }
-            }
-            else {
-                // Stalemate
-                GameResult::Draw
-            });
-        }
-
-        None
-    }
-
     /// Executes a random playout from the given position until a terminal state
-    /// or depth limit. Returns the score from White's perspective (1.0 win,
-    /// -1.0 loss, 0.0 draw).
+    /// or depth limit.
     fn playout(&mut self, mut pos: Position) -> GameResult {
         let mut depth = 0;
-        const MAX_DEPTH: usize = 256; // Cutoff to prevent infinite loops
+        const MAX_DEPTH: usize = 256;
 
         loop {
-            // Generate legal moves for the current position
             let moves = {
                 let mut moves = Vec::new();
                 _ = fold_legal_moves(&pos, &mut moves, |acc, m| {
@@ -67,10 +35,9 @@ impl PlayoutEvaluator {
                 });
                 moves
             };
-            let move_cnt = moves.len();
 
             // 1. Check for Terminal State / Draw Rules
-            if let Some(result) = Self::check_terminal(&pos, move_cnt) {
+            if let Some(result) = pos.game_result_with(moves.len() > 0) {
                 return result;
             }
 
@@ -80,7 +47,7 @@ impl PlayoutEvaluator {
             }
 
             // 3. Make a random move
-            let mov = moves[self.rng.random_range(0..move_cnt)];
+            let mov = moves[self.rng.random_range(0..moves.len())];
             pos.make_move(mov);
 
             depth += 1;
