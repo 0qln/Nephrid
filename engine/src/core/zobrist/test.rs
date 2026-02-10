@@ -9,7 +9,6 @@ use crate::{
         zobrist,
     },
     misc::ConstFrom,
-    uci::tokens::Tokenizer,
 };
 
 #[test]

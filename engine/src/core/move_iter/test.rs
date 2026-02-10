@@ -7,10 +7,10 @@ use crate::{
         zobrist,
     },
     misc::DebugMode,
-    uci::{sync::CancellationToken, tokens::Tokenizer},
+    uci::{sync::CancellationToken},
 };
 
-fn test_pos(mut fen: &str, depth: Depth, expected: u64) {
+fn test_pos(fen: &str, depth: Depth, expected: u64) {
     magics::init();
     zobrist::init();
 
