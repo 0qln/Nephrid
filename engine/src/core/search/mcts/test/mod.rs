@@ -1,104 +1,75 @@
-use crate::core::{
-    color::colors,
-    position::Position,
-    search::mcts::{
-        eval::{
-            Evaluator, RawPolicy,
-            nn::{self, EvalInfoNode},
-        },
-        nn::POLICY_OUTPUTS,
-    },
-};
-use std::{cell::RefCell, rc::Rc};
-
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 
-use super::{
-    eval::{Evaluation, Guess},
-    node::Node,
+use crate::core::{
+    position::Position,
+    search::mcts::{
+        eval::{Evaluation, Evaluator, Guess, RawPolicy},
+        nn::POLICY_OUTPUTS,
+        node::NodeRef,
+        search::SelectionNodeRef,
+    },
+    turn::Turn,
 };
 
 #[derive(Clone)]
-pub struct DummyEvaluator<const X: usize>(RefCell<SmallRng>, [Option<Evaluation>; X]);
+pub struct DummyTraceData {
+    turn: Turn,
+}
 
-impl<const X: usize> DummyEvaluator<X> {
-    fn fill(&mut self) {
-        let mut rng = self.0.borrow_mut();
+/// A dummy evaluator that returns random values.
+/// Useful for testing the search tree mechanics without a trained network.
+pub struct DummyEvaluator {
+    rng: SmallRng,
+}
 
-        for i in 0..X {
-            let quality = rng.random_range(-1.0..=1.0);
-
-            let raw_policy = RawPolicy::new({
-                let mut p = [0.2; POLICY_OUTPUTS];
-                let policy_idx = rng.random_range(0..POLICY_OUTPUTS);
-                p[policy_idx] = 1.0;
-                p
-            });
-
-            if self.get_eval(i).is_none() {
-                self.1[i] = Some(Evaluation::Guess(Box::new(Guess {
-                    relative_to: colors::WHITE,
-                    quality,
-                    policy: raw_policy,
-                })));
-            }
-        }
+impl DummyEvaluator {
+    pub fn new() -> Self {
+        Self::default()
     }
 }
 
-impl<const X: usize> Evaluator for DummyEvaluator<X> {
-    type Node = nn::EvalInfoNode;
-
-    // Prepare an eval_info_node with the required info for this evaluator.
-    fn trace(
-        &mut self,
-        parent: &mut Rc<RefCell<Self::Node>>,
-        _node: Rc<RefCell<Node>>,
-        _pos: &Position,
-    ) -> Rc<RefCell<Self::Node>> {
-        Self::Node::append(parent, None)
-    }
-
-    /// Evluate all the nodes in the batch.
-    fn eval_guesses(&mut self) {
-        self.fill()
-    }
-
-    /// Set the evaluation at a specific index.
-    fn set_eval(&mut self, index: usize, eval: Evaluation) {
-        self.1[index] = Some(eval);
-    }
-
-    /// Clear the evaluation at a specific index.
-    /// (Mark the node at `index` to be evaluated by `eval_guesses`.)
-    fn batch_eval(&mut self, _index: usize, _eval_node: Rc<RefCell<EvalInfoNode>>) {}
-
-    /// Get the evaluation at a specific index.
-    /// (Dummy Code: returns a random value)
-    fn get_eval(&self, index: usize) -> Option<&Evaluation> {
-        if let Some(x) = self.1.get(index) {
-            x.as_ref()
-        }
-        else {
-            None
-        }
-    }
-
-    fn init(&mut self, _node: Rc<RefCell<Node>>, _pos: &Position) -> Rc<RefCell<Self::Node>> {
-        Rc::new(RefCell::new(EvalInfoNode::new_root(None)))
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &super::eval::EvalInfo<Self::Node>> {
-        [].iter()
-    }
-}
-
-impl<const X: usize> Default for DummyEvaluator<X> {
+impl Default for DummyEvaluator {
     fn default() -> Self {
+        // Use a fixed seed for deterministic testing behavior.
         let seed = 0xdead_beef;
-        let rng = SmallRng::seed_from_u64(seed);
-        let mut result = Self(RefCell::new(rng), [const { None }; X]);
-        result.fill();
-        result
+        Self {
+            rng: SmallRng::seed_from_u64(seed),
+        }
+    }
+}
+
+impl Evaluator for DummyEvaluator {
+    type TraceData = DummyTraceData;
+
+    fn trace(&self, _node: NodeRef, pos: &Position) -> Self::TraceData {
+        DummyTraceData { turn: pos.get_turn() }
+    }
+
+    fn eval_batch(
+        &mut self,
+        leafs: &[SelectionNodeRef<Self::TraceData>],
+    ) -> impl Iterator<Item = Evaluation> {
+        let mut evaluations = Vec::with_capacity(leafs.len());
+
+        for leaf in leafs {
+            let leaf = leaf.borrow();
+            let trace_data = &leaf.data().trace_data;
+
+            let quality = self.rng.random_range(-1.0..=1.0);
+
+            let mut policy_arr = [0.01; POLICY_OUTPUTS];
+            let spike_index = self.rng.random_range(0..POLICY_OUTPUTS);
+            policy_arr[spike_index] = 1.0;
+
+            let raw_policy = RawPolicy::new(policy_arr);
+
+            evaluations.push(Evaluation::Guess(Box::new(Guess {
+                relative_to: trace_data.turn,
+                quality,
+                policy: raw_policy,
+            })));
+        }
+
+        evaluations.into_iter()
     }
 }

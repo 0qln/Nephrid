@@ -21,7 +21,7 @@ fn test(fen: &str, expected_result: Option<GameResult>) {
     let mut node = Node::leaf();
     node.expand(&pos);
 
-    let result = DummyEvaluator::<1>::eval_terminal(&node, &pos);
+    let result = DummyEvaluator::eval_terminal(&node, &pos);
 
     // asserts when we expect a result.
     if expected_result.is_some() {
@@ -102,7 +102,7 @@ fn three_fold_repetition() {
     let mut node = Node::leaf();
     node.expand(&pos);
 
-    let result = DummyEvaluator::<1>::eval_terminal(&node, &pos);
+    let result = DummyEvaluator::eval_terminal(&node, &pos);
 
     // asserts when we expect a result.
     if expected_result.is_some() {

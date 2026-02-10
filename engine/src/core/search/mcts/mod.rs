@@ -8,8 +8,7 @@ use crate::{
         search::mcts::{
             back::{Backpropagater, DefaultBackuper},
             eval::{
-                Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator,
-                r#static::StaticEvaluator,
+                Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator, r#static::StaticEvaluator,
             },
             limiter::DefaultLimiter,
             nn::{Model, ModelConfig},
@@ -37,7 +36,7 @@ pub mod select;
 pub mod strategy;
 pub mod utils;
 
-// pub mod test;
+pub mod test;
 
 pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     pos: &Position,
