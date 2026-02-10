@@ -16,8 +16,8 @@ use crate::core::{
 };
 use std::{cell::RefCell, rc::Rc};
 
-// #[cfg(test)]
-// pub mod test;
+#[cfg(test)]
+pub mod test;
 
 pub struct SelectionItem<T> {
     /// The selected node.

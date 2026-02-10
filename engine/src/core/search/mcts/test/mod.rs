@@ -18,6 +18,7 @@ pub struct DummyTraceData {
 
 /// A dummy evaluator that returns random values.
 /// Useful for testing the search tree mechanics without a trained network.
+#[derive(Debug, Clone)]
 pub struct DummyEvaluator {
     rng: SmallRng,
 }

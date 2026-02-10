@@ -19,12 +19,12 @@ fn fuzz<const X: usize>(pos: &'static str) {
         .spawn(move || {
             let pos = Position::from_fen(pos).unwrap();
 
-            let eval = DummyEvaluator::<X>::default();
+            let eval = DummyEvaluator::default();
             let limiter = NoopLimiter::default();
             let mut tree = Tree::new();
 
             for _i in 0..(50_000 / X) {
-                let mut searcher = TreeSearcher::<X, _, _, PuctSelector<X>, _, _>::new(
+                let mut searcher = TreeSearcher::<X, _, _, PuctSelector, _, _>::new(
                     &mut tree,
                     pos.clone(),
                     PuctSelector::default(),
@@ -72,7 +72,7 @@ fn growth() {
     assert_eq!(tree.get_root().borrow().visits(), 0);
 
     // Perform two growth iterations
-    TreeSearcher::<1, DummyEvaluator<1>, NoopLimiter, PuctSelector<1>, DefaultBackuper, _>::new(
+    TreeSearcher::<1, DummyEvaluator, NoopLimiter, PuctSelector, DefaultBackuper, _>::new(
         &mut tree,
         pos.clone(),
         PuctSelector::default(),
@@ -82,7 +82,7 @@ fn growth() {
         NullNoiser,
     )
     .grow();
-    TreeSearcher::<1, DummyEvaluator<1>, NoopLimiter, PuctSelector<1>, DefaultBackuper, _>::new(
+    TreeSearcher::<1, DummyEvaluator, NoopLimiter, PuctSelector, DefaultBackuper, _>::new(
         &mut tree,
         pos.clone(),
         PuctSelector::default(),
