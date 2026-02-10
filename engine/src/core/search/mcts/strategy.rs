@@ -80,9 +80,17 @@ impl MctsStrategy for MctsUci {
             sync::out(&format!("currmove {mov}"));
 
             let nps = self.nps(tree.size()).map(|x| format!("nps {x}"));
+            let depth = Some(format!("depth {}", tree.mindepth()));
+            let seldepth = Some(format!("seldepth {}", tree.maxdepth()));
             let pv = Some(format!("pv {}", tree.principal_variation()));
-            let args = [nps, pv].into_iter().flatten().collect_vec();
-            sync::out(&format!("info {}", args.join(" ")));
+
+            let args = [nps, depth, seldepth, pv]
+                .into_iter()
+                .flatten()
+                .collect_vec()
+                .join(" ");
+
+            sync::out(&format!("info {args}"));
         }
         step
     }

@@ -103,12 +103,40 @@ impl Tree {
         self.get_root().borrow().subtree_size()
     }
 
+    /// Returns the max depth of the tree.
+    /// e.g.
+    /// when we only have root -> 0
+    /// when root has 1 child -> 1
+    /// when roto has 2 children, where 1 with a child -> 2
+    pub fn maxdepth(&self) -> usize {
+        self.get_root().borrow().subtree_maxdepth()
+    }
+
+    /// Returns the min depth of the tree.
+    /// e.g.
+    /// when we only have root -> 0
+    /// when root has 1 child -> 1
+    /// when roto has 2 children, where 1 with a child -> 1
+    pub fn mindepth(&self) -> usize {
+        self.get_root().borrow().subtree_mindepth()
+    }
+
     pub fn get_root(&self) -> Rc<RefCell<Node>> {
         self.root.clone()
     }
 }
 
 pub struct Path(pub Vec<Branch>);
+
+impl Path {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 impl fmt::Display for Path {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -411,6 +439,24 @@ impl Node {
             .iter_branches()
             .map(|b| b.node().borrow().subtree_size())
             .sum::<usize>()
+    }
+
+    /// Retruns the max depth of this node's subtree.
+    /// Returns 0 if there are no children.
+    pub fn subtree_maxdepth(&self) -> usize {
+        self.iter_branches()
+            .map(|b| 1 + b.node().borrow().subtree_maxdepth())
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Retruns the min depth of this node's subtree.
+    /// Returns 0 if there are no children.
+    pub fn subtree_mindepth(&self) -> usize {
+        self.iter_branches()
+            .map(|b| 1 + b.node().borrow().subtree_mindepth())
+            .min()
+            .unwrap_or(0)
     }
 
     // /// The amount of wins in this and all subtrees.
