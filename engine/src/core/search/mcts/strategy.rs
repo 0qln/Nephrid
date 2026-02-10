@@ -38,9 +38,7 @@ impl MctsStrategy for MctsFindBest {
         None
     }
 
-    fn start(&mut self, _tree: &mut Tree) {
-        ()
-    }
+    fn start(&mut self, _tree: &mut Tree) {}
 }
 
 #[derive(Default, Debug)]
@@ -108,7 +106,5 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
         step
     }
 
-    fn start(&mut self, _tree: &mut Tree) {
-        ()
-    }
+    fn start(&mut self, _tree: &mut Tree) {}
 }
