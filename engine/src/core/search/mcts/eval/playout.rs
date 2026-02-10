@@ -37,7 +37,7 @@ impl PlayoutEvaluator {
             };
 
             // 1. Check for Terminal State / Draw Rules
-            if let Some(result) = pos.game_result_with(moves.len() > 0) {
+            if let Some(result) = pos.game_result_with(!moves.is_empty()) {
                 return result;
             }
 

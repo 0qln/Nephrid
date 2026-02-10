@@ -91,7 +91,7 @@ impl<const X: usize, T> Selection<X, T> {
     }
 
     pub fn get_mut(&mut self, index: usize) -> Option<&mut SelectionLeaf<T>> {
-        (&mut self.leafs[index]).as_mut()
+        self.leafs[index].as_mut()
     }
 }
 
@@ -259,7 +259,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
 
         self.selection.set(line_index, (sel_node, eval));
 
-        return used_budget;
+        used_budget
     }
 
     /// Returns: how much of the budget was used.
@@ -356,12 +356,10 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
     }
 
     fn backup_evals(&mut self) {
-        for sel in &self.selection.leafs {
-            if let Some(sel) = sel {
-                let node = sel.0.clone();
-                if let EvalItem::Evaluated(eval) = &sel.1 {
-                    self.backprop.backpropagate(node, eval);
-                }
+        for sel in self.selection.leafs.iter().flatten() {
+            let node = sel.0.clone();
+            if let EvalItem::Evaluated(eval) = &sel.1 {
+                self.backprop.backpropagate(node, eval);
             }
         }
     }

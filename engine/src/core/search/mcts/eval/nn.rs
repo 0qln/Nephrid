@@ -120,7 +120,7 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
         &mut self,
         leafs: &[SelectionNodeRef<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
-        let batch_size = leafs.iter().count();
+        let batch_size = leafs.len();
         // todo: do we rly need this?
         // if batch_size == 0 {
         //     return &std::iter::empty();
@@ -151,7 +151,7 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
             .map(|raw_policy| RawPolicy(raw_policy.try_into().unwrap()));
 
         leafs
-            .into_iter()
+            .iter()
             .zip(values)
             .zip(raw_policies)
             .map(|((b, c), d)| (b, c, d))
