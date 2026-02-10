@@ -53,13 +53,15 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     let time_limit = Instant::now() + time_per_move;
     let tree = state.tree();
 
+    strategy.start(tree);
+
     while !ct.is_cancelled() && (!limit.is_active || Instant::now() < time_limit) {
         let evaluator = parts.evaluator();
         let selector = parts.selector();
         let backprop = parts.backprop();
         let noiser = parts.noiser();
 
-        let mut searcher = TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new(
+        TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new(
             tree,
             pos.clone(),
             selector,
@@ -67,9 +69,8 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
             evaluator,
             backprop,
             noiser,
-        );
+        ).grow();
 
-        searcher.grow();
         strategy.step(tree);
     }
 

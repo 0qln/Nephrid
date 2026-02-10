@@ -1,18 +1,20 @@
 use itertools::Itertools;
 
-use crate::core::Move;
-use crate::core::Position;
-use crate::core::move_iter::fold_legal_moves;
-use crate::core::search::mcts::eval::Policy;
-use crate::core::search::mcts::eval::RawPolicy;
-use crate::core::search::mcts::node::ops::ControlFlow;
-use std::assert_matches::assert_matches;
-use std::assert_matches::debug_assert_matches;
-use std::cell::RefCell;
-use std::cmp::Ordering;
-use std::fmt;
-use std::ops;
-use std::rc::Rc;
+use crate::core::{
+    Move, Position,
+    move_iter::fold_legal_moves,
+    search::mcts::{
+        eval::{Policy, RawPolicy},
+        node::ops::ControlFlow,
+    },
+};
+use std::{
+    assert_matches::{assert_matches, debug_assert_matches},
+    cell::RefCell,
+    cmp::Ordering,
+    fmt, ops,
+    rc::Rc,
+};
 
 #[cfg(test)]
 pub mod test;
@@ -68,7 +70,7 @@ impl Tree {
     }
 
     /// Returns the current principal variation.
-    pub fn principal_variation(&self) -> Vec<Branch> {
+    pub fn principal_variation(&self) -> Path {
         let mut buf = Vec::new();
         let mut current = self.root.clone();
         loop {
@@ -93,11 +95,25 @@ impl Tree {
                 }
             }
         }
-        buf
+        Path(buf)
+    }
+
+    /// Retruns the number of nodes in this tree
+    pub fn size(&self) -> usize {
+        self.get_root().borrow().subtree_size()
     }
 
     pub fn get_root(&self) -> Rc<RefCell<Node>> {
         self.root.clone()
+    }
+}
+
+pub struct Path(pub Vec<Branch>);
+
+impl fmt::Display for Path {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut moves = self.0.iter().map(|x| x.mov().to_string());
+        f.write_str(&moves.join(" "))
     }
 }
 
@@ -106,9 +122,11 @@ pub enum NodeState {
     /// A leaf is an untouched node.
     #[default]
     Leaf,
-    /// An expanded node is a node which has been analized and to be found to have children.
+    /// An expanded node is a node which has been analized and to be found to
+    /// have children.
     Expanded,
-    /// A terminal node is a node which has been analized and to be found to have no children.
+    /// A terminal node is a node which has been analized and to be found to
+    /// have no children.
     Terminal,
 }
 
@@ -225,8 +243,8 @@ impl Node {
     /// Sort the branches in ascending order.
     pub fn sort_by<T: Ord>(&mut self, f: impl Fn(&Branch) -> T) {
         // todo: the sorting can be done a lot more efficiently:
-        // The puct score does not change very often later on, only as we start the search.
-        // Also we might only need the first few branches if MPV is low.
+        // The puct score does not change very often later on, only as we start the
+        // search. Also we might only need the first few branches if MPV is low.
         self.branches.sort_by_key(f);
     }
 
@@ -336,7 +354,8 @@ impl Node {
 
         self.state = if self.branches.is_empty() {
             NodeState::Terminal
-        } else {
+        }
+        else {
             NodeState::Expanded
         };
     }
@@ -385,6 +404,15 @@ impl Node {
         self.state = state
     }
 
+    /// Returns the number of nodes in all subsequent branches + 1 (for this
+    /// node).
+    pub fn subtree_size(&self) -> usize {
+        1 + self
+            .iter_branches()
+            .map(|b| b.node().borrow().subtree_size())
+            .sum::<usize>()
+    }
+
     // /// The amount of wins in this and all subtrees.
     // pub fn wins(&self) -> usize {
     //     match self.state() {
@@ -397,10 +425,10 @@ impl Node {
     //     }
     // }
 
-    ///// Applies `f` to this and all child nodes, until no more child is found or `f` returns
-    ///// residual.
-    //pub fn try_fold_down<B, F, R>(this: Rc<RefCell<Self>>, mut init: B, mut f: F) -> R
-    //where
+    ///// Applies `f` to this and all child nodes, until no more child is found or
+    ///// `f` returns residual.
+    //pub fn try_fold_down<B, F, R>(this: Rc<RefCell<Self>>, mut init: B, mut f: F)
+    // -> R where
     //    F: FnMut(B, Rc<RefCell<Self>>) -> R,
     //    R: Try<Output = B>,
     //{

@@ -1,13 +1,15 @@
-use itertools::Itertools;
+use std::time::{Duration, Instant};
 
-use crate::core::Move;
-use crate::core::search::mcts::Tree;
-use crate::uci::sync;
+use crate::{
+    core::{Move, search::mcts::Tree},
+    uci::sync,
+};
 
 pub trait MctsStrategy {
     type Result;
     type Step;
 
+    fn start(&mut self, tree: &mut Tree);
     fn result(&mut self, tree: &mut Tree) -> Self::Result;
     fn step(&mut self, tree: &mut Tree) -> Self::Step;
 }
@@ -35,11 +37,22 @@ impl MctsStrategy for MctsFindBest {
         }
         None
     }
+
+    fn start(&mut self, _tree: &mut Tree) {
+        ()
+    }
 }
 
 #[derive(Default, Debug)]
 pub struct MctsUci {
     find_best: MctsFindBest,
+    search_start: Option<Instant>,
+}
+
+impl MctsUci {
+    pub fn search_time(&self) -> Option<Duration> {
+        Some(Instant::now() - self.search_start?)
+    }
 }
 
 impl MctsStrategy for MctsUci {
@@ -56,15 +69,21 @@ impl MctsStrategy for MctsUci {
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
         let step = self.find_best.step(tree);
-        let pv = tree.principal_variation();
         if let Some(mov) = step {
             sync::out(&format!("currmove {mov}"));
             sync::out(&format!(
-                "info pv {}",
-                pv.iter().map(|x| x.mov().to_string()).join(" ")
+                "info nps {} pv {}",
+                self.search_time()
+                    .map(|t| tree.size() as u128 * 1_000_000_000 / t.as_nanos())
+                    .unwrap_or_default(),
+                tree.principal_variation()
             ));
         }
         step
+    }
+
+    fn start(&mut self, _tree: &mut Tree) {
+        self.search_start = Some(Instant::now());
     }
 }
 
@@ -87,5 +106,9 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
         let step = (self.inner.step(tree), self.iteration);
         self.iteration += 1;
         step
+    }
+
+    fn start(&mut self, _tree: &mut Tree) {
+        ()
     }
 }
