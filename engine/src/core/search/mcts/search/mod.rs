@@ -6,10 +6,10 @@ use crate::core::{
     search::mcts::{
         back::{Backpropagater, DefaultBackuper},
         eval::{Evaluation, Evaluator},
-        limiter::{self, DefaultLimiter, Limiter},
+        limiter::{self, Limiter},
         node::{Node, NodeRef, NodeState, Tree},
         noise::{DirichletNoiser, Noiser},
-        select::{PuctSelector, Selector},
+        select::Selector,
         utils::DoubleLinkedNode,
     },
     turn::Turn,
@@ -108,10 +108,10 @@ pub struct TreeSearcher<
     'a,
     const MPV: usize,
     E: Evaluator,
-    L: Limiter = DefaultLimiter,
-    S: Selector = PuctSelector,
-    B: Backpropagater = DefaultBackuper,
-    N: Noiser = DirichletNoiser,
+    L: Limiter,
+    S: Selector,
+    B: Backpropagater,
+    N: Noiser,
 > {
     /// The position that will be edited during the selection and
     /// backpropagatation.

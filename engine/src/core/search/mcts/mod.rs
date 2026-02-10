@@ -15,7 +15,7 @@ use crate::{
             node::Tree,
             noise::{DirichletNoiser, Noiser, NullNoiser},
             search::TreeSearcher,
-            select::{PuctSelector, Selector, UcbSelector},
+            select::{puct::PuctSelector, Selector, ucb::UcbSelector},
             strategy::MctsStrategy,
         },
     },
