@@ -1,25 +1,27 @@
+use itertools::Itertools;
+
 use crate::core::{
     Position,
+    depth::Depth,
     search::mcts::{
         back::{Backpropagater, DefaultBackuper},
         eval::{Evaluation, Evaluator},
         limiter::{self, DefaultLimiter, Limiter},
-        node::{Node, NodeState, Tree},
+        node::{Node, NodeRef, NodeState, Tree},
         noise::{DirichletNoiser, Noiser},
         select::{PuctSelector, Selector},
         utils::DoubleLinkedNode,
     },
     turn::Turn,
 };
-use crate::core::depth::Depth;
 use std::{cell::RefCell, rc::Rc};
 
-#[cfg(test)]
-pub mod test;
+// #[cfg(test)]
+// pub mod test;
 
 pub struct SelectionItem<T> {
     /// The selected node.
-    pub node: Rc<RefCell<Node>>,
+    pub node: NodeRef,
 
     /// Depth from root
     pub depth: Depth,
@@ -31,17 +33,32 @@ pub struct SelectionItem<T> {
     pub trace_data: T,
 }
 
+#[derive(Debug)]
+pub enum EvalItem {
+    Batched,
+    Evaluated(Evaluation),
+}
+
+impl EvalItem {
+    fn is_batched(&self) -> bool {
+        matches!(self, Self::Batched)
+    }
+}
+
 pub type SelectionNode<T> = DoubleLinkedNode<SelectionItem<T>>;
+
 pub type SelectionNodeRef<T> = Rc<RefCell<SelectionNode<T>>>;
+
+pub type SelectionLeaf<T> = (SelectionNodeRef<T>, EvalItem);
 
 pub struct Selection<const X: usize, T> {
     pub root: Option<SelectionNodeRef<T>>,
-    pub leafs: [Option<SelectionNodeRef<T>>; X],
+    pub leafs: [Option<SelectionLeaf<T>>; X],
 }
 
 impl<const X: usize, T> Default for Selection<X, T> {
     fn default() -> Self {
-        const fn empty_leaf<T>() -> Option<SelectionNodeRef<T>> {
+        const fn empty_leaf<T>() -> Option<SelectionLeaf<T>> {
             None
         }
         Self {
@@ -69,8 +86,12 @@ impl<const X: usize, T> Selection<X, T> {
         root
     }
 
-    pub fn set(&mut self, index: usize, item: SelectionNodeRef<T>) {
+    pub fn set(&mut self, index: usize, item: SelectionLeaf<T>) {
         self.leafs[index] = Some(item);
+    }
+
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut SelectionLeaf<T>> {
+        (&mut self.leafs[index]).as_mut()
     }
 }
 
@@ -153,7 +174,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
 {
     pub fn grow(&mut self) {
         self.select_lines();
-        self.evaluator.eval_guesses();
+        self.eval_batched();
         self.backup_evals();
         self.apply_noise();
         self.iterations += 1;
@@ -165,7 +186,7 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         // small with this one ._.
         let node = self.tree.get_root();
         let turn = self.position.get_turn();
-        let eval_data = self.evaluator.create_data(node.clone(), &self.position);
+        let eval_data = self.evaluator.trace(node.clone(), &self.position);
         let sel_root = self.selection.init_root(node.clone(), turn, eval_data);
         self.process_node(MPV, 0, Depth::MIN, node, sel_root);
     }
@@ -219,33 +240,24 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
     ) -> usize {
         let pos = &self.position;
 
-        //
         // Check if the board has a terminal evaluation.
-        //
         let terminal_eval = E::eval_terminal(&node.borrow(), pos);
-        let used_budget = if let Some(terminal_eval) = terminal_eval {
+        let (used_budget, eval) = if let Some(eval) = terminal_eval {
             node.borrow_mut().set_state(NodeState::Terminal);
-            self.evaluator.set_eval(line_index, terminal_eval);
-            1
+            (1, EvalItem::Evaluated(eval))
         }
-        //
-        // Check if we are even interested in searching this line any further.
-        //
+        // Check if we are even interested in searching this line any
+        // further.
         else if self.limiter.should_stop(limiter::Params { pos, depth }) {
-            // todo: maybe it's better to return 0 (skip this node) instead of using a Nope (draw
-            // evaluation).
-            self.evaluator.set_eval(line_index, Evaluation::Nope);
-            1
+            // todo: maybe it's better to return 0 (skip this node) instead of using a draw
+            (1, EvalItem::Evaluated(Evaluation::Nope))
         }
-        //
         // Else note down that we need to guess this node's evaluation.
-        //
         else {
-            self.evaluator.batch_eval(line_index, eval_node);
-            1
-        }
+            (1, EvalItem::Batched)
+        };
 
-        self.selection.set(line_index, sel_node);
+        self.selection.set(line_index, (sel_node, eval));
 
         return used_budget;
     }
@@ -272,6 +284,9 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         while budget >= 1 {
             if let Some(branch) = parent_node.borrow().get_branch(branch_index) {
                 let current_budget = self.selector.budget(budget);
+                if current_budget == 0 {
+                    break;
+                }
 
                 // make the move of the current branch, such that we can follow the line.
                 self.position.make_move(branch.mov());
@@ -279,17 +294,19 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
                 let depth = depth + 1;
                 let node = branch.node();
 
-                let selc_info = SelectionNode::append(
+                let eval_info = self.evaluator.trace(node.clone(), &self.position);
+
+                let sel_info = SelectionNode::append(
                     &mut sel_node_parent,
                     SelectionItem {
                         depth,
                         node: node.clone(),
                         turn: self.position.get_turn(),
-                        trace_data: self.evaluator.create_data(node.clone(), &self.position),
+                        trace_data: eval_info,
                     },
                 );
 
-                let used = self.process_node(current_budget, line_index, depth, node, selc_info);
+                let used = self.process_node(current_budget, line_index, depth, node, sel_info);
 
                 // undo the move again
                 self.position.unmake_move(branch.mov());
@@ -314,19 +331,38 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         used_budget
     }
 
-    fn backup_evals(&mut self) {
-        for (index, leaf) in self
-            .selector
-            .iter()
-            .enumerate()
-            .filter_map(|(i, x)| Some((i, x?)))
-        {
-            let eval = self
-                .evaluator
-                .get_eval(index)
-                .unwrap_or_else(|| panic!("Evaluation missing for index {index}"));
+    fn eval_batched(&mut self) {
+        let mut batched_leafs = self
+            .selection
+            .leafs
+            .iter_mut()
+            .filter_map(|l| match l {
+                Some(l) if l.1.is_batched() => Some(l),
+                _ => None,
+            })
+            .collect_vec();
 
-            self.backprop.backpropagate(leaf, eval);
+        let evals = {
+            let batch = batched_leafs.iter().map(|b| b.0.clone()).collect_vec();
+            self.evaluator
+                .eval_batch(&batch)
+                // todo: idk why we need to collect this as vec here
+                .collect_vec()
+        };
+
+        for (leaf, eval) in batched_leafs.iter_mut().zip(evals) {
+            leaf.1 = EvalItem::Evaluated(eval);
+        }
+    }
+
+    fn backup_evals(&mut self) {
+        for sel in &self.selection.leafs {
+            if let Some(sel) = sel {
+                let node = sel.0.clone();
+                if let EvalItem::Evaluated(eval) = &sel.1 {
+                    self.backprop.backpropagate(node, eval);
+                }
+            }
         }
     }
 

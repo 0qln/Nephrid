@@ -1,4 +1,3 @@
-use super::utils::*;
 use crate::core::{
     Position,
     color::Color,
@@ -7,7 +6,8 @@ use crate::core::{
             BOARD_INPUT_HISTORY, BoardInputFloats, Model, POLICY_OUTPUTS, StateInputFloats,
             VALUE_OUTPUTS, board_history_input, board_input, state_input,
         },
-        node::{Node, NodeState},
+        node::{Node, NodeRef, NodeState},
+        search::SelectionNodeRef,
     },
     turn::Turn,
 };
@@ -23,19 +23,15 @@ use std::{assert_matches::assert_matches, cell::RefCell, ops::ControlFlow, rc::R
 pub mod test;
 
 pub mod nn;
-pub mod none;
+pub mod playout;
 pub mod r#static;
 
 pub trait Evaluator {
     type TraceData;
 
-    // Prepare an eval_info_node with the required info for this evaluator under
-    // `parent` and return the newly create eval info.
-    fn create_data(&self, node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData;
+    fn trace(&self, node: NodeRef, pos: &Position) -> Self::TraceData;
 
-    /// Evaluate all the nodes in the batch.
-    /// (Which is, all the nodes that are eval `None`)
-    fn eval_guesses(&mut self);
+    // fn trace_stopped(&self) -> Self::TraceData;
 
     /// Evaluate a node's terminal state. If the node is terminal, return the
     /// evaluation, else return None.
@@ -51,8 +47,10 @@ pub trait Evaluator {
         game_result.map(Evaluation::Terminal)
     }
 
-    /// Mark the node at `index` to be evaluated when doing `eval_guesses`.
-    fn batch_eval(&mut self, index: usize, eval_node: Self::NodeRef);
+    fn eval_batch(
+        &mut self,
+        batch: &[SelectionNodeRef<Self::TraceData>],
+    ) -> impl Iterator<Item = Evaluation>;
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

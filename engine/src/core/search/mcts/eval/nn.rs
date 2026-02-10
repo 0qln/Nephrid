@@ -1,3 +1,5 @@
+use crate::core::search::mcts::search::SelectionNode;
+
 use super::*;
 
 #[derive(Debug, PartialEq)]
@@ -15,38 +17,20 @@ impl InputFloats {
     }
 }
 
-#[derive(Default, Debug)]
-pub enum EvalInfo {
-    OnBatch(BatchInfo),
-    Evaluated(Evaluation),
-    #[default]
-    None,
-}
-
-impl EvalInfo {
-    pub const fn new_none() -> Self {
-        Self::None
-    }
-}
-
 #[derive(PartialEq, Debug)]
-pub struct BatchInfo {
+pub struct TraceInfo {
     /// Input floats for the eval model.
     inputs: InputFloats,
 
     /// The node that this eval info is for.
     node: Rc<RefCell<Node>>,
-
-    /// Turn of the current player.
-    turn: Turn,
 }
 
-impl BatchInfo {
+impl TraceInfo {
     pub fn new(node: Rc<RefCell<Node>>, pos: &Position) -> Self {
         Self {
             inputs: InputFloats::new(pos),
             node,
-            turn: pos.get_turn(),
         }
     }
 }
@@ -69,11 +53,16 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
         self.device
     }
 
-    fn build_board_batch<B: Iterator<Item = Rc<RefCell<EvalInfoNode>>>>(&self, batch: B) -> Tensor<B, 4> {
+    /// batch: The iterator of the selected leaf nodes that should be evaluated
+    /// in this batch.
+    fn build_board_batch(
+        &self,
+        batch: impl Iterator<Item = SelectionNodeRef<<Self as Evaluator>::TraceData>>,
+    ) -> Tensor<B, 4> {
         // concatenate the board inputs along the batch dimension.
         Tensor::cat(
             batch
-                .map(|eval_node| Self::get_node_history(eval_node))
+                .map(|leaf| Self::get_node_history(leaf))
                 // concatenate the board inputs along the channel dimension.
                 .map(|history| nn::board_history_input(&history, self.device()))
                 .collect_vec(),
@@ -81,25 +70,20 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
         )
     }
 
-    /// Returns the history in following order:
+    /// Returns the history of the given selected leaf in following order:
     /// - the oldest board state is the first index
     /// - the youngest board state is the last index
-    fn get_node_history(eval_info: Rc<RefCell<EvalInfoNode>>) -> Vec<BoardInputFloats> {
+    fn get_node_history(
+        leaf: SelectionNodeRef<<Self as Evaluator>::TraceData>,
+    ) -> Vec<BoardInputFloats> {
         let mut vec: Vec<BoardInputFloats> = vec![];
 
-        _ = EvalInfoNode::try_fold_up_mut(eval_info.clone(), (), |_, eval_info| {
+        _ = SelectionNode::try_fold_up_mut(leaf.clone(), (), |_, leaf| {
             if vec.len() == BOARD_INPUT_HISTORY {
                 return ControlFlow::Break(());
             }
 
-            let board_input = eval_info
-                .borrow()
-                .data()
-                .as_ref()
-                .expect("Eval info is missing. Did you forget to call `init()`?")
-                .inputs
-                .board;
-
+            let board_input = leaf.borrow().data().trace_data.inputs.board;
             vec.insert(0, board_input);
 
             ControlFlow::Continue::<(), ()>(())
@@ -108,18 +92,15 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
         vec
     }
 
-    fn build_state_batch<B: Iterator<Item = Rc<RefCell<EvalInfoNode>>>>(&self, batch: B) -> Tensor<B, 2> {
+    fn build_state_batch(
+        &self,
+        batch: impl Iterator<Item = SelectionNodeRef<<Self as Evaluator>::TraceData>>,
+    ) -> Tensor<B, 2> {
         // concatenate the state inputs along the batch dimension.
         Tensor::cat(
-            batch.map(|eval_info| {
-                    let state_input = eval_info
-                        .borrow()
-                        .data()
-                        .as_ref()
-                        .expect("Eval info is missing")
-                        .inputs
-                        .state;
-
+            batch
+                .map(|leaf| {
+                    let state_input = leaf.borrow().data().trace_data.inputs.state;
                     Tensor::from_floats([state_input], self.device())
                 })
                 .collect_vec(),
@@ -129,47 +110,24 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
 }
 
 impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X> {
-    type TraceData = EvalInfo;
+    type TraceData = TraceInfo;
 
-    fn create_data(&mut self, node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData {
-        let data = BatchInfo::new(node, pos);
-        EvalInfo::OnBatch(data)
+    fn trace(&self, node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData {
+        TraceInfo::new(node, pos)
     }
 
-    fn get_eval(&self, index: usize) -> Option<&Evaluation> {
-        if let Some(x) = self.eval_infos.evals.get(index)
-            && let EvalInfo::Evaluated(eval) = x
-        {
-            Some(eval)
-        }
-        else {
-            None
-        }
-    }
+    fn eval_batch(
+        &mut self,
+        leafs: &[SelectionNodeRef<Self::TraceData>],
+    ) -> impl Iterator<Item = Evaluation> {
+        let batch_size = leafs.iter().count();
+        // todo: do we rly need this?
+        // if batch_size == 0 {
+        //     return &std::iter::empty();
+        // }
 
-    fn set_eval(&mut self, index: usize, eval: Evaluation) {
-        if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            *x = EvalInfo::Evaluated(eval);
-        }
-    }
-
-    fn batch_eval(&mut self, index: usize, eval_node: Rc<RefCell<Self::Node>>) {
-        if let Some(x) = self.eval_infos.evals.get_mut(index) {
-            *x = EvalInfo::OnBatch(eval_node);
-        }
-        else {
-            panic!("Out of range");
-        }
-    }
-
-    fn eval_batch(&mut self, ) {
-        let batch_size = self.iter_batch().count();
-        if batch_size == 0 {
-            return;
-        }
-
-        let board_batch = self.build_board_batch();
-        let state_batch = self.build_state_batch();
+        let board_batch = self.build_board_batch(leafs.iter().cloned());
+        let state_batch = self.build_state_batch(leafs.iter().cloned());
         let (values, raw_policies) = self.model.forward(board_batch, state_batch);
 
         assert_eq!(values.shape(), Shape::new([batch_size, VALUE_OUTPUTS]));
@@ -192,49 +150,22 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
             .chunks(POLICY_OUTPUTS)
             .map(|raw_policy| RawPolicy(raw_policy.try_into().unwrap()));
 
-        // Enumerate all eval_infos, which have not yet been assigned and assign them a
-        // their guess.
-        for (index, eval_info, value, raw_policy) in self
-            .eval_infos
-            .evals
-            .iter()
-            .enumerate()
-            .filter_map(|(i, x)| {
-                if let EvalInfo::OnBatch(eval_info) = x {
-                    Some((i, eval_info.clone()))
-                }
-                else {
-                    None
-                }
-            })
-            // ---
-            // todo: we allocate here bc if we borrow above, we cannot borrow mutably in the
-            // for loop to set the eval_infos...
-            // find a better solution
-            .collect_vec()
+        leafs
             .into_iter()
-            // ---
             .zip(values)
             .zip(raw_policies)
-            .map(|(((a, b), c), d)| (a, b, c, d))
-        {
-            let eval_info = eval_info.borrow();
-            let eval_info = eval_info
-                .data()
-                .as_ref()
-                .expect("This should be a leaf and leafes should have data.");
+            .map(|((b, c), d)| (b, c, d))
+            .map(|(leaf, value, raw_policy)| {
+                let leaf = leaf.borrow();
+                let data = leaf.data();
 
-            let eval = Evaluation::Guess(Box::new(Guess {
-                relative_to: eval_info.turn,
-                quality: value[0],
-                policy: raw_policy,
-            }));
-
-            self.eval_infos.evals[index] = EvalInfo::Evaluated(eval);
-        }
-    }
-
-    fn iter(&self) -> impl Iterator<Item = &EvalInfo<Rc<RefCell<Self::Node>>>> {
-        self.eval_infos.evals.iter()
+                Evaluation::Guess(Box::new(Guess {
+                    relative_to: data.turn,
+                    quality: value[0],
+                    policy: raw_policy,
+                }))
+            })
+            .collect_vec()
+            .into_iter()
     }
 }

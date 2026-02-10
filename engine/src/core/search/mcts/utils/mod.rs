@@ -69,6 +69,10 @@ impl<T> DoubleLinkedNode<T> {
         }
         R::from_output(init)
     }
+
+    pub fn data_mut(&mut self) -> &mut T {
+        &mut self.data
+    }
 }
 
 pub trait IDoubleLinkedNode {

@@ -50,7 +50,7 @@ impl<const X: usize> Evaluator for DummyEvaluator<X> {
     type Node = nn::EvalInfoNode;
 
     // Prepare an eval_info_node with the required info for this evaluator.
-    fn create_data(
+    fn trace(
         &mut self,
         parent: &mut Rc<RefCell<Self::Node>>,
         _node: Rc<RefCell<Node>>,

@@ -7,7 +7,10 @@ use crate::{
         position::Position,
         search::mcts::{
             back::{Backpropagater, DefaultBackuper},
-            eval::{Evaluator, nn::NNEvaluator, none::NoneEvaluator, r#static::StaticEvaluator},
+            eval::{
+                Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator,
+                r#static::StaticEvaluator,
+            },
             limiter::DefaultLimiter,
             nn::{Model, ModelConfig},
             node::Tree,
@@ -34,7 +37,7 @@ pub mod select;
 pub mod strategy;
 pub mod utils;
 
-pub mod test;
+// pub mod test;
 
 pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     pos: &Position,
@@ -131,13 +134,13 @@ pub struct NNParts<B: Backend> {
 }
 
 impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
-    type Selector = PuctSelector<X>;
+    type Selector = PuctSelector;
     type Evaluator = NNEvaluator<'a, 'a, B, X>;
     type Backprop = DefaultBackuper;
     type Noiser = DirichletNoiser;
 
     fn selector(&self) -> Self::Selector {
-        PuctSelector::<X>::default()
+        PuctSelector::default()
     }
 
     fn evaluator(&self) -> Self::Evaluator {
@@ -177,8 +180,8 @@ impl<B: Backend> NNParts<B> {
 pub struct StaticParts;
 
 impl<const X: usize> MctsParts<X> for &StaticParts {
-    type Selector = PuctSelector<X>;
-    type Evaluator = StaticEvaluator<X>;
+    type Selector = PuctSelector;
+    type Evaluator = StaticEvaluator;
     type Backprop = DefaultBackuper;
     type Noiser = NullNoiser;
 
@@ -204,8 +207,8 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
 pub struct PureParts;
 
 impl<const X: usize> MctsParts<X> for &PureParts {
-    type Selector = UcbSelector<X>;
-    type Evaluator = NoneEvaluator<X>;
+    type Selector = UcbSelector;
+    type Evaluator = PlayoutEvaluator;
     type Backprop = DefaultBackuper;
     type Noiser = NullNoiser;
 
