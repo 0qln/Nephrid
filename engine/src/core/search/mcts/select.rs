@@ -30,7 +30,7 @@ pub struct PuctSelector {
 
 impl PuctSelector {
     pub fn new(c: f32) -> Self {
-        Self { c, ..Default::default() }
+        Self { c }
     }
 }
 
