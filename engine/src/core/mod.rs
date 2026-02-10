@@ -1,18 +1,16 @@
 use search::{limit::Limit, mode::Mode};
+use std::sync::{Arc, Mutex};
 
 use self::r#move::LongAlgebraicUciNotation;
 use crate::{
     core::{
-        config::{ConfigOptionType, Configuration},
+        config::Configuration,
         depth::Depth,
         r#move::Move,
         position::{FenImport, PgnExport, Position},
         search::{Command, Thread},
     },
-    misc::trim_newline,
-};
-use crate::{
-    misc::DebugMode,
+    misc::{DebugMode, trim_newline},
     uci::{
         sync::{self, CancellationToken, UciError},
         tokens::Tokenizer,
@@ -40,8 +38,8 @@ pub struct Game {
     /// The moves that have been made.
     history: Vec<Move>,
 
-    /// The currently set position of the engine. Changing this during a search should not
-    /// immediatly affect the search tree.
+    /// The currently set position of the engine. Changing this during a search
+    /// should not immediatly affect the search tree.
     position: Position,
 }
 
@@ -75,7 +73,7 @@ impl Game {
 /// Stores relevant information of the chess engine.
 pub struct Engine {
     /// Current engine configuration.
-    config: Configuration,
+    config: Arc<Mutex<Configuration>>,
 
     /// Search thread
     search_t: Thread,
@@ -121,7 +119,8 @@ pub fn execute_uci(
             let pos = &engine.game.position();
             let str = if engine.debug.get() {
                 format!("{pos:?}")
-            } else {
+            }
+            else {
                 format!("{pos}")
             };
 
@@ -195,10 +194,11 @@ pub fn execute_uci(
                 (mode, limit)
             };
 
+            let cfg = engine.config.clone();
             let cmd = match mode {
-                Mode::Normal => Command::Normal(position, limit, token, debug),
+                Mode::Normal => Command::Normal(position, limit, token, debug, cfg),
                 Mode::Ponder => Command::Ponder,
-                Mode::Perft => Command::Perft(position, limit, token, debug),
+                Mode::Perft => Command::Perft(position, limit, token, debug, cfg),
             };
 
             engine.search_t.tx.send(cmd)?;
@@ -272,9 +272,7 @@ pub fn execute_uci(
             sync::out("id name Nephrid");
             sync::out("id author 0qln");
             // Option response
-            for option in &engine.config.0 {
-                sync::out(&option.to_string());
-            }
+            engine.config.lock().expect("Config dead :(").print_uci();
             // Uciok response
             sync::out("uciok");
             Ok(())
@@ -288,13 +286,12 @@ pub fn execute_uci(
                     "value" => break,
                     part => {
                         name.push_str(part);
-                        // Reintroduce spaces between parts
-                        if !name.is_empty() {
-                            name.push(' ')
-                        }
+                        name.push(' ');
                     }
                 };
             }
+
+            let name = name.trim();
 
             if name.is_empty() {
                 return Err(UciError::MissingArgument("name").into());
@@ -304,50 +301,17 @@ pub fn execute_uci(
             let mut new_value = String::new();
             while let Some(token) = tokenizer.next_token() {
                 new_value.push_str(token);
-                // Reintroduce spaces between parts
-                if !new_value.is_empty() {
-                    new_value.push(' ')
-                }
+                new_value.push(' ');
             }
 
             let new_value = new_value.trim();
 
-            let name = name.trim();
-            match engine.config.find_mut(name) {
-                None => Err(UciError::UnknownOption(name.to_owned()))?,
-                Some(option) => match &mut option.cfg_type {
-                    ConfigOptionType::Check { value, .. } => {
-                        if new_value.is_empty() {
-                            return Err(UciError::MissingArgument("value").into());
-                        }
-                        *value = new_value.parse()?;
-                    }
-                    ConfigOptionType::Spin { min, max, value, .. } => {
-                        if new_value.is_empty() {
-                            return Err(UciError::MissingArgument("value").into());
-                        }
-                        let parsed = new_value.parse()?;
-                        if parsed < *min || parsed > *max {
-                            return Err(UciError::InputOutOfRange(
-                                new_value.to_string(),
-                                min.to_string(),
-                                max.to_string(),
-                            )
-                            .into());
-                        }
-                        *value = parsed;
-                    }
-                    ConfigOptionType::Combo { options, value, .. } => {
-                        let new_value = new_value.to_string();
-                        if !options.0.contains(&new_value) {
-                            return Err(UciError::InvalidValue(new_value, options.clone().0).into());
-                        }
-                        *value = new_value;
-                    }
-                    ConfigOptionType::Button { callback } => callback(),
-                    ConfigOptionType::String(value) => *value = new_value.into(),
-                },
-            };
+            engine
+                .config
+                .lock()
+                .expect("Config dead :(")
+                .set(name, new_value)?;
+
             Ok(())
         }
         Some("debug") => {

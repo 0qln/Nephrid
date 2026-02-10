@@ -360,11 +360,11 @@ fn test_tree_principal_variation_simple_path() {
     let pv = tree.principal_variation();
     assert_eq!(pv.len(), 2);
     assert_eq!(
-        pv[0].mov(),
+        pv.0[0].mov(),
         Move::new(squares::E2, squares::E4, move_flags::QUIET)
     );
     assert_eq!(
-        pv[1].mov(),
+        pv.0[1].mov(),
         Move::new(squares::E7, squares::E5, move_flags::QUIET)
     );
 }

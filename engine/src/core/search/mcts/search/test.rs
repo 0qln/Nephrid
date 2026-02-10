@@ -3,7 +3,7 @@ use crate::core::{
     position::Position,
     search::mcts::{
         back::DefaultBackuper, limiter::NoopLimiter, node::Tree, noise::NullNoiser,
-        search::TreeSearcher, select::PuctSelector, test::DummyEvaluator,
+        search::TreeSearcher, select::puct::PuctSelector, test::DummyEvaluator,
     },
     zobrist,
 };

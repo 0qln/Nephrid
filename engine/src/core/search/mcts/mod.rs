@@ -4,6 +4,7 @@ use rand::{SeedableRng, rngs::SmallRng};
 use crate::{
     core::{
         Limit,
+        config::Configuration,
         position::Position,
         search::mcts::{
             back::{Backpropagater, DefaultBackuper},
@@ -40,7 +41,7 @@ pub mod test;
 
 pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     pos: &Position,
-    parts: P,
+    parts: &mut P,
     state: &mut M,
     limit: Limit,
     _debug: DebugMode,
@@ -83,7 +84,9 @@ pub trait MctsParts<const X: usize = { config::MPV }> {
     type Evaluator: Evaluator;
     type Backprop: Backpropagater;
     type Noiser: Noiser;
+    type Instance;
 
+    fn new(config: &Configuration) -> Self::Instance;
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
     fn backprop(&self) -> Self::Backprop;
@@ -132,6 +135,10 @@ pub struct NNParts<B: Backend> {
 
     /// Hardware abstraction for the nn model
     pub device: B::Device,
+
+    // Noiser
+    alpha: f32,
+    epsilon: f32,
 }
 
 impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
@@ -139,6 +146,7 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
     type Evaluator = NNEvaluator<'a, 'a, B, X>;
     type Backprop = DefaultBackuper;
     type Noiser = DirichletNoiser;
+    type Instance = NNParts<B>;
 
     fn selector(&self) -> Self::Selector {
         PuctSelector::default()
@@ -154,37 +162,47 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
 
     fn noiser(&self) -> Self::Noiser {
         let rng = SmallRng::from_os_rng();
-        DirichletNoiser::new(0.3, 0.25, rng)
+        DirichletNoiser::new(self.alpha, self.epsilon, rng)
     }
-}
 
-impl<B: Backend> Default for NNParts<B> {
-    fn default() -> Self {
-        Self::from_path("./weights")
+    fn new(config: &Configuration) -> Self::Instance {
+        let alpha = config.dirichlet_alpha() as f32 / 100f32;
+        let epsilon = config.dirichlet_alpha() as f32 / 100f32;
+        let weights = config.weights_path();
+        Self::Instance::from_path(weights, alpha, epsilon)
     }
 }
 
 impl<B: Backend> NNParts<B> {
-    pub fn from_path(_nn_path: &str) -> Self {
+    pub fn from_path(_nn_path: &str, alpha: f32, epsilon: f32) -> Self {
         let device = B::Device::default();
         let nn = ModelConfig::new().init(&device); // todo: read from nn_path
-        Self::new(nn, device)
+        Self::new(nn, device, alpha, epsilon)
     }
 
-    pub fn new(nn: Model<B>, device: B::Device) -> Self {
-        Self { nn: Box::new(nn), device }
+    pub fn new(nn: Model<B>, device: B::Device, alpha: f32, epsilon: f32) -> Self {
+        Self {
+            nn: Box::new(nn),
+            device,
+            alpha,
+            epsilon,
+        }
     }
 }
 
 /// Mcts parts for mcts with puct + static analysis.
 #[derive(Debug, Default)]
-pub struct StaticParts;
+pub struct StaticParts {
+    alpha: f32,
+    epsilon: f32,
+}
 
-impl<const X: usize> MctsParts<X> for &StaticParts {
+impl<const X: usize> MctsParts<X> for StaticParts {
     type Selector = PuctSelector;
     type Evaluator = StaticEvaluator;
     type Backprop = DefaultBackuper;
     type Noiser = DirichletNoiser;
+    type Instance = StaticParts;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -200,7 +218,19 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
 
     fn noiser(&self) -> Self::Noiser {
         let rng = SmallRng::from_os_rng();
-        DirichletNoiser::new(0.3, 0.25, rng)
+        DirichletNoiser::new(self.alpha, self.epsilon, rng)
+    }
+
+    fn new(config: &Configuration) -> Self::Instance {
+        let alpha = config.dirichlet_alpha() as f32 / 100f32;
+        let epsilon = config.dirichlet_alpha() as f32 / 100f32;
+        Self::Instance::new(alpha, epsilon)
+    }
+}
+
+impl StaticParts {
+    pub fn new(alpha: f32, epsilon: f32) -> Self {
+        Self { alpha, epsilon }
     }
 }
 
@@ -208,11 +238,12 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
 #[derive(Debug, Default)]
 pub struct PureParts;
 
-impl<const X: usize> MctsParts<X> for &PureParts {
+impl<const X: usize> MctsParts<X> for PureParts {
     type Selector = UcbSelector;
     type Evaluator = PlayoutEvaluator;
     type Backprop = DefaultBackuper;
     type Noiser = NullNoiser;
+    type Instance = PureParts;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -229,6 +260,10 @@ impl<const X: usize> MctsParts<X> for &PureParts {
 
     fn noiser(&self) -> Self::Noiser {
         Default::default()
+    }
+
+    fn new(_config: &Configuration) -> Self::Instance {
+        Self::Instance {}
     }
 }
 
@@ -258,7 +293,7 @@ pub mod config {
     #[cfg(feature = "mcts-nn")]
     pub mod mcts {
         use crate::core::search::mcts::NNParts;
-        pub type Parts = NNParts<super::nn_backend::Backend>;
+        pub type Parts<'a> = &'a NNParts<super::nn_backend::Backend>;
     }
 
     #[cfg(feature = "mcts-sa")]

@@ -1,8 +1,6 @@
 use itertools::Itertools;
 use rand::rngs::SmallRng;
-use rand_distr::Distribution;
-use rand_distr::Gamma;
-use rand_distr::num_traits::Zero;
+use rand_distr::{Distribution, Gamma, num_traits::Zero};
 use thiserror::Error;
 
 use crate::core::search::mcts::node::Node;
