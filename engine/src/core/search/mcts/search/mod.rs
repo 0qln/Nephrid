@@ -4,11 +4,11 @@ use crate::core::{
     Position,
     depth::Depth,
     search::mcts::{
-        back::{Backpropagater, DefaultBackuper},
+        back::Backpropagater,
         eval::{Evaluation, Evaluator},
         limiter::{self, Limiter},
         node::{Node, NodeRef, NodeState, Tree},
-        noise::{DirichletNoiser, Noiser},
+        noise::Noiser,
         select::Selector,
         utils::DoubleLinkedNode,
     },
