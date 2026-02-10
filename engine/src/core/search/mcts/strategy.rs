@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+use itertools::Itertools;
+
 use crate::{
     core::{Move, search::mcts::Tree},
     uci::sync,
@@ -51,6 +53,13 @@ impl MctsUci {
     pub fn search_time(&self) -> Option<Duration> {
         Some(Instant::now() - self.search_start?)
     }
+
+    /// Number of nodes per second since start of the search, given the current
+    /// number of nodes in the search tree.
+    pub fn nps(&self, num_nodes: usize) -> Option<u128> {
+        self.search_time()
+            .map(|t| num_nodes as u128 * 1_000_000_000 / t.as_nanos())
+    }
 }
 
 impl MctsStrategy for MctsUci {
@@ -69,13 +78,11 @@ impl MctsStrategy for MctsUci {
         let step = self.find_best.step(tree);
         if let Some(mov) = step {
             sync::out(&format!("currmove {mov}"));
-            sync::out(&format!(
-                "info nps {} pv {}",
-                self.search_time()
-                    .map(|t| tree.size() as u128 * 1_000_000_000 / t.as_nanos())
-                    .unwrap_or_default(),
-                tree.principal_variation()
-            ));
+
+            let nps = self.nps(tree.size()).map(|x| format!("nps {x}"));
+            let pv = Some(format!("pv {}", tree.principal_variation()));
+            let args = [nps, pv].into_iter().flatten().collect_vec();
+            sync::out(&format!("info {}", args.join(" ")));
         }
         step
     }
