@@ -182,6 +182,8 @@ impl Ord for Value {
     }
 }
 
+pub type NodeRef = Rc<RefCell<Node>>;
+
 #[derive(Clone, Default, PartialEq)]
 pub struct Node {
     /// The number of times this node was visited.
