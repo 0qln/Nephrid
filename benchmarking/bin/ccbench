@@ -6,9 +6,9 @@ openings="$3"
 out="$4"
 
 cutechess-cli \
-    -engine cmd="$engine1" \
-    -engine cmd="$engine2" \
-    -each proto=uci tc=40/100 \
+    -engine cmd="$engine1" name="$engine1" \
+    -engine cmd="$engine2" name="$engine2" \
+    -each proto=uci tc=40/60 \
     -rounds 500 \
     -concurrency 4 \
     -openings file="$openings" \
