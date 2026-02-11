@@ -52,17 +52,14 @@ pub fn init() -> Thread {
                             Err(_) => &Configuration::default(),
                         };
 
-                        let mut mcts_parts = <mcts::config::mcts::Parts as MctsParts>::new(cfg);
-
-                        let strat = MctsUci::default();
                         let result = mcts(
                             &pos,
-                            &mut mcts_parts,
+                            &<&mcts::config::mcts::Parts as MctsParts>::new(cfg),
                             &mut mcts_state,
                             limit,
                             debug,
                             ct,
-                            strat,
+                            MctsUci::default(),
                         );
                         result.expect("");
                     }

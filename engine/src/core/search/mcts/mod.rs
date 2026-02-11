@@ -41,7 +41,7 @@ pub mod test;
 
 pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     pos: &Position,
-    parts: &mut P,
+    parts: P,
     state: &mut M,
     limit: Limit,
     _debug: DebugMode,
@@ -197,7 +197,7 @@ pub struct StaticParts {
     epsilon: f32,
 }
 
-impl<const X: usize> MctsParts<X> for StaticParts {
+impl<const X: usize> MctsParts<X> for &StaticParts {
     type Selector = PuctSelector;
     type Evaluator = StaticEvaluator;
     type Backprop = DefaultBackuper;
@@ -238,7 +238,7 @@ impl StaticParts {
 #[derive(Debug, Default)]
 pub struct PureParts;
 
-impl<const X: usize> MctsParts<X> for PureParts {
+impl<const X: usize> MctsParts<X> for &PureParts {
     type Selector = UcbSelector;
     type Evaluator = PlayoutEvaluator;
     type Backprop = DefaultBackuper;
@@ -293,7 +293,7 @@ pub mod config {
     #[cfg(feature = "mcts-nn")]
     pub mod mcts {
         use crate::core::search::mcts::NNParts;
-        pub type Parts<'a> = &'a NNParts<super::nn_backend::Backend>;
+        pub type Parts = NNParts<super::nn_backend::Backend>;
     }
 
     #[cfg(feature = "mcts-sa")]
