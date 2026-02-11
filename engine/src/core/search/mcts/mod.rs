@@ -166,8 +166,8 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
     }
 
     fn new(config: &Configuration) -> Self::Instance {
-        let alpha = config.dirichlet_alpha() as f32 / 100f32;
-        let epsilon = config.dirichlet_alpha() as f32 / 100f32;
+        let alpha = config.dirichlet_alpha();
+        let epsilon = config.dirichlet_epsilon();
         let weights = config.weights_path();
         Self::Instance::from_path(weights, alpha, epsilon)
     }
@@ -222,8 +222,8 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
     }
 
     fn new(config: &Configuration) -> Self::Instance {
-        let alpha = config.dirichlet_alpha() as f32 / 100f32;
-        let epsilon = config.dirichlet_alpha() as f32 / 100f32;
+        let alpha = config.dirichlet_alpha();
+        let epsilon = config.dirichlet_epsilon();
         Self::Instance::new(alpha, epsilon)
     }
 }

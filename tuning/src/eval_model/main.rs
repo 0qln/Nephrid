@@ -3,20 +3,21 @@
 // use std::env::var;
 use burn::{nn::loss::BinaryCrossEntropyLossConfig, train::MultiLabelClassificationOutput};
 use engine::core::{
-    depth::Depth,
+    config::Configuration,
     search::mcts::{
-        MctsParts, NNParts, SearchState,
+        MctsParts, SearchState,
         back::{Backpropagater, DefaultBackuper},
         eval::{Evaluation, Evaluator, GameResult, Guess, RawPolicy, nn::NNEvaluator},
         mcts,
         nn::{BOARD_INPUT_HISTORY, POLICY_OUTPUTS, board_history_input},
-        node::{Branch, Node, NodeState, Value},
-        select::{Score, Selection, SelectionItem, SelectionNode, Selector},
+        node::{Branch, Node, Value},
+        select::puct,
         strategy::{MctsFindBest, MctsStrategy},
     },
     turn::Turn,
 };
-use std::{cell::RefCell, cmp::max};
+use rand::SeedableRng;
+use std::cmp::max;
 
 use burn::{
     prelude::Module,
@@ -24,7 +25,7 @@ use burn::{
     tensor::{Tensor, backend::Backend},
 };
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::{env::var, error::Error, fs, marker::PhantomData, ops::ControlFlow, rc::Rc, sync::Mutex};
+use std::{env::var, error::Error, fs, marker::PhantomData, rc::Rc, sync::Mutex};
 
 use burn::{
     data::dataloader::DataLoaderBuilder,
@@ -63,14 +64,18 @@ use engine::{
                     VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
                 },
                 node::Tree,
+                noise::DirichletNoiser,
+                search::SelectionNodeRef,
+                select::Selector,
             },
         },
         zobrist,
     },
     misc::DebugMode,
-    uci::{sync::CancellationToken, tokens::Tokenizer},
+    uci::sync::CancellationToken,
 };
 use itertools::Itertools;
+use rand::rngs::SmallRng;
 use std::path::{Path, PathBuf};
 
 #[cfg(test)]
@@ -823,6 +828,8 @@ impl MctsStrategy for MctsTrain {
     type Result = (<MctsFindBest as MctsStrategy>::Result, Tree);
     type Step = (<MctsFindBest as MctsStrategy>::Step,);
 
+    fn start(&mut self, _: &mut Tree) {}
+
     fn result(&mut self, tree: &mut Tree) -> Self::Result {
         let inference_result = self.infer.result(tree);
         let tree = tree.to_owned();
@@ -910,7 +917,7 @@ struct State {
 }
 
 // Some interesting stats about the decision.
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Stats {
     pub policy_avg: f32,
     pub policy_variance: f32,
@@ -1015,17 +1022,18 @@ where
                 break;
             }
 
-            let model = &nn_state.nn;
-            let device = &nn_state.device;
-            let mut evaluator = NNEvaluator::<_, 1>::new(model, device);
-            let eval_node = evaluator.init(tree.get_root(), &pos);
-            evaluator.batch_eval(0, eval_node);
-            evaluator.eval_guesses();
-            let guess = evaluator.get_eval(0);
-            let guess = guess.expect("The evaluator should have generated the guess");
-            let guess = guess.guess().expect(
-                "We specifically told the evaluator to make a guess and not a terminal evaluation.",
-            );
+            // let model = &nn_state.nn;
+            // let device = &nn_state.device;
+            // let mut evaluator = NNEvaluator::<_, 1>::new(model, device);
+            // let eval_node = evaluator.init(tree.get_root(), &pos);
+            // let sel_node =
+            // evaluator.batch_eval(0, eval_node);
+            // evaluator.eval_guesses();
+            // let guess = evaluator.get_eval(0);
+            // let guess = guess.expect("The evaluator should have generated the guess");
+            // let guess = guess.guess().expect(
+            //     "We specifically told the evaluator to make a guess and not a terminal
+            // evaluation.", );
 
             let b_in = board_input(&pos);
             let s_in = state_input(&pos);
@@ -1040,7 +1048,8 @@ where
             let state = State { mov, moving_color: turn };
             let input = Input { board_in: b_in, state_in: s_in };
             let target = P::Target::from(&tree);
-            let stats = Stats::new(guess.clone());
+            // let stats = Stats::new(guess.clone());
+            let stats = Stats::default();
             decisions.push(Decision { input, target, state, stats });
         }
         game_result
@@ -1070,10 +1079,11 @@ pub struct TrainParts<B: Backend> {
 }
 
 impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a TrainParts<B> {
-    type Selector = TrainSelector<X>;
+    type Selector = TrainSelector;
     type Backprop = TrainBackprop;
     type Evaluator = NNEvaluator<'a, 'a, B, X>;
     type Noiser = DirichletNoiser;
+    type Instance = TrainParts<B>;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -1091,29 +1101,38 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a TrainParts<B> {
         let rng = SmallRng::from_os_rng();
         DirichletNoiser::new(0.3, 0.25, rng)
     }
+
+    fn new(config: &Configuration) -> Self::Instance {
+        let alpha = config.dirichlet_alpha();
+        let epsilon = config.dirichlet_epsilon();
+        let weights = config.weights_path();
+        Self::Instance::from_path(weights, alpha, epsilon)
+    }
 }
 
 impl<B: Backend> TrainParts<B> {
     pub fn new(nn: Model<B>, device: B::Device) -> Self {
         Self { nn: Box::new(nn), device }
     }
+
+    pub fn from_path(_nn_path: &str, _alpha: f32, _epsilon: f32) -> Self {
+        todo!("read from nn_path");
+        // let device = B::Device::default();
+        // let nn = ModelConfig::new().init(&device);
+        // Self::new(nn, device, alpha, epsilon)
+    }
 }
 
 // todo: for training try to use a selector that weighs the actualy game results
 // higher than the value estimations... maybe that will help idk though
-pub struct TrainSelector<const X: usize> {
+pub struct TrainSelector {
     c: f32,
     policy_weight: f32,
-    selection: Selection<X>,
 }
 
-impl<const X: usize> TrainSelector<X> {
+impl TrainSelector {
     pub fn new(c: f32, policy_weight: f32) -> Self {
-        Self {
-            c,
-            policy_weight,
-            ..Default::default()
-        }
+        Self { c, policy_weight }
     }
 
     /// Weighted policy, where
@@ -1125,50 +1144,25 @@ impl<const X: usize> TrainSelector<X> {
     }
 }
 
-impl<const X: usize> Default for TrainSelector<X> {
+impl Default for TrainSelector {
     fn default() -> Self {
         Self {
             c: f32::sqrt(2.0),
             policy_weight: 1.0,
-            selection: Default::default(),
         }
     }
 }
 
-impl<const X: usize> Selector for TrainSelector<X> {
-    type Score = Score;
+impl Selector for TrainSelector {
+    type Score = puct::Score;
 
-    fn score(&self, branch: &Branch, cap_n_i: u32) -> Score {
+    fn score(&self, branch: &Branch, cap_n_i: u32) -> Self::Score {
         let n_i = branch.visits() as f32;
         let value = branch.node().borrow().value();
         let policy = Self::weighted_policy(branch.policy(), self.policy_weight);
         let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
         let exploration = self.c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);
-        Score(exploitation + exploration)
-    }
-
-    fn set(&mut self, index: usize, item: Rc<RefCell<SelectionNode>>) {
-        self.selection.leafs[index] = Some(item);
-    }
-
-    fn iter(&self) -> impl Iterator<Item = Option<Rc<RefCell<SelectionNode>>>> {
-        self.selection.leafs.iter().cloned()
-    }
-
-    fn init(&mut self, root_node: Rc<RefCell<Node>>, turn: Turn) -> Rc<RefCell<SelectionNode>> {
-        let root = Rc::new(RefCell::new(SelectionNode::new_root(SelectionItem {
-            leaf: root_node,
-            depth: Depth::MIN,
-            turn,
-        })));
-
-        self.selection.root = Some(root.clone());
-        root
-    }
-
-    fn budget(&self, remaining_budget: usize) -> usize {
-        // todo: maybe make this relative to the branch's puct score.
-        max(1, (remaining_budget as f32 * 0.3) as usize)
+        puct::Score(exploitation + exploration)
     }
 }
 
@@ -1182,12 +1176,12 @@ impl Backpropagater for TrainBackprop {
         ()
     }
 
-    fn backpropagate(&self, leaf: Rc<RefCell<SelectionNode>>, eval: &Evaluation) {
+    fn backpropagate<T>(&self, leaf: SelectionNodeRef<T>, eval: &Evaluation) {
         // default backup
         self.default.backpropagate(leaf.clone(), eval);
 
         // update our diagnostics or something ...
-        if let Evaluation::Terminal(result) = eval {}
+        if let Evaluation::Terminal(_result) = eval {}
     }
 }
 

@@ -241,12 +241,12 @@ impl Configuration {
         self.threads.value
     }
 
-    pub fn dirichlet_alpha(&self) -> i32 {
-        self.dirichlet_alpha.value
+    pub fn dirichlet_alpha(&self) -> f32 {
+        self.dirichlet_alpha.value as f32 / 100.
     }
 
-    pub fn dirichlet_epsilon(&self) -> i32 {
-        self.dirichlet_epsilon.value
+    pub fn dirichlet_epsilon(&self) -> f32 {
+        self.dirichlet_epsilon.value as f32 / 100.
     }
 
     pub fn weights_path(&self) -> &str {

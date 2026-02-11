@@ -1,37 +1,37 @@
-use std::env::var;
-use std::path::PathBuf;
+use std::{env::var, path::PathBuf};
 
-use crate::FenDataset;
-use crate::FenItemRaw;
-use crate::MctsTrain;
-use crate::TrainingConfig;
-use crate::train;
-use burn::backend::Autodiff;
-use burn::config::Config;
-use burn::data::dataset::Dataset;
-use burn::prelude::Module;
-use burn::record::CompactRecorder;
-use burn::record::Recorder;
-use burn_cuda::Cuda;
-use burn_cuda::CudaDevice;
-use engine::core::coordinates::squares;
-use engine::core::r#move::Move;
-use engine::core::r#move::move_flags;
-use engine::core::move_iter::sliding_piece::magics;
-use engine::core::position::Position;
-use engine::core::search::limit::Limit;
-use engine::core::search::mcts::NNParts;
-use engine::core::search::mcts::SearchState;
-use engine::core::search::mcts::mcts;
-use engine::core::search::mcts::nn::ModelConfig;
-use engine::core::zobrist;
-use engine::misc::DebugMode;
-use engine::uci::sync::CancellationToken;
-use engine::uci::tokens::Tokenizer;
+use crate::{FenDataset, FenItemRaw, MctsTrain, TrainingConfig, train};
+use burn::{
+    backend::Autodiff,
+    config::Config,
+    data::dataset::Dataset,
+    prelude::Module,
+    record::{CompactRecorder, Recorder},
+};
+use burn_cuda::{Cuda, CudaDevice};
+use engine::{
+    core::{
+        coordinates::squares,
+        r#move::{Move, move_flags},
+        move_iter::sliding_piece::magics,
+        position::Position,
+        search::{
+            limit::Limit,
+            mcts::{NNParts, SearchState, mcts, nn::ModelConfig},
+        },
+        zobrist,
+    },
+    misc::DebugMode,
+    uci::sync::CancellationToken,
+};
 
 const OUT_DIR: &'static str = "tuning/out/eval_model/test";
+const DIRICHLET_ALPHA: f32 = 0.3;
+const DIRICHLET_EPS: f32 = 0.25;
 
 pub mod logs {
+    use super::*;
+
     pub fn init() {
         let mut buf = PathBuf::new();
         buf.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
@@ -48,9 +48,9 @@ pub mod logs {
 //     magics::init();
 //     zobrist::init();
 
-//     // This is the policy that we want to learn. e.g. if we pretend that this policy was the
-//     // result of the selfplay phase, training the enging toward this should result in very
-//     // mminimal loss.
+//     // This is the policy that we want to learn. e.g. if we pretend that this
+// policy was the     // result of the selfplay phase, training the enging
+// toward this should result in very     // mminimal loss.
 //     let target_move = Move::new(squares::B5, squares::A5, move_flags::QUIET);
 //     let target_policy = {
 //         let mut pol = RawPolicy::null();
@@ -66,8 +66,9 @@ pub mod logs {
 
 //     let result_weights = {
 //         let mut config_path = PathBuf::new();
-//         config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
-//         config_path.push("tuning/src/eval_model/test/config.json");
+//         config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT
+// variable"));         config_path.push("tuning/src/eval_model/test/config.
+// json");
 
 //         let config = TrainingConfig::load(&config_path).expect(&format!(
 //             "Couldn't load config.json at {:?}",
@@ -124,8 +125,7 @@ pub fn learn_mate_in_1() {
     // test
     let test_fen = FenDataset::new("mate_in_1.edp", "train");
     let fen = Dataset::<FenItemRaw>::get(&test_fen, 0).expect("no fen in dataset");
-    let tok = &mut Tokenizer::new(&fen.fen);
-    let pos: Position = tok.try_into().expect("");
+    let pos = Position::from_fen(&fen.fen).expect("Bad fen");
     let result = {
         let record = CompactRecorder::new()
             .load(result_weights.into(), &device)
@@ -136,7 +136,7 @@ pub fn learn_mate_in_1() {
             .load_record(record);
 
         let mut mcts_state = SearchState::default();
-        let nn_state = NNParts::new(model, device);
+        let nn_state = NNParts::new(model, device, DIRICHLET_ALPHA, DIRICHLET_EPS);
 
         let limit = Limit {
             is_active: true,
@@ -203,8 +203,7 @@ pub fn learn_mate_in_2() {
     // test
     let test_fen = FenDataset::new("mate_in_2.edp", "train");
     let fen = Dataset::<FenItemRaw>::get(&test_fen, 0).expect("no fen in dataset");
-    let tok = &mut Tokenizer::new(&fen.fen);
-    let mut pos: Position = tok.try_into().expect("");
+    let mut pos = Position::from_fen(&fen.fen).expect("Bad fen");
     let result = {
         let record = CompactRecorder::new()
             .load(result_weights.into(), &device)
@@ -226,7 +225,7 @@ pub fn learn_mate_in_2() {
         let ct = CancellationToken::new();
 
         let mut mcts_state = SearchState::default();
-        let nn_state = NNParts::new(model, device);
+        let nn_state = NNParts::new(model, device, DIRICHLET_ALPHA, DIRICHLET_EPS);
 
         // us/mov-1
         let result = mcts(

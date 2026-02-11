@@ -31,8 +31,6 @@ pub trait Evaluator {
 
     fn trace(&self, node: NodeRef, pos: &Position) -> Self::TraceData;
 
-    // fn trace_stopped(&self) -> Self::TraceData;
-
     /// Evaluate a node's terminal state. If the node is terminal, return the
     /// evaluation, else return None.
     fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation> {
