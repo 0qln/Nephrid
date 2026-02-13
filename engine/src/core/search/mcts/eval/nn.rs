@@ -1,3 +1,5 @@
+use burn::tensor::{DType, TensorData};
+
 use crate::core::search::mcts::search::SelectionNode;
 
 use super::*;
@@ -121,31 +123,40 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
         leafs: &[SelectionNodeRef<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
         let batch_size = leafs.len();
-        // todo: do we rly need this?
-        // if batch_size == 0 {
-        //     return &std::iter::empty();
-        // }
 
-        let board_batch = self.build_board_batch(leafs.iter().cloned());
-        let state_batch = self.build_state_batch(leafs.iter().cloned());
-        let (values, raw_policies) = self.model.forward(board_batch, state_batch);
+        let values_shape = Shape::new([batch_size, VALUE_OUTPUTS]);
+        let policy_shape = Shape::new([batch_size, POLICY_OUTPUTS]);
 
-        assert_eq!(values.shape(), Shape::new([batch_size, VALUE_OUTPUTS]));
-        assert_eq!(
-            raw_policies.shape(),
-            Shape::new([batch_size, POLICY_OUTPUTS])
-        );
+        let (values, raw_policies) = if batch_size != 0 {
+            let board_batch = self.build_board_batch(leafs.iter().cloned());
+            let state_batch = self.build_state_batch(leafs.iter().cloned());
+            let (values, raw_policies) = self.model.forward(board_batch, state_batch);
 
-        let values = values.into_data();
+            assert_eq!(values.shape(), values_shape);
+            assert_eq!(raw_policies.shape(), policy_shape);
+
+            let values = values.into_data();
+            let raw_policies = raw_policies.into_data();
+
+            (values, raw_policies)
+        }
+        else {
+            (
+                TensorData::from_bytes_vec(vec![], values_shape, DType::F32),
+                TensorData::from_bytes_vec(vec![], policy_shape, DType::F32),
+            )
+        };
+
         let values = values
             .as_slice::<f32>()
             .expect("Qualities could not be converted to vec.");
-        let values = values.chunks(VALUE_OUTPUTS);
 
-        let raw_policies = raw_policies.into_data();
         let raw_policies = raw_policies
             .as_slice::<f32>()
             .expect("Policy could not be converted to vec.");
+
+        let values = values.chunks(VALUE_OUTPUTS);
+
         let raw_policies = raw_policies
             .chunks(POLICY_OUTPUTS)
             .map(|raw_policy| RawPolicy(raw_policy.try_into().unwrap()));

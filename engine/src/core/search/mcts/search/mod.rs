@@ -105,7 +105,6 @@ impl<const X: usize, T> Selection<X, T> {
 /// parallelize. If we don't have access to hardware accell, resort to using a
 /// backend like WebGPU, or NdArray, and just do TreeSearcher<MPV=1>.
 pub struct TreeSearcher<
-    'a,
     const MPV: usize,
     E: Evaluator,
     L: Limiter,
@@ -132,9 +131,8 @@ pub struct TreeSearcher<
     /// Noiser
     noiser: N,
 
-    /// The tree to be searched.
-    tree: &'a mut Tree,
-
+    // /// The tree to be searched.
+    // tree: &'a mut Tree,
     /// Number of compeleted iterations.
     iterations: usize,
 
@@ -143,11 +141,10 @@ pub struct TreeSearcher<
     selection: Selection<MPV, E::TraceData>,
 }
 
-impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
-    TreeSearcher<'a, MPV, E, L, S, B, N>
+impl<const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
+    TreeSearcher<MPV, E, L, S, B, N>
 {
     pub fn new(
-        tree: &'a mut Tree,
         position: Position,
         selector: S,
         limiter: L,
@@ -156,7 +153,6 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         noiser: N,
     ) -> Self {
         Self {
-            tree,
             position,
             selector,
             limiter,
@@ -169,22 +165,22 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
     }
 }
 
-impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
-    TreeSearcher<'a, MPV, E, L, S, B, N>
+impl<const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
+    TreeSearcher<MPV, E, L, S, B, N>
 {
-    pub fn grow(&mut self) {
-        self.select_lines();
+    pub fn grow(&mut self, tree: &mut Tree) {
+        self.select_lines(tree);
         self.eval_batched();
         self.backup_evals();
-        self.apply_noise();
+        self.apply_noise(tree);
         self.iterations += 1;
     }
 
     // Select the root leafes.
-    fn select_lines(&mut self) {
+    fn select_lines(&mut self, tree: &mut Tree) {
         // todo: convert to iterative approach -- or not if the stack frame is
         // small with this one ._.
-        let node = self.tree.get_root();
+        let node = tree.get_root();
         let turn = self.position.get_turn();
         let eval_data = self.evaluator.trace(node.clone(), &self.position);
         let sel_root = self.selection.init_root(node.clone(), turn, eval_data);
@@ -364,13 +360,13 @@ impl<'a, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropaga
         }
     }
 
-    fn apply_noise(&mut self) {
+    fn apply_noise(&mut self, tree: &mut Tree) {
         // Only apply noise once
         if self.iterations > 0 {
             return;
         }
 
-        let root = self.tree.get_root();
+        let root = tree.get_root();
         _ = self.noiser.apply_noise(&mut root.borrow_mut());
     }
 }

@@ -25,7 +25,6 @@ fn fuzz<const X: usize>(pos: &'static str) {
 
             for _i in 0..(50_000 / X) {
                 let mut searcher = TreeSearcher::<X, _, _, PuctSelector, _, _>::new(
-                    &mut tree,
                     pos.clone(),
                     PuctSelector::default(),
                     limiter.clone(),
@@ -33,7 +32,7 @@ fn fuzz<const X: usize>(pos: &'static str) {
                     DefaultBackuper::default(),
                     NullNoiser,
                 );
-                searcher.grow();
+                searcher.grow(&mut tree);
             }
         })
         .expect("Couldn't spawn thread")
@@ -73,7 +72,6 @@ fn growth() {
 
     // Perform two growth iterations
     TreeSearcher::<1, DummyEvaluator, NoopLimiter, PuctSelector, DefaultBackuper, _>::new(
-        &mut tree,
         pos.clone(),
         PuctSelector::default(),
         NoopLimiter,
@@ -81,9 +79,8 @@ fn growth() {
         DefaultBackuper::default(),
         NullNoiser,
     )
-    .grow();
+    .grow(&mut tree);
     TreeSearcher::<1, DummyEvaluator, NoopLimiter, PuctSelector, DefaultBackuper, _>::new(
-        &mut tree,
         pos.clone(),
         PuctSelector::default(),
         NoopLimiter,
@@ -91,7 +88,7 @@ fn growth() {
         DefaultBackuper::default(),
         NullNoiser,
     )
-    .grow();
+    .grow(&mut tree);
 
     // Verify backpropagation
     assert!(tree.get_root().borrow().visits() >= 1);

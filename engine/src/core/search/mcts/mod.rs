@@ -52,7 +52,7 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
 
     let time_per_move = limit.time_per_move(pos);
     let time_limit = Instant::now() + time_per_move;
-    let tree = state.tree();
+    let mut tree = state.tree();
 
     strategy.start(tree);
 
@@ -63,7 +63,6 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
         let noiser = parts.noiser();
 
         TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new(
-            tree,
             pos.clone(),
             selector,
             limiter.clone(),
@@ -71,7 +70,7 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
             backprop,
             noiser,
         )
-        .grow();
+        .grow(&mut tree);
 
         strategy.step(tree);
     }
@@ -275,7 +274,7 @@ pub mod config {
     pub const MPV: usize = 32;
 
     #[cfg(all(feature = "nn-backend-ndarray", not(feature = "mcts-pure")))]
-    pub const MPV: usize = 4;
+    pub const MPV: usize = 1;
 
     #[cfg(feature = "nn-backend-cuda")]
     pub mod nn_backend {
