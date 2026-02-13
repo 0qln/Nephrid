@@ -3,5 +3,14 @@ name = "nephrid"
 version = "25.11.22+b4b7c55"
 edition = "2024"
 
+[features]
+cpu = ["engine/nn-backend-ndarray"]
+gpu = ["engine/nn-backend-cuda"]
+mcts-nn = ["engine/mcts-nn"]
+mcts-sa = ["engine/mcts-sa"]
+mcts-pure = ["engine/mcts-pure"]
+
+default = ["cpu", "mcts-sa"]
+
 [dependencies]
-engine = { version = "*", path = "../engine", features = [ "mcts-sa", "nn-backend-ndarray"] }
+engine = { version = "*", path = "../engine", default-features = false }
