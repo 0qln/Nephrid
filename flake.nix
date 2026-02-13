@@ -107,8 +107,15 @@
               +
               # bash
               ''
+                # Dev Docs
                 echo "yo! o/"
-
+                echo "binary comilation example: "
+                echo '$ cargo run --bin nephrid --release --features "mcts-nn,gpu" --no-default-features'
+              ''
+              +
+              # bash
+              ''
+                # PATH
                 export PATH="$PWD/benchmarking/bin:$PATH"
               '';
           };
