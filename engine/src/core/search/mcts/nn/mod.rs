@@ -1,3 +1,6 @@
+use burn::record::{CompactRecorder, Recorder, RecorderError};
+use std::path::PathBuf;
+
 use burn::{
     config::Config,
     module::Module,
@@ -8,12 +11,10 @@ use burn::{
         pool::{MaxPool2d, MaxPool2dConfig},
     },
     prelude::Backend,
-    tensor::{
-        Tensor,
-        activation::softmax,
-    },
+    tensor::{Tensor, activation::softmax},
 };
 use itertools::Itertools;
+use thiserror::Error;
 
 use crate::core::{
     bitboard,
@@ -145,14 +146,16 @@ pub fn board_history_input<B: Backend>(
             "if we need no padding the history tensor should be full"
         );
         history_tensor
-    } else if history_len == 0 {
+    }
+    else if history_len == 0 {
         debug_assert_eq!(
             padding_tensor.shape()[1],
             BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
             "if we have no history the padding tensor should be full"
         );
         padding_tensor
-    } else {
+    }
+    else {
         Tensor::cat(vec![padding_tensor, history_tensor], 1)
     }
 }
@@ -487,5 +490,23 @@ impl ModelConfig {
             policy_dense: policy_dense.init(device),
             policy_out: policy_out.init(device),
         }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum LoadNNError {
+    #[error("Bad nn record: {0}")]
+    BadRecord(RecorderError),
+}
+
+impl<B: Backend> TryFrom<(PathBuf, &B::Device)> for Model<B> {
+    type Error = LoadNNError;
+
+    fn try_from((path, device): (PathBuf, &B::Device)) -> Result<Self, Self::Error> {
+        let record = CompactRecorder::new()
+            .load(path, device)
+            .map_err(LoadNNError::BadRecord)?;
+        let nn = ModelConfig::new().init(device).load_record(record);
+        Ok(nn)
     }
 }
