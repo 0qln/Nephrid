@@ -1,5 +1,6 @@
 use burn::prelude::Backend;
 use rand::{SeedableRng, rngs::SmallRng};
+use thiserror::Error;
 
 use crate::{
     core::{
@@ -12,7 +13,7 @@ use crate::{
                 Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator, r#static::StaticEvaluator,
             },
             limiter::DefaultLimiter,
-            nn::{Model, ModelConfig},
+            nn::{LoadNNError, Model},
             node::Tree,
             noise::{DirichletNoiser, Noiser, NullNoiser},
             search::TreeSearcher,
@@ -24,7 +25,7 @@ use crate::{
     uci::sync::CancellationToken,
 };
 
-use std::time::Instant;
+use std::{path::PathBuf, time::Instant};
 
 pub mod back;
 pub mod eval;
@@ -83,9 +84,8 @@ pub trait MctsParts<const X: usize = { config::MPV }> {
     type Evaluator: Evaluator;
     type Backprop: Backpropagater;
     type Noiser: Noiser;
-    type Instance;
+    type Instance: for<'a> TryFrom<&'a Configuration>;
 
-    fn new(config: &Configuration) -> Self::Instance;
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
     fn backprop(&self) -> Self::Backprop;
@@ -163,22 +163,28 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
         let rng = SmallRng::from_os_rng();
         DirichletNoiser::new(self.alpha, self.epsilon, rng)
     }
+}
 
-    fn new(config: &Configuration) -> Self::Instance {
+#[derive(Error, Debug)]
+pub enum CreateNNPartsError {
+    #[error("Error while creating nn-parts: {0}")]
+    LoadNNError(LoadNNError),
+}
+
+impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
+    type Error = CreateNNPartsError;
+
+    fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
         let alpha = config.dirichlet_alpha();
         let epsilon = config.dirichlet_epsilon();
-        let weights = config.weights_path();
-        Self::Instance::from_path(weights, alpha, epsilon)
+        let weights = PathBuf::from(config.weights_path());
+        let device = B::Device::default();
+        let nn = Model::try_from((weights, &device)).map_err(Self::Error::LoadNNError)?;
+        Ok(Self::new(nn, device, alpha, epsilon))
     }
 }
 
 impl<B: Backend> NNParts<B> {
-    pub fn from_path(_nn_path: &str, alpha: f32, epsilon: f32) -> Self {
-        let device = B::Device::default();
-        let nn = ModelConfig::new().init(&device); // todo: read from nn_path
-        Self::new(nn, device, alpha, epsilon)
-    }
-
     pub fn new(nn: Model<B>, device: B::Device, alpha: f32, epsilon: f32) -> Self {
         Self {
             nn: Box::new(nn),
@@ -219,11 +225,13 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
         let rng = SmallRng::from_os_rng();
         DirichletNoiser::new(self.alpha, self.epsilon, rng)
     }
+}
 
-    fn new(config: &Configuration) -> Self::Instance {
+impl From<&Configuration> for StaticParts {
+    fn from(config: &Configuration) -> Self {
         let alpha = config.dirichlet_alpha();
         let epsilon = config.dirichlet_epsilon();
-        Self::Instance::new(alpha, epsilon)
+        Self::new(alpha, epsilon)
     }
 }
 
@@ -260,9 +268,11 @@ impl<const X: usize> MctsParts<X> for &PureParts {
     fn noiser(&self) -> Self::Noiser {
         Default::default()
     }
+}
 
-    fn new(_config: &Configuration) -> Self::Instance {
-        Self::Instance {}
+impl From<&Configuration> for PureParts {
+    fn from(_config: &Configuration) -> Self {
+        Self {}
     }
 }
 

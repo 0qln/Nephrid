@@ -5,7 +5,7 @@ use burn::{nn::loss::BinaryCrossEntropyLossConfig, train::MultiLabelClassificati
 use engine::core::{
     config::Configuration,
     search::mcts::{
-        MctsParts, SearchState,
+        CreateNNPartsError, MctsParts, SearchState,
         back::{Backpropagater, DefaultBackuper},
         eval::{Evaluation, Evaluator, GameResult, Guess, RawPolicy, nn::NNEvaluator},
         mcts,
@@ -987,7 +987,7 @@ where
     let mut pos = Position::from_fen(pos)?;
 
     let mut decisions = Vec::<Decision<P::Target>>::new();
-    let nn_state = TrainParts::new(model, device);
+    let nn_state = TrainParts::new(model, device, 0.3, 0.25);
     let mut mcts_state = SearchState::default();
 
     println!("{pos:?}");
@@ -1076,6 +1076,8 @@ where
 pub struct TrainParts<B: Backend> {
     pub nn: Box<Model<B>>,
     pub device: B::Device,
+    alpha: f32,
+    epsilon: f32,
 }
 
 impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a TrainParts<B> {
@@ -1099,27 +1101,31 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a TrainParts<B> {
 
     fn noiser(&self) -> Self::Noiser {
         let rng = SmallRng::from_os_rng();
-        DirichletNoiser::new(0.3, 0.25, rng)
+        DirichletNoiser::new(self.alpha, self.epsilon, rng)
     }
+}
 
-    fn new(config: &Configuration) -> Self::Instance {
+impl<B: Backend> TryFrom<&Configuration> for TrainParts<B> {
+    type Error = CreateNNPartsError;
+
+    fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
         let alpha = config.dirichlet_alpha();
         let epsilon = config.dirichlet_epsilon();
-        let weights = config.weights_path();
-        Self::Instance::from_path(weights, alpha, epsilon)
+        let weights = PathBuf::from(config.weights_path());
+        let device = B::Device::default();
+        let nn = Model::try_from((weights, &device)).map_err(Self::Error::LoadNNError)?;
+        Ok(Self::new(nn, device, alpha, epsilon))
     }
 }
 
 impl<B: Backend> TrainParts<B> {
-    pub fn new(nn: Model<B>, device: B::Device) -> Self {
-        Self { nn: Box::new(nn), device }
-    }
-
-    pub fn from_path(_nn_path: &str, _alpha: f32, _epsilon: f32) -> Self {
-        todo!("read from nn_path");
-        // let device = B::Device::default();
-        // let nn = ModelConfig::new().init(&device);
-        // Self::new(nn, device, alpha, epsilon)
+    pub fn new(nn: Model<B>, device: B::Device, alpha: f32, epsilon: f32) -> Self {
+        Self {
+            nn: Box::new(nn),
+            device,
+            alpha,
+            epsilon,
+        }
     }
 }
 

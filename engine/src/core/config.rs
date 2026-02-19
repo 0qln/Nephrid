@@ -259,12 +259,10 @@ impl Configuration {
         match name.to_lowercase().as_str() {
             "hash" => self.hash.set(value),
             "threads" => self.threads.set(value),
-            "clear hash" | "clearhash" => {
-                self.clear_hash.trigger();
-                Ok(())
-            }
+            "clear hash" | "clearhash" => Ok(self.clear_hash.trigger()),
             "[dirichlet noise] alpha" | "dirichlet alpha" => self.dirichlet_alpha.set(value),
             "[dirichlet noise] epsilon" | "dirichlet epsilon" => self.dirichlet_epsilon.set(value),
+            "weights path" => Ok(self.weights_path.set(value)),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -275,6 +273,7 @@ impl Configuration {
         sync::out(&format!("{}", self.clear_hash));
         sync::out(&format!("{}", self.dirichlet_alpha));
         sync::out(&format!("{}", self.dirichlet_epsilon));
+        sync::out(&format!("{}", self.weights_path));
     }
 }
 

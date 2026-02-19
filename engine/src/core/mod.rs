@@ -194,11 +194,10 @@ pub fn execute_uci(
                 (mode, limit)
             };
 
-            let cfg = engine.config.clone();
             let cmd = match mode {
-                Mode::Normal => Command::Normal(position, limit, token, debug, cfg),
+                Mode::Normal => Command::Normal(position, limit, token, debug),
                 Mode::Ponder => Command::Ponder,
-                Mode::Perft => Command::Perft(position, limit, token, debug, cfg),
+                Mode::Perft => Command::Perft(position, limit, token, debug),
             };
 
             engine.search_t.tx.send(cmd)?;
@@ -311,6 +310,11 @@ pub fn execute_uci(
                 .lock()
                 .expect("Config dead :(")
                 .set(name, new_value)?;
+
+            // update search thread config.
+            let cfg = engine.config.clone();
+            let cmd = Command::Configure(cfg);
+            engine.search_t.tx.send(cmd)?;
 
             Ok(())
         }
