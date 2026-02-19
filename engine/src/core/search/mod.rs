@@ -122,10 +122,9 @@ pub fn init() -> Thread {
         })
         .expect("Failed to spawn search thread.");
 
-    tx.send(Command::Configure(Arc::new(Mutex::new(
+    _ = tx.send(Command::Configure(Arc::new(Mutex::new(
         Configuration::default(),
-    ))))
-    .expect("Default config won't work...");
+    ))));
 
     Thread { tx }
 }
