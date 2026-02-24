@@ -16,6 +16,7 @@ ndarray = "0.17.1"
 ringbuf = "0.4.8"
 rand_distr = "0.5.1"
 approx = "0.5.1"
+bumpalo = { version = "3.20.2", features = ["boxed", "allocator_api", "allocator-api2"] }
 
 [features]
 default = []

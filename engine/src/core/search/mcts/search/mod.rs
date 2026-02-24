@@ -195,7 +195,7 @@ impl<const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater,
         budget: usize,
         line_index: usize,
         depth: Depth,
-        node: Rc<RefCell<Node>>,
+        node: NodeRef,
         sel_node: SelectionNodeRef<E::TraceData>,
     ) -> usize {
         let state = node.borrow().state();
@@ -230,7 +230,7 @@ impl<const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater,
     fn select_node(
         &mut self,
         line_index: usize,
-        node: Rc<RefCell<Node>>,
+        node: NodeRef,
         sel_node: SelectionNodeRef<E::TraceData>,
         depth: Depth,
     ) -> usize {
@@ -264,7 +264,7 @@ impl<const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater,
         budget: usize,
         line_index: usize,
         depth: Depth,
-        parent_node: Rc<RefCell<Node>>,
+        parent_node: NodeRef,
         mut sel_node_parent: SelectionNodeRef<E::TraceData>,
     ) -> usize {
         // Split the budget up between this and the subsequent best nodes.
