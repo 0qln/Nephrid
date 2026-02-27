@@ -29,7 +29,9 @@ pub fn tree_grow(c: &mut Criterion) {
                 )
             },
             |(mut searcher, mut tree)| {
-                searcher.grow(&mut tree);
+                for _ in 0..1000 {
+                    searcher.grow(&mut tree);
+                }
             },
             BatchSize::SmallInput,
         )
