@@ -1,5 +1,7 @@
 use itertools::Itertools;
 
+use std::ops::Deref;
+
 use crate::core::{
     Move, Position,
     move_iter::fold_legal_moves,
@@ -9,6 +11,7 @@ use crate::core::{
     },
 };
 use std::{
+    alloc::{Allocator, Global},
     assert_matches::{assert_matches, debug_assert_matches},
     cell::RefCell,
     cmp::Ordering,
@@ -20,16 +23,14 @@ use std::{
 pub mod test;
 
 #[derive(Default, Debug, Clone)]
-pub struct Tree {
+pub struct Tree<A: Allocator = Global, NodeRef: Deref<Target = Node<A>> = Rc<RefCell<Node<A>>>> {
     /// Root of the tree.
-    root: Rc<RefCell<Node>>,
+    root: NodeRef,
 }
 
-impl Tree {
+impl<A: Allocator, NodeRef: Deref<Target = Node<A>> + Default> Tree<A, NodeRef> {
     pub fn new() -> Self {
-        Self {
-            root: Rc::new(RefCell::new(Node::leaf())),
-        }
+        Self { root: Default::default() }
     }
 
     pub fn advance_best(&mut self) {
@@ -158,10 +159,12 @@ pub enum NodeState {
     Terminal,
 }
 
+type DefaultBranch = Branch<Rc<RefCell<Node>>, bumpalo::Allocator>;
+
 #[derive(Clone, Default, Debug, PartialEq)]
-pub struct Branch {
+pub struct Branch<NodeRef: Deref<Node<A>>, A: Allocator = Global> {
     /// The node that this branch leads to.
-    node: Rc<RefCell<Node>>,
+    node: NodeRef,
 
     /// The policy of picking this branch.
     policy: f32,
@@ -231,7 +234,7 @@ impl Ord for Value {
 pub type NodeRef = Rc<RefCell<Node>>;
 
 #[derive(Clone, Default, PartialEq)]
-pub struct Node {
+pub struct Node<A: Allocator = Global> {
     /// The number of times this node was visited.
     pub visits: u32,
 
@@ -246,7 +249,7 @@ pub struct Node {
     state: NodeState,
 
     /// All the branches from this node.
-    branches: Vec<Branch>,
+    branches: Vec<Branch, A>,
 }
 
 impl fmt::Debug for Node {
