@@ -822,6 +822,10 @@ impl Position {
     pub fn piece_info(&self) -> &PieceInfo {
         &self.piece_info
     }
+
+    pub fn state_info(&self) -> &StateInfo {
+        &self.state.get_current()
+    }
 }
 
 pub struct PiecePlacementInfo<'a>(&'a Position);

@@ -223,6 +223,15 @@ impl Policy {
 pub fn normalize(xs: &mut [f32]) {
     let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
 
+    // make sure all values are positive.
+    if let Some(min) = xs.iter().min_by(|a, b| f32::total_cmp(a, b)).cloned()
+        && min < 0.
+    {
+        for policy in xs.iter_mut() {
+            *policy += -min;
+        }
+    }
+
     let sum = xs.iter().sum();
     if f32_eq(sum, 0., 0.001) {
         // Fallback to uniform distribution
@@ -244,6 +253,15 @@ pub fn normalize(xs: &mut [f32]) {
             "Evaluator should return a probability distribution. Sum was expected to be 1, but \
              was {sum}"
         );
+    }
+}
+
+fn softmax(xs: &mut [f32], temperature: f32) {
+    let max = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+    let exps: Vec<f32> = xs.iter().map(|x| ((x - max) / temperature).exp()).collect();
+    let sum: f32 = exps.iter().sum();
+    for (x, e) in xs.iter_mut().zip(exps) {
+        *x = e / sum;
     }
 }
 

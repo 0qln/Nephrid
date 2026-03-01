@@ -1,12 +1,13 @@
 use itertools::Itertools;
-use std::assert_matches::debug_assert_matches;
+use std::{assert_matches::debug_assert_matches, cmp::max};
 
 use crate::{
     core::{
         color::colors,
         coordinates::{Square, squares},
+        r#move::Move,
         piece::{PieceType, piece_type},
-        position::PieceInfo,
+        position::{PieceInfo, StateInfo},
         search::mcts::search::SelectionNodeRef,
     },
     impl_variants,
@@ -27,7 +28,11 @@ impl Psqt {
     }
 }
 
-const PIECE_VALUES: [i32; piece_type::N_VARIANTS] = [0, 100, 300, 300, 500, 800, 0];
+const PIECE_SCORES: [i32; piece_type::N_VARIANTS] = [0, 100, 300, 300, 500, 800, 0];
+
+pub fn piece_score(pt: PieceType) -> i32 {
+    PIECE_SCORES[pt.v() as usize]
+}
 
 const MG_PAWN_TABLE: Psqt = Psqt([
     0, 0, 0, 0, 0, 0, 0, 0, 98, 134, 61, 95, 68, 126, 34, -11, -6, 7, 26, 31, 65, 56, 25, -20, -14,
@@ -200,7 +205,7 @@ pub struct QualityInput {}
 impl QualityInput {
     fn material(pos: &PieceInfo, color: Color) -> i32 {
         (piece_type::PAWN..piece_type::KING)
-            .map(|p| pos.get_bitboard(p, color).pop_cnt() as i32 * PIECE_VALUES[p.v() as usize])
+            .map(|p| pos.get_bitboard(p, color).pop_cnt() as i32 * piece_score(p))
             .sum()
     }
 
@@ -250,6 +255,38 @@ impl PolicyInput {
     fn new() -> Self {
         Self {}
     }
+
+    pub fn psqt(phase: TaperValue, piece: PieceType, from: Square, to: Square) -> i32 {
+        let curr_score = {
+            let mg = psqt_score(game_phases::MG, piece, from);
+            let eg = psqt_score(game_phases::EG, piece, from);
+            phase.weighted_eval(mg, eg)
+        };
+        let new_score = {
+            let mg = psqt_score(game_phases::MG, piece, to);
+            let eg = psqt_score(game_phases::EG, piece, to);
+            phase.weighted_eval(mg, eg)
+        };
+        new_score - curr_score
+    }
+
+    /// MVV-LVA inspired bonus for capturing high-value pieces with low-value
+    /// pieces. Returns atleast 0, since we can decide not to make a
+    /// capture.
+    pub fn mvv_lva(pos: &PieceInfo, mov: Move) -> i32 {
+        if mov.get_flag().is_capture() {
+            let capturing = pos.get_piece(mov.get_from()).piece_type();
+            let captured = pos.get_piece(mov.get_to()).piece_type();
+            let score = piece_score(captured) - piece_score(capturing);
+            return max(0, score);
+        }
+        0
+    }
+
+    pub fn meta(pos: &PieceInfo, mov: Move, _state: &StateInfo) -> i32 {
+        // todo: give bonus for promotions etc.
+        0
+    }
 }
 
 impl From<&EvalInfo> for RawPolicy {
@@ -257,6 +294,7 @@ impl From<&EvalInfo> for RawPolicy {
         let node = &input.node.borrow();
         let pos = &input.pos;
         let phase = input.phase;
+        let state = &input.state;
 
         debug_assert_matches!(node.state(), NodeState::Expanded | NodeState::Terminal);
 
@@ -268,19 +306,13 @@ impl From<&EvalInfo> for RawPolicy {
             let from = mov.get_from();
             let to = mov.get_to();
             let piece = pos.get_piece(from).piece_type();
-            let curr_score = {
-                let mg = psqt_score(game_phases::MG, piece, from);
-                let eg = psqt_score(game_phases::EG, piece, from);
-                phase.weighted_eval(mg, eg)
-            };
-            let new_score = {
-                let mg = psqt_score(game_phases::MG, piece, to);
-                let eg = psqt_score(game_phases::EG, piece, to);
-                phase.weighted_eval(mg, eg)
-            };
-            let score = (curr_score - new_score) as f32;
-            policy.set(usize::from(mov), score);
+            let score = PolicyInput::psqt(phase, piece, from, to)
+                + PolicyInput::mvv_lva(pos, mov)
+                + PolicyInput::meta(pos, mov, &state);
+            policy.set(usize::from(mov), score as f32);
         }
+
+        softmax(&mut policy.0, 10.);
 
         policy
     }
@@ -305,12 +337,16 @@ pub struct EvalInfo {
 
     /// Piece infos of the position.
     pos: PieceInfo,
+
+    /// Current position state info.
+    state: StateInfo,
 }
 
 impl EvalInfo {
     pub fn new(node: Rc<RefCell<Node>>, pos: &Position) -> Self {
         Self {
             pos: pos.piece_info().clone(),
+            state: pos.state_info().clone(),
             phase: TaperValue::from_position(&pos),
             node: node.clone(),
             turn: pos.get_turn(),
