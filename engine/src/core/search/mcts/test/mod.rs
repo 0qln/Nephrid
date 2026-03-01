@@ -3,7 +3,7 @@ use rand::{Rng, SeedableRng, rngs::SmallRng};
 use crate::core::{
     position::Position,
     search::mcts::{
-        eval::{Evaluation, Evaluator, Guess, RawPolicy},
+        eval::{Evaluation, Evaluator, Guess, Quality, RawPolicy},
         nn::POLICY_OUTPUTS,
         node::NodeRef,
         search::SelectionNodeRef,
@@ -66,7 +66,7 @@ impl Evaluator for DummyEvaluator {
 
             evaluations.push(Evaluation::Guess(Box::new(Guess {
                 relative_to: trace_data.turn,
-                quality,
+                quality: Quality::new(quality),
                 policy: raw_policy,
             })));
         }

@@ -1,4 +1,5 @@
 use std::ops::ControlFlow;
+use crate::core::search::mcts::eval::Value;
 
 use crate::core::search::mcts::{
     eval::Evaluation,
@@ -8,7 +9,7 @@ use crate::core::search::mcts::{
 
 pub trait Backpropagater {
     /// Update the node with the result of an evaluation.
-    fn update(node: &mut Node, value: f32);
+    fn update(node: &mut Node, value: Value);
 
     /// Backpropagate the [eval].
     fn backpropagate<T>(&self, leaf: SelectionNodeRef<T>, eval: &Evaluation);
@@ -18,7 +19,7 @@ pub trait Backpropagater {
 pub struct DefaultBackuper {}
 
 impl Backpropagater for DefaultBackuper {
-    fn update(node: &mut Node, value: f32) {
+    fn update(node: &mut Node, value: Value) {
         node.visits += 1;
         node.value += value;
     }

@@ -172,7 +172,7 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
 
                 Evaluation::Guess(Box::new(Guess {
                     relative_to: data.turn,
-                    quality: value[0],
+                    quality: Quality::new(value[0]),
                     policy: raw_policy,
                 }))
             })

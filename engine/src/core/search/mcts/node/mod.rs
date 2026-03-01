@@ -4,7 +4,7 @@ use crate::core::{
     Move, Position,
     move_iter::fold_legal_moves,
     search::mcts::{
-        eval::{Policy, RawPolicy},
+        eval::{self, Policy, RawPolicy},
         node::ops::ControlFlow,
     },
 };
@@ -218,7 +218,7 @@ impl PartialOrd for Value {
 }
 
 impl_op!(/ |l: Value, r: f32| -> f32 { l.0 / r });
-impl_op!(+= |l: &mut Value, r: f32| { l.0 += r } );
+impl_op!(+= |l: &mut Value, r: eval::Value| { l.0 += r.v() } );
 
 impl Eq for Value {}
 

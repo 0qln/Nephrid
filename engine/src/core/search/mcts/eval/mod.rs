@@ -288,8 +288,12 @@ impl Value {
     }
 
     /// Inverses the value in it's range
-    fn inverse(&self) -> Value {
+    pub fn inverse(&self) -> Value {
         Self(1. - self.0)
+    }
+
+    pub fn v(&self) -> f32 {
+        self.0
     }
 
     // these are functions, because maybe later we want to have different values for
