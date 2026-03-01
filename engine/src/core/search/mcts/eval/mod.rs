@@ -60,14 +60,26 @@ pub enum GameResult {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Guess {
     pub relative_to: Color,
-    // value in the range from -1 to 1
-    pub quality: f32,
+    pub quality: Quality,
     pub policy: RawPolicy,
 }
 
 impl Guess {
     pub fn policy(&self) -> &RawPolicy {
         &self.policy
+    }
+
+    /// Returns a Value, where 0 is a loss and 1 is a win.
+    /// `turn`: Relative to which player should the value of the evaoluation be?
+    pub fn to_value(&self, turn: Color) -> Value {
+        let value = Value::from(self.quality);
+
+        if self.relative_to == turn {
+            value
+        }
+        else {
+            value.inverse()
+        }
     }
 }
 
@@ -93,53 +105,23 @@ impl fmt::Display for Evaluation {
 
 impl GameResult {
     /// Returns a number between 0 and 1, where 0 is a loss and 1 is a win.
-    const fn to_value(self, turn: Color) -> f32 {
+    const fn to_value(self, turn: Color) -> Value {
         match self {
-            Self::Win { relative_to } => {
-                if relative_to.v() == turn.v() {
-                    Self::win_value()
-                }
-                else {
-                    Self::loss_value()
-                }
-            }
-            Self::Draw => Self::draw_value(),
+            Self::Win { relative_to } if relative_to.v() == turn.v() => Value::win(),
+            Self::Win { .. } => Value::loss(),
+            Self::Draw => Value::draw(),
         }
-    }
-
-    // these are functions, because maybe later we want to have different values for
-    // e.g. a win that is close to the root node or further.
-
-    pub const fn draw_value() -> f32 {
-        0.5
-    }
-
-    pub const fn win_value() -> f32 {
-        1.0
-    }
-
-    pub const fn loss_value() -> f32 {
-        0.0
     }
 }
 
 impl Evaluation {
     /// Returns a number between 0 and 1, where 0 is a loss and 1 is a win.
     /// `turn`: Relative to which player should the value of the evaoluation be?
-    pub fn to_value(&self, turn: Color) -> f32 {
+    pub fn to_value(&self, turn: Color) -> Value {
         match self {
             Self::Terminal(result) => result.to_value(turn),
-            Self::Nope => GameResult::draw_value(),
-            Self::Guess(guess) => {
-                // The quality is between -1 and 1, so we have to convert it to a 0 to 1 range.
-                let quality = (guess.quality + 1.0) / 2.0;
-                if guess.relative_to == turn {
-                    quality
-                }
-                else {
-                    1.0 - quality
-                }
-            }
+            Self::Nope => Value::draw(),
+            Self::Guess(guess) => guess.to_value(turn),
         }
     }
 
@@ -275,5 +257,59 @@ impl Policy {
         let mut result = Self(policy);
         result.normalize();
         result
+    }
+}
+
+/// A value in range [-1; 1]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Quality(f32);
+
+impl Quality {
+    pub fn new(_0: f32) -> Self {
+        debug_assert!(_0 >= -1. && _0 <= 1.);
+        Self(_0)
+    }
+}
+
+impl From<Value> for Quality {
+    fn from(v: Value) -> Self {
+        Self((v.0 - 1.) / 2.)
+    }
+}
+
+/// A value in range [0; 1]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Value(f32);
+
+impl Value {
+    pub fn new(_0: f32) -> Self {
+        debug_assert!(_0 >= 0. && _0 <= 1.);
+        Self(_0)
+    }
+
+    /// Inverses the value in it's range
+    fn inverse(&self) -> Value {
+        Self(1. - self.0)
+    }
+
+    // these are functions, because maybe later we want to have different values for
+    // e.g. a win that is close to the root node or further.
+
+    pub const fn draw() -> Self {
+        Self(0.5)
+    }
+
+    pub const fn win() -> Self {
+        Self(1.0)
+    }
+
+    pub const fn loss() -> Self {
+        Self(0.0)
+    }
+}
+
+impl From<Quality> for Value {
+    fn from(q: Quality) -> Self {
+        Self(q.0 * 2. - 1.)
     }
 }
