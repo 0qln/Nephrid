@@ -1,3 +1,4 @@
+use bumpalo::Bump;
 use burn::prelude::Backend;
 use rand::{SeedableRng, rngs::SmallRng};
 use thiserror::Error;
@@ -40,10 +41,11 @@ pub mod utils;
 
 pub mod test;
 
-pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
+pub fn mcts<'a, S: MctsStrategy, P: MctsParts, M: MctsState<'a>>(
     pos: &Position,
     parts: P,
     state: &mut M,
+    bump: &'a Bump,
     limit: Limit,
     _debug: DebugMode,
     ct: CancellationToken,
@@ -53,9 +55,10 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
 
     let time_per_move = limit.time_per_move(pos);
     let time_limit = Instant::now() + time_per_move;
-    let mut tree = state.tree();
 
-    strategy.start(tree);
+    let tree = state.tree_mut();
+
+    strategy.start(&mut *tree);
 
     while !ct.is_cancelled() && (!limit.is_active || Instant::now() < time_limit) {
         let evaluator = parts.evaluator();
@@ -63,7 +66,8 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
         let backprop = parts.backprop();
         let noiser = parts.noiser();
 
-        TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new(
+        TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new_in(
+            bump,
             pos.clone(),
             selector,
             limiter.clone(),
@@ -71,17 +75,19 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
             backprop,
             noiser,
         )
-        .grow(&mut tree);
+        // Re-borrow the tree for each iteration
+        .grow(&mut *tree);
 
-        strategy.step(tree);
+        strategy.step(&mut *tree);
     }
 
-    strategy.result(state.tree())
+    // Give the final tree ownership to the strategy result extraction
+    strategy.result(tree)
 }
 
 pub trait MctsParts<const X: usize = { config::MPV }> {
     type Selector: Selector;
-    type Evaluator: Evaluator;
+    type Evaluator: for<'a> Evaluator<'a>;
     type Backprop: Backpropagater;
     type Noiser: Noiser;
     type Instance: for<'a> TryFrom<&'a Configuration>;
@@ -92,8 +98,8 @@ pub trait MctsParts<const X: usize = { config::MPV }> {
     fn noiser(&self) -> Self::Noiser;
 }
 
-pub trait MctsState {
-    fn tree(&mut self) -> &mut Tree;
+pub trait MctsState<'t> {
+    fn tree_mut(&mut self) -> &mut Tree<'t>;
 }
 
 // todo:
@@ -108,20 +114,22 @@ pub trait MctsState {
 // be really slow. <todo:benchmark />
 //
 /// # The search state.
-///
-/// Either we have ownership of a search-tree, or we have the join handle of the
-/// thread that will give us back the ownership of the search-tree.
-///
-/// (An option because maybe we just started something else like perft or some
-/// sht)
-#[derive(Default, Debug)]
-pub struct SearchState {
+#[derive(Debug)]
+pub struct SearchState<'bump> {
     /// The game tree.
-    pub tree: Tree,
+    pub tree: Tree<'bump>,
 }
 
-impl MctsState for SearchState {
-    fn tree(&mut self) -> &mut Tree {
+impl<'b> SearchState<'b> {
+    pub fn new_in(bump: &'b Bump) -> Self {
+        Self {
+            tree: Tree::new_in(bump)
+        }
+    }
+}
+
+impl<'b> MctsState<'b> for SearchState<'b> {
+    fn tree_mut(&mut self) -> &mut Tree<'b> {
         &mut self.tree
     }
 }

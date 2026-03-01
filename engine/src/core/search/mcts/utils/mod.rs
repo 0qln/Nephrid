@@ -6,6 +6,8 @@ use std::rc::Weak;
 #[cfg(test)]
 pub mod test;
 
+pub type DoubleLinkedNodeRef<T> = Rc<RefCell<DoubleLinkedNode<T>>>;
+
 #[derive(Default, Debug)]
 pub struct DoubleLinkedNode<T> {
     data: T,

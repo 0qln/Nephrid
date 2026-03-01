@@ -1,3 +1,4 @@
+use bumpalo::Bump;
 use thiserror::Error;
 
 use crate::{
@@ -39,9 +40,9 @@ pub struct Thread {
     pub tx: Sender<Command>,
 }
 
-pub struct Worker {
+pub struct Worker<'a> {
     mcts_parts: Option<mcts::config::mcts::Parts>,
-    mcts_state: mcts::SearchState,
+    mcts_state: mcts::SearchState<'a>,
 }
 
 #[derive(Error, Debug)]
@@ -54,14 +55,14 @@ pub enum ExecError {
     RuntimeError(Box<dyn Error>),
 }
 
-impl Worker {
-    pub fn new() -> Self {
-        let mcts_state = mcts::SearchState::default();
+impl<'a> Worker<'a> {
+    pub fn new_in(bump: &'a Bump) -> Self {
+        let mcts_state = mcts::SearchState::new_in(&bump);
         let mcts_parts = None;
         Self { mcts_parts, mcts_state }
     }
 
-    pub fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
+    pub fn exec(&mut self, bump: &'a mut Bump, cmd: Command) -> Result<(), ExecError> {
         match cmd {
             Command::Perft(pos, limit, ct, debug) => {
                 perft(pos, limit, ct, debug);
@@ -71,7 +72,16 @@ impl Worker {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
 
-                let result = mcts(&pos, parts, state, limit, debug, ct, MctsUci::default());
+                let result = mcts(
+                    &pos,
+                    parts,
+                    state,
+                    bump,
+                    limit,
+                    debug,
+                    ct,
+                    MctsUci::default(),
+                );
 
                 match result {
                     None => todo!("Log error or something"),
@@ -95,11 +105,20 @@ impl Worker {
                 Ok(())
             }
             Command::AdvanceState(mov) => {
-                self.mcts_state.tree.advance_to(|b| b.mov() == mov);
+                *bump = Bump::new();
+                let new_tree = self
+                    .mcts_state
+                    .tree
+                    .into_advance_to(bump, |b| b.mov() == mov)
+                    .expect("oops");
+
+                self.mcts_state.tree = new_tree;
+
                 Ok(())
             }
             Command::ResetState => {
-                self.mcts_state.tree = Tree::default();
+                *bump = Bump::new();
+                self.mcts_state.tree = Tree::new_in(bump);
                 Ok(())
             }
         }

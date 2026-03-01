@@ -39,7 +39,7 @@ impl Default for DummyEvaluator {
     }
 }
 
-impl Evaluator for DummyEvaluator {
+impl<'a> Evaluator<'a> for DummyEvaluator {
     type TraceData = DummyTraceData;
 
     fn trace(&self, _node: NodeRef, pos: &Position) -> Self::TraceData {

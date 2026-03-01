@@ -20,16 +20,16 @@ impl InputFloats {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct TraceInfo {
+pub struct TraceInfo<'node> {
     /// Input floats for the eval model.
     inputs: InputFloats,
 
     /// The node that this eval info is for.
-    node: Rc<RefCell<Node>>,
+    node: NodeRef<'node>,
 }
 
-impl TraceInfo {
-    pub fn new(node: Rc<RefCell<Node>>, pos: &Position) -> Self {
+impl<'node> TraceInfo<'node> {
+    pub fn new(node: NodeRef<'node>, pos: &Position) -> Self {
         Self {
             inputs: InputFloats::new(pos),
             node,
@@ -57,9 +57,9 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
 
     /// batch: The iterator of the selected leaf nodes that should be evaluated
     /// in this batch.
-    fn build_board_batch(
+    fn build_board_batch<'bump>(
         &self,
-        batch: impl Iterator<Item = SelectionNodeRef<<Self as Evaluator>::TraceData>>,
+        batch: impl Iterator<Item = SelectionNodeRef<'bump, <Self as Evaluator<'bump>>::TraceData>>,
     ) -> Tensor<B, 4> {
         // concatenate the board inputs along the batch dimension.
         Tensor::cat(
@@ -94,9 +94,9 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
         vec
     }
 
-    fn build_state_batch(
+    fn build_state_batch<'bump>(
         &self,
-        batch: impl Iterator<Item = SelectionNodeRef<<Self as Evaluator>::TraceData>>,
+        batch: impl Iterator<Item = SelectionNodeRef<'bump, <Self as Evaluator<'bump>>::TraceData>>,
     ) -> Tensor<B, 2> {
         // concatenate the state inputs along the batch dimension.
         Tensor::cat(
@@ -111,16 +111,16 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
     }
 }
 
-impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X> {
-    type TraceData = TraceInfo;
+impl<'bump, 'a, 'b, B: Backend, const X: usize> Evaluator<'bump> for NNEvaluator<'a, 'b, B, X> {
+    type TraceData = TraceInfo<'bump>;
 
-    fn trace(&self, node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData {
+    fn trace(&self, node: NodeRef<'bump>, pos: &Position) -> Self::TraceData {
         TraceInfo::new(node, pos)
     }
 
     fn eval_batch(
         &mut self,
-        leafs: &[SelectionNodeRef<Self::TraceData>],
+        leafs: &[SelectionNodeRef<'bump, Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
         let batch_size = leafs.len();
 

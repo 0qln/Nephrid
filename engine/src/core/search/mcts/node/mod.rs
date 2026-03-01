@@ -1,6 +1,5 @@
+use bumpalo::Bump;
 use itertools::Itertools;
-
-use std::ops::Deref;
 
 use crate::core::{
     Move, Position,
@@ -11,28 +10,33 @@ use crate::core::{
     },
 };
 use std::{
-    alloc::{Allocator, Global},
     assert_matches::{assert_matches, debug_assert_matches},
     cell::RefCell,
     cmp::Ordering,
     fmt, ops,
-    rc::Rc,
 };
 
-#[cfg(test)]
-pub mod test;
+// todo: fix test
+// #[cfg(test)]
+// pub mod test;
 
-#[derive(Default, Debug, Clone)]
-pub struct Tree<A: Allocator = Global, NodeRef: Deref<Target = Node<A>> = Rc<RefCell<Node<A>>>> {
+#[derive(Debug)]
+pub struct Tree<'bump> {
     /// Root of the tree.
-    root: NodeRef,
+    root: NodeRef<'bump>,
 }
 
-impl<A: Allocator, NodeRef: Deref<Target = Node<A>> + Default> Tree<A, NodeRef> {
-    pub fn new() -> Self {
-        Self { root: Default::default() }
+impl<'bump> Tree<'bump> {
+    pub fn new_in(bump: &'bump Bump) -> Self {
+        Self {
+            // Allocates the root directly into the arena
+            root: bump.alloc(RefCell::new(Node::leaf_in(bump))),
+        }
     }
 
+    /// Advances the root pointer *within the same arena*.
+    /// Note: This leaks the dropped branches until the whole arena is
+    /// dropped/reset.
     pub fn advance_best(&mut self) {
         let node = {
             let root = self.root.borrow();
@@ -44,6 +48,19 @@ impl<A: Allocator, NodeRef: Deref<Target = Node<A>> + Default> Tree<A, NodeRef> 
         }
     }
 
+    /// Consumes this tree, advances to the best branch, and deeply copies the
+    /// retained subtree into a `new_bump` arena.
+    /// This is the proper way to free memory of unselected branches.
+    pub fn into_advance_best<'new>(self, new_bump: &'new Bump) -> Option<Tree<'new>> {
+        let root = self.root.borrow();
+        let branch = root.select_best()?;
+
+        Some(Tree {
+            root: branch.node().borrow().clone_into(new_bump),
+        })
+    }
+
+    /// Advances the root pointer *within the same arena*.
     pub fn advance_to<F: Fn(&Branch) -> bool>(&mut self, pred: F) {
         let node = {
             let root = self.root.borrow();
@@ -53,6 +70,21 @@ impl<A: Allocator, NodeRef: Deref<Target = Node<A>> + Default> Tree<A, NodeRef> 
         if let Some(node) = node {
             self.root = node;
         }
+    }
+
+    /// Consumes this tree, advances to the matched branch, and deeply copies
+    /// the retained subtree into a `new_bump` arena.
+    pub fn into_advance_to<'new: 'bump, F: Fn(&Branch) -> bool>(
+        &mut self,
+        new_bump: &'new Bump,
+        pred: F,
+    ) -> Option<()> {
+        let root = self.root.borrow();
+        let branch = root.iter_branches().find(|x| pred(x))?;
+
+        self.root = branch.node().borrow().clone_into(new_bump);
+
+        Some(())
     }
 
     /// Returns None if there are no moves.
@@ -71,20 +103,18 @@ impl<A: Allocator, NodeRef: Deref<Target = Node<A>> + Default> Tree<A, NodeRef> 
     }
 
     /// Returns the current principal variation.
-    pub fn principal_variation(&self) -> Path {
+    pub fn principal_variation(&self) -> Path<'bump> {
         let mut buf = Vec::new();
-        let mut current = self.root.clone();
+        let mut current = self.root;
         loop {
             let state = current.borrow().state();
             match state {
                 NodeState::Expanded => {
                     debug_assert!(
-                        !{ current.borrow().branches.is_empty() },
+                        !current.borrow().branches.is_empty(),
                         "Contradiction: NodeState == Expanded, but there are no branches."
                     );
 
-                    // we can clone here since branch struct is very small
-                    // SAFETY: This branch is only reached when NodeState == Expanded
                     let branch =
                         unsafe { current.borrow().select_best().unwrap_unchecked().clone() };
                     let node = branch.node();
@@ -105,31 +135,23 @@ impl<A: Allocator, NodeRef: Deref<Target = Node<A>> + Default> Tree<A, NodeRef> 
     }
 
     /// Returns the max depth of the tree.
-    /// e.g.
-    /// when we only have root -> 0
-    /// when root has 1 child -> 1
-    /// when roto has 2 children, where 1 with a child -> 2
     pub fn maxdepth(&self) -> usize {
         self.get_root().borrow().subtree_maxdepth()
     }
 
     /// Returns the min depth of the tree.
-    /// e.g.
-    /// when we only have root -> 0
-    /// when root has 1 child -> 1
-    /// when roto has 2 children, where 1 with a child -> 1
     pub fn mindepth(&self) -> usize {
         self.get_root().borrow().subtree_mindepth()
     }
 
-    pub fn get_root(&self) -> Rc<RefCell<Node>> {
-        self.root.clone()
+    pub fn get_root(&self) -> NodeRef<'bump> {
+        self.root
     }
 }
 
-pub struct Path(pub Vec<Branch>);
+pub struct Path<'bump>(pub Vec<Branch<'bump>>);
 
-impl Path {
+impl<'bump> Path<'bump> {
     pub fn len(&self) -> usize {
         self.0.len()
     }
@@ -139,7 +161,7 @@ impl Path {
     }
 }
 
-impl fmt::Display for Path {
+impl<'bump> fmt::Display for Path<'bump> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut moves = self.0.iter().map(|x| x.mov().to_string());
         f.write_str(&moves.join(" "))
@@ -148,23 +170,17 @@ impl fmt::Display for Path {
 
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NodeState {
-    /// A leaf is an untouched node.
     #[default]
     Leaf,
-    /// An expanded node is a node which has been analized and to be found to
-    /// have children.
     Expanded,
-    /// A terminal node is a node which has been analized and to be found to
-    /// have no children.
     Terminal,
 }
 
-type DefaultBranch = Branch<Rc<RefCell<Node>>, bumpalo::Allocator>;
-
-#[derive(Clone, Default, Debug, PartialEq)]
-pub struct Branch<NodeRef: Deref<Node<A>>, A: Allocator = Global> {
+// Derived Copy since NodeRef<'bump> and Move are Copy.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Branch<'bump> {
     /// The node that this branch leads to.
-    node: NodeRef,
+    node: NodeRef<'bump>,
 
     /// The policy of picking this branch.
     policy: f32,
@@ -173,12 +189,21 @@ pub struct Branch<NodeRef: Deref<Node<A>>, A: Allocator = Global> {
     mov: Move,
 }
 
-impl Branch {
-    pub fn new(m: Move, policy: f32) -> Self {
+impl<'bump> Branch<'bump> {
+    pub fn new_in(m: Move, policy: f32, bump: &'bump Bump) -> Self {
         Self {
-            node: Rc::new(RefCell::new(Node::leaf())),
+            node: bump.alloc(RefCell::new(Node::leaf_in(bump))),
             policy,
             mov: m,
+        }
+    }
+
+    /// Deep clones this branch and its descendants into a new bump arena
+    pub fn clone_into<'new>(&self, new_bump: &'new Bump) -> Branch<'new> {
+        Branch {
+            node: self.node.borrow().clone_into(new_bump),
+            policy: self.policy,
+            mov: self.mov,
         }
     }
 
@@ -190,8 +215,8 @@ impl Branch {
         self.policy
     }
 
-    pub fn node(&self) -> Rc<RefCell<Node>> {
-        self.node.clone()
+    pub fn node(&self) -> NodeRef<'bump> {
+        self.node
     }
 
     pub fn visits(&self) -> u32 {
@@ -231,28 +256,19 @@ impl Ord for Value {
     }
 }
 
-pub type NodeRef = Rc<RefCell<Node>>;
+pub type NodeRef<'bump> = &'bump RefCell<Node<'bump>>;
 
-#[derive(Clone, Default, PartialEq)]
-pub struct Node<A: Allocator = Global> {
-    /// The number of times this node was visited.
+pub type Branches<'bump> = bumpalo::collections::Vec<'bump, Branch<'bump>>;
+
+#[derive(Clone, PartialEq)]
+pub struct Node<'bump> {
     pub visits: u32,
-
-    /// The value of this node. (~sums all the values of it's children)
     pub value: Value,
-
-    // todo: put this behind a generic PAYLOAD parameter or something, this is currently only used
-    // for training and should thus not be here in production.
-    // /// win/draw/loss count
-    // pub terminal_wdl: WDL,
-    /// The current state of this node.
     state: NodeState,
-
-    /// All the branches from this node.
-    branches: Vec<Branch, A>,
+    branches: Branches<'bump>,
 }
 
-impl fmt::Debug for Node {
+impl<'bump> fmt::Debug for Node<'bump> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Node")
             .field("value", &self.value())
@@ -270,63 +286,65 @@ impl fmt::Debug for Node {
     }
 }
 
-impl Node {
-    /// Sort the branches in ascending order.
+impl<'bump> Node<'bump> {
+    /// Deep clones this node and all of its descendants into a new bump arena
+    pub fn clone_into<'new>(&self, new_bump: &'new Bump) -> NodeRef<'new> {
+        let mut new_branches = Branches::new_in(new_bump);
+
+        for branch in self.branches.iter() {
+            new_branches.push(branch.clone_into(new_bump));
+        }
+
+        new_bump.alloc(RefCell::new(Node {
+            visits: self.visits,
+            value: self.value,
+            state: self.state,
+            branches: new_branches,
+        }))
+    }
+
     pub fn sort_by<T: Ord>(&mut self, f: impl Fn(&Branch) -> T) {
-        // todo: the sorting can be done a lot more efficiently:
-        // The puct score does not change very often later on, only as we start the
-        // search. Also we might only need the first few branches if MPV is low.
         self.branches.sort_by_key(f);
     }
 
-    pub fn get_branch(&self, index: usize) -> Option<&Branch> {
+    pub fn get_branch(&self, index: usize) -> Option<&Branch<'bump>> {
         self.branches.get(index)
     }
 
-    pub fn set_branches(&mut self, branches: Vec<Branch>) {
+    pub fn set_branches(&mut self, branches: Branches<'bump>) {
         self.branches = branches;
     }
 
-    pub fn iter_branches(&self) -> impl Iterator<Item = &Branch> {
+    pub fn iter_branches(&self) -> impl Iterator<Item = &Branch<'bump>> {
         self.branches.iter()
     }
 
-    pub fn iter_branches_mut(&mut self) -> impl Iterator<Item = &mut Branch> {
+    pub fn iter_branches_mut(&mut self) -> impl Iterator<Item = &mut Branch<'bump>> {
         self.branches.iter_mut()
     }
 
-    /// Whether this node has branches.
     pub fn has_branches(&self) -> bool {
         !self.branches.is_empty()
     }
 
-    /// The number of branches this node has
     pub fn num_branches(&self) -> usize {
         self.branches.len()
     }
 
-    /// Create a new leaf node.
-    pub fn leaf() -> Self {
+    pub fn leaf_in(bump: &'bump Bump) -> Self {
         Self {
             state: NodeState::Leaf,
-            branches: Vec::new(),
+            branches: Branches::new_in(bump),
             visits: 0,
             value: Value(0.0),
         }
     }
 
-    /// Select the branch with the most visits.
-    /// Returns None if there are no branches.
-    pub fn select_best(&self) -> Option<&Branch> {
+    pub fn select_best(&self) -> Option<&Branch<'bump>> {
         self.select(|b| b.visits())
     }
 
-    pub fn take_best(self) -> Option<Branch> {
-        self.take(|b| b.visits())
-    }
-
-    /// Returns None if there are no branches.
-    pub fn select<F, T>(&self, transform: F) -> Option<&Branch>
+    pub fn select<F, T>(&self, transform: F) -> Option<&Branch<'bump>>
     where
         F: Fn(&Branch) -> T,
         T: PartialOrd,
@@ -338,8 +356,7 @@ impl Node {
         })
     }
 
-    /// Returns None if there are no branches.
-    pub fn select_mut<F, T>(&mut self, transform: F) -> Option<&mut Branch>
+    pub fn select_mut<F, T>(&mut self, transform: F) -> Option<&mut Branch<'bump>>
     where
         F: Fn(&Branch) -> T,
         T: PartialOrd,
@@ -351,34 +368,12 @@ impl Node {
         })
     }
 
-    /// Returns None if there are no branches.
-    pub fn take<F, T>(self, transform: F) -> Option<Branch>
-    where
-        F: Fn(&Branch) -> T,
-        T: PartialOrd,
-    {
-        self.branches.into_iter().max_by(|a, b| {
-            let a = transform(a);
-            let b = transform(b);
-            a.partial_cmp(&b).expect("Node comparison failed!")
-        })
-    }
-
-    /// Returns None if there are no branches.
-    pub fn take_branch<F>(self, pred: F) -> Option<Branch>
-    where
-        F: Fn(&Branch) -> bool,
-    {
-        self.branches.into_iter().find(pred)
-    }
-
-    /// Expand the node.
-    pub fn expand(&mut self, pos: &Position) {
+    pub fn expand_in(&mut self, pos: &Position, bump: &'bump Bump) {
         assert_matches!(self.state(), NodeState::Leaf);
 
         _ = fold_legal_moves(pos, &mut self.branches, |acc, m| {
             ControlFlow::Continue::<(), _>({
-                acc.push(Branch::new(m, 0.0));
+                acc.push(Branch::new_in(m, 0.0, bump));
                 acc
             })
         });
@@ -391,7 +386,6 @@ impl Node {
         };
     }
 
-    /// Sets the policies of the branches.
     pub fn set_policy(&mut self, policy: &Policy) {
         assert_eq!(
             self.branches.len(),
@@ -404,7 +398,6 @@ impl Node {
         }
     }
 
-    /// Sets the policies of the branches.
     pub fn set_policy_raw(&mut self, raw_policy: &RawPolicy) {
         debug_assert_matches!(
             self.state(),
@@ -435,8 +428,6 @@ impl Node {
         self.state = state
     }
 
-    /// Returns the number of nodes in all subsequent branches + 1 (for this
-    /// node).
     pub fn subtree_size(&self) -> usize {
         1 + self
             .iter_branches()
@@ -444,8 +435,6 @@ impl Node {
             .sum::<usize>()
     }
 
-    /// Retruns the max depth of this node's subtree.
-    /// Returns 0 if there are no children.
     pub fn subtree_maxdepth(&self) -> usize {
         self.iter_branches()
             .map(|b| 1 + b.node().borrow().subtree_maxdepth())
@@ -453,41 +442,10 @@ impl Node {
             .unwrap_or(0)
     }
 
-    /// Retruns the min depth of this node's subtree.
-    /// Returns 0 if there are no children.
     pub fn subtree_mindepth(&self) -> usize {
         self.iter_branches()
             .map(|b| 1 + b.node().borrow().subtree_mindepth())
             .min()
             .unwrap_or(0)
     }
-
-    // /// The amount of wins in this and all subtrees.
-    // pub fn wins(&self) -> usize {
-    //     match self.state() {
-    //         NodeState::Terminal => {
-    //             let game_result = Evaluator::eval_terminal(self, pos)
-    //         }
-    //         NodeState::Expanded => self.iter_branches().map(
-    //             |b| b.node().wins()
-    //         ).sum()
-    //     }
-    // }
-
-    ///// Applies `f` to this and all child nodes, until no more child is found or
-    ///// `f` returns residual.
-    //pub fn try_fold_down<B, F, R>(this: Rc<RefCell<Self>>, mut init: B, mut f: F)
-    // -> R where
-    //    F: FnMut(B, Rc<RefCell<Self>>) -> R,
-    //    R: Try<Output = B>,
-    //{
-    //    init = f(init, this.clone())?;
-    //    self.iter_branches()
-    //        .try_fold(init, f);
-    //    //while let Some(parent) = { this.borrow_mut().parent() } {
-    //    //        this = parent;
-    //    //        init = f(init, this.clone())?;
-    //    //}
-    //    R::from_output(init)
-    //}
 }

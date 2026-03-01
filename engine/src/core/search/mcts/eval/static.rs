@@ -42,9 +42,9 @@ pub struct PolicyInput {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct EvalInfo {
+pub struct EvalInfo<'node> {
     /// The node that this eval info is for.
-    node: Rc<RefCell<Node>>,
+    node: NodeRef<'node>,
 
     /// Quality info for static evaluation
     q_input: QualityInput,
@@ -56,8 +56,8 @@ pub struct EvalInfo {
     turn: Turn,
 }
 
-impl EvalInfo {
-    pub fn new(node: Rc<RefCell<Node>>, pos: &Position) -> Self {
+impl<'node> EvalInfo<'node> {
+    pub fn new(node: NodeRef<'node>, pos: &Position) -> Self {
         Self {
             node,
             turn: pos.get_turn(),
@@ -76,10 +76,10 @@ impl StaticEvaluator {
     }
 }
 
-impl Evaluator for StaticEvaluator {
-    type TraceData = EvalInfo;
+impl<'trace> Evaluator<'trace> for StaticEvaluator {
+    type TraceData = EvalInfo<'trace>;
 
-    fn trace(&self, node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData {
+    fn trace(&self, node: NodeRef<'trace>, pos: &Position) -> Self::TraceData {
         EvalInfo::new(node, pos)
     }
 
