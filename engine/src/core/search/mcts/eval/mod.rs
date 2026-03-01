@@ -178,26 +178,6 @@ impl RawPolicy {
     pub fn iter(&self) -> impl Iterator<Item = f32> {
         self.0.iter().cloned()
     }
-
-    pub fn normalize(&mut self) {
-        let policy_sum = {
-            let sum = self.iter().sum();
-            if sum == 0.0 {
-                // Fallback to uniform distribution
-                self.len() as f32
-            }
-            else {
-                sum
-            }
-        };
-        for policy in &mut self.0 {
-            *policy /= policy_sum;
-        }
-
-        // Evaluator should return a probability distribution.
-        let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
-        debug_assert!(f32_eq(self.iter().sum::<f32>(), 1., 0.001));
-    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -232,31 +212,38 @@ impl Policy {
         self.0.iter_mut()
     }
 
-    pub fn normalize(&mut self) {
-        let policy_sum = {
-            let sum = self.iter().sum();
-            if sum == 0.0 {
-                // Fallback to uniform distribution
-                self.len() as f32
-            }
-            else {
-                sum
-            }
-        };
-        for policy in &mut self.0 {
-            *policy /= policy_sum;
-        }
-
-        // Evaluator should return a probability distribution.
-        let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
-        debug_assert!(f32_eq(self.iter().sum::<f32>(), 1., 0.001));
-    }
-
     pub fn new(policy: Vec<f32>) -> Self {
         debug_assert!(!policy.is_empty(), "Should have atleast one policy item");
         let mut result = Self(policy);
-        result.normalize();
+        normalize(&mut result.0);
         result
+    }
+}
+
+pub fn normalize(xs: &mut [f32]) {
+    let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
+
+    let sum = xs.iter().sum();
+    if f32_eq(sum, 0., 0.001) {
+        // Fallback to uniform distribution
+        let uniform = 1.0 / xs.len() as f32;
+        for policy in xs.iter_mut() {
+            *policy = uniform;
+        }
+    }
+    else {
+        for policy in xs.iter_mut() {
+            *policy /= sum;
+        }
+    }
+
+    {
+        let sum = xs.iter().sum::<f32>();
+        debug_assert!(
+            f32_eq(sum, 1., 0.001),
+            "Evaluator should return a probability distribution. Sum was expected to be 1, but \
+             was {sum}"
+        );
     }
 }
 
@@ -273,7 +260,7 @@ impl Quality {
 
 impl From<Value> for Quality {
     fn from(v: Value) -> Self {
-        Self((v.0 - 1.) / 2.)
+        Self::new((v.0 - 0.5) * 2.)
     }
 }
 
@@ -314,6 +301,6 @@ impl Value {
 
 impl From<Quality> for Value {
     fn from(q: Quality) -> Self {
-        Self(q.0 * 2. - 1.)
+        Self::new((q.0 + 1.) / 2.)
     }
 }

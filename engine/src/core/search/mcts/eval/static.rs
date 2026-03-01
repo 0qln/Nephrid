@@ -1,11 +1,12 @@
 use itertools::Itertools;
-use std::cmp::max;
+use std::assert_matches::debug_assert_matches;
 
 use crate::{
     core::{
         color::colors,
         coordinates::{Square, squares},
-        piece::piece_type,
+        piece::{PieceType, piece_type},
+        position::PieceInfo,
         search::mcts::search::SelectionNodeRef,
     },
     impl_variants,
@@ -124,6 +125,10 @@ const PSQT_EG: [Psqt; piece_type::N_VARIANTS] = [
 
 const PSQT: [[Psqt; piece_type::N_VARIANTS]; game_phases::N_VARIANTS] = [PSQT_MG, PSQT_EG];
 
+fn psqt_score(phase: GamePhase, piece: PieceType, sq: Square) -> i32 {
+    PSQT[phase.v() as usize][piece.v() as usize].get(sq)
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct GamePhase {
     v: TGamePhase,
@@ -170,7 +175,7 @@ const PIECE_PHASES: [PiecePhase; piece_type::N_VARIANTS] = {
 /// Where:
 ///  0 => early game
 /// 24 => late game
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(PartialEq, Debug, Default, Copy, Clone)]
 pub struct TaperValue(u32);
 
 impl TaperValue {
@@ -190,24 +195,21 @@ impl TaperValue {
 }
 
 #[derive(Debug, PartialEq, Default)]
-pub struct QualityInput {
-    w_q: i32,
-    b_q: i32,
-}
+pub struct QualityInput {}
 
 impl QualityInput {
-    fn material(pos: &Position, color: Color) -> i32 {
+    fn material(pos: &PieceInfo, color: Color) -> i32 {
         (piece_type::PAWN..piece_type::KING)
             .map(|p| pos.get_bitboard(p, color).pop_cnt() as i32 * PIECE_VALUES[p.v() as usize])
             .sum()
     }
 
-    fn psqt(pos: &Position, color: Color) -> i32 {
-        fn score(pos: &Position, color: Color, phase: GamePhase) -> i32 {
+    fn psqt(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
+        fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> i32 {
             (piece_type::PAWN..=piece_type::KING)
                 .map(|piece| {
                     pos.get_bitboard(piece, color)
-                        .map(|sq| PSQT[phase.v() as usize][piece.v() as usize].get(sq))
+                        .map(|sq| psqt_score(phase, piece, sq))
                         .sum::<i32>()
                 })
                 .sum()
@@ -215,42 +217,73 @@ impl QualityInput {
 
         let mg = score(pos, color, game_phases::MG);
         let eg = score(pos, color, game_phases::EG);
-        let phase = TaperValue::from_position(&pos);
         phase.weighted_eval(mg, eg)
     }
 
-    fn value(pos: &Position, color: Color) -> i32 {
-        Self::material(pos, color) + Self::psqt(pos, color)
+    fn value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
+        Self::material(pos, color) + Self::psqt(pos, color, phase)
     }
 
-    fn new(pos: &Position) -> Self {
-        Self {
-            w_q: Self::value(pos, colors::WHITE),
-            b_q: Self::value(pos, colors::BLACK),
-        }
+    fn new() -> Self {
+        Self {}
     }
 }
 
 /// Convert QualityInput into Quality, where the Quality is relative to white.
-impl From<&QualityInput> for Quality {
-    fn from(q_input: &QualityInput) -> Self {
+impl From<&EvalInfo> for Quality {
+    fn from(input: &EvalInfo) -> Self {
         // get delta
-        let w_q = q_input.w_q;
-        let b_q = q_input.b_q;
+        let w_q = QualityInput::value(&input.pos, colors::WHITE, input.phase);
+        let b_q = QualityInput::value(&input.pos, colors::BLACK, input.phase);
         let d = (w_q - b_q) as f32;
 
-        // normalize to [0;1]
-        let m = (max(w_q, b_q)) as f32;
-        let v = Value::new(if m == 0. { 0. } else { d / m });
-
         // normalize to [-1;1]
-        Quality::from(v)
+        let m = (w_q.abs() + b_q.abs()) as f32;
+        Quality::new(if m == 0. { 0. } else { d / m })
     }
 }
 
 #[derive(Debug, PartialEq, Default)]
-pub struct PolicyInput {
-    p: RawPolicy,
+pub struct PolicyInput {}
+
+impl PolicyInput {
+    fn new() -> Self {
+        Self {}
+    }
+}
+
+impl From<&EvalInfo> for RawPolicy {
+    fn from(input: &EvalInfo) -> Self {
+        let node = &input.node.borrow();
+        let pos = &input.pos;
+        let phase = input.phase;
+
+        debug_assert_matches!(node.state(), NodeState::Expanded | NodeState::Terminal);
+
+        let mut policy = RawPolicy::null();
+        for mov in node.iter_branches().map(|b| b.mov()) {
+            // policy for each move in the position is the difference of the psqt score from
+            // the previous position and the psqt score of the next position that is
+            // achieved by the move.
+            let from = mov.get_from();
+            let to = mov.get_to();
+            let piece = pos.get_piece(from).piece_type();
+            let curr_score = {
+                let mg = psqt_score(game_phases::MG, piece, from);
+                let eg = psqt_score(game_phases::EG, piece, from);
+                phase.weighted_eval(mg, eg)
+            };
+            let new_score = {
+                let mg = psqt_score(game_phases::MG, piece, to);
+                let eg = psqt_score(game_phases::EG, piece, to);
+                phase.weighted_eval(mg, eg)
+            };
+            let score = (curr_score - new_score) as f32;
+            policy.set(usize::from(mov), score);
+        }
+
+        policy
+    }
 }
 
 #[derive(PartialEq, Debug)]
@@ -266,15 +299,23 @@ pub struct EvalInfo {
 
     /// Turn of the current player.
     turn: Turn,
+
+    /// The current game phase taper value.
+    phase: TaperValue,
+
+    /// Piece infos of the position.
+    pos: PieceInfo,
 }
 
 impl EvalInfo {
     pub fn new(node: Rc<RefCell<Node>>, pos: &Position) -> Self {
         Self {
-            node,
+            pos: pos.piece_info().clone(),
+            phase: TaperValue::from_position(&pos),
+            node: node.clone(),
             turn: pos.get_turn(),
-            q_input: QualityInput::new(pos),
-            p_input: PolicyInput::default(),
+            q_input: QualityInput::new(),
+            p_input: PolicyInput::new(),
         }
     }
 }
@@ -308,8 +349,8 @@ impl Evaluator for StaticEvaluator {
 
                 Evaluation::Guess(Box::new(Guess {
                     relative_to: colors::WHITE,
-                    quality: (&eval_info.q_input).into(),
-                    policy: eval_info.p_input.p.to_owned(),
+                    quality: eval_info.into(),
+                    policy: eval_info.into(),
                 }))
             })
             .collect_vec()

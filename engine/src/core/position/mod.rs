@@ -101,7 +101,8 @@ impl StateInfo {
                 let between_occupancy = occupancy & between_squares;
                 if between_occupancy.pop_cnt_eq_1() {
                     acc | between_squares
-                } else {
+                }
+                else {
                     acc
                 }
             });
@@ -208,17 +209,15 @@ impl StateStack {
 
 type Repetitions = repetitions::RepetitionTable<16>;
 
-#[derive(Clone, PartialEq, Eq)]
-pub struct Position {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PieceInfo {
     c_bitboards: [Bitboard; 2],
     t_bitboards: [Bitboard; 7],
     pieces: [Piece; 64],
     piece_counts: [i8; 14],
-    state: StateStack,
-    repetitions: Repetitions,
 }
 
-impl Default for Position {
+impl Default for PieceInfo {
     /// Returns an empty position.
     fn default() -> Self {
         Self {
@@ -226,13 +225,11 @@ impl Default for Position {
             t_bitboards: Default::default(),
             pieces: [Piece::default(); 64],
             piece_counts: Default::default(),
-            state: Default::default(),
-            repetitions: Default::default(),
         }
     }
 }
 
-impl Position {
+impl PieceInfo {
     #[inline]
     pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
         self.get_color_bb(color) & self.get_piece_bb(piece_type)
@@ -301,7 +298,27 @@ impl Position {
         // without checking that the value is in range.
         unsafe { self.piece_counts.get_unchecked_mut(piece.v() as usize) }
     }
+}
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct Position {
+    piece_info: PieceInfo,
+    state: StateStack,
+    repetitions: Repetitions,
+}
+
+impl Default for Position {
+    /// Returns an empty position.
+    fn default() -> Self {
+        Self {
+            piece_info: Default::default(),
+            state: Default::default(),
+            repetitions: Default::default(),
+        }
+    }
+}
+
+impl Position {
     #[inline]
     pub fn get_turn(&self) -> Turn {
         self.state.get_current().turn
@@ -324,7 +341,8 @@ impl Position {
             && self.get_turn() == c
         {
             Bitboard::from_c(sq)
-        } else {
+        }
+        else {
             Default::default()
         }
     }
@@ -377,7 +395,7 @@ impl Position {
 
     #[inline]
     pub fn is_insufficient_material(&self) -> bool {
-        self.piece_counts.iter().sum::<i8>() <= 2
+        self.piece_info.piece_counts.iter().sum::<i8>() <= 2
     }
 
     #[inline]
@@ -404,8 +422,8 @@ impl Position {
         self.plys_50() >= Ply { v: 100 }
     }
 
-    /// Returns the game result if the position is in a terminal state, else None.
-    /// has_moves: Whether this position has subsequent moves.
+    /// Returns the game result if the position is in a terminal state, else
+    /// None. has_moves: Whether this position has subsequent moves.
     pub fn game_result_with(&self, has_moves: bool) -> Option<GameResult> {
         let stm = self.get_turn();
         let check_state = self.get_check_state();
@@ -415,7 +433,8 @@ impl Position {
             Some(if check_state != CheckState::None {
                 // If in check and no moves, it's a loss for the current player
                 GameResult::Win { relative_to: !stm }
-            } else {
+            }
+            else {
                 // Stalemate
                 GameResult::Draw
             })
@@ -674,7 +693,8 @@ impl Position {
             let color_case = squares::A8_C * c.v();
             if sq.v() == (squares::A1_C | color_case) {
                 cr.set_false(castling_sides::QUEEN_SIDE, c)
-            } else if sq.v() == (squares::H1_C | color_case) {
+            }
+            else if sq.v() == (squares::H1_C | color_case) {
                 cr.set_false(castling_sides::KING_SIDE, c)
             }
         }
@@ -747,6 +767,60 @@ impl Position {
     /// Convenience wrapper
     pub fn from_fen(fen: &str) -> Result<Self, FenParseError> {
         Self::try_from(FenImport(&mut Tokenizer::new(fen)))
+    }
+
+    #[inline]
+    pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
+        self.piece_info.get_bitboard(piece_type, color)
+    }
+
+    #[inline]
+    pub fn get_color_bb(&self, color: Color) -> Bitboard {
+        self.piece_info.get_color_bb(color)
+    }
+
+    #[inline]
+    fn get_color_bb_mut(&mut self, color: Color) -> &mut Bitboard {
+        self.piece_info.get_color_bb_mut(color)
+    }
+
+    #[inline]
+    pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
+        self.piece_info.get_piece_bb(piece_type)
+    }
+
+    #[inline]
+    fn get_piece_bb_mut(&mut self, piece_type: PieceType) -> &mut Bitboard {
+        self.piece_info.get_piece_bb_mut(piece_type)
+    }
+
+    #[inline]
+    pub fn get_occupancy(&self) -> Bitboard {
+        self.piece_info.get_occupancy()
+    }
+
+    #[inline]
+    pub fn get_piece(&self, sq: Square) -> Piece {
+        self.piece_info.get_piece(sq)
+    }
+
+    #[inline]
+    fn get_piece_mut(&mut self, sq: Square) -> &mut Piece {
+        self.piece_info.get_piece_mut(sq)
+    }
+
+    #[inline]
+    pub fn get_piece_count(&self, piece: Piece) -> i8 {
+        self.piece_info.get_piece_count(piece)
+    }
+
+    #[inline]
+    fn get_piece_count_mut(&mut self, piece: Piece) -> &mut i8 {
+        self.piece_info.get_piece_count_mut(piece)
+    }
+
+    pub fn piece_info(&self) -> &PieceInfo {
+        &self.piece_info
     }
 }
 
@@ -869,10 +943,11 @@ impl PgnExport {
                 //
                 // [...]
                 //
-                // All white move elements have a preceding move number indication.  A black move
-                // element has a preceding move number indication only in two cases: first, if
-                // there is intervening annotation or commentary between the black move and the
-                // previous white move; and second, if there is no previous white move in the
+                // All white move elements have a preceding move number indication.  A black
+                // move element has a preceding move number indication only in
+                // two cases: first, if there is intervening annotation or
+                // commentary between the black move and the previous white
+                // move; and second, if there is no previous white move in the
                 // special case where a game starts from a position where Black is the active
                 // player.
                 // There are no other cases where move number indications appear in PGN export
@@ -918,14 +993,14 @@ impl fmt::Display for PgnExport {
 
 // For PGN export format, there are no white space characters between the left
 // bracket and the tag name, there are no white space characters between the tag
-// value and the right bracket, and there is a single space character between the
-// tag name and the tag value.
+// value and the right bracket, and there is a single space character between
+// the tag name and the tag value.
 pub struct PgnTagPair<A, B>(pub A, pub B);
 
 impl<A: fmt::Display, B: fmt::Display> fmt::Display for PgnTagPair<A, B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // todo: we could check the length of fmt(self.a) or fmt(self.b), and introduce a
-        // linebreak if that would overflow the 255 char limit.
+        // todo: we could check the length of fmt(self.a) or fmt(self.b), and introduce
+        // a linebreak if that would overflow the 255 char limit.
         write!(f, "[{} \"{}\"]", self.0, self.1)
     }
 }
@@ -933,11 +1008,11 @@ impl<A: fmt::Display, B: fmt::Display> fmt::Display for PgnTagPair<A, B> {
 // 8.1.1.7: The Result tag
 //
 // The Result field value is the result of the game.  It is always exactly the
-// same as the game termination marker that concludes the associated movetext.  It
-// is always one of four possible values: "1-0" (White wins), "0-1" (Black wins),
-// "1/2-1/2" (drawn game), and "*" (game still in progress, game abandoned, or
-// result otherwise unknown).  Note that the digit zero is used in both of the
-// first two cases; not the letter "O".
+// same as the game termination marker that concludes the associated movetext.
+// It is always one of four possible values: "1-0" (White wins), "0-1" (Black
+// wins), "1/2-1/2" (drawn game), and "*" (game still in progress, game
+// abandoned, or result otherwise unknown).  Note that the digit zero is used in
+// both of the first two cases; not the letter "O".
 //
 // All possible examples:
 //
@@ -994,9 +1069,9 @@ pub struct PgnTagPairSection(pub Vec<PgnTagPair<&'static str, Box<dyn fmt::Displ
 impl fmt::Display for PgnTagPairSection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // PGN import format may have multiple tag pairs on the same line and may even
-        // have a tag pair spanning more than a single line.  Export format requires each
-        // tag pair to appear left justified on a line by itself; a single empty line
-        // follows the last tag pair.
+        // have a tag pair spanning more than a single line.  Export format requires
+        // each tag pair to appear left justified on a line by itself; a single
+        // empty line follows the last tag pair.
         for tag_pair in self.0.iter() {
             writeln!(f, "{}", tag_pair)?;
         }
@@ -1052,9 +1127,9 @@ impl fmt::Display for PgnMoveTextSection {
         // successive text lines each of which has less than 80 printing characters.  As
         // many tokens as possible are placed on a line with the remainder appearing on
         // successive lines.  A single space character appears between any two adjacent
-        // symbol tokens on the same line in the movetext.  As with the tag pair section,
-        // a single empty line follows the last line of data to conclude the movetext
-        // section.
+        // symbol tokens on the same line in the movetext.  As with the tag pair
+        // section, a single empty line follows the last line of data to
+        // conclude the movetext section.
         let mut width = 0;
         let mut append_text = |text: &str| {
             width += text.len();

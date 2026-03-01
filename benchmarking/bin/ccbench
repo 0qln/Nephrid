@@ -10,6 +10,6 @@ cutechess-cli \
     -engine cmd="$engine2" name="$engine2" \
     -each proto=uci tc=40/60 \
     -rounds 200 \
-    -concurrency 4 \
+    -concurrency 6 \
     -openings file="$openings" \
     -pgnout "$out"
