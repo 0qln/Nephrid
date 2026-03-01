@@ -36,6 +36,23 @@ impl QualityInput {
     }
 }
 
+/// Convert QualityInput into Quality, where the Quality is relative to white.
+impl From<&QualityInput> for Quality {
+    fn from(q_input: &QualityInput) -> Self {
+        // get delta
+        let w_q = q_input.w_q;
+        let b_q = q_input.b_q;
+        let d = (w_q - b_q) as f32;
+
+        // normalize to [0;1]
+        let m = (max(w_q, b_q)) as f32;
+        let v = Value::new(if m == 0. { 0. } else { d / m });
+
+        // normalize to [-1;1]
+        Quality::from(v)
+    }
+}
+
 #[derive(Debug, PartialEq, Default)]
 pub struct PolicyInput {
     p: RawPolicy,
@@ -94,19 +111,9 @@ impl Evaluator for StaticEvaluator {
                 let data = leaf_borrow.data();
                 let eval_info = &data.trace_data;
 
-                // Squish into a range from -1 to +1
-                let w_q = eval_info.q_input.w_q;
-                let b_q = eval_info.q_input.b_q;
-                let d = w_q as i32 - b_q as i32;
-                let m = max(w_q, b_q);
-                // Prevent division by zero if board is empty or pieces have 0 value
-                let q = if m == 0 { 0. } else { d as f32 / m as f32 };
-
-                let quality = if eval_info.turn == colors::WHITE { q } else { -q };
-
                 Evaluation::Guess(Box::new(Guess {
-                    relative_to: eval_info.turn,
-                    quality,
+                    relative_to: colors::WHITE,
+                    quality: (&eval_info.q_input).into(),
                     policy: eval_info.p_input.p.to_owned(),
                 }))
             })
