@@ -201,14 +201,29 @@ impl fmt::Debug for Button {
     }
 }
 
+/// Engine configuration.
 #[derive(Debug, Clone)]
 pub struct Configuration {
+    /// Hash size.
     hash: ConfigOption<Spin>,
+
+    /// Num threads.
     threads: ConfigOption<Spin>,
+
+    /// Clear hash tables.
     clear_hash: ConfigOption<Button>,
+
+    /// Dirichlet noise - alpha parameter.
     dirichlet_alpha: ConfigOption<Spin>,
+
+    /// Dirichlet noise - epsilon parameter.
     dirichlet_epsilon: ConfigOption<Spin>,
+
+    /// Path to nn weights file.
     weights_path: ConfigOption<StringOption>,
+
+    /// Whether to keep the game tree in between `go`-commands.
+    game_tree_caching: ConfigOption<Check>,
 }
 
 impl Default for Configuration {
@@ -226,6 +241,7 @@ impl Default for Configuration {
                 Spin::new(25, 0, 100),
             ),
             weights_path: ConfigOption::new("Weights Path", StringOption::new("./weights")),
+            game_tree_caching: ConfigOption::new("Game tree caching", Check::new(true)),
         }
     }
 }
@@ -253,6 +269,10 @@ impl Configuration {
         &self.weights_path.value
     }
 
+    pub fn game_tree_caching(&self) -> bool {
+        self.game_tree_caching.value
+    }
+
     // Setter
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -263,6 +283,7 @@ impl Configuration {
             "[dirichlet noise] alpha" | "dirichlet alpha" => self.dirichlet_alpha.set(value),
             "[dirichlet noise] epsilon" | "dirichlet epsilon" => self.dirichlet_epsilon.set(value),
             "weights path" => Ok(self.weights_path.set(value)),
+            "game tree caching" => self.game_tree_caching.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -274,6 +295,7 @@ impl Configuration {
         sync::out(&format!("{}", self.dirichlet_alpha));
         sync::out(&format!("{}", self.dirichlet_epsilon));
         sync::out(&format!("{}", self.weights_path));
+        sync::out(&format!("{}", self.game_tree_caching));
     }
 }
 

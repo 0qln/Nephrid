@@ -213,7 +213,16 @@ pub fn execute_uci(
                 engine.game.push_move(mov);
 
                 // also advance the mcts game tree
-                engine.search_t.tx.send(Command::AdvanceState(mov))?;
+                let game_tree_caching = engine
+                    .config
+                    .lock()
+                    .map(|c| c.game_tree_caching())
+                    .unwrap_or(false);
+
+                engine.search_t.tx.send(match game_tree_caching {
+                    true => Command::AdvanceState(mov),
+                    false => Command::ResetState,
+                })?;
 
                 Ok(())
             };
