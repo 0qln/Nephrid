@@ -11,7 +11,7 @@ use crate::{
         bitboard::Bitboard,
         castling::{CastlingSideParseError, castling_sides},
         color::colors,
-        coordinates::{File, Rank, Square, SquareTokenizationError},
+        coordinates::{EpCaptureSquare, File, Rank, Square, SquareTokenizationError},
         move_iter::{
             bishop::Bishop,
             fold_legal_moves,
@@ -193,6 +193,18 @@ impl Move {
         }
     }
 
+    /// If this move is a capture, returns the square on which the captured
+    /// piece will be removed.
+    pub fn get_capture_sq(&self) -> Option<Square> {
+        let flag = self.get_flag();
+        let to = self.get_to();
+        match flag {
+            f::EN_PASSANT => EpCaptureSquare::try_from(to).ok()?.v(),
+            f if f.is_capture() => Some(to),
+            _ => None,
+        }
+    }
+
     #[inline]
     pub fn get_flag(&self) -> MoveFlag {
         // Safety: The inner move flag bits are only ever set from a MoveFlag struct.
@@ -222,9 +234,11 @@ impl fmt::Display for Move {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.v == 0 {
             write!(f, "0000")
-        } else if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
+        }
+        else if let Ok(promo) = PromoPieceType::try_from(self.get_flag()) {
             write!(f, "{}{}{}", self.get_from(), self.get_to(), promo)
-        } else {
+        }
+        else {
             write!(f, "{}{}", self.get_from(), self.get_to())
         }
     }
@@ -316,9 +330,10 @@ impl<'a> fmt::Display for SAN<'a> {
                     else if candidates & Bitboard::from_c(from_rank) == from_bb {
                         write!(f, "{from_rank}")?;
                     }
-                    // Third (when both the first and the second steps fail), the two character square
-                    // coordinate of the originating square of the moving piece is inserted
-                    // immediately after the moving piece letter.
+                    // Third (when both the first and the second steps fail), the two character
+                    // square coordinate of the originating square of the moving
+                    // piece is inserted immediately after the moving piece
+                    // letter.
                     else {
                         write!(f, "{from}")?;
                     }
@@ -353,8 +368,8 @@ impl<'a> fmt::Display for SAN<'a> {
             pos.make_move(self.mov);
             if pos.get_check_state() != CheckState::None {
                 // If the move is a checking move, the plus sign "+" is appended as a suffix to
-                // the basic SAN move notation; if the move is a checkmating move, the octothorpe
-                // sign "#" is appended instead.
+                // the basic SAN move notation; if the move is a checkmating move, the
+                // octothorpe sign "#" is appended instead.
                 f.write_char(if pos.has_legal_moves() { '+' } else { '#' })?;
             }
         }
@@ -419,22 +434,27 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
 }
 
 impl From<Move> for usize {
-    /// Converts a move to a index, such that in any given position, no two moves will have the same index and there are few gaps.
+    /// Converts a move to a index, such that in any given position, no two
+    /// moves will have the same index and there are few gaps.
     fn from(mov: Move) -> Self {
         let flag = mov.get_flag();
         let result = if flag.is_promo() {
             // Promotions are special cases:
-            // 1. Since promotions have multiple moves for the same from-to combination, we add a variance for different promotions.
-            // 2. We need to bias, such that we don't collide with valid from-to indeces. (SQ_MASK)
-            // 3. We also need to bias by the file of the from square, such that we don't collide with other promotions.
+            // 1. Since promotions have multiple moves for the same from-to combination, we
+            //    add a variance for different promotions.
+            // 2. We need to bias, such that we don't collide with valid from-to indeces.
+            //    (SQ_MASK)
+            // 3. We also need to bias by the file of the from square, such that we don't
+            //    collide with other promotions.
             let min_index = Move::MASK_SQ + 1;
             let min_promo_flag = move_flags::PROMOTION_KNIGHT.v() as u16;
             let flag_off = flag.v() as u16 - min_promo_flag;
             let file_off = File::from_c(mov.get_from()).v() as u16;
             min_index + flag_off + file_off
-        } else {
-            // For most moves, we can just use the from and to squares to get a unique index for
-            // any set of moves of any position.
+        }
+        else {
+            // For most moves, we can just use the from and to squares to get a unique index
+            // for any set of moves of any position.
             mov.v & Move::MASK_SQ
         };
         result as usize
