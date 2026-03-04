@@ -1,5 +1,8 @@
 use search::{limit::Limit, mode::Mode};
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    thread, time,
+};
 
 use self::r#move::LongAlgebraicUciNotation;
 use crate::{
@@ -346,6 +349,21 @@ pub fn execute_uci(
         Some("isready") => {
             sync::out("readyok");
             Ok(())
+        }
+        Some("perf") => {
+            execute_uci(engine, "go".to_owned(), cancellation_token.clone())?;
+            execute_uci(engine, "go".to_owned(), cancellation_token.clone())?;
+
+            let dur = tokenizer
+                .next_token()
+                .map(&str::parse::<u64>)
+                .map(Result::ok)
+                .flatten()
+                .unwrap_or(5);
+            let dur = time::Duration::from_secs(dur);
+            thread::sleep(dur);
+
+            execute_uci(engine, "quit".to_owned(), cancellation_token)
         }
         Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
         None => Ok(()),
