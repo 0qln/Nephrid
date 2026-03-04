@@ -105,6 +105,7 @@ impl<const X: usize, T> Selection<X, T> {
 /// parallelize. If we don't have access to hardware accell, resort to using a
 /// backend like WebGPU, or NdArray, and just do TreeSearcher<MPV=1>.
 pub struct TreeSearcher<
+    'pos,
     const MPV: usize,
     E: Evaluator,
     L: Limiter,
@@ -114,7 +115,7 @@ pub struct TreeSearcher<
 > {
     /// The position that will be edited during the selection and
     /// backpropagatation.
-    position: Position,
+    position: &'pos mut Position,
 
     /// Selector to select the leafes.
     selector: S,
@@ -141,11 +142,11 @@ pub struct TreeSearcher<
     selection: Selection<MPV, E::TraceData>,
 }
 
-impl<const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
-    TreeSearcher<MPV, E, L, S, B, N>
+impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
+    TreeSearcher<'pos, MPV, E, L, S, B, N>
 {
     pub fn new(
-        position: Position,
+        position: &'pos mut Position,
         selector: S,
         limiter: L,
         evaluator: E,
@@ -165,8 +166,8 @@ impl<const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater,
     }
 }
 
-impl<const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
-    TreeSearcher<MPV, E, L, S, B, N>
+impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
+    TreeSearcher<'pos, MPV, E, L, S, B, N>
 {
     pub fn grow(&mut self, tree: &mut Tree) {
         self.select_lines(tree);
@@ -267,7 +268,6 @@ impl<const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater,
         parent_node: Rc<RefCell<Node>>,
         mut sel_node_parent: SelectionNodeRef<E::TraceData>,
     ) -> usize {
-        // Split the budget up between this and the subsequent best nodes.
         let root_visits = parent_node.borrow().visits();
         parent_node
             .borrow_mut()

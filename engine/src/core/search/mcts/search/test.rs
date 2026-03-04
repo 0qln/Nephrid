@@ -24,8 +24,10 @@ fn fuzz<const X: usize>(pos: &'static str) {
             let mut tree = Tree::new();
 
             for _i in 0..(50_000 / X) {
+                let mut pos_clone = pos.clone();
+
                 let mut searcher = TreeSearcher::<X, _, _, PuctSelector, _, _>::new(
-                    pos.clone(),
+                    &mut pos_clone,
                     PuctSelector::default(),
                     limiter.clone(),
                     eval.clone(),
@@ -33,6 +35,8 @@ fn fuzz<const X: usize>(pos: &'static str) {
                     NullNoiser,
                 );
                 searcher.grow(&mut tree);
+
+                assert_eq!(&pos, &pos_clone);
             }
         })
         .expect("Couldn't spawn thread")

@@ -67,11 +67,11 @@ impl Worker {
                 perft(pos, limit, ct, debug);
                 Ok(())
             }
-            Command::Normal(pos, limit, ct, debug) => {
+            Command::Normal(mut pos, limit, ct, debug) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
 
-                let result = mcts(&pos, parts, state, limit, debug, ct, MctsUci::default());
+                let result = mcts(&mut pos, parts, state, limit, debug, ct, MctsUci::default());
 
                 match result {
                     None => todo!("Log error or something"),

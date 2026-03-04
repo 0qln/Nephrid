@@ -41,7 +41,7 @@ pub mod utils;
 pub mod test;
 
 pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
-    pos: &Position,
+    pos: &mut Position,
     parts: P,
     state: &mut M,
     limit: Limit,
@@ -64,7 +64,7 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
         let noiser = parts.noiser();
 
         TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new(
-            pos.clone(),
+            pos,
             selector,
             limiter.clone(),
             evaluator,
