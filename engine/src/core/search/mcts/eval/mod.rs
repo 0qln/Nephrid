@@ -105,9 +105,9 @@ impl fmt::Display for Evaluation {
 
 impl GameResult {
     /// Returns a number between 0 and 1, where 0 is a loss and 1 is a win.
-    const fn to_value(self, turn: Color) -> Value {
+    fn to_value(self, turn: Color) -> Value {
         match self {
-            Self::Win { relative_to } if relative_to.v() == turn.v() => Value::win(),
+            Self::Win { relative_to } if relative_to == turn => Value::win(),
             Self::Win { .. } => Value::loss(),
             Self::Draw => Value::draw(),
         }

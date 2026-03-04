@@ -130,7 +130,8 @@ const PSQT_EG: [Psqt; piece_type::N_VARIANTS] = [
 
 const PSQT: [[Psqt; piece_type::N_VARIANTS]; game_phases::N_VARIANTS] = [PSQT_MG, PSQT_EG];
 
-fn psqt_score(phase: GamePhase, piece: PieceType, sq: Square) -> i32 {
+fn psqt_score(phase: GamePhase, piece: PieceType, sq: Square, color: Color) -> i32 {
+    let sq = if color == colors::WHITE { sq } else { sq.flip_v() };
     PSQT[phase.v() as usize][piece.v() as usize].get(sq)
 }
 
@@ -214,7 +215,7 @@ impl QualityInput {
             (piece_type::PAWN..=piece_type::KING)
                 .map(|piece| {
                     pos.get_bitboard(piece, color)
-                        .map(|sq| psqt_score(phase, piece, sq))
+                        .map(|sq| psqt_score(phase, piece, sq, color))
                         .sum::<i32>()
                 })
                 .sum()
@@ -256,15 +257,21 @@ impl PolicyInput {
         Self {}
     }
 
-    pub fn psqt(phase: TaperValue, piece: PieceType, from: Square, to: Square) -> i32 {
+    pub fn psqt(
+        phase: TaperValue,
+        piece: PieceType,
+        from: Square,
+        to: Square,
+        color: Color,
+    ) -> i32 {
         let curr_score = {
-            let mg = psqt_score(game_phases::MG, piece, from);
-            let eg = psqt_score(game_phases::EG, piece, from);
+            let mg = psqt_score(game_phases::MG, piece, from, color);
+            let eg = psqt_score(game_phases::EG, piece, from, color);
             phase.weighted_eval(mg, eg)
         };
         let new_score = {
-            let mg = psqt_score(game_phases::MG, piece, to);
-            let eg = psqt_score(game_phases::EG, piece, to);
+            let mg = psqt_score(game_phases::MG, piece, to, color);
+            let eg = psqt_score(game_phases::EG, piece, to, color);
             phase.weighted_eval(mg, eg)
         };
         new_score - curr_score
@@ -274,9 +281,9 @@ impl PolicyInput {
     /// pieces. Returns atleast 0, since we can decide not to make a
     /// capture.
     pub fn mvv_lva(pos: &PieceInfo, mov: Move) -> i32 {
-        if mov.get_flag().is_capture() {
+        if let Some(capture_sq) = mov.get_capture_sq() {
             let capturing = pos.get_piece(mov.get_from()).piece_type();
-            let captured = pos.get_piece(mov.get_to()).piece_type();
+            let captured = pos.get_piece(capture_sq).piece_type();
             let score = piece_score(captured) - piece_score(capturing);
             return max(0, score);
         }
@@ -295,6 +302,7 @@ impl From<&EvalInfo> for RawPolicy {
         let pos = &input.pos;
         let phase = input.phase;
         let state = &input.state;
+        let color = input.turn;
 
         debug_assert_matches!(node.state(), NodeState::Expanded | NodeState::Terminal);
 
@@ -306,7 +314,7 @@ impl From<&EvalInfo> for RawPolicy {
             let from = mov.get_from();
             let to = mov.get_to();
             let piece = pos.get_piece(from).piece_type();
-            let score = PolicyInput::psqt(phase, piece, from, to)
+            let score = PolicyInput::psqt(phase, piece, from, to, color)
                 + PolicyInput::mvv_lva(pos, mov)
                 + PolicyInput::meta(pos, mov, &state);
             policy.set(usize::from(mov), score as f32);
