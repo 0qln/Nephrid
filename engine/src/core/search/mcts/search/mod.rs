@@ -132,10 +132,8 @@ pub struct TreeSearcher<
     /// Noiser
     noiser: N,
 
-    // /// The tree to be searched.
-    // tree: &'a mut Tree,
     /// Number of compeleted iterations.
-    iterations: usize,
+    iterations: u64,
 
     /// Stack of nodes that were selected during the selection phase, for each
     /// principal line.
@@ -164,13 +162,21 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             selection: Default::default(),
         }
     }
-}
 
-impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
-    TreeSearcher<'pos, MPV, E, L, S, B, N>
-{
+    pub fn iterations(&self) -> u64 {
+        self.iterations
+    }
+
     pub fn grow(&mut self, tree: &mut Tree) {
+        self.selection = Default::default();
+
+        // println!("[grow-{}]", self.iterations());
+
         self.select_lines(tree);
+
+        let num_selected = self.selection.leafs.iter().filter(|l| l.is_some()).count();
+        // println!("[selected {num_selected}/{MPV}]",);
+
         self.eval_batched();
         self.backup_evals();
         self.apply_noise(tree);

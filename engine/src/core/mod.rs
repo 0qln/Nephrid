@@ -174,6 +174,7 @@ pub fn execute_uci(
                         "binc" => collect_and_parse!(limit.binc),
                         "movestogo" => collect_and_parse!(limit.movestogo),
                         "depth" => collect_and_parse!(limit.depth),
+                        "iterations" => collect_and_parse!(limit.iterations),
                         "nodes" => collect_and_parse!(limit.nodes),
                         "mate" => collect_and_parse!(limit.mate),
                         "movetime" => collect_and_parse!(limit.movetime),

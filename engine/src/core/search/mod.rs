@@ -74,7 +74,7 @@ impl Worker {
                 let result = mcts(&mut pos, parts, state, limit, debug, ct, MctsUci::default());
 
                 match result {
-                    None => todo!("Log error or something"),
+                    None => todo!("Log error or something: got no result from mcts search."),
                     Some(_) => {}
                 };
 

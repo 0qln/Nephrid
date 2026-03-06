@@ -1,3 +1,5 @@
+use crate::core::search::mcts::eval::Value;
+
 use super::*;
 
 pub struct PuctSelector {
@@ -26,11 +28,12 @@ impl Selector for PuctSelector {
         // The quality is updated incrementally as the tree is explored.
         // Because of this, we have to divide by the number of playouts
         // to get the average quality of this node.
-        // If this node has not yet been visited, we set the quality to 0.
+        // If this node has not yet been visited, we set the quality to 0 and rely
+        // completely on exploration factor.
         let value = branch.node().borrow().value();
-        let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
+        let exploitation = if n_i == 0. { 0. } else { value / n_i };
 
-        let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1f32 + n_i);
+        let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1. + n_i);
 
         Score(exploitation + exploration)
     }

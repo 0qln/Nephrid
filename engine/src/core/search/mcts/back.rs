@@ -1,5 +1,5 @@
-use std::ops::ControlFlow;
 use crate::core::search::mcts::eval::Value;
+use std::ops::ControlFlow;
 
 use crate::core::search::mcts::{
     eval::Evaluation,
@@ -25,11 +25,16 @@ impl Backpropagater for DefaultBackuper {
     }
 
     fn backpropagate<T>(&self, leaf: SelectionNodeRef<T>, eval: &Evaluation) {
+        // println!("[eval: {eval}]");
+
         // Traverse the selected node in reverse, updating the parents along the way.
         _ = SelectionNode::try_fold_up_mut(leaf.clone(), (), |_, node| {
             let turn = node.borrow().data().turn;
+            let depth = node.borrow().data().depth;
             let value = eval.to_value(turn);
             Self::update(&mut node.borrow_mut().data().node.borrow_mut(), value);
+
+            // println!("[node: ({turn}, {depth}), update: {value:?}]");
 
             ControlFlow::Continue::<(), ()>(())
         });
