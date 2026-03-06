@@ -1,5 +1,3 @@
-use crate::core::search::mcts::eval::Value;
-
 use super::*;
 
 pub struct PuctSelector {

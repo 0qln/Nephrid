@@ -243,9 +243,7 @@ impl From<&EvalInfo> for Quality {
         let b_q = QualityInput::value(&input.pos, colors::BLACK, input.phase);
         let d = (w_q - b_q) as f32;
 
-        // normalize to [-1;1]
-        let m = (w_q.abs() + b_q.abs()) as f32;
-        Quality::new(if m == 0. { 0. } else { d / m })
+        Quality::squish(d)
     }
 }
 
@@ -278,14 +276,13 @@ impl PolicyInput {
     }
 
     /// MVV-LVA inspired bonus for capturing high-value pieces with low-value
-    /// pieces. Returns atleast 0, since we can decide not to make a
-    /// capture.
+    /// pieces.
     pub fn mvv_lva(pos: &PieceInfo, mov: Move) -> i32 {
         if let Some(capture_sq) = mov.get_capture_sq() {
             let capturing = pos.get_piece(mov.get_from()).piece_type();
             let captured = pos.get_piece(capture_sq).piece_type();
             let score = piece_score(captured) - piece_score(capturing);
-            return max(0, score);
+            return score;
         }
         0
     }
@@ -317,6 +314,7 @@ impl From<&EvalInfo> for RawPolicy {
             let score = PolicyInput::psqt(phase, piece, from, to, color)
                 + PolicyInput::mvv_lva(pos, mov)
                 + PolicyInput::meta(pos, mov, &state);
+
             policy.set(usize::from(mov), score as f32);
         }
 

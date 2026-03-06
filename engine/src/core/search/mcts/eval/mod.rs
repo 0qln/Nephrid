@@ -285,18 +285,31 @@ fn softmax(xs: &mut [f32], temperature: f32) {
 pub struct Quality(f32);
 
 impl Quality {
-    pub fn new(_0: f32) -> Self {
-        debug_assert!(_0 >= -1. && _0 <= 1.);
-        Self(_0)
+    pub fn new(v: f32) -> Self {
+        debug_assert!(v >= Self::min().v() && v <= Self::max().v());
+        Self(v)
+    }
+
+    /// Squishes v in range [-1; 1], whatever it's value is.
+    fn squish(v: f32) -> Self {
+        Self::new(v.tanh())
     }
 
     /// Inverses the value in it's range
     pub fn inverse(&self) -> Self {
-        Self((2. - (self.0 + 1.)) - 1.)
+        Self(-self.0)
     }
 
     pub fn v(&self) -> f32 {
         self.0
+    }
+
+    pub const fn max() -> Self {
+        Self(1.)
+    }
+
+    pub const fn min() -> Self {
+        Self(-1.)
     }
 
     // these are functions, because maybe later we want to have different values for
@@ -307,60 +320,68 @@ impl Quality {
     }
 
     pub const fn win() -> Self {
-        Self(1.0)
+        Self::max()
     }
 
     pub const fn loss() -> Self {
-        Self(-1.0)
+        Self::min()
     }
 }
 
 /// tmp
-pub type Value = Quality;
+// pub type Value = Quality;
 
-// impl From<Value> for Quality {
-//     fn from(v: Value) -> Self {
-//         Self::new((v.0 - 0.5) * 2.)
-//     }
-// }
+impl From<Value> for Quality {
+    fn from(v: Value) -> Self {
+        Self::new((v.0 - 0.5) * 2.)
+    }
+}
 
-// /// A value in range [0; 1]
-// #[derive(Debug, PartialEq, Clone, Copy)]
-// pub struct Value(f32);
+/// A value in range [0; 1]
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Value(f32);
 
-// impl Value {
-//     pub fn new(_0: f32) -> Self {
-//         debug_assert!(_0 >= 0. && _0 <= 1.);
-//         Self(_0)
-//     }
+impl Value {
+    pub fn new(v: f32) -> Self {
+        debug_assert!(v >= Self::min().v() && v <= Self::max().v());
+        Self(v)
+    }
 
-//     /// Inverses the value in it's range
-//     pub fn inverse(&self) -> Value {
-//         Self(1. - self.0)
-//     }
+    /// Inverses the value in it's range
+    pub fn inverse(&self) -> Value {
+        Self(1. - self.0)
+    }
 
-//     pub fn v(&self) -> f32 {
-//         self.0
-//     }
+    pub fn v(&self) -> f32 {
+        self.0
+    }
 
-//     // these are functions, because maybe later we want to have different
-// values for     // e.g. a win that is close to the root node or further.
+    pub const fn max() -> Self {
+        Self(1.)
+    }
 
-//     pub const fn draw() -> Self {
-//         Self(0.5)
-//     }
+    pub const fn min() -> Self {
+        Self(0.)
+    }
 
-//     pub const fn win() -> Self {
-//         Self(1.0)
-//     }
+    // these are functions, because maybe later we want to have different values for
+    // // e.g. a win that is close to the root node or further.
 
-//     pub const fn loss() -> Self {
-//         Self(0.0)
-//     }
-// }
+    pub const fn draw() -> Self {
+        Self(0.5)
+    }
 
-// impl From<Quality> for Value {
-//     fn from(q: Quality) -> Self {
-//         Self::new((q.0 + 1.) / 2.)
-//     }
-// }
+    pub const fn win() -> Self {
+        Self::max()
+    }
+
+    pub const fn loss() -> Self {
+        Self::min()
+    }
+}
+
+impl From<Quality> for Value {
+    fn from(q: Quality) -> Self {
+        Self::new((q.0 + 1.) / 2.)
+    }
+}
