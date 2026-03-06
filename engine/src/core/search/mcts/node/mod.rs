@@ -208,6 +208,9 @@ impl Branch {
     }
 }
 
+/// The value of a node.
+/// positive ~> good for current player at this node
+/// negative ~> bad for current player at this node
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct Value(pub f32);
 
