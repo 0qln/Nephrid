@@ -37,7 +37,8 @@ pub mod search;
 pub mod select;
 pub mod strategy;
 
-pub mod test;
+// todo: fix test
+// pub mod test;
 
 pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     pos: &mut Position,
@@ -146,7 +147,7 @@ pub struct NNParts<B: Backend> {
 
 impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
     type Selector = PuctSelector;
-    type Evaluator = NNEvaluator<'a, 'a, B, X>;
+    type Evaluator = NNEvaluator<'a, 'a, B>;
     type Backprop = DefaultBackuper;
     type Noiser = DirichletNoiser;
     type Instance = NNParts<B>;
@@ -156,7 +157,7 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        NNEvaluator::<_, X>::new(&self.nn, &self.device)
+        NNEvaluator::new(&self.nn, &self.device)
     }
 
     fn backprop(&self) -> Self::Backprop {

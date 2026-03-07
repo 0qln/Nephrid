@@ -1,4 +1,4 @@
-use itertools::Itertools;
+use crate::core::turn::Turn;
 
 use crate::{
     core::{
@@ -7,10 +7,7 @@ use crate::{
         r#move::Move,
         piece::{PieceType, piece_type},
         position::{PieceInfo, StateInfo},
-        search::mcts::{
-            node::{Branch, node_state::Branching},
-            search::SelectionNodeRef,
-        },
+        search::mcts::node::{Branch, node_state::Branching},
     },
     impl_variants,
 };
@@ -324,10 +321,10 @@ impl From<&EvalInfo> for RawPolicy {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug)]
 pub struct EvalInfo {
-    /// The node that this eval info is for.
-    node: NodeRef<Branching>,
+    /// The to-be-evaluated that this eval info is for.
+    node: CtNodeRef<Branching>,
 
     /// Quality info for static evaluation
     q_input: QualityInput,
@@ -349,12 +346,12 @@ pub struct EvalInfo {
 }
 
 impl EvalInfo {
-    pub fn new(node: NodeRef<Branching>, pos: &Position) -> Self {
+    pub fn new(node: CtNodeRef<Branching>, pos: &Position) -> Self {
         Self {
             pos: pos.piece_info().clone(),
             state: pos.state_info().clone(),
             phase: TaperValue::from_position(&pos),
-            node: node.clone(),
+            node,
             turn: pos.get_turn(),
             q_input: QualityInput::new(),
             p_input: PolicyInput::new(),
@@ -372,30 +369,32 @@ impl StaticEvaluator {
 }
 
 impl Evaluator for StaticEvaluator {
-    type TraceData = EvalInfo;
+    type TraceData = Option<EvalInfo>;
 
-    fn trace(&self, node: NodeRef<Branching>, pos: &Position) -> Self::TraceData {
-        EvalInfo::new(node, pos)
+    fn trace<S: HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
+        let node = node.try_into_branching()?;
+        Some(EvalInfo::new(node, pos))
     }
 
-    fn eval_batch(
+    fn eval_batch<const X: usize>(
         &mut self,
-        leafs: &[SelectionNodeRef<Self::TraceData>],
+        _selection: &Selection<X, Self::TraceData>,
+        leafs: &[&SelectionLeaf<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
         leafs
             .iter()
-            .map(|leaf| {
-                let leaf_borrow = leaf.borrow();
-                let data = leaf_borrow.data();
-                let eval_info = &data.trace_data;
-
+            .filter_map(|&leaf| {
+                leaf.leaf_data
+                    .as_ref()
+                    .map(|l| (&l.trace_data).as_ref())
+                    .flatten()
+            })
+            .map(|eval_info| {
                 Evaluation::Guess(Box::new(Guess {
                     relative_to: colors::WHITE,
                     quality: eval_info.into(),
                     policy: eval_info.into(),
                 }))
             })
-            .collect_vec()
-            .into_iter()
     }
 }

@@ -1,8 +1,14 @@
-use burn::tensor::{DType, TensorData};
+use burn::tensor::{DType, Shape, Tensor, TensorData, backend::Backend};
+use itertools::Itertools;
+use std::ops::ControlFlow;
 
 use crate::core::search::mcts::{
-    node::{NodeRef, node_state::Branching},
-    search::SelectionNode,
+    nn::{
+        self, BOARD_INPUT_HISTORY, BoardInputFloats, Model, StateInputFloats, VALUE_OUTPUTS,
+        board_input, state_input,
+    },
+    node::CtNodeRef,
+    search::{Selection, SelectionLeaf},
 };
 
 use super::*;
@@ -22,26 +28,20 @@ impl InputFloats {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug)]
 pub struct TraceInfo {
     /// Input floats for the eval model.
     inputs: InputFloats,
-
-    /// The node that this eval info is for.
-    node: NodeRef<Branching>,
 }
 
 impl TraceInfo {
-    pub fn new(node: NodeRef<Branching>, pos: &Position) -> Self {
-        Self {
-            inputs: InputFloats::new(pos),
-            node,
-        }
+    pub fn new(pos: &Position) -> Self {
+        Self { inputs: InputFloats::new(pos) }
     }
 }
 
 /// X: batch size
-pub struct NNEvaluator<'a, 'b, B: Backend, const X: usize> {
+pub struct NNEvaluator<'a, 'b, B: Backend> {
     /// NN Model
     model: &'a Model<B>,
 
@@ -49,7 +49,7 @@ pub struct NNEvaluator<'a, 'b, B: Backend, const X: usize> {
     device: &'b B::Device,
 }
 
-impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
+impl<'a, 'b, B: Backend> NNEvaluator<'a, 'b, B> {
     pub fn new(model: &'a Model<B>, device: &'b B::Device) -> Self {
         Self { model, device }
     }
@@ -60,14 +60,15 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
 
     /// batch: The iterator of the selected leaf nodes that should be evaluated
     /// in this batch.
-    fn build_board_batch(
+    fn build_board_batch<'c, const X: usize>(
         &self,
-        batch: impl Iterator<Item = SelectionNodeRef<<Self as Evaluator>::TraceData>>,
+        selection: &Selection<X, TraceInfo>,
+        batch: impl Iterator<Item = &'c SelectionLeaf<TraceInfo>>,
     ) -> Tensor<B, 4> {
         // concatenate the board inputs along the batch dimension.
         Tensor::cat(
             batch
-                .map(|leaf| Self::get_node_history(leaf))
+                .map(|leaf| self.get_node_history(selection, leaf))
                 // concatenate the board inputs along the channel dimension.
                 .map(|history| nn::board_history_input(&history, self.device()))
                 .collect_vec(),
@@ -78,17 +79,25 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
     /// Returns the history of the given selected leaf in following order:
     /// - the oldest board state is the first index
     /// - the youngest board state is the last index
-    fn get_node_history(
-        leaf: SelectionNodeRef<<Self as Evaluator>::TraceData>,
+    fn get_node_history<const X: usize>(
+        &self,
+        selection: &Selection<X, TraceInfo>,
+        leaf: &SelectionLeaf<TraceInfo>,
     ) -> Vec<BoardInputFloats> {
         let mut vec: Vec<BoardInputFloats> = vec![];
 
-        _ = SelectionNode::try_fold_up_mut(leaf.clone(), (), |_, leaf| {
+        // 1. Insert the leaf's own board input first
+        if let Some(leaf_data) = &leaf.leaf_data {
+            vec.insert(0, leaf_data.trace_data.inputs.board);
+        }
+
+        // 2. Traverse up the tree to gather parent board inputs
+        _ = selection.try_fold_up(leaf.parent_id, (), |_, node| {
             if vec.len() == BOARD_INPUT_HISTORY {
                 return ControlFlow::Break(());
             }
 
-            let board_input = leaf.borrow().data().trace_data.inputs.board;
+            let board_input = node.item.trace_data.inputs.board;
             vec.insert(0, board_input);
 
             ControlFlow::Continue::<(), ()>(())
@@ -97,15 +106,15 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
         vec
     }
 
-    fn build_state_batch(
+    fn build_state_batch<'c>(
         &self,
-        batch: impl Iterator<Item = SelectionNodeRef<<Self as Evaluator>::TraceData>>,
+        batch: impl Iterator<Item = &'c SelectionLeaf<TraceInfo>>,
     ) -> Tensor<B, 2> {
         // concatenate the state inputs along the batch dimension.
         Tensor::cat(
             batch
                 .map(|leaf| {
-                    let state_input = leaf.borrow().data().trace_data.inputs.state;
+                    let state_input = leaf.leaf_data.as_ref().unwrap().trace_data.inputs.state;
                     Tensor::from_floats([state_input], self.device())
                 })
                 .collect_vec(),
@@ -114,16 +123,18 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
     }
 }
 
-impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X> {
+impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
     type TraceData = TraceInfo;
 
-    fn trace(&self, node: NodeRef<Branching>, pos: &Position) -> Self::TraceData {
-        TraceInfo::new(node, pos)
+    fn trace<S: HasBranches>(&self, _node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
+        TraceInfo::new(pos)
     }
 
-    fn eval_batch(
+    // Now correctly borrows the selection arena to read historical states!
+    fn eval_batch<const X: usize>(
         &mut self,
-        leafs: &[SelectionNodeRef<Self::TraceData>],
+        selection: &Selection<X, Self::TraceData>,
+        leafs: &[&SelectionLeaf<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
         let batch_size = leafs.len();
 
@@ -131,8 +142,8 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
         let policy_shape = Shape::new([batch_size, POLICY_OUTPUTS]);
 
         let (values, raw_policies) = if batch_size != 0 {
-            let board_batch = self.build_board_batch(leafs.iter().cloned());
-            let state_batch = self.build_state_batch(leafs.iter().cloned());
+            let board_batch = self.build_board_batch(selection, leafs.iter().copied());
+            let state_batch = self.build_state_batch(leafs.iter().copied());
             let (values, raw_policies) = self.model.forward(board_batch, state_batch);
 
             assert_eq!(values.shape(), values_shape);
@@ -168,13 +179,12 @@ impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X>
             .iter()
             .zip(values)
             .zip(raw_policies)
-            .map(|((b, c), d)| (b, c, d))
-            .map(|(leaf, value, raw_policy)| {
-                let leaf = leaf.borrow();
-                let data = leaf.data();
+            .map(|((&leaf, value), raw_policy)| {
+                // Safely extract the turn from the leaf_data (this is always a branching node)
+                let turn = leaf.leaf_data.as_ref().unwrap().turn;
 
                 Evaluation::Guess(Box::new(Guess {
-                    relative_to: data.turn,
+                    relative_to: turn,
                     quality: Quality::new(value[0]),
                     policy: raw_policy,
                 }))

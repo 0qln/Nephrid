@@ -5,17 +5,12 @@ use crate::core::{
         nn::POLICY_OUTPUTS,
         node::{
             CtNodeRef,
-            node_state::{Branching, HasBranches, Terminal},
+            node_state::{HasBranches, Terminal},
         },
-        search::SelectionNodeRef,
+        search::{Selection, SelectionLeaf},
     },
 };
-use burn::{
-    Tensor,
-    tensor::{Shape, backend::Backend},
-};
 use core::fmt;
-use itertools::Itertools;
 use std::ops::ControlFlow;
 
 #[cfg(test)]
@@ -42,9 +37,10 @@ pub trait Evaluator {
         Evaluation::Terminal(game_result)
     }
 
-    fn eval_batch(
+    fn eval_batch<const X: usize>(
         &mut self,
-        batch: &[SelectionNodeRef<Self::TraceData>],
+        selection: &Selection<X, Self::TraceData>,
+        leafs: &[&SelectionLeaf<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation>;
 }
 

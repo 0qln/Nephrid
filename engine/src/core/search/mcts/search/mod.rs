@@ -81,7 +81,6 @@ const fn empty_leaf<T>() -> Option<SelectionLeaf<T>> {
 
 impl<const X: usize, T> Default for Selection<X, T> {
     fn default() -> Self {
-
         Self {
             arena: Vec::new(),
             root: None,
@@ -168,6 +167,25 @@ impl<const X: usize, T> Selection<X, T> {
     {
         loop {
             let node = &mut self.arena[current.0];
+            init = f(init, node)?;
+
+            if let Some(parent_id) = node.parent {
+                current = parent_id;
+            }
+            else {
+                break;
+            }
+        }
+        R::from_output(init)
+    }
+
+    pub fn try_fold_up<B, F, R>(&self, mut current: NodeId, mut init: B, mut f: F) -> R
+    where
+        F: FnMut(B, &SelectionNode<T>) -> R,
+        R: std::ops::Try<Output = B>,
+    {
+        loop {
+            let node = &self.arena[current.0];
             init = f(init, node)?;
 
             if let Some(parent_id) = node.parent {
@@ -411,7 +429,6 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             let batch = batched_indices
                 .iter()
                 .map(|&i| {
-                    // Extract the CtNodeRef directly from the leaf array
                     self.selection.leafs[i]
                         .as_ref()
                         .unwrap()
@@ -423,7 +440,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 })
                 .collect::<Vec<_>>();
 
-            self.evaluator.eval_batch(&batch).collect::<Vec<_>>()
+            self.evaluator.eval_batch(&batch)
         };
 
         for (i, eval) in batched_indices.into_iter().zip(evals) {

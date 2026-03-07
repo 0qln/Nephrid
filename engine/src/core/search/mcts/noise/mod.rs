@@ -3,7 +3,7 @@ use rand::rngs::SmallRng;
 use rand_distr::{Distribution, Gamma, num_traits::Zero};
 use thiserror::Error;
 
-use crate::core::search::mcts::node::Node;
+use crate::core::search::mcts::node::{CtNodeRef, node_state::Evaluated};
 
 #[cfg(test)]
 pub mod test;
@@ -12,7 +12,7 @@ pub trait Noiser {
     type Error;
 
     /// Apply noise to the polices of this node.
-    fn apply_noise(&mut self, node: &mut Node) -> Result<(), Self::Error>;
+    fn apply_noise(&mut self, node: &mut CtNodeRef<Evaluated>) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +25,11 @@ pub struct DirichletNoiser {
 impl DirichletNoiser {
     pub fn new(alpha: f32, eps: f32, rng: SmallRng) -> Self {
         Self { alpha, eps, rng }
+    }
+
+    pub fn gamma(&self) -> Result<Gamma<f32>, DirichletNoiseError> {
+        let alpha = self.alpha.into();
+        Gamma::new(alpha, 1.).map_err(|_| DirichletNoiseError::BadAlpha(alpha))
     }
 }
 
@@ -40,25 +45,27 @@ pub enum DirichletNoiseError {
 impl Noiser for DirichletNoiser {
     type Error = DirichletNoiseError;
 
-    fn apply_noise(&mut self, node: &mut Node) -> Result<(), Self::Error> {
+    fn apply_noise(&mut self, node: &mut CtNodeRef<Evaluated>) -> Result<(), Self::Error> {
         // Generate noise
-        let alpha = self.alpha;
-        let gamma = Gamma::new(alpha, 1.0_f32).map_err(|_| DirichletNoiseError::BadAlpha(alpha))?;
-        let distr = gamma.sample_iter(&mut self.rng);
-        let noise = distr.take(node.num_branches()).collect_vec();
-        let total = noise.iter().sum::<f32>();
+        let noise = {
+            let node = node.borrow();
+            let branches = node.branches();
+            let gamma = self.gamma()?;
+            let distr = gamma.sample_iter(&mut self.rng);
+            let noise = distr.take(branches.len()).collect_vec();
+            let total = noise.iter().sum::<f32>();
 
-        if total.is_zero() {
-            return Err(DirichletNoiseError::LowNoise);
-        }
+            if total.is_zero() {
+                return Err(DirichletNoiseError::LowNoise);
+            }
+
+            noise
+        };
 
         // Apply noise
-        for (branch, noise) in node.iter_branches_mut().zip(noise) {
-            let eps = self.eps;
-            let norm_noise = noise / total;
-            let policy = branch.policy();
-            branch.set_policy(policy * (1. - eps) + eps * norm_noise);
-        }
+        let eps = self.eps;
+        let mut node = node.borrow_mut();
+        node.apply_policy_noise(&noise, eps);
 
         Ok(())
     }
@@ -70,7 +77,7 @@ pub struct NullNoiser;
 impl Noiser for NullNoiser {
     type Error = ();
 
-    fn apply_noise(&mut self, _node: &mut Node) -> Result<(), Self::Error> {
+    fn apply_noise(&mut self, _node: &mut CtNodeRef<Evaluated>) -> Result<(), Self::Error> {
         Ok(())
     }
 }

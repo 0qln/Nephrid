@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use rand::prelude::*;
 
-use crate::core::{move_iter::fold_legal_moves, search::mcts::search::SelectionNodeRef};
+use crate::core::move_iter::fold_legal_moves;
 
 use super::*;
 
@@ -62,27 +62,30 @@ pub struct PlayoutTraceData {
 }
 
 impl Evaluator for PlayoutEvaluator {
-    type TraceData = PlayoutTraceData;
+    type TraceData = Option<PlayoutTraceData>;
 
     /// Captures the position at the current node.
-    fn trace(&self, _node: NodeRef<Branching>, pos: &Position) -> Self::TraceData {
-        PlayoutTraceData { start_pos: pos.clone() }
+    fn trace<S: HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
+        let _node = node.try_into_branching()?;
+        Some(PlayoutTraceData { start_pos: pos.clone() })
     }
 
     /// Runs playouts for all collected leaves in the batch.
-    fn eval_batch(
+    fn eval_batch<const X: usize>(
         &mut self,
-        leafs: &[SelectionNodeRef<Self::TraceData>],
+        _selection: &Selection<X, Self::TraceData>,
+        leafs: &[&SelectionLeaf<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
         leafs
             .iter()
-            .map(|leaf| {
-                let leaf_borrow = leaf.borrow();
-                let data = leaf_borrow.data();
-                let info = &data.trace_data;
-
-                let result = self.playout(info.start_pos.clone());
-
+            .filter_map(|&leaf| {
+                leaf.leaf_data
+                    .as_ref()
+                    .map(|l| (&l.trace_data).as_ref())
+                    .flatten()
+            })
+            .map(|eval_info| {
+                let result = self.playout(eval_info.start_pos.clone());
                 Evaluation::Terminal(result)
             })
             .collect_vec()

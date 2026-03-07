@@ -256,6 +256,16 @@ impl<S: node_state::Any> CtNodeRef<S> {
     }
 }
 
+impl<S: node_state::Valid> CtNodeRef<S> {
+    // todo: this can be const when const-trait feature is properly implemented.
+    pub fn try_into_branching(self) -> Option<CtNodeRef<Branching>> {
+        match S::state() {
+            NodeState::Branching => Some(unsafe { mem::transmute(self) }),
+            _ => None,
+        }
+    }
+}
+
 impl<S: node_state::Any + Default> CtNodeRef<S> {
     #[inline]
     unsafe fn transform_with<TargetState: node_state::Any>(
@@ -286,6 +296,12 @@ impl CtNodeRef<Leaf> {
                 ExpandedRefSwitch::Branching(ret)
             }
         }
+    }
+}
+
+impl CtNodeRef<Branching> {
+    pub fn set_policy_raw(self, raw_policy: &RawPolicy) -> CtNodeRef<Evaluated> {
+        unsafe { self.transform_with(|node| node.set_policy_raw(raw_policy)) }
     }
 }
 
@@ -451,13 +467,13 @@ pub mod node_state {
 
     pub trait Any {}
 
-    pub trait Valid: Any {
+    pub const trait Valid: Any {
         fn state() -> NodeState;
     }
 
     pub trait Expanded: Any {}
 
-    pub trait HasBranches: Any {}
+    pub trait HasBranches: Any + Valid {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Leaf;
@@ -672,6 +688,17 @@ impl Node<Branching> {
     }
 }
 
+impl Node<Evaluated> {
+    pub fn apply_policy_noise(&mut self, noise: &[f32], eps: f32) {
+        let total = noise.iter().sum::<f32>();
+        for (branch, noise) in self.data.branches.iter_mut().zip(noise) {
+            let norm_noise = noise / total;
+            let policy = branch.policy();
+            branch.set_policy(policy * (1. - eps) + eps * norm_noise);
+        }
+    }
+}
+
 impl<S: node_state::Valid> Node<S> {
     pub fn state() -> NodeState {
         S::state()
@@ -695,5 +722,9 @@ impl<S: node_state::Any> Node<S> {
 
     pub fn value(&self) -> Value {
         self.data.value()
+    }
+
+    pub fn update(&mut self, value: eval::Value) {
+        self.data.update(value)
     }
 }
