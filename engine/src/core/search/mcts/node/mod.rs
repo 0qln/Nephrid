@@ -83,41 +83,45 @@ impl Tree {
         }
     }
 
-    // pub fn best_moves(&self, threshold: Value) -> Vec<Move> {
-    //     let root = self.root.borrow();
-    //     root.branches()
-    //         .iter()
-    //         .filter(|b| b.value() > threshold)
-    //         .map(|b| b.mov())
-    //         .collect_vec()
-    // }
+    pub fn best_moves(&self, threshold: Value) -> Vec<Move> {
+        fn map(node: CtNodeRef<impl HasBranches>, threshold: Value) -> Vec<Move> {
+            node.borrow()
+                .branches()
+                .iter()
+                .filter(|b| b.value() > threshold)
+                .map(|b| b.mov())
+                .collect_vec()
+        }
 
-    /// Returns the current principal variation.
+        match self.root.clone().into_ct() {
+            NodeSwitch::Branching(node) => map(node, threshold),
+            NodeSwitch::Evaluated(node) => map(node, threshold),
+            _ => vec![],
+        }
+    }
+
+    /// Returns the current principal variation. The branches are clones, but
+    /// contain valid references to their nodes.
     pub fn principal_variation(&self) -> Path {
         let mut buf = Vec::new();
         let mut current = self.root.clone();
 
-        // todo
-        // loop {
-        //     let next_branch = {
-        //         let borrow = current.borrow();
-        //         if borrow.branches().is_empty() {
-        //             None
-        //         }
-        //         else {
-        //             borrow.branches().iter().max_by_key(|b| b.visits()).cloned()
-        //         }
-        //     };
+        loop {
+            let branch = match current.into_ct() {
+                NodeSwitch::Branching(node) => Some(node.borrow().select_best().clone()),
+                NodeSwitch::Evaluated(node) => Some(node.borrow().select_best().clone()),
+                _ => None,
+            };
 
-        //     match next_branch {
-        //         Some(branch) => {
-        //             let node = branch.node();
-        //             buf.push(branch);
-        //             current = node;
-        //         }
-        //         None => break,
-        //     }
-        // }
+            match branch {
+                Some(branch) => {
+                    let node = branch.node();
+                    buf.push(branch);
+                    current = node;
+                }
+                None => break,
+            }
+        }
         Path(buf)
     }
 
