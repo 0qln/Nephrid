@@ -247,7 +247,58 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     }
 
     pub fn init_root(&mut self, tree: &mut Tree) {
-        // todo
+        loop {
+            let root = tree.get_root().clone();
+            match root.into_ct() {
+                NodeSwitch::Leaf(node) => {
+                    let _ = node.expand(&self.position);
+                    // Cycle continues so the expanded components can be
+                    // evaluated.
+                }
+                NodeSwitch::Branching(node) => {
+                    let turn = self.position.get_turn();
+                    let trace_data = self.evaluator.trace(node.clone(), &self.position);
+
+                    self.selection.clear();
+                    // Place the root node temporarily in the leafs array for evaluating.
+                    self.selection.set(
+                        0,
+                        SelectionLeaf {
+                            leaf_data: Some(SelectionItem {
+                                node: node.clone(),
+                                turn,
+                                trace_data,
+                            }),
+                            parent_id: NodeId(0), // Dummy, we bypass backprop and apply manually.
+                            eval: EvalItem::Batched,
+                        },
+                    );
+
+                    let eval = {
+                        let leaf = self.selection.leafs[0].as_ref().unwrap();
+                        self.evaluator
+                            .eval_batch(&self.selection, &[leaf])
+                            .next()
+                            .unwrap()
+                    };
+
+                    if let Evaluation::Guess(guess) = eval {
+                        node.set_policy_raw(&guess.policy);
+                    }
+
+                    self.selection.clear();
+                    break;
+                }
+                NodeSwitch::Evaluated(_) => {
+                    break;
+                }
+                NodeSwitch::Terminal(node) => {
+                    // Evaluator::eval_terminal is an associated function without `&self`
+                    let _ = E::eval_terminal(node, &self.position);
+                    break;
+                }
+            }
+        }
     }
 
     pub fn grow(&mut self, tree: &mut Tree) {
@@ -261,12 +312,18 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     }
 
     fn select_lines(&mut self, tree: &mut Tree) {
-        let root = tree.get_root();
+        let root = tree.get_root().clone();
         let turn = self.position.get_turn();
-        let eval_data = self.evaluator.trace(root.clone(), &self.position);
 
-        let sel_root_id = self.selection.init_root(root.clone(), turn, eval_data);
-        self.pick_branches(MPV, 0, Depth::MIN, root, sel_root_id);
+        let root_eval = match root.into_ct() {
+            NodeSwitch::Evaluated(n) => n,
+            _ => panic!("Root must be evaluated before selecting lines! Did you call init_root?"),
+        };
+
+        let eval_data = self.evaluator.trace(root_eval.clone(), &self.position);
+
+        let sel_root_id = self.selection.init_root(root_eval.clone(), turn, eval_data);
+        self.pick_branches(MPV, 0, Depth::MIN, root_eval, sel_root_id);
     }
 
     fn pick_branches(
@@ -340,7 +397,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         };
 
         self.position.unmake_move(branch.mov());
-        return used;
+        used
     }
 
     fn select_leaf(
@@ -425,22 +482,13 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             }
         }
 
-        let evals = {
-            let batch = batched_indices
+        let evals: Vec<Evaluation> = {
+            let leafs: Vec<&SelectionLeaf<E::TraceData>> = batched_indices
                 .iter()
-                .map(|&i| {
-                    self.selection.leafs[i]
-                        .as_ref()
-                        .unwrap()
-                        .leaf_data
-                        .as_ref()
-                        .unwrap()
-                        .node
-                        .clone()
-                })
-                .collect::<Vec<_>>();
+                .map(|&i| self.selection.leafs[i].as_ref().unwrap())
+                .collect();
 
-            self.evaluator.eval_batch(&batch)
+            self.evaluator.eval_batch(&self.selection, &leafs).collect()
         };
 
         for (i, eval) in batched_indices.into_iter().zip(evals) {
@@ -451,12 +499,8 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     }
 
     fn backup_evals(&mut self) {
-        for sel in self.selection.leafs.iter().flatten() {
-            if let EvalItem::Evaluated(eval) = &sel.eval {
-                // IMPORTANT: Since the leaf is no longer in the bump arena,
-                // backpropagation now strictly starts from the leaf's parent in the arena!
-                self.backprop.backpropagate(sel.parent_id, eval);
-            }
+        for leaf in self.selection.leafs.iter().flatten() {
+            self.backprop.backpropagate(&self.selection, leaf);
         }
     }
 
@@ -465,7 +509,9 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             return;
         }
 
-        let root = tree.get_root();
-        _ = self.noiser.apply_noise(&mut root.borrow_mut());
+        let root = tree.get_root().clone();
+        if let NodeSwitch::Evaluated(node) = root.into_ct() {
+            _ = self.noiser.apply_noise(&mut *node.borrow_mut());
+        }
     }
 }

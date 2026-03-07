@@ -228,10 +228,6 @@ impl QualityInput {
     fn value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
         Self::material(pos, color) + Self::psqt(pos, color, phase)
     }
-
-    fn new() -> Self {
-        Self {}
-    }
 }
 
 /// Convert QualityInput into Quality, where the Quality is relative to white.
@@ -250,10 +246,6 @@ impl From<&EvalInfo> for Quality {
 pub struct PolicyInput {}
 
 impl PolicyInput {
-    fn new() -> Self {
-        Self {}
-    }
-
     pub fn psqt(
         phase: TaperValue,
         piece: PieceType,
@@ -326,12 +318,6 @@ pub struct EvalInfo {
     /// The to-be-evaluated that this eval info is for.
     node: CtNodeRef<Branching>,
 
-    /// Quality info for static evaluation
-    q_input: QualityInput,
-
-    /// Policy for static evaluation
-    p_input: PolicyInput,
-
     /// Turn of the current player.
     turn: Turn,
 
@@ -353,8 +339,6 @@ impl EvalInfo {
             phase: TaperValue::from_position(&pos),
             node,
             turn: pos.get_turn(),
-            q_input: QualityInput::new(),
-            p_input: PolicyInput::new(),
         }
     }
 }
