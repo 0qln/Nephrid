@@ -36,7 +36,6 @@ pub mod noise;
 pub mod search;
 pub mod select;
 pub mod strategy;
-pub mod utils;
 
 pub mod test;
 
