@@ -1,6 +1,5 @@
 use itertools::Itertools;
 use rand::prelude::*;
-use std::{cell::RefCell, rc::Rc};
 
 use crate::core::{move_iter::fold_legal_moves, search::mcts::search::SelectionNodeRef};
 
@@ -66,7 +65,7 @@ impl Evaluator for PlayoutEvaluator {
     type TraceData = PlayoutTraceData;
 
     /// Captures the position at the current node.
-    fn trace(&self, _node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData {
+    fn trace(&self, _node: NodeRef<Branching>, pos: &Position) -> Self::TraceData {
         PlayoutTraceData { start_pos: pos.clone() }
     }
 

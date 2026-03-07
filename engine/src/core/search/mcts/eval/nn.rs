@@ -1,6 +1,9 @@
 use burn::tensor::{DType, TensorData};
 
-use crate::core::search::mcts::search::SelectionNode;
+use crate::core::search::mcts::{
+    node::{NodeRef, node_state::Branching},
+    search::SelectionNode,
+};
 
 use super::*;
 
@@ -25,11 +28,11 @@ pub struct TraceInfo {
     inputs: InputFloats,
 
     /// The node that this eval info is for.
-    node: Rc<RefCell<Node>>,
+    node: NodeRef<Branching>,
 }
 
 impl TraceInfo {
-    pub fn new(node: Rc<RefCell<Node>>, pos: &Position) -> Self {
+    pub fn new(node: NodeRef<Branching>, pos: &Position) -> Self {
         Self {
             inputs: InputFloats::new(pos),
             node,
@@ -114,7 +117,7 @@ impl<'a, 'b, B: Backend, const X: usize> NNEvaluator<'a, 'b, B, X> {
 impl<'a, 'b, B: Backend, const X: usize> Evaluator for NNEvaluator<'a, 'b, B, X> {
     type TraceData = TraceInfo;
 
-    fn trace(&self, node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData {
+    fn trace(&self, node: NodeRef<Branching>, pos: &Position) -> Self::TraceData {
         TraceInfo::new(node, pos)
     }
 

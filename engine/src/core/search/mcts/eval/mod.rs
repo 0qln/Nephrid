@@ -2,14 +2,13 @@ use crate::core::{
     Position,
     color::Color,
     search::mcts::{
-        nn::{
-            BOARD_INPUT_HISTORY, BoardInputFloats, Model, POLICY_OUTPUTS, StateInputFloats,
-            VALUE_OUTPUTS, board_history_input, board_input, state_input,
+        nn::POLICY_OUTPUTS,
+        node::{
+            CtNodeRef,
+            node_state::{Branching, HasBranches, Terminal},
         },
-        node::{Node, NodeRef, NodeState},
         search::SelectionNodeRef,
     },
-    turn::Turn,
 };
 use burn::{
     Tensor,
@@ -17,7 +16,7 @@ use burn::{
 };
 use core::fmt;
 use itertools::Itertools;
-use std::{assert_matches::assert_matches, cell::RefCell, ops::ControlFlow, rc::Rc};
+use std::ops::ControlFlow;
 
 #[cfg(test)]
 pub mod test;
@@ -29,20 +28,18 @@ pub mod r#static;
 pub trait Evaluator {
     type TraceData;
 
-    fn trace(&self, node: NodeRef, pos: &Position) -> Self::TraceData;
+    /// Note a trace of a branching node during the selection phase.
+    /// `node` may or may not be the node that was just expanded during the
+    /// selection phase.
+    fn trace<S: HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData;
 
+    // todo: can we change this to just taking `Node<Terminal>`?
     /// Evaluate a node's terminal state. If the node is terminal, return the
     /// evaluation, else return None.
-    fn eval_terminal(node: &Node, pos: &Position) -> Option<Evaluation> {
-        assert_matches!(
-            node.state(),
-            NodeState::Terminal | NodeState::Expanded,
-            "We need a terminal or expanded node for proper evaluation."
-        );
-
-        let has_moves = node.has_branches();
-        let game_result = pos.game_result_with(has_moves);
-        game_result.map(Evaluation::Terminal)
+    fn eval_terminal(_node: CtNodeRef<Terminal>, pos: &Position) -> Evaluation {
+        let game_result = pos.game_result_with(false);
+        let game_result = game_result.expect("A position with no moves has to have a game result.");
+        Evaluation::Terminal(game_result)
     }
 
     fn eval_batch(

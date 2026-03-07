@@ -1,16 +1,12 @@
-use crate::core::search::mcts::eval::Value;
 use std::ops::ControlFlow;
 
 use crate::core::search::mcts::{
     eval::Evaluation,
-    node::{Node, NodeState},
+    node::NodeState,
     search::{SelectionNode, SelectionNodeRef},
 };
 
 pub trait Backpropagater {
-    /// Update the node with the result of an evaluation.
-    fn update(node: &mut Node, value: Value);
-
     /// Backpropagate the [eval].
     fn backpropagate<T>(&self, leaf: SelectionNodeRef<T>, eval: &Evaluation);
 }
@@ -19,11 +15,6 @@ pub trait Backpropagater {
 pub struct DefaultBackuper {}
 
 impl Backpropagater for DefaultBackuper {
-    fn update(node: &mut Node, value: Value) {
-        node.visits += 1;
-        node.value += value;
-    }
-
     fn backpropagate<T>(&self, leaf: SelectionNodeRef<T>, eval: &Evaluation) {
         // println!("[eval: {eval}]");
 
@@ -32,7 +23,8 @@ impl Backpropagater for DefaultBackuper {
             let turn = node.borrow().data().turn;
             let depth = node.borrow().data().depth;
             let value = eval.to_value(turn);
-            Self::update(&mut node.borrow_mut().data().node.borrow_mut(), value);
+            let node = node.borrow_mut().data().node.borrow_mut();
+            node.update(value);
 
             // println!("[node: ({turn}, {depth}), update: {value:?}]");
 

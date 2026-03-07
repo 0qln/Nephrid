@@ -1,4 +1,4 @@
-use itertools::Itertools;
+use std::ops::Try;
 
 use crate::core::{
     Position,
@@ -7,30 +7,29 @@ use crate::core::{
         back::Backpropagater,
         eval::{Evaluation, Evaluator},
         limiter::{self, Limiter},
-        node::{Branch, CtNodeRef, Tree, node_state::*},
+        node::{
+            Branch, CtNodeRef, Tree,
+            node_state::{self, *},
+        },
         noise::Noiser,
         select::Selector,
-        utils::DoubleLinkedNode,
     },
     turn::Turn,
 };
-use std::{cell::RefCell, rc::Rc};
 
 #[cfg(test)]
 pub mod test;
 
-pub struct SelectionItem<T> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NodeId(pub usize);
+
+#[derive(Debug)]
+pub struct SelectionItem<T, S: node_state::Any> {
     /// The selected leaf that was just expanded, but has not yet been evaluated
-    /// yet.
-    pub node: CtNodeRef<Branching>,
-
-    /// Depth from root
-    pub depth: Depth,
-
+    pub node: CtNodeRef<S>,
     /// Current player's turn
     pub turn: Turn,
-
-    /// Context specific data.
+    /// Context specific data
     pub trace_data: T,
 }
 
@@ -41,70 +40,148 @@ pub enum EvalItem {
 }
 
 impl EvalItem {
-    fn is_batched(&self) -> bool {
+    pub fn is_batched(&self) -> bool {
         matches!(self, Self::Batched)
     }
 }
 
-pub type SelectionNode<T> = DoubleLinkedNode<SelectionItem<T>>;
+pub type SelParentData<T> = SelectionItem<T, Evaluated>;
+pub type SelLeafData<T> = SelectionItem<T, Branching>;
 
-pub type SelectionNodeRef<T> = Rc<RefCell<SelectionNode<T>>>;
+/// A node allocated within the Selection's bump arena.
+/// Since leaves are stored separately, this is ALWAYS a parent node!
+#[derive(Debug)]
+pub struct SelectionNode<T> {
+    pub item: SelParentData<T>,
+    pub parent: Option<NodeId>,
+    pub children: Vec<NodeId>,
+}
 
-pub type SelectionLeaf<T> = (SelectionNodeRef<T>, EvalItem);
+/// The new dedicated Leaf structure.
+#[derive(Debug)]
+pub struct SelectionLeaf<T> {
+    /// Option because Terminal nodes don't have branching trace data!
+    pub leaf_data: Option<SelLeafData<T>>,
+    /// The parent node inside the bump arena
+    pub parent_id: NodeId,
+    pub eval: EvalItem,
+}
 
 pub struct Selection<const X: usize, T> {
-    pub root: Option<SelectionNodeRef<T>>,
+    /// The Bump Arena. Now STRICTLY contains only Parent nodes.
+    pub arena: Vec<SelectionNode<T>>,
+    pub root: Option<NodeId>,
+    /// The dedicated arena for our Leaf nodes.
     pub leafs: [Option<SelectionLeaf<T>>; X],
+}
+
+const fn empty_leaf<T>() -> Option<SelectionLeaf<T>> {
+    None
 }
 
 impl<const X: usize, T> Default for Selection<X, T> {
     fn default() -> Self {
-        const fn empty_leaf<T>() -> Option<SelectionLeaf<T>> {
-            None
-        }
+
         Self {
+            arena: Vec::new(),
             root: None,
-            leafs: [const { empty_leaf() }; X],
+            leafs: [const { empty_leaf::<T>() }; X],
         }
     }
 }
 
 impl<const X: usize, T> Selection<X, T> {
+    /// Initializes a new root node.
     pub fn init_root(
         &mut self,
-        root_node: CtNodeRef<Branching>,
+        root_node: CtNodeRef<Evaluated>,
         turn: Turn,
         trace_data: T,
-    ) -> SelectionNodeRef<T> {
-        let root = Rc::new(RefCell::new(SelectionNode::new_root(SelectionItem {
-            node: root_node,
-            depth: Depth::MIN,
-            turn,
-            trace_data,
-        })));
+    ) -> NodeId {
+        let root_id = NodeId(self.arena.len());
+        self.arena.push(SelectionNode {
+            item: SelectionItem {
+                node: root_node,
+                turn,
+                trace_data,
+            },
+            parent: None,
+            children: vec![],
+        });
 
-        self.root = Some(root.clone());
-        root
+        self.root = Some(root_id);
+        root_id
+    }
+
+    /// Clear the arena and selection.
+    pub fn clear(&mut self) {
+        self.arena.clear();
+        self.leafs = [const { empty_leaf::<T>() }; X];
+        self.root = None;
+    }
+
+    /// Allocates a new Parent node in the arena and attaches it to the parent.
+    /// No more Results/Enums needed!
+    pub fn append_parent(
+        &mut self,
+        parent_id: NodeId,
+        parent_node: CtNodeRef<Evaluated>,
+        turn: Turn,
+        trace_data: T,
+    ) -> NodeId {
+        let child_id = NodeId(self.arena.len());
+
+        // Add the child ID to the parent's children vector
+        self.arena[parent_id.0].children.push(child_id);
+
+        // Bump allocate the new child node
+        self.arena.push(SelectionNode {
+            item: SelectionItem {
+                node: parent_node,
+                turn,
+                trace_data,
+            },
+            parent: Some(parent_id),
+            children: vec![],
+        });
+
+        child_id
     }
 
     pub fn set(&mut self, index: usize, item: SelectionLeaf<T>) {
         self.leafs[index] = Some(item);
     }
 
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut SelectionLeaf<T>> {
-        self.leafs[index].as_mut()
+    pub fn get_node(&self, id: NodeId) -> &SelectionNode<T> {
+        &self.arena[id.0]
+    }
+
+    pub fn get_node_mut(&mut self, id: NodeId) -> &mut SelectionNode<T> {
+        &mut self.arena[id.0]
+    }
+
+    /// Applies `f` to the given node and all parent nodes, moving up the tree.
+    pub fn try_fold_up_mut<B, F, R>(&mut self, mut current: NodeId, mut init: B, mut f: F) -> R
+    where
+        F: FnMut(B, &mut SelectionNode<T>) -> R,
+        R: Try<Output = B>,
+    {
+        loop {
+            let node = &mut self.arena[current.0];
+            init = f(init, node)?;
+
+            if let Some(parent_id) = node.parent {
+                current = parent_id;
+            }
+            else {
+                break;
+            }
+        }
+        R::from_output(init)
     }
 }
 
 /// # Tree searcher
-///
-/// This statemachine should hold all the info that is required to search.
-///
-/// ## Multi pv.
-///
-/// Use multi pv lines with batched evaluation, if we have access to GPU and can
-/// parallelize. If we don't have access to hardware accell, resort to using a
-/// backend like WebGPU, or NdArray, and just do TreeSearcher<MPV=1>.
 pub struct TreeSearcher<
     'pos,
     const MPV: usize,
@@ -114,30 +191,13 @@ pub struct TreeSearcher<
     B: Backpropagater,
     N: Noiser,
 > {
-    /// The position that will be edited during the selection and
-    /// backpropagatation.
     position: &'pos mut Position,
-
-    /// Selector to select the leafes.
     selector: S,
-
-    /// Limiter to dicide whether to keep searching non-terminating nodes.
     limiter: L,
-
-    /// Evaluator to evaluate non-terminating nodes.
     evaluator: E,
-
-    /// Backpropagater
     backprop: B,
-
-    /// Noiser
     noiser: N,
-
-    /// Number of compeleted iterations.
     iterations: u64,
-
-    /// Stack of nodes that were selected during the selection phase, for each
-    /// principal line.
     selection: Selection<MPV, E::TraceData>,
 }
 
@@ -168,138 +228,36 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         self.iterations
     }
 
-    pub fn grow(&mut self, tree: &mut Tree) {
-        self.selection = Default::default();
+    pub fn init_root(&mut self, tree: &mut Tree) {
+        // todo
+    }
 
-        // println!("[grow-{}]", self.iterations());
+    pub fn grow(&mut self, tree: &mut Tree) {
+        self.selection.clear(); // Using the new clear() method!
 
         self.select_lines(tree);
-
-        // let num_selected = self.selection.leafs.iter().filter(|l|
-        // l.is_some()).count(); println!("[selected {num_selected}/{MPV}]",);
-
         self.eval_batched();
         self.backup_evals();
         self.apply_noise(tree);
         self.iterations += 1;
     }
 
-    // Select the root leafes.
     fn select_lines(&mut self, tree: &mut Tree) {
-        // todo: convert to iterative approach -- or not if the stack frame is
-        // small with this one ._.
         let root = tree.get_root();
         let turn = self.position.get_turn();
         let eval_data = self.evaluator.trace(root.clone(), &self.position);
-        let sel_root = self.selection.init_root(root.clone(), turn, eval_data);
-        self.process_node(MPV, 0, Depth::MIN, root, sel_root);
+
+        let sel_root_id = self.selection.init_root(root.clone(), turn, eval_data);
+        self.pick_branches(MPV, 0, Depth::MIN, root, sel_root_id);
     }
 
-    /// Follows a branch and decides what to do depending on the current state
-    /// of the branch's node.
-    /// Returns: how much of the budget was used.
-    fn process_node(
-        &mut self,
-        budget: usize,
-        line_index: usize,
-        depth: Depth,
-        branch: &Branch,
-        sel_node: SelectionNodeRef<E::TraceData>,
-    ) -> usize {
-        match branch.node().into_ct() {
-            // Only if the node is already expanded we want to follow the branch.
-            NodeSwitch::Branching(node) => {
-                // If the node is expanded, pick branches and follow the lines.
-                self.pick_branches(budget, line_index, depth, node, sel_node)
-            }
-
-            // Select leaf nodes.
-            NodeSwitch::Leaf(node) => {
-                // If the node is a leaf, expand the node's branches for future
-                // mcts iterations. And select it for mcts
-                // evaluation.
-                //
-                // this is fine to do now, since we split above and in the fn
-                // `select_branches` we immidieatly increment
-                // the branch_index and thus during a
-                // single selection phase, this match block is only reached once
-                // per node in a mcts iteration. Altough we should probably unit
-                // test this somehow.
-                self.select_leaf(line_index, sel_node, node, depth)
-            }
-
-            // On Terminal nodes, note down the evaluation.
-            NodeSwitch::Terminal(node) => self.select_terminal(line_index, sel_node, node, depth),
-        }
-    }
-
-    fn select_leaf(
-        &mut self,
-        line_index: usize,
-        sel_node: SelectionNodeRef<E::TraceData>,
-        node: CtNodeRef<Leaf>,
-        depth: Depth,
-    ) -> usize {
-        let expanded = node.expand(&self.position);
-
-        match expanded {
-            ExpandedRefSwitch::Terminal(node) => {
-                self.select_terminal(line_index, sel_node, node, depth)
-            }
-            ExpandedRefSwitch::Branching(node) => {
-                self.select_branching(line_index, sel_node, depth)
-            }
-        }
-    }
-
-    fn select_terminal(
-        &mut self,
-        line_index: usize,
-        sel_node: SelectionNodeRef<E::TraceData>,
-        node: CtNodeRef<Terminal>,
-        depth: Depth,
-    ) -> usize {
-        let eval = E::eval_terminal(node, &self.position);
-        self.selection
-            .set(line_index, (sel_node, EvalItem::Evaluated(eval)));
-        1
-    }
-
-    /// Returns: how much of the budget was used.
-    fn select_branching(
-        &mut self,
-        line_index: usize,
-        sel_node: SelectionNodeRef<E::TraceData>,
-        node: CtNodeRef<Branching>,
-        depth: Depth,
-    ) -> usize {
-        let pos = &self.position;
-
-        // todo: does this check even belong here?
-        // Check if we are even interested in searching this line any
-        // further.
-        let (used_budget, eval) = if self.limiter.should_stop(limiter::Params { pos, depth }) {
-            // todo: maybe it's better to return 0 (skip this node) instead of using a draw
-            (1, EvalItem::Evaluated(Evaluation::Nope))
-        }
-        // Else note down that we need to guess this node's evaluation.
-        else {
-            (1, EvalItem::Batched)
-        };
-
-        self.selection.set(line_index, (sel_node, eval));
-
-        used_budget
-    }
-
-    /// Returns: how much of the budget was used.
     fn pick_branches(
         &mut self,
         budget: usize,
         line_index: usize,
         depth: Depth,
-        parent_node: CtNodeRef<Branching>,
-        mut sel_node_parent: SelectionNodeRef<E::TraceData>,
+        parent_node: CtNodeRef<Evaluated>,
+        sel_node_id: NodeId,
     ) -> usize {
         let root_visits = parent_node.borrow().visits();
         parent_node
@@ -310,91 +268,182 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         let mut used_budget = 0;
         let mut line_index = line_index;
         let mut branch_index = 0;
+
         while budget >= 1 {
             if let Some(branch) = parent_node.borrow().get_branch(branch_index) {
-                let current_budget = self.selector.budget(budget);
-                if current_budget == 0 {
+                let curr_budget = self.selector.budget(budget);
+                if curr_budget == 0 {
                     break;
-                }
+                };
 
-                // make the move of the current branch, such that we can follow the line.
-                self.position.make_move(branch.mov());
+                let used = self.select_branch(curr_budget, line_index, depth, branch, sel_node_id);
 
-                let depth = depth + 1;
-                let node = branch.node();
-
-                let eval_info = self.evaluator.trace(node.clone(), &self.position);
-
-                let sel_info = SelectionNode::append(
-                    &mut sel_node_parent,
-                    SelectionItem {
-                        depth,
-                        node: node.clone(),
-                        turn: self.position.get_turn(),
-                        trace_data: eval_info,
-                    },
-                );
-
-                let used = self.process_node(current_budget, line_index, depth, node, sel_info);
-
-                // undo the move again
-                self.position.unmake_move(branch.mov());
-
-                budget -= current_budget;
+                budget -= curr_budget;
                 branch_index += 1;
 
-                // `process_node` should have used `used` nodes. Thus we increase the
-                // line_index by that amount.
                 line_index += used;
                 used_budget += used;
             }
             else {
-                // in this case there are no more branches to distribute the budget to.
-                // todo:
-                // this currently wastes some remaining budget, fix that.
-                // or later if we make the selection and eval parallel, just go select as many
-                // lines as possible, until we have a full (X==MPV) batch.
                 break;
             }
         }
         used_budget
     }
 
-    fn eval_batched(&mut self) {
-        let mut batched_leafs = self
-            .selection
-            .leafs
-            .iter_mut()
-            .filter_map(|l| match l {
-                Some(l) if l.1.is_batched() => Some(l),
-                _ => None,
-            })
-            .collect_vec();
+    fn select_branch(
+        &mut self,
+        budget: usize,
+        line_index: usize,
+        depth: Depth,
+        branch: &Branch,
+        parent_sel_id: NodeId,
+    ) -> usize {
+        self.position.make_move(branch.mov());
+        let depth = depth + 1;
+        let turn = self.position.get_turn();
 
-        let evals = {
-            let batch = batched_leafs.iter().map(|b| b.0.clone()).collect_vec();
-            self.evaluator
-                .eval_batch(&batch)
-                // todo: idk why we need to collect this as vec here
-                .collect_vec()
+        let used = match branch.node().into_ct() {
+            NodeSwitch::Branching(node) => {
+                // Now directly goes to select_branching! No appending here.
+                self.select_branching(line_index, parent_sel_id, node, depth)
+            }
+            NodeSwitch::Evaluated(node) => {
+                let trace_data = self.evaluator.trace(node.clone(), &self.position);
+                let child_id =
+                    self.selection
+                        .append_parent(parent_sel_id, node.clone(), turn, trace_data);
+                self.pick_branches(budget, line_index, depth, node, child_id)
+            }
+            NodeSwitch::Leaf(node) => self.select_leaf(line_index, parent_sel_id, node, depth),
+            NodeSwitch::Terminal(node) => {
+                self.select_terminal(line_index, parent_sel_id, node, depth)
+            }
         };
 
-        for (leaf, eval) in batched_leafs.iter_mut().zip(evals) {
-            leaf.1 = EvalItem::Evaluated(eval);
+        self.position.unmake_move(branch.mov());
+        return used;
+    }
+
+    fn select_leaf(
+        &mut self,
+        line_index: usize,
+        parent_sel_id: NodeId,
+        node: CtNodeRef<Leaf>,
+        depth: Depth,
+    ) -> usize {
+        let expanded = node.expand(&self.position);
+
+        match expanded {
+            ExpandedRefSwitch::Terminal(node) => {
+                self.select_terminal(line_index, parent_sel_id, node, depth)
+            }
+            ExpandedRefSwitch::Branching(node) => {
+                self.select_branching(line_index, parent_sel_id, node, depth)
+            }
+        }
+    }
+
+    fn select_terminal(
+        &mut self,
+        line_index: usize,
+        parent_sel_id: NodeId,
+        node: CtNodeRef<Terminal>,
+        _depth: Depth,
+    ) -> usize {
+        let eval = E::eval_terminal(node, &self.position);
+
+        // Terminal nodes just set `leaf_data` to None!
+        self.selection.set(
+            line_index,
+            SelectionLeaf {
+                leaf_data: None,
+                parent_id: parent_sel_id,
+                eval: EvalItem::Evaluated(eval),
+            },
+        );
+        1
+    }
+
+    fn select_branching(
+        &mut self,
+        line_index: usize,
+        parent_id: NodeId,
+        node: CtNodeRef<Branching>,
+        depth: Depth,
+    ) -> usize {
+        let pos = &self.position;
+
+        let (used_budget, eval) = if self.limiter.should_stop(limiter::Params { pos, depth }) {
+            (1, EvalItem::Evaluated(Evaluation::Nope))
+        }
+        else {
+            (1, EvalItem::Batched)
+        };
+
+        let turn = self.position.get_turn();
+        let trace_data = self.evaluator.trace(node.clone(), pos);
+
+        // Put the newly encountered leaf directly into the leafs array
+        self.selection.set(
+            line_index,
+            SelectionLeaf {
+                leaf_data: Some(SelectionItem { node, turn, trace_data }),
+                parent_id,
+                eval,
+            },
+        );
+
+        used_budget
+    }
+
+    fn eval_batched(&mut self) {
+        let mut batched_indices = Vec::new();
+        for (i, leaf) in self.selection.leafs.iter().enumerate() {
+            if let Some(l) = leaf {
+                if l.eval.is_batched() {
+                    batched_indices.push(i);
+                }
+            }
+        }
+
+        let evals = {
+            let batch = batched_indices
+                .iter()
+                .map(|&i| {
+                    // Extract the CtNodeRef directly from the leaf array
+                    self.selection.leafs[i]
+                        .as_ref()
+                        .unwrap()
+                        .leaf_data
+                        .as_ref()
+                        .unwrap()
+                        .node
+                        .clone()
+                })
+                .collect::<Vec<_>>();
+
+            self.evaluator.eval_batch(&batch).collect::<Vec<_>>()
+        };
+
+        for (i, eval) in batched_indices.into_iter().zip(evals) {
+            if let Some(leaf) = &mut self.selection.leafs[i] {
+                leaf.eval = EvalItem::Evaluated(eval);
+            }
         }
     }
 
     fn backup_evals(&mut self) {
         for sel in self.selection.leafs.iter().flatten() {
-            let node = sel.0.clone();
-            if let EvalItem::Evaluated(eval) = &sel.1 {
-                self.backprop.backpropagate(node, eval);
+            if let EvalItem::Evaluated(eval) = &sel.eval {
+                // IMPORTANT: Since the leaf is no longer in the bump arena,
+                // backpropagation now strictly starts from the leaf's parent in the arena!
+                self.backprop.backpropagate(sel.parent_id, eval);
             }
         }
     }
 
     fn apply_noise(&mut self, tree: &mut Tree) {
-        // Only apply noise once
         if self.iterations > 0 {
             return;
         }

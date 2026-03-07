@@ -1,5 +1,4 @@
 use itertools::Itertools;
-use std::{assert_matches::debug_assert_matches, cmp::max};
 
 use crate::{
     core::{
@@ -8,7 +7,10 @@ use crate::{
         r#move::Move,
         piece::{PieceType, piece_type},
         position::{PieceInfo, StateInfo},
-        search::mcts::search::SelectionNodeRef,
+        search::mcts::{
+            node::{Branch, node_state::Branching},
+            search::SelectionNodeRef,
+        },
     },
     impl_variants,
 };
@@ -287,7 +289,7 @@ impl PolicyInput {
         0
     }
 
-    pub fn meta(pos: &PieceInfo, mov: Move, _state: &StateInfo) -> i32 {
+    pub fn meta(_pos: &PieceInfo, _mov: Move, _state: &StateInfo) -> i32 {
         // todo: give bonus for promotions etc.
         0
     }
@@ -301,10 +303,8 @@ impl From<&EvalInfo> for RawPolicy {
         let state = &input.state;
         let color = input.turn;
 
-        debug_assert_matches!(node.state(), NodeState::Expanded | NodeState::Terminal);
-
         let mut policy = RawPolicy::null();
-        for mov in node.iter_branches().map(|b| b.mov()) {
+        for mov in node.branches().iter().map(|b: &Branch| b.mov()) {
             // policy for each move in the position is the difference of the psqt score from
             // the previous position and the psqt score of the next position that is
             // achieved by the move.
@@ -327,7 +327,7 @@ impl From<&EvalInfo> for RawPolicy {
 #[derive(PartialEq, Debug)]
 pub struct EvalInfo {
     /// The node that this eval info is for.
-    node: Rc<RefCell<Node>>,
+    node: NodeRef<Branching>,
 
     /// Quality info for static evaluation
     q_input: QualityInput,
@@ -349,7 +349,7 @@ pub struct EvalInfo {
 }
 
 impl EvalInfo {
-    pub fn new(node: Rc<RefCell<Node>>, pos: &Position) -> Self {
+    pub fn new(node: NodeRef<Branching>, pos: &Position) -> Self {
         Self {
             pos: pos.piece_info().clone(),
             state: pos.state_info().clone(),
@@ -374,7 +374,7 @@ impl StaticEvaluator {
 impl Evaluator for StaticEvaluator {
     type TraceData = EvalInfo;
 
-    fn trace(&self, node: Rc<RefCell<Node>>, pos: &Position) -> Self::TraceData {
+    fn trace(&self, node: NodeRef<Branching>, pos: &Position) -> Self::TraceData {
         EvalInfo::new(node, pos)
     }
 

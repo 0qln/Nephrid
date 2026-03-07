@@ -1,8 +1,8 @@
 use crate::core::search::mcts::node::node_state::{
-    ExpandedRefSwitch, ExpandedSwitch, NodeState, NodeSwitch, Unknown,
+    ExpandedRefSwitch, ExpandedSwitch, HasBranches, NodeState, NodeSwitch, Unknown,
 };
 use itertools::Itertools;
-use std::mem;
+use std::{mem, ops::Deref};
 
 use crate::core::{
     Move, Position,
@@ -32,16 +32,15 @@ impl Tree {
     }
 
     pub fn advance_best(&mut self) {
+        fn map(node: CtNodeRef<impl HasBranches>) -> RtNodeRef {
+            node.borrow().select_best().node()
+        }
+
         let node = {
-            let root_borrow = self.root.borrow();
-            if let Some(branched) = root_borrow.branching() {
-                Some(branched.select_best().node())
-            }
-            else if let Some(evaluated) = root_borrow.evaluated() {
-                Some(evaluated.select_best().node())
-            }
-            else {
-                None
+            match self.root.clone().into_ct() {
+                NodeSwitch::Branching(node) => Some(map(node)),
+                NodeSwitch::Evaluated(node) => Some(map(node)),
+                _ => None,
             }
         };
 
@@ -51,83 +50,90 @@ impl Tree {
     }
 
     pub fn advance_to<F: Fn(&Branch) -> bool>(&mut self, pred: F) {
+        fn map(
+            node: CtNodeRef<impl HasBranches>,
+            pred: impl Fn(&Branch) -> bool,
+        ) -> Option<RtNodeRef> {
+            node.borrow().find_branch(|x| pred(x)).map(|b| b.node())
+        }
+
         let node = {
-            let root_borrow = self.root.borrow();
-            let branch = root_borrow.branches().iter().find(|x| pred(x));
-            branch.map(|b| b.node())
+            match self.root.clone().into_ct() {
+                NodeSwitch::Branching(node) => Some(map(node, pred)),
+                NodeSwitch::Evaluated(node) => Some(map(node, pred)),
+                _ => None,
+            }
         };
 
-        if let Some(node) = node {
+        if let Some(node) = node.flatten() {
             self.root = node;
         }
     }
 
     /// Returns None if there are no moves.
     pub fn best_move(&self) -> Option<Move> {
-        let root = self.root.borrow();
+        fn map(node: CtNodeRef<impl HasBranches>) -> Move {
+            node.borrow().select_best().mov()
+        }
 
-        // Downcast securely using the typestate pattern
-        if let Some(branching) = root.branching() {
-            Some(branching.select_best().mov())
-        }
-        else if let Some(evaluated) = root.evaluated() {
-            Some(evaluated.select_best().mov())
-        }
-        else {
-            None
+        match self.root.clone().into_ct() {
+            NodeSwitch::Branching(node) => Some(map(node)),
+            NodeSwitch::Evaluated(node) => Some(map(node)),
+            _ => None,
         }
     }
 
-    pub fn best_moves(&self, threshold: Value) -> Vec<Move> {
-        let root = self.root.borrow();
-        root.branches()
-            .iter()
-            .filter(|b| b.value() > threshold)
-            .map(|b| b.mov())
-            .collect_vec()
-    }
+    // pub fn best_moves(&self, threshold: Value) -> Vec<Move> {
+    //     let root = self.root.borrow();
+    //     root.branches()
+    //         .iter()
+    //         .filter(|b| b.value() > threshold)
+    //         .map(|b| b.mov())
+    //         .collect_vec()
+    // }
 
     /// Returns the current principal variation.
     pub fn principal_variation(&self) -> Path {
         let mut buf = Vec::new();
         let mut current = self.root.clone();
 
-        loop {
-            let next_branch = {
-                let borrow = current.borrow();
-                if borrow.branches().is_empty() {
-                    None
-                }
-                else {
-                    borrow.branches().iter().max_by_key(|b| b.visits()).cloned()
-                }
-            };
+        // todo
+        // loop {
+        //     let next_branch = {
+        //         let borrow = current.borrow();
+        //         if borrow.branches().is_empty() {
+        //             None
+        //         }
+        //         else {
+        //             borrow.branches().iter().max_by_key(|b| b.visits()).cloned()
+        //         }
+        //     };
 
-            match next_branch {
-                Some(branch) => {
-                    let node = branch.node();
-                    buf.push(branch);
-                    current = node;
-                }
-                None => break,
-            }
-        }
+        //     match next_branch {
+        //         Some(branch) => {
+        //             let node = branch.node();
+        //             buf.push(branch);
+        //             current = node;
+        //         }
+        //         None => break,
+        //     }
+        // }
         Path(buf)
     }
 
     /// Returns the number of nodes in this tree
     pub fn size(&self) -> usize {
-        self.get_root().borrow().subtree_size()
+        self.get_root().borrow().data.subtree_size()
     }
 
     /// Returns the max depth of the tree.
     pub fn maxdepth(&self) -> usize {
-        self.get_root().borrow().subtree_maxdepth()
+        self.get_root().borrow().data.subtree_maxdepth()
     }
 
     /// Returns the min depth of the tree.
     pub fn mindepth(&self) -> usize {
-        self.get_root().borrow().subtree_mindepth()
+        self.get_root().borrow().data.subtree_mindepth()
     }
 
     pub fn get_root(&self) -> RtNodeRef {
@@ -154,7 +160,7 @@ impl fmt::Display for Path {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq)]
+#[derive(Clone, Default, Debug)]
 pub struct Branch {
     /// The node that this branch leads to.
     node: RtNodeRef,
@@ -219,9 +225,23 @@ impl Ord for Value {
 
 /// A node reference with compile time information about the state.
 #[repr(transparent)]
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct CtNodeRef<S: node_state::Any> {
     node: Rc<RefCell<Node<S>>>,
+}
+
+impl<S: node_state::Any + Clone> Clone for CtNodeRef<S> {
+    fn clone(&self) -> Self {
+        Self { node: self.node.clone() }
+    }
+}
+
+impl<S: node_state::Any> Deref for CtNodeRef<S> {
+    type Target = Rc<RefCell<Node<S>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.node
+    }
 }
 
 impl<S: node_state::Any> CtNodeRef<S> {
@@ -232,22 +252,58 @@ impl<S: node_state::Any> CtNodeRef<S> {
     }
 }
 
+impl<S: node_state::Any + Default> CtNodeRef<S> {
+    #[inline]
+    unsafe fn transform_with<TargetState: node_state::Any>(
+        self,
+        mut transform: impl FnMut(Node<S>) -> Node<TargetState>,
+    ) -> CtNodeRef<TargetState> {
+        let inner = self.node.replace(Default::default());
+        let transformed = transform(inner);
+        let ret: CtNodeRef<TargetState> = unsafe { mem::transmute(self) };
+        ret.node.replace(transformed);
+        ret
+    }
+}
+
 impl CtNodeRef<Leaf> {
-    pub fn expand(mut self, pos: &Position) -> ExpandedRefSwitch {
+    pub fn expand(self, pos: &Position) -> ExpandedRefSwitch {
         let leaf = self.node.replace(Default::default());
         let expanded = leaf.expand(pos);
         match expanded {
-            ExpandedSwitch::Terminal(node) => ExpandedRefSwitch::Terminal(Self { node }),
-            ExpandedSwitch::Branching(node) => ExpandedRefSwitch::Branching(Self { node }),
+            ExpandedSwitch::Terminal(node) => {
+                let ret: CtNodeRef<Terminal> = unsafe { mem::transmute(self) };
+                ret.node.replace(node);
+                ExpandedRefSwitch::Terminal(ret)
+            }
+            ExpandedSwitch::Branching(node) => {
+                let ret: CtNodeRef<Branching> = unsafe { mem::transmute(self) };
+                ret.node.replace(node);
+                ExpandedRefSwitch::Branching(ret)
+            }
         }
     }
 }
 
 /// A node reference with runtime infomration about the state.
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone)]
 pub struct RtNodeRef {
     node: CtNodeRef<Unknown>,
     state: NodeState,
+}
+
+impl Deref for RtNodeRef {
+    type Target = CtNodeRef<Unknown>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.node
+    }
+}
+
+impl Default for RtNodeRef {
+    fn default() -> Self {
+        Self::new(Node::new_leaf())
+    }
 }
 
 impl RtNodeRef {
@@ -268,7 +324,7 @@ impl RtNodeRef {
         // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
         // another state.
         unsafe {
-            match self.node_state() {
+            match self.state() {
                 NodeState::Leaf => NodeSwitch::Leaf(mem::transmute(self.node)),
                 NodeState::Branching => NodeSwitch::Branching(mem::transmute(self.node)),
                 NodeState::Terminal => NodeSwitch::Terminal(mem::transmute(self.node)),
@@ -300,7 +356,7 @@ impl RtNodeRef {
     // }
 }
 
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Default)]
 pub struct NodeData {
     /// All the branches from this node.
     branches: Vec<Branch>,
@@ -334,14 +390,14 @@ impl NodeData {
         1 + self
             .branches()
             .iter()
-            .map(|b| b.node().borrow().subtree_size())
+            .map(|b| b.node().borrow().data.subtree_size())
             .sum::<usize>()
     }
 
     pub fn subtree_maxdepth(&self) -> usize {
         self.branches()
             .iter()
-            .map(|b| 1 + b.node().borrow().subtree_maxdepth())
+            .map(|b| 1 + b.node().borrow().data.subtree_maxdepth())
             .max()
             .unwrap_or(0)
     }
@@ -349,7 +405,7 @@ impl NodeData {
     pub fn subtree_mindepth(&self) -> usize {
         self.branches()
             .iter()
-            .map(|b| 1 + b.node().borrow().subtree_mindepth())
+            .map(|b| 1 + b.node().borrow().data.subtree_mindepth())
             .min()
             .unwrap_or(0)
     }
@@ -371,7 +427,7 @@ pub mod node_state {
         Evaluated,
     }
 
-    #[derive(Debug, PartialEq, Eq, Clone)]
+    #[derive(Debug, Clone)]
     pub enum NodeSwitch {
         Leaf(CtNodeRef<Leaf>),
         Branching(CtNodeRef<Branching>),
@@ -396,6 +452,8 @@ pub mod node_state {
     }
 
     pub trait Expanded: Any {}
+
+    pub trait HasBranches: Any {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Leaf;
@@ -425,6 +483,7 @@ pub mod node_state {
         }
     }
     impl Expanded for Branching {}
+    impl HasBranches for Branching {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Evaluated;
@@ -434,6 +493,7 @@ pub mod node_state {
             NodeState::Evaluated
         }
     }
+    impl HasBranches for Evaluated {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Unknown;
@@ -441,7 +501,7 @@ pub mod node_state {
 }
 
 #[repr(transparent)]
-#[derive(Clone, Default, PartialEq)]
+#[derive(Clone, Default)]
 pub struct Node<State: node_state::Any> {
     /// The data.
     data: NodeData,
@@ -507,7 +567,7 @@ impl<S: node_state::Expanded> Node<S> {
     }
 }
 
-impl Node<Branching> {
+impl<S: node_state::HasBranches> Node<S> {
     pub fn branches(&self) -> &[Branch] {
         &self.data.branches
     }
@@ -522,6 +582,10 @@ impl Node<Branching> {
 
     pub fn select_best(&self) -> &Branch {
         self.select(|b| b.visits())
+    }
+
+    pub fn find_branch(&self, mut pred: impl FnMut(&Branch) -> bool) -> Option<&Branch> {
+        self.data.branches.iter().find(|&b| pred(b))
     }
 
     pub fn take_best(self) -> Branch {
@@ -619,5 +683,13 @@ impl<S: node_state::Any> Node<S> {
     /// state `S`.
     unsafe fn new(data: NodeData) -> Self {
         Self { data, _state: PhantomData }
+    }
+
+    pub fn visits(&self) -> u32 {
+        self.data.visits()
+    }
+
+    pub fn value(&self) -> Value {
+        self.data.value()
     }
 }

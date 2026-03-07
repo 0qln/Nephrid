@@ -1,7 +1,8 @@
-use std::cell::RefCell;
-use std::ops::Try;
-use std::rc::Rc;
-use std::rc::Weak;
+use std::{
+    cell::RefCell,
+    ops::Try,
+    rc::{Rc, Weak},
+};
 
 #[cfg(test)]
 pub mod test;
@@ -48,8 +49,8 @@ impl<T> DoubleLinkedNode<T> {
         self.parent.clone()
     }
 
-    /// Applies `f` to this and all parent nodes, until no more parent is found or `f` returns
-    /// residual.
+    /// Applies `f` to this and all parent nodes, until no more parent is found
+    /// or `f` returns residual.
     pub fn try_fold_up_mut<B, F, R>(mut this: Rc<RefCell<Self>>, mut init: B, mut f: F) -> R
     where
         F: FnMut(B, Rc<RefCell<Self>>) -> R,
@@ -60,7 +61,8 @@ impl<T> DoubleLinkedNode<T> {
             if let Some(parent) = Weak::upgrade(&parent) {
                 this = parent;
                 init = f(init, this.clone())?;
-            } else {
+            }
+            else {
                 // todo: this this right that we just break when we can't upgrade the parent
                 // reference? this would mean that the parent was dropped...
                 //break;
