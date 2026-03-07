@@ -5,17 +5,13 @@ use crate::core::{
     move_iter::fold_legal_moves,
     search::mcts::{
         eval::{self, Policy, RawPolicy},
-        node::ops::ControlFlow,
+        node::{
+            node_state::{Branching, Evaluated, Leaf, Terminal},
+            ops::ControlFlow,
+        },
     },
 };
-use std::{
-    cell::{Ref, RefCell},
-    cmp::Ordering,
-    fmt,
-    marker::PhantomData,
-    ops,
-    rc::Rc,
-};
+use std::{cell::RefCell, cmp::Ordering, fmt, marker::PhantomData, ops, rc::Rc};
 
 #[cfg(test)]
 pub mod test;
@@ -32,24 +28,31 @@ impl Tree {
     }
 
     pub fn advance_best(&mut self) {
-        let root = self.root.expanded();
-        let node = root.map(|x| x.borrow().select_best().node());
+        let node = {
+            let root_borrow = self.root.borrow();
+            if let Some(branched) = root_borrow.branching() {
+                Some(branched.select_best().node())
+            }
+            else if let Some(evaluated) = root_borrow.evaluated() {
+                Some(evaluated.select_best().node())
+            }
+            else {
+                None
+            }
+        };
+
         if let Some(node) = node {
             self.root = node;
         }
     }
 
     pub fn advance_to<F: Fn(&Branch) -> bool>(&mut self, pred: F) {
-        let node = self
-            .root
-            .expanded()
-            .map(|x| {
-                let root = x.borrow();
-                let branch = root.branches().iter().find(|x| pred(x));
-                let node = branch.map(|b| b.node());
-                node
-            })
-            .flatten();
+        let node = {
+            let root_borrow = self.root.borrow();
+            let branch = root_borrow.branches().iter().find(|x| pred(x));
+            branch.map(|b| b.node())
+        };
+
         if let Some(node) = node {
             self.root = node;
         }
@@ -57,13 +60,22 @@ impl Tree {
 
     /// Returns None if there are no moves.
     pub fn best_move(&self) -> Option<Move> {
-        let root = self.root.expanded()?;
-        let best = Ref::map(root.borrow(), |n| n.select_best());
-        Some(best.mov())
+        let root = self.root.borrow();
+
+        // Downcast securely using the typestate pattern
+        if let Some(branching) = root.branching() {
+            Some(branching.select_best().mov())
+        }
+        else if let Some(evaluated) = root.evaluated() {
+            Some(evaluated.select_best().mov())
+        }
+        else {
+            None
+        }
     }
 
     pub fn best_moves(&self, threshold: Value) -> Vec<Move> {
-        let root = self.root.data();
+        let root = self.root.borrow();
         root.branches()
             .iter()
             .filter(|b| b.value() > threshold)
@@ -75,43 +87,43 @@ impl Tree {
     pub fn principal_variation(&self) -> Path {
         let mut buf = Vec::new();
         let mut current = self.root.clone();
+
         loop {
-            match current {
-                AnyNodeRef::Expanded(expanded) => {
-                    let branch = expanded.borrow().select_best().clone();
+            let next_branch = {
+                let borrow = current.borrow();
+                if borrow.branches().is_empty() {
+                    None
+                }
+                else {
+                    borrow.branches().iter().max_by_key(|b| b.visits()).cloned()
+                }
+            };
+
+            match next_branch {
+                Some(branch) => {
                     let node = branch.node();
                     buf.push(branch);
                     current = node;
                 }
-                _ => {
-                    break;
-                }
+                None => break,
             }
         }
         Path(buf)
     }
 
-    /// Retruns the number of nodes in this tree
+    /// Returns the number of nodes in this tree
     pub fn size(&self) -> usize {
-        self.get_root().data().subtree_size()
+        self.get_root().borrow().subtree_size()
     }
 
     /// Returns the max depth of the tree.
-    /// e.g.
-    /// when we only have root -> 0
-    /// when root has 1 child -> 1
-    /// when roto has 2 children, where 1 with a child -> 2
     pub fn maxdepth(&self) -> usize {
-        self.get_root().data().subtree_maxdepth()
+        self.get_root().borrow().subtree_maxdepth()
     }
 
     /// Returns the min depth of the tree.
-    /// e.g.
-    /// when we only have root -> 0
-    /// when root has 1 child -> 1
-    /// when roto has 2 children, where 1 with a child -> 1
     pub fn mindepth(&self) -> usize {
-        self.get_root().data().subtree_mindepth()
+        self.get_root().borrow().subtree_mindepth()
     }
 
     pub fn get_root(&self) -> AnyNodeRef {
@@ -140,14 +152,9 @@ impl fmt::Display for Path {
 
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum NodeState {
-    /// A leaf is an untouched node.
     #[default]
     Leaf,
-    /// An expanded node is a node which has been analized and to be found to
-    /// have children.
     Expanded,
-    /// A terminal node is a node which has been analized and to be found to
-    /// have no children.
     Terminal,
 }
 
@@ -181,16 +188,12 @@ impl Branch {
     }
 
     pub fn visits(&self) -> u32 {
-        self.node.data().visits()
+        self.node.borrow().visits()
     }
 
     pub fn value(&self) -> Value {
-        self.node.data().value()
+        self.node.borrow().value()
     }
-
-    // pub fn node_state(&self) -> NodeState {
-    //     self.node.data().state()
-    // }
 
     pub fn set_policy(&mut self, policy: f32) {
         self.policy = policy;
@@ -198,8 +201,6 @@ impl Branch {
 }
 
 /// The value of a node.
-/// positive ~> good for current player at this node
-/// negative ~> bad for current player at this node
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct Value(pub f32);
 
@@ -220,70 +221,116 @@ impl Ord for Value {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq)]
-struct Leaf;
-
-#[derive(Clone, Default, Debug, PartialEq)]
-struct Terminal;
-
-#[derive(Clone, Default, Debug, PartialEq)]
-struct Expanded;
-
 pub type NodeRef<S> = Rc<RefCell<Node<S>>>;
 
+pub type AnyNodeRef = Rc<RefCell<AnyNode>>;
+
 #[derive(Clone, Debug, PartialEq)]
-pub enum AnyNodeRef {
-    Terminal(NodeRef<Terminal>),
-    Leaf(NodeRef<Leaf>),
-    Expanded(NodeRef<Expanded>),
+pub enum AnyNode {
+    Terminal(Node<Terminal>),
+    Leaf(Node<Leaf>),
+    Branching(Node<Branching>),
+    Evaluated(Node<Evaluated>),
 }
 
-impl AnyNodeRef {
+impl AnyNode {
     pub fn new_terminal(data: NodeData) -> Self {
-        Self::Terminal(Rc::new(RefCell::new(Node::<Terminal>::new(data))))
+        Self::Terminal(Node::<Terminal>::new(data))
     }
 
-    pub fn new_expanded(data: NodeData) -> Self {
-        Self::Expanded(Rc::new(RefCell::new(Node::<Expanded>::new(data))))
+    pub fn new_branching(data: NodeData) -> Self {
+        Self::Branching(Node::<Branching>::new(data))
     }
 
     pub fn new_leaf(data: NodeData) -> Self {
-        Self::Leaf(Rc::new(RefCell::new(Node::<Leaf>::new(data))))
+        Self::Leaf(Node::<Leaf>::new(data))
     }
 
-    pub fn expanded(&self) -> Option<NodeRef<Expanded>> {
+    pub fn new_evaluated(data: NodeData) -> Self {
+        Self::Evaluated(Node::<Evaluated>::new(data))
+    }
+
+    pub fn branching(&self) -> Option<&Node<Branching>> {
         match self {
-            Self::Expanded(x) => Some(x.clone()),
+            Self::Branching(x) => Some(x),
             _ => None,
         }
     }
 
-    pub fn leaf(&self) -> Option<NodeRef<Leaf>> {
+    pub fn leaf(&self) -> Option<&Node<Leaf>> {
         match self {
-            Self::Leaf(x) => Some(x.clone()),
+            Self::Leaf(x) => Some(x),
             _ => None,
         }
     }
 
-    pub fn data(&self) -> Ref<'_, NodeData> {
+    pub fn evaluated(&self) -> Option<&Node<Evaluated>> {
         match self {
-            AnyNodeRef::Terminal(ref_cell) => Ref::map(ref_cell.borrow(), |node| node.data()),
-            AnyNodeRef::Leaf(ref_cell) => Ref::map(ref_cell.borrow(), |node| node.data()),
-            AnyNodeRef::Expanded(ref_cell) => Ref::map(ref_cell.borrow(), |node| node.data()),
+            Self::Evaluated(x) => Some(x),
+            _ => None,
         }
+    }
+
+    pub fn terminal(&self) -> Option<&Node<Terminal>> {
+        match self {
+            Self::Terminal(x) => Some(x),
+            _ => None,
+        }
+    }
+
+    pub fn data(&self) -> &NodeData {
+        match self {
+            Self::Terminal(n) => n.data(),
+            Self::Leaf(n) => n.data(),
+            Self::Branching(n) => n.data(),
+            Self::Evaluated(n) => n.data(),
+        }
+    }
+
+    pub fn data_mut(&mut self) -> &mut NodeData {
+        match self {
+            Self::Terminal(n) => n.data_mut(),
+            Self::Leaf(n) => n.data_mut(),
+            Self::Branching(n) => n.data_mut(),
+            Self::Evaluated(n) => n.data_mut(),
+        }
+    }
+
+    // Dynamic Delegation Methods
+    pub fn visits(&self) -> u32 {
+        self.data().visits()
+    }
+    pub fn value(&self) -> Value {
+        self.data().value()
+    }
+    pub fn branches(&self) -> &[Branch] {
+        self.data().branches()
+    }
+    pub fn subtree_size(&self) -> usize {
+        self.data().subtree_size()
+    }
+    pub fn subtree_maxdepth(&self) -> usize {
+        self.data().subtree_maxdepth()
+    }
+    pub fn subtree_mindepth(&self) -> usize {
+        self.data().subtree_mindepth()
+    }
+
+    pub fn update(&mut self, value: eval::Value) {
+        let data = self.data_mut();
+        data.visits += 1;
+        data.value += value;
     }
 }
 
-impl Default for AnyNodeRef {
+impl Default for AnyNode {
     fn default() -> Self {
         Self::Leaf(Default::default())
     }
 }
 
 #[derive(Clone, Default, PartialEq)]
-struct NodeData {
-    // todo: could move this into [State]Expanded {...}, such that we don't carry this around in
-    // leafs and terminal nodes.
+pub struct NodeData {
     /// All the branches from this node.
     branches: Vec<Branch>,
 
@@ -292,77 +339,88 @@ struct NodeData {
 
     /// The value of this node. (~sums all the values of it's children)
     pub value: Value,
-    // todo: put this behind a generic PAYLOAD parameter or something, this is currently only used
-    // for training and should thus not be here in production.
-    // /// win/draw/loss count
-    // pub terminal_wdl: WDL,
 }
 
 impl NodeData {
-    fn visits(&self) -> u32 {
+    pub fn visits(&self) -> u32 {
         self.visits
     }
 
-    fn value(&self) -> Value {
+    pub fn value(&self) -> Value {
         self.value
     }
 
-    fn branches(&self) -> &[Branch] {
+    pub fn branches(&self) -> &[Branch] {
         &self.branches
     }
 
-    /// Returns the number of nodes in all subsequent branches + 1 (for this
-    /// node).
     pub fn subtree_size(&self) -> usize {
         1 + self
             .branches()
             .iter()
-            .map(|b| b.node().data().subtree_size())
+            .map(|b| b.node().borrow().subtree_size())
             .sum::<usize>()
     }
 
-    /// Retruns the max depth of this node's subtree.
-    /// Returns 0 if there are no children.
     pub fn subtree_maxdepth(&self) -> usize {
         self.branches()
             .iter()
-            .map(|b| 1 + b.node().data().subtree_maxdepth())
+            .map(|b| 1 + b.node().borrow().subtree_maxdepth())
             .max()
             .unwrap_or(0)
     }
 
-    /// Retruns the min depth of this node's subtree.
-    /// Returns 0 if there are no children.
     pub fn subtree_mindepth(&self) -> usize {
         self.branches()
             .iter()
-            .map(|b| 1 + b.node().data().subtree_mindepth())
+            .map(|b| 1 + b.node().borrow().subtree_mindepth())
             .min()
             .unwrap_or(0)
     }
 }
 
-#[derive(Clone, Default, PartialEq)]
-pub struct Node<State> {
-    /// The current state of this node.
-    _state: PhantomData<State>,
+pub mod node_state {
+    pub trait Any {}
+    pub trait Expanded: Any {}
+    pub trait Branched: Any {}
 
-    /// The data.
-    data: NodeData,
+    #[derive(Clone, Default, Debug, PartialEq)]
+    pub struct Leaf;
+    impl Any for Leaf {}
+
+    #[derive(Clone, Default, Debug, PartialEq)]
+    pub struct Terminal;
+    impl Any for Terminal {}
+    impl Expanded for Terminal {}
+
+    #[derive(Clone, Default, Debug, PartialEq)]
+    pub struct Branching;
+    impl Any for Branching {}
+    impl Expanded for Branching {}
+    impl Branched for Branching {}
+
+    #[derive(Clone, Default, Debug, PartialEq)]
+    pub struct Evaluated;
+    impl Any for Evaluated {}
+    impl Expanded for Evaluated {}
+    impl Branched for Evaluated {}
 }
 
-// impl<S1, S2> From<Node<S1>> for Node<S2> {
-//     fn from(Node { data, .. }: Node<S1>) -> Self {
-//         Node::<S2> { data, _state: PhantomData }
-//     }
-// }
+#[repr(transparent)]
+#[derive(Clone, Default, PartialEq)]
+pub struct Node<State: node_state::Any> {
+    /// The data.
+    data: NodeData,
 
-impl<S> fmt::Debug for Node<S> {
+    /// The current state of this node.
+    _state: PhantomData<State>,
+}
+
+impl<S: node_state::Any> fmt::Debug for Node<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Node")
             .field("value", &self.value())
             .field("visits", &self.visits())
-            // .field("state", &self.state())
             .field(
                 "branches",
                 &self
@@ -377,34 +435,41 @@ impl<S> fmt::Debug for Node<S> {
 }
 
 impl Node<Leaf> {
-    /// Expand the node.
-    pub fn expand(mut self, pos: &Position) -> AnyNodeRef {
+    /// Expand the node, consuming the Leaf and returning the dynamic AnyNode
+    /// variant.
+    pub fn expand(mut self, pos: &Position) -> AnyNode {
         _ = fold_legal_moves(pos, &mut self.data.branches, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Branch::new(
                     m,
                     0.0,
-                    AnyNodeRef::new_leaf(Default::default()),
+                    Rc::new(RefCell::new(AnyNode::new_leaf(Default::default()))),
                 ));
                 acc
             })
         });
 
         if self.data.branches.is_empty() {
-            AnyNodeRef::new_terminal(self.data)
+            AnyNode::new_terminal(self.data)
         }
         else {
-            AnyNodeRef::new_expanded(self.data)
+            AnyNode::new_branching(self.data)
         }
     }
 }
 
-impl Node<Expanded> {
-    /// Sort the branches in ascending order.
+impl<S: node_state::Expanded> Node<S> {
+    pub fn has_branches(&self) -> bool {
+        !self.data.branches.is_empty()
+    }
+}
+
+impl<S: node_state::Branched> Node<S> {
+    pub fn branches(&self) -> &[Branch] {
+        &self.data.branches
+    }
+
     pub fn sort_by<T: Ord>(&mut self, f: impl Fn(&Branch) -> T) {
-        // todo: the sorting can be done a lot more efficiently:
-        // The puct score does not change very often later on, only as we start the
-        // search. Also we might only need the first few branches if MPV is low.
         self.data.branches.sort_by_key(f);
     }
 
@@ -412,21 +477,6 @@ impl Node<Expanded> {
         self.data.branches.get(index)
     }
 
-    pub fn set_branches(&mut self, branches: Vec<Branch>) {
-        self.data.branches = branches;
-    }
-
-    /// Whether this node has branches.
-    pub fn has_branches(&self) -> bool {
-        !self.data.branches.is_empty()
-    }
-
-    /// The number of branches this node has
-    pub fn num_branches(&self) -> usize {
-        self.data.branches.len()
-    }
-
-    /// Select the branch with the most visits.
     pub fn select_best(&self) -> &Branch {
         self.select(|b| b.visits())
     }
@@ -435,7 +485,6 @@ impl Node<Expanded> {
         self.take(|b| b.visits())
     }
 
-    /// Returns None if there are no branches.
     pub fn select<F, T>(&self, transform: F) -> &Branch
     where
         F: Fn(&Branch) -> T,
@@ -483,37 +532,46 @@ impl Node<Expanded> {
             })
             .expect("An expanded node has to have atleast one branch.")
     }
+}
 
-    /// Sets the policies of the branches.
-    pub fn set_policy(&mut self, policy: &Policy) {
+impl Node<Branching> {
+    /// Consumes the Branching Node and strictly returns an Evaluated Node!
+    pub fn set_policy(mut self, policy: &Policy) -> Node<Evaluated> {
         assert_eq!(
-            self.data.branches.len(),
+            self.branches().len(),
             policy.len(),
             "There has to be exactly one policy for each branch."
         );
 
         for (i, branch) in self.data.branches.iter_mut().enumerate() {
-            branch.policy = policy.get(i).unwrap();
+            branch.set_policy(policy.get(i).unwrap());
         }
+
+        Node::<Evaluated>::new(self.data)
     }
 
-    /// Sets the policies of the branches.
-    pub fn set_policy_raw(&mut self, raw_policy: &RawPolicy) {
-        let moves = self.data.branches.iter().map(|b| usize::from(b.mov()));
-        let policy = Policy::from_raw(raw_policy, moves)
-            .expect("Shouldn't be None, since the moves are correct for this node.");
+    pub fn set_policy_raw(self, raw_policy: &RawPolicy) -> Node<Evaluated> {
+        let policy = {
+            let moves = self.branches().iter().map(|b| usize::from(b.mov()));
+            Policy::from_raw(raw_policy, moves)
+                .expect("Shouldn't be None, since the moves are correct for this node.")
+        };
 
-        self.set_policy(&policy);
+        self.set_policy(&policy)
     }
 }
 
-impl<S> Node<S> {
+impl<S: node_state::Any> Node<S> {
     pub fn new(data: NodeData) -> Self {
         Self { data, _state: PhantomData }
     }
 
-    fn data(&self) -> &NodeData {
+    pub fn data(&self) -> &NodeData {
         &self.data
+    }
+
+    pub(crate) fn data_mut(&mut self) -> &mut NodeData {
+        &mut self.data
     }
 
     pub fn visits(&self) -> u32 {
@@ -524,8 +582,9 @@ impl<S> Node<S> {
         self.data.value
     }
 
-    pub fn branches(&self) -> &[Branch] {
-        &self.data.branches
+    pub fn update(&mut self, value: eval::Value) {
+        self.data.visits += 1;
+        self.data.value += value;
     }
 
     // /// The amount of wins in this and all subtrees.
