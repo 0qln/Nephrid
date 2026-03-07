@@ -1,4 +1,8 @@
+use crate::core::search::mcts::node::node_state::{
+    ExpandedRefSwitch, ExpandedSwitch, NodeState, NodeSwitch, Unknown,
+};
 use itertools::Itertools;
+use std::mem;
 
 use crate::core::{
     Move, Position,
@@ -19,11 +23,11 @@ pub mod test;
 #[derive(Default, Debug, Clone)]
 pub struct Tree {
     /// Root of the tree.
-    root: AnyNodeRef,
+    root: RtNodeRef,
 }
 
 impl Tree {
-    pub fn new(root: AnyNodeRef) -> Self {
+    pub fn new(root: RtNodeRef) -> Self {
         Self { root }
     }
 
@@ -126,7 +130,7 @@ impl Tree {
         self.get_root().borrow().subtree_mindepth()
     }
 
-    pub fn get_root(&self) -> AnyNodeRef {
+    pub fn get_root(&self) -> RtNodeRef {
         self.root.clone()
     }
 }
@@ -150,18 +154,10 @@ impl fmt::Display for Path {
     }
 }
 
-#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
-pub enum NodeState {
-    #[default]
-    Leaf,
-    Expanded,
-    Terminal,
-}
-
 #[derive(Clone, Default, Debug, PartialEq)]
 pub struct Branch {
     /// The node that this branch leads to.
-    node: AnyNodeRef,
+    node: RtNodeRef,
 
     /// The policy of picking this branch.
     policy: f32,
@@ -171,7 +167,7 @@ pub struct Branch {
 }
 
 impl Branch {
-    pub fn new(mov: Move, policy: f32, node: AnyNodeRef) -> Self {
+    pub fn new(mov: Move, policy: f32, node: RtNodeRef) -> Self {
         Self { node, policy, mov }
     }
 
@@ -181,10 +177,6 @@ impl Branch {
 
     pub fn policy(&self) -> f32 {
         self.policy
-    }
-
-    pub fn node(&self) -> AnyNodeRef {
-        self.node.clone()
     }
 
     pub fn visits(&self) -> u32 {
@@ -197,6 +189,10 @@ impl Branch {
 
     pub fn set_policy(&mut self, policy: f32) {
         self.policy = policy;
+    }
+
+    pub fn node(&self) -> RtNodeRef {
+        self.node.clone()
     }
 }
 
@@ -221,112 +217,87 @@ impl Ord for Value {
     }
 }
 
-pub type NodeRef<S> = Rc<RefCell<Node<S>>>;
-
-pub type AnyNodeRef = Rc<RefCell<AnyNode>>;
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum AnyNode {
-    Terminal(Node<Terminal>),
-    Leaf(Node<Leaf>),
-    Branching(Node<Branching>),
-    Evaluated(Node<Evaluated>),
+/// A node reference with compile time information about the state.
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub struct CtNodeRef<S: node_state::Any> {
+    node: Rc<RefCell<Node<S>>>,
 }
 
-impl AnyNode {
-    pub fn new_terminal(data: NodeData) -> Self {
-        Self::Terminal(Node::<Terminal>::new(data))
-    }
-
-    pub fn new_branching(data: NodeData) -> Self {
-        Self::Branching(Node::<Branching>::new(data))
-    }
-
-    pub fn new_leaf(data: NodeData) -> Self {
-        Self::Leaf(Node::<Leaf>::new(data))
-    }
-
-    pub fn new_evaluated(data: NodeData) -> Self {
-        Self::Evaluated(Node::<Evaluated>::new(data))
-    }
-
-    pub fn branching(&self) -> Option<&Node<Branching>> {
-        match self {
-            Self::Branching(x) => Some(x),
-            _ => None,
+impl<S: node_state::Any> CtNodeRef<S> {
+    pub fn new(node: Node<S>) -> Self {
+        Self {
+            node: Rc::new(RefCell::new(node)),
         }
-    }
-
-    pub fn leaf(&self) -> Option<&Node<Leaf>> {
-        match self {
-            Self::Leaf(x) => Some(x),
-            _ => None,
-        }
-    }
-
-    pub fn evaluated(&self) -> Option<&Node<Evaluated>> {
-        match self {
-            Self::Evaluated(x) => Some(x),
-            _ => None,
-        }
-    }
-
-    pub fn terminal(&self) -> Option<&Node<Terminal>> {
-        match self {
-            Self::Terminal(x) => Some(x),
-            _ => None,
-        }
-    }
-
-    pub fn data(&self) -> &NodeData {
-        match self {
-            Self::Terminal(n) => n.data(),
-            Self::Leaf(n) => n.data(),
-            Self::Branching(n) => n.data(),
-            Self::Evaluated(n) => n.data(),
-        }
-    }
-
-    pub fn data_mut(&mut self) -> &mut NodeData {
-        match self {
-            Self::Terminal(n) => n.data_mut(),
-            Self::Leaf(n) => n.data_mut(),
-            Self::Branching(n) => n.data_mut(),
-            Self::Evaluated(n) => n.data_mut(),
-        }
-    }
-
-    // Dynamic Delegation Methods
-    pub fn visits(&self) -> u32 {
-        self.data().visits()
-    }
-    pub fn value(&self) -> Value {
-        self.data().value()
-    }
-    pub fn branches(&self) -> &[Branch] {
-        self.data().branches()
-    }
-    pub fn subtree_size(&self) -> usize {
-        self.data().subtree_size()
-    }
-    pub fn subtree_maxdepth(&self) -> usize {
-        self.data().subtree_maxdepth()
-    }
-    pub fn subtree_mindepth(&self) -> usize {
-        self.data().subtree_mindepth()
-    }
-
-    pub fn update(&mut self, value: eval::Value) {
-        let data = self.data_mut();
-        data.visits += 1;
-        data.value += value;
     }
 }
 
-impl Default for AnyNode {
-    fn default() -> Self {
-        Self::Leaf(Default::default())
+impl CtNodeRef<Leaf> {
+    pub fn expand(mut self, pos: &Position) -> ExpandedRefSwitch {
+        let leaf = self.node.replace(Default::default());
+        let expanded = leaf.expand(pos);
+        match expanded {
+            ExpandedSwitch::Terminal(node) => ExpandedRefSwitch::Terminal(Self { node }),
+            ExpandedSwitch::Branching(node) => ExpandedRefSwitch::Branching(Self { node }),
+        }
     }
+}
+
+/// A node reference with runtime infomration about the state.
+#[derive(Clone, Debug)]
+pub struct RtNodeRef {
+    node: CtNodeRef<Unknown>,
+    state: NodeState,
+}
+
+impl RtNodeRef {
+    pub fn new<S: node_state::Valid>(node: Node<S>) -> Self {
+        Self::from_ct(CtNodeRef::new(node))
+    }
+
+    pub fn from_ct<S: node_state::Valid>(node: CtNodeRef<S>) -> Self {
+        Self {
+            // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
+            // another state.
+            node: unsafe { mem::transmute(node) },
+            state: S::state(),
+        }
+    }
+
+    pub fn into_ct(self) -> NodeSwitch {
+        // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
+        // another state.
+        unsafe {
+            match self.node_state() {
+                NodeState::Leaf => NodeSwitch::Leaf(mem::transmute(self.node)),
+                NodeState::Branching => NodeSwitch::Branching(mem::transmute(self.node)),
+                NodeState::Terminal => NodeSwitch::Terminal(mem::transmute(self.node)),
+                NodeState::Evaluated => NodeSwitch::Evaluated(mem::transmute(self.node)),
+            }
+        }
+    }
+
+    pub fn state(&self) -> NodeState {
+        self.state
+    }
+
+    // pub fn expand(&mut self) {
+    //     if let NodeSwitch::Leaf(leaf) = self.into_ct() {
+    //         match leaf.expand(pos) {
+    //             ExpandedSwitch::Terminal(node) => {
+    //                 self.node_state = NodeState::Terminal;
+    //                 self.node = node;
+    //             }
+    //             ExpandedSwitch::Branching(node) => {
+    //                 self.node_state = NodeState::Branching;
+    //                 self.node = node;
+    //             }
+    //         }
+    //     }
+    //     else {
+    //         // todo: maybe log an error or something?
+    //     }
+    // }
 }
 
 #[derive(Clone, Default, PartialEq)]
@@ -335,10 +306,10 @@ pub struct NodeData {
     branches: Vec<Branch>,
 
     /// The number of times this node was visited.
-    pub visits: u32,
+    visits: u32,
 
     /// The value of this node. (~sums all the values of it's children)
-    pub value: Value,
+    value: Value,
 }
 
 impl NodeData {
@@ -352,6 +323,11 @@ impl NodeData {
 
     pub fn branches(&self) -> &[Branch] {
         &self.branches
+    }
+
+    pub fn update(&mut self, value: eval::Value) {
+        self.visits += 1;
+        self.value += value;
     }
 
     pub fn subtree_size(&self) -> usize {
@@ -377,33 +353,91 @@ impl NodeData {
             .min()
             .unwrap_or(0)
     }
+
+    fn new_leaf() -> NodeData {
+        Self::default()
+    }
 }
 
 pub mod node_state {
+    use super::{CtNodeRef, Node};
+
+    #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
+    pub enum NodeState {
+        #[default]
+        Leaf,
+        Branching,
+        Terminal,
+        Evaluated,
+    }
+
+    #[derive(Debug, PartialEq, Eq, Clone)]
+    pub enum NodeSwitch {
+        Leaf(CtNodeRef<Leaf>),
+        Branching(CtNodeRef<Branching>),
+        Terminal(CtNodeRef<Terminal>),
+        Evaluated(CtNodeRef<Evaluated>),
+    }
+
+    pub enum ExpandedSwitch {
+        Terminal(Node<Terminal>),
+        Branching(Node<Branching>),
+    }
+
+    pub enum ExpandedRefSwitch {
+        Terminal(CtNodeRef<Terminal>),
+        Branching(CtNodeRef<Branching>),
+    }
+
     pub trait Any {}
+
+    pub trait Valid: Any {
+        fn state() -> NodeState;
+    }
+
     pub trait Expanded: Any {}
-    pub trait Branched: Any {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Leaf;
     impl Any for Leaf {}
+    impl Valid for Leaf {
+        fn state() -> NodeState {
+            NodeState::Leaf
+        }
+    }
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Terminal;
     impl Any for Terminal {}
+    impl Valid for Terminal {
+        fn state() -> NodeState {
+            NodeState::Terminal
+        }
+    }
     impl Expanded for Terminal {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Branching;
     impl Any for Branching {}
+    impl Valid for Branching {
+        fn state() -> NodeState {
+            NodeState::Branching
+        }
+    }
     impl Expanded for Branching {}
-    impl Branched for Branching {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Evaluated;
     impl Any for Evaluated {}
-    impl Expanded for Evaluated {}
-    impl Branched for Evaluated {}
+    impl Valid for Evaluated {
+        fn state() -> NodeState {
+            NodeState::Evaluated
+        }
+    }
+
+    #[derive(Clone, Default, Debug, PartialEq)]
+    pub struct Unknown;
+    impl Any for Unknown {}
 }
 
 #[repr(transparent)]
@@ -437,24 +471,33 @@ impl<S: node_state::Any> fmt::Debug for Node<S> {
 impl Node<Leaf> {
     /// Expand the node, consuming the Leaf and returning the dynamic AnyNode
     /// variant.
-    pub fn expand(mut self, pos: &Position) -> AnyNode {
+    pub fn expand(mut self, pos: &Position) -> ExpandedSwitch {
         _ = fold_legal_moves(pos, &mut self.data.branches, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Branch::new(
                     m,
                     0.0,
-                    Rc::new(RefCell::new(AnyNode::new_leaf(Default::default()))),
+                    RtNodeRef::new(Node::<Leaf>::new_leaf()),
                 ));
                 acc
             })
         });
 
         if self.data.branches.is_empty() {
-            AnyNode::new_terminal(self.data)
+            // SAFETY: We just expanded the moves and there are none, so the data has to be
+            // of a Terminal node.
+            ExpandedSwitch::Terminal(unsafe { Node::<Terminal>::new(self.data) })
         }
         else {
-            AnyNode::new_branching(self.data)
+            // SAFETY: We just expanded the moves and there are some, so the data has to be
+            // of a Branching node.
+            ExpandedSwitch::Branching(unsafe { Node::<Branching>::new(self.data) })
         }
+    }
+
+    fn new_leaf() -> Self {
+        // SAFETY: The Node data is of a leaf.
+        unsafe { Node::<Leaf>::new(NodeData::new_leaf()) }
     }
 }
 
@@ -464,7 +507,7 @@ impl<S: node_state::Expanded> Node<S> {
     }
 }
 
-impl<S: node_state::Branched> Node<S> {
+impl Node<Branching> {
     pub fn branches(&self) -> &[Branch] {
         &self.data.branches
     }
@@ -535,7 +578,6 @@ impl<S: node_state::Branched> Node<S> {
 }
 
 impl Node<Branching> {
-    /// Consumes the Branching Node and strictly returns an Evaluated Node!
     pub fn set_policy(mut self, policy: &Policy) -> Node<Evaluated> {
         assert_eq!(
             self.branches().len(),
@@ -547,7 +589,8 @@ impl Node<Branching> {
             branch.set_policy(policy.get(i).unwrap());
         }
 
-        Node::<Evaluated>::new(self.data)
+        // SAFETY: we just set the policy for each branch. It has to be valid.
+        unsafe { Node::<Evaluated>::new(self.data) }
     }
 
     pub fn set_policy_raw(self, raw_policy: &RawPolicy) -> Node<Evaluated> {
@@ -561,58 +604,20 @@ impl Node<Branching> {
     }
 }
 
+impl<S: node_state::Valid> Node<S> {
+    pub fn state() -> NodeState {
+        S::state()
+    }
+}
+
 impl<S: node_state::Any> Node<S> {
-    pub fn new(data: NodeData) -> Self {
+    /// Construct a new node.
+    ///
+    /// # Safety
+    ///
+    /// The caller has to make sure that `data` contains valid data to be in
+    /// state `S`.
+    unsafe fn new(data: NodeData) -> Self {
         Self { data, _state: PhantomData }
     }
-
-    pub fn data(&self) -> &NodeData {
-        &self.data
-    }
-
-    pub(crate) fn data_mut(&mut self) -> &mut NodeData {
-        &mut self.data
-    }
-
-    pub fn visits(&self) -> u32 {
-        self.data.visits
-    }
-
-    pub fn value(&self) -> Value {
-        self.data.value
-    }
-
-    pub fn update(&mut self, value: eval::Value) {
-        self.data.visits += 1;
-        self.data.value += value;
-    }
-
-    // /// The amount of wins in this and all subtrees.
-    // pub fn wins(&self) -> usize {
-    //     match self.state() {
-    //         NodeState::Terminal => {
-    //             let game_result = Evaluator::eval_terminal(self, pos)
-    //         }
-    //         NodeState::Expanded => self.iter_branches().map(
-    //             |b| b.node().wins()
-    //         ).sum()
-    //     }
-    // }
-
-    ///// Applies `f` to this and all child nodes, until no more child is found or
-    ///// `f` returns residual.
-    //pub fn try_fold_down<B, F, R>(this: Rc<RefCell<Self>>, mut init: B, mut f: F)
-    // -> R where
-    //    F: FnMut(B, Rc<RefCell<Self>>) -> R,
-    //    R: Try<Output = B>,
-    //{
-    //    init = f(init, this.clone())?;
-    //    self.iter_branches()
-    //        .try_fold(init, f);
-    //    //while let Some(parent) = { this.borrow_mut().parent() } {
-    //    //        this = parent;
-    //    //        init = f(init, this.clone())?;
-    //    //}
-    //    R::from_output(init)
-    //}
 }

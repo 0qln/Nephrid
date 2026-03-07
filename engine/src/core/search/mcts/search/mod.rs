@@ -7,7 +7,7 @@ use crate::core::{
         back::Backpropagater,
         eval::{Evaluation, Evaluator},
         limiter::{self, Limiter},
-        node::{Node, NodeRef, NodeState, Tree},
+        node::{Branch, CtNodeRef, Tree, node_state::*},
         noise::Noiser,
         select::Selector,
         utils::DoubleLinkedNode,
@@ -20,8 +20,9 @@ use std::{cell::RefCell, rc::Rc};
 pub mod test;
 
 pub struct SelectionItem<T> {
-    /// The selected node.
-    pub node: NodeRef,
+    /// The selected leaf that was just expanded, but has not yet been evaluated
+    /// yet.
+    pub node: CtNodeRef<Branching>,
 
     /// Depth from root
     pub depth: Depth,
@@ -71,7 +72,7 @@ impl<const X: usize, T> Default for Selection<X, T> {
 impl<const X: usize, T> Selection<X, T> {
     pub fn init_root(
         &mut self,
-        root_node: Rc<RefCell<Node>>,
+        root_node: CtNodeRef<Branching>,
         turn: Turn,
         trace_data: T,
     ) -> SelectionNodeRef<T> {
@@ -174,8 +175,8 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         self.select_lines(tree);
 
-        let num_selected = self.selection.leafs.iter().filter(|l| l.is_some()).count();
-        // println!("[selected {num_selected}/{MPV}]",);
+        // let num_selected = self.selection.leafs.iter().filter(|l|
+        // l.is_some()).count(); println!("[selected {num_selected}/{MPV}]",);
 
         self.eval_batched();
         self.backup_evals();
@@ -187,11 +188,11 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     fn select_lines(&mut self, tree: &mut Tree) {
         // todo: convert to iterative approach -- or not if the stack frame is
         // small with this one ._.
-        let node = tree.get_root();
+        let root = tree.get_root();
         let turn = self.position.get_turn();
-        let eval_data = self.evaluator.trace(node.clone(), &self.position);
-        let sel_root = self.selection.init_root(node.clone(), turn, eval_data);
-        self.process_node(MPV, 0, Depth::MIN, node, sel_root);
+        let eval_data = self.evaluator.trace(root.clone(), &self.position);
+        let sel_root = self.selection.init_root(root.clone(), turn, eval_data);
+        self.process_node(MPV, 0, Depth::MIN, root, sel_root);
     }
 
     /// Follows a branch and decides what to do depending on the current state
@@ -202,56 +203,82 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         budget: usize,
         line_index: usize,
         depth: Depth,
-        node: Rc<RefCell<Node>>,
+        branch: &Branch,
         sel_node: SelectionNodeRef<E::TraceData>,
     ) -> usize {
-        let state = node.borrow().state();
-        match state {
+        match branch.node().into_ct() {
             // Only if the node is already expanded we want to follow the branch.
-            NodeState::Expanded => {
+            NodeSwitch::Branching(node) => {
                 // If the node is expanded, pick branches and follow the lines.
                 self.pick_branches(budget, line_index, depth, node, sel_node)
             }
-            NodeState::Leaf => {
-                // If the node is a leaf, expand the node's branches for future mcts iterations.
-                // And select it for mcts evaluation.
+
+            // Select leaf nodes.
+            NodeSwitch::Leaf(node) => {
+                // If the node is a leaf, expand the node's branches for future
+                // mcts iterations. And select it for mcts
+                // evaluation.
                 //
-                // this is fine to do now, since we split above and in the fn `select_branches`
-                // we immidieatly increment the branch_index and thus during a
+                // this is fine to do now, since we split above and in the fn
+                // `select_branches` we immidieatly increment
+                // the branch_index and thus during a
                 // single selection phase, this match block is only reached once
                 // per node in a mcts iteration. Altough we should probably unit
                 // test this somehow.
-                node.borrow_mut().expand(&self.position);
-
-                // select the node.
-                self.select_node(line_index, node, sel_node, depth)
+                self.select_leaf(line_index, sel_node, node, depth)
             }
-            NodeState::Terminal => {
-                // select the node.
-                self.select_node(line_index, node, sel_node, depth)
+
+            // On Terminal nodes, note down the evaluation.
+            NodeSwitch::Terminal(node) => self.select_terminal(line_index, sel_node, node, depth),
+        }
+    }
+
+    fn select_leaf(
+        &mut self,
+        line_index: usize,
+        sel_node: SelectionNodeRef<E::TraceData>,
+        node: CtNodeRef<Leaf>,
+        depth: Depth,
+    ) -> usize {
+        let expanded = node.expand(&self.position);
+
+        match expanded {
+            ExpandedRefSwitch::Terminal(node) => {
+                self.select_terminal(line_index, sel_node, node, depth)
+            }
+            ExpandedRefSwitch::Branching(node) => {
+                self.select_branching(line_index, sel_node, depth)
             }
         }
     }
 
-    /// Returns: how much of the budget was used.
-    fn select_node(
+    fn select_terminal(
         &mut self,
         line_index: usize,
-        node: Rc<RefCell<Node>>,
         sel_node: SelectionNodeRef<E::TraceData>,
+        node: CtNodeRef<Terminal>,
+        depth: Depth,
+    ) -> usize {
+        let eval = E::eval_terminal(node, &self.position);
+        self.selection
+            .set(line_index, (sel_node, EvalItem::Evaluated(eval)));
+        1
+    }
+
+    /// Returns: how much of the budget was used.
+    fn select_branching(
+        &mut self,
+        line_index: usize,
+        sel_node: SelectionNodeRef<E::TraceData>,
+        node: CtNodeRef<Branching>,
         depth: Depth,
     ) -> usize {
         let pos = &self.position;
 
-        // Check if the board has a terminal evaluation.
-        let terminal_eval = E::eval_terminal(&node.borrow(), pos);
-        let (used_budget, eval) = if let Some(eval) = terminal_eval {
-            node.borrow_mut().set_state(NodeState::Terminal);
-            (1, EvalItem::Evaluated(eval))
-        }
+        // todo: does this check even belong here?
         // Check if we are even interested in searching this line any
         // further.
-        else if self.limiter.should_stop(limiter::Params { pos, depth }) {
+        let (used_budget, eval) = if self.limiter.should_stop(limiter::Params { pos, depth }) {
             // todo: maybe it's better to return 0 (skip this node) instead of using a draw
             (1, EvalItem::Evaluated(Evaluation::Nope))
         }
@@ -271,7 +298,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         budget: usize,
         line_index: usize,
         depth: Depth,
-        parent_node: Rc<RefCell<Node>>,
+        parent_node: CtNodeRef<Branching>,
         mut sel_node_parent: SelectionNodeRef<E::TraceData>,
     ) -> usize {
         let root_visits = parent_node.borrow().visits();
