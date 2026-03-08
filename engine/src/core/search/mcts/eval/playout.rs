@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use rand::prelude::*;
 
-use crate::core::move_iter::fold_legal_moves;
+use crate::core::{move_iter::fold_legal_moves, search::mcts::node::node_state::Branching};
 
 use super::*;
 
@@ -66,8 +66,8 @@ impl Evaluator for PlayoutEvaluator {
 
     /// Captures the position at the current node.
     fn trace<S: HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
-        let _node = node.try_into_branching()?;
-        Some(PlayoutTraceData { start_pos: pos.clone() })
+        node.try_into::<Branching>()
+            .map(|_node| PlayoutTraceData { start_pos: pos.clone() })
     }
 
     /// Runs playouts for all collected leaves in the batch.

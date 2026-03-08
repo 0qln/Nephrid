@@ -20,17 +20,29 @@ use std::{cell::RefCell, cmp::Ordering, fmt, marker::PhantomData, ops, rc::Rc};
 #[cfg(test)]
 pub mod test;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Tree {
     /// Root of the tree.
     root: RtNodeRef,
+
+    // todo: incrementally computed versions of the compute_subtree_* functions.
+    size: usize,
+    mindepth: u16,
+    maxdepth: u16,
+}
+
+impl Default for Tree {
+    fn default() -> Self {
+        Self {
+            root: Default::default(),
+            size: 1,
+            mindepth: 1,
+            maxdepth: 1,
+        }
+    }
 }
 
 impl Tree {
-    pub fn new(root: RtNodeRef) -> Self {
-        Self { root }
-    }
-
     pub fn advance_best(&mut self) {
         fn map(node: CtNodeRef<impl HasBranches>) -> RtNodeRef {
             node.borrow().select_best().node()
@@ -103,7 +115,7 @@ impl Tree {
     /// Returns the current principal variation. The branches are clones, but
     /// contain valid references to their nodes.
     pub fn principal_variation(&self) -> Path {
-        let mut buf = Vec::new();
+        let mut buf = Vec::with_capacity(self.mindepth().into());
         let mut current = self.root.clone();
 
         loop {
@@ -126,22 +138,34 @@ impl Tree {
     }
 
     /// Returns the number of nodes in this tree
-    pub fn size(&self) -> usize {
-        self.get_root().borrow().data.subtree_size()
+    pub fn compute_size(&self) -> usize {
+        self.get_root().borrow().data.compute_subtree_size()
     }
 
     /// Returns the max depth of the tree.
-    pub fn maxdepth(&self) -> usize {
-        self.get_root().borrow().data.subtree_maxdepth()
+    pub fn compute_maxdepth(&self) -> usize {
+        self.get_root().borrow().data.compute_subtree_maxdepth()
     }
 
     /// Returns the min depth of the tree.
-    pub fn mindepth(&self) -> usize {
-        self.get_root().borrow().data.subtree_mindepth()
+    pub fn compute_mindepth(&self) -> usize {
+        self.get_root().borrow().data.compute_subtree_mindepth()
     }
 
     pub fn get_root(&self) -> RtNodeRef {
         self.root.clone()
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn mindepth(&self) -> u16 {
+        self.mindepth
+    }
+
+    pub fn maxdepth(&self) -> u16 {
+        self.maxdepth
     }
 }
 
@@ -266,11 +290,14 @@ impl<S: node_state::Valid> CtNodeRef<S> {
 }
 
 impl<S: node_state::Valid> CtNodeRef<S> {
-    // todo: this can be const when const-trait feature is properly implemented.
-    pub fn try_into_branching(self) -> Option<CtNodeRef<Branching>> {
-        match S::state() {
-            NodeState::Branching => Some(unsafe { mem::transmute(self) }),
-            _ => None,
+    /// Try to transmute this into the specified state. Retruns none if the
+    /// state is not the target state.
+    pub fn try_into<Target: node_state::Valid>(self) -> Option<CtNodeRef<Target>> {
+        if S::state() == Target::state() {
+            Some(unsafe { mem::transmute(self) })
+        }
+        else {
+            None
         }
     }
 }
@@ -428,26 +455,26 @@ impl NodeData {
         self.value += value;
     }
 
-    pub fn subtree_size(&self) -> usize {
+    pub fn compute_subtree_size(&self) -> usize {
         1 + self
             .branches()
             .iter()
-            .map(|b| b.node().borrow().data.subtree_size())
+            .map(|b| b.node().borrow().data.compute_subtree_size())
             .sum::<usize>()
     }
 
-    pub fn subtree_maxdepth(&self) -> usize {
+    pub fn compute_subtree_maxdepth(&self) -> usize {
         self.branches()
             .iter()
-            .map(|b| 1 + b.node().borrow().data.subtree_maxdepth())
+            .map(|b| 1 + b.node().borrow().data.compute_subtree_maxdepth())
             .max()
             .unwrap_or(0)
     }
 
-    pub fn subtree_mindepth(&self) -> usize {
+    pub fn compute_subtree_mindepth(&self) -> usize {
         self.branches()
             .iter()
-            .map(|b| 1 + b.node().borrow().data.subtree_mindepth())
+            .map(|b| 1 + b.node().borrow().data.compute_subtree_mindepth())
             .min()
             .unwrap_or(0)
     }
@@ -582,15 +609,9 @@ impl Node<Leaf> {
         }
     }
 
-    fn new_leaf() -> Self {
+    pub fn new_leaf() -> Self {
         // SAFETY: The Node data is of a leaf.
         unsafe { Node::<Leaf>::new(NodeData::new_leaf()) }
-    }
-}
-
-impl<S: node_state::Expanded> Node<S> {
-    pub fn has_branches(&self) -> bool {
-        !self.data.branches.is_empty()
     }
 }
 
@@ -607,19 +628,15 @@ impl<S: node_state::HasBranches> Node<S> {
         self.data.branches.get(index)
     }
 
-    pub fn select_best(&self) -> &Branch {
+    fn select_best(&self) -> &Branch {
         self.select(|b| b.visits())
     }
 
-    pub fn find_branch(&self, mut pred: impl FnMut(&Branch) -> bool) -> Option<&Branch> {
+    fn find_branch(&self, mut pred: impl FnMut(&Branch) -> bool) -> Option<&Branch> {
         self.data.branches.iter().find(|&b| pred(b))
     }
 
-    pub fn take_best(self) -> Branch {
-        self.take(|b| b.visits())
-    }
-
-    pub fn select<F, T>(&self, transform: F) -> &Branch
+    fn select<F, T>(&self, transform: F) -> &Branch
     where
         F: Fn(&Branch) -> T,
         T: PartialOrd,
@@ -627,38 +644,6 @@ impl<S: node_state::HasBranches> Node<S> {
         self.data
             .branches
             .iter()
-            .max_by(|a, b| {
-                let a = transform(a);
-                let b = transform(b);
-                a.partial_cmp(&b).expect("Node comparison failed!")
-            })
-            .expect("An expanded node has to have atleast one branch.")
-    }
-
-    pub fn select_mut<F, T>(&mut self, transform: F) -> &mut Branch
-    where
-        F: Fn(&Branch) -> T,
-        T: PartialOrd,
-    {
-        self.data
-            .branches
-            .iter_mut()
-            .max_by(|a, b| {
-                let a = transform(a);
-                let b = transform(b);
-                a.partial_cmp(&b).expect("Node comparison failed!")
-            })
-            .expect("An expanded node has to have atleast one branch.")
-    }
-
-    pub fn take<F, T>(self, transform: F) -> Branch
-    where
-        F: Fn(&Branch) -> T,
-        T: PartialOrd,
-    {
-        self.data
-            .branches
-            .into_iter()
             .max_by(|a, b| {
                 let a = transform(a);
                 let b = transform(b);

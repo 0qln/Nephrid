@@ -356,8 +356,8 @@ impl Evaluator for StaticEvaluator {
     type TraceData = Option<EvalInfo>;
 
     fn trace<S: HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
-        let node = node.try_into_branching()?;
-        Some(EvalInfo::new(node, pos))
+        node.try_into::<Branching>()
+            .map(|node| EvalInfo::new(node, pos))
     }
 
     fn eval_batch<const X: usize>(
