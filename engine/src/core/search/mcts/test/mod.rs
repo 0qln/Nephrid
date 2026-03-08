@@ -1,3 +1,7 @@
+use crate::core::search::mcts::{
+    node::{CtNodeRef, node_state::HasBranches},
+    search::{Selection, SelectionLeaf},
+};
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 
 use crate::core::{
@@ -5,8 +9,6 @@ use crate::core::{
     search::mcts::{
         eval::{Evaluation, Evaluator, Guess, Quality, RawPolicy},
         nn::POLICY_OUTPUTS,
-        node::NodeRef,
-        search::SelectionNodeRef,
     },
     turn::Turn,
 };
@@ -42,19 +44,19 @@ impl Default for DummyEvaluator {
 impl Evaluator for DummyEvaluator {
     type TraceData = DummyTraceData;
 
-    fn trace(&self, _node: NodeRef, pos: &Position) -> Self::TraceData {
+    fn trace<S: HasBranches>(&self, _node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
         DummyTraceData { turn: pos.get_turn() }
     }
 
-    fn eval_batch(
+    fn eval_batch<const X: usize>(
         &mut self,
-        leafs: &[SelectionNodeRef<Self::TraceData>],
+        _selection: &Selection<X, Self::TraceData>,
+        leafs: &[&SelectionLeaf<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
         let mut evaluations = Vec::with_capacity(leafs.len());
 
         for leaf in leafs {
-            let leaf = leaf.borrow();
-            let trace_data = &leaf.data().trace_data;
+            let trace_data = &leaf.leaf_data.as_ref().unwrap().trace_data;
 
             let quality = self.rng.random_range(-1.0..=1.0);
 

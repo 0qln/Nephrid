@@ -21,23 +21,29 @@ fn fuzz<const X: usize>(pos: &'static str) {
 
             let eval = DummyEvaluator::default();
             let limiter = NoopLimiter::default();
-            let mut tree = Tree::new();
+            let mut tree = Tree::default();
+
+            let mut pos_clone = pos.clone();
+
+            // todo: compare cached metrics (e.g. tree.size()) with computed metrics (e.g.
+            // tree.compute_size()).
+
+            let mut searcher = TreeSearcher::<X, _, _, PuctSelector, _, _>::new(
+                &mut pos_clone,
+                PuctSelector::default(),
+                limiter.clone(),
+                eval.clone(),
+                DefaultBackuper::default(),
+                NullNoiser,
+            );
+
+            searcher.init_root(&mut tree);
 
             for _i in 0..(50_000 / X) {
-                let mut pos_clone = pos.clone();
-
-                let mut searcher = TreeSearcher::<X, _, _, PuctSelector, _, _>::new(
-                    &mut pos_clone,
-                    PuctSelector::default(),
-                    limiter.clone(),
-                    eval.clone(),
-                    DefaultBackuper::default(),
-                    NullNoiser,
-                );
                 searcher.grow(&mut tree);
-
-                assert_eq!(&pos, &pos_clone);
             }
+
+            assert_eq!(&pos, &pos_clone);
         })
         .expect("Couldn't spawn thread")
         .join()
@@ -69,7 +75,7 @@ fn growth() {
 
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
     let pos = Position::from_fen(fen).unwrap();
-    let mut tree = Tree::new();
+    let mut tree = Tree::default();
 
     // Initial state checks
     assert_eq!(tree.get_root().borrow().visits(), 0);
@@ -101,12 +107,13 @@ fn growth() {
     let root = tree.get_root();
     let mut child_visited = false;
     let mut i = 0;
-    while let Some(branch) = root.borrow().get_branch(i) {
-        if branch.node().borrow().visits() > 0 {
-            child_visited = true;
-            break;
-        }
-        i += 1;
-    }
+    // todo: fix
+    // while let Some(branch) = root.borrow().get_branch(i) {
+    //     if branch.node().borrow().visits() > 0 {
+    //         child_visited = true;
+    //         break;
+    //     }
+    //     i += 1;
+    // }
     assert!(child_visited, "At least one child should have visits");
 }

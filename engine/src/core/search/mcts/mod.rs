@@ -37,8 +37,7 @@ pub mod search;
 pub mod select;
 pub mod strategy;
 
-// todo: fix test
-// pub mod test;
+pub mod test;
 
 pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     pos: &mut Position,
