@@ -2,7 +2,7 @@ use crate::core::search::mcts::node::node_state::{
     ExpandedRefSwitch, ExpandedSwitch, HasBranches, NodeState, NodeSwitch, Unknown,
 };
 use itertools::Itertools;
-use std::{mem, ops::Deref};
+use std::{cell::Cell, mem, ops::Deref};
 
 use crate::core::{
     Move, Position,
@@ -227,31 +227,40 @@ impl Ord for Value {
     }
 }
 
+#[derive(Debug)]
+pub struct NodeInner<S: node_state::Any> {
+    state: Cell<NodeState>,
+    data: RefCell<Node<S>>,
+}
+
 /// A node reference with compile time information about the state.
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct CtNodeRef<S: node_state::Any> {
-    node: Rc<RefCell<Node<S>>>,
+    inner: Rc<NodeInner<S>>,
 }
 
 impl<S: node_state::Any + Clone> Clone for CtNodeRef<S> {
     fn clone(&self) -> Self {
-        Self { node: self.node.clone() }
+        Self { inner: self.inner.clone() }
     }
 }
 
 impl<S: node_state::Any> Deref for CtNodeRef<S> {
-    type Target = Rc<RefCell<Node<S>>>;
+    type Target = RefCell<Node<S>>;
 
     fn deref(&self) -> &Self::Target {
-        &self.node
+        &self.inner.data
     }
 }
 
-impl<S: node_state::Any> CtNodeRef<S> {
+impl<S: node_state::Valid> CtNodeRef<S> {
     pub fn new(node: Node<S>) -> Self {
         Self {
-            node: Rc::new(RefCell::new(node)),
+            inner: Rc::new(NodeInner {
+                state: Cell::new(S::state()),
+                data: RefCell::new(node),
+            }),
         }
     }
 }
@@ -268,31 +277,37 @@ impl<S: node_state::Valid> CtNodeRef<S> {
 
 impl<S: node_state::Any + Default> CtNodeRef<S> {
     #[inline]
-    unsafe fn transform_with<TargetState: node_state::Any>(
+    unsafe fn transform_with<TargetState: node_state::Valid>(
         self,
         mut transform: impl FnMut(Node<S>) -> Node<TargetState>,
     ) -> CtNodeRef<TargetState> {
-        let inner = self.node.replace(Default::default());
-        let transformed = transform(inner);
+        let inner_node = self.replace(Default::default());
+        let transformed = transform(inner_node);
+
+        self.inner.state.set(TargetState::state());
+
         let ret: CtNodeRef<TargetState> = unsafe { mem::transmute(self) };
-        ret.node.replace(transformed);
+        ret.replace(transformed);
         ret
     }
 }
 
 impl CtNodeRef<Leaf> {
     pub fn expand(self, pos: &Position) -> ExpandedRefSwitch {
-        let leaf = self.node.replace(Default::default());
+        let leaf = self.replace(Default::default());
         let expanded = leaf.expand(pos);
+
         match expanded {
             ExpandedSwitch::Terminal(node) => {
+                self.inner.state.set(NodeState::Terminal);
                 let ret: CtNodeRef<Terminal> = unsafe { mem::transmute(self) };
-                ret.node.replace(node);
+                ret.replace(node);
                 ExpandedRefSwitch::Terminal(ret)
             }
             ExpandedSwitch::Branching(node) => {
+                self.inner.state.set(NodeState::Branching);
                 let ret: CtNodeRef<Branching> = unsafe { mem::transmute(self) };
-                ret.node.replace(node);
+                ret.replace(node);
                 ExpandedRefSwitch::Branching(ret)
             }
         }
@@ -308,8 +323,7 @@ impl CtNodeRef<Branching> {
 /// A node reference with runtime infomration about the state.
 #[derive(Debug, Clone)]
 pub struct RtNodeRef {
-    node: CtNodeRef<Unknown>,
-    state: NodeState,
+    node: CtNodeRef<node_state::Unknown>,
 }
 
 impl Deref for RtNodeRef {
@@ -336,7 +350,6 @@ impl RtNodeRef {
             // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
             // another state.
             node: unsafe { mem::transmute(node) },
-            state: S::state(),
         }
     }
 
@@ -354,26 +367,8 @@ impl RtNodeRef {
     }
 
     pub fn state(&self) -> NodeState {
-        self.state
+        self.node.inner.state.get()
     }
-
-    // pub fn expand(&mut self) {
-    //     if let NodeSwitch::Leaf(leaf) = self.into_ct() {
-    //         match leaf.expand(pos) {
-    //             ExpandedSwitch::Terminal(node) => {
-    //                 self.node_state = NodeState::Terminal;
-    //                 self.node = node;
-    //             }
-    //             ExpandedSwitch::Branching(node) => {
-    //                 self.node_state = NodeState::Branching;
-    //                 self.node = node;
-    //             }
-    //         }
-    //     }
-    //     else {
-    //         // todo: maybe log an error or something?
-    //     }
-    // }
 }
 
 #[derive(Clone, Default)]
@@ -386,6 +381,33 @@ pub struct NodeData {
 
     /// The value of this node. (~sums all the values of it's children)
     value: Value,
+}
+
+impl fmt::Debug for NodeData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Node")
+            .field("value", &self.value())
+            .field("visits", &self.visits())
+            .field("branches", &self.branches)
+            .finish()
+    }
+}
+
+impl fmt::Display for NodeData {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Node")
+            .field("value", &self.value())
+            .field("visits", &self.visits())
+            .field(
+                "branches",
+                &self
+                    .branches
+                    .iter()
+                    .map(|b| format!("{}", b.mov()))
+                    .collect_vec(),
+            )
+            .finish()
+    }
 }
 
 impl NodeData {
@@ -455,11 +477,13 @@ pub mod node_state {
         Evaluated(CtNodeRef<Evaluated>),
     }
 
+    #[derive(Debug)]
     pub enum ExpandedSwitch {
         Terminal(Node<Terminal>),
         Branching(Node<Branching>),
     }
 
+    #[derive(Debug)]
     pub enum ExpandedRefSwitch {
         Terminal(CtNodeRef<Terminal>),
         Branching(CtNodeRef<Branching>),
@@ -521,7 +545,7 @@ pub mod node_state {
 }
 
 #[repr(transparent)]
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct Node<State: node_state::Any> {
     /// The data.
     data: NodeData,
@@ -530,26 +554,8 @@ pub struct Node<State: node_state::Any> {
     _state: PhantomData<State>,
 }
 
-impl<S: node_state::Any> fmt::Debug for Node<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Node")
-            .field("value", &self.value())
-            .field("visits", &self.visits())
-            .field(
-                "branches",
-                &self
-                    .data
-                    .branches
-                    .iter()
-                    .filter(|c| c.visits() != 0)
-                    .collect_vec(),
-            )
-            .finish()
-    }
-}
-
 impl Node<Leaf> {
-    /// Expand the node, consuming the Leaf and returning the dynamic AnyNode
+    /// Expand the node, consuming the Leaf.
     /// variant.
     pub fn expand(mut self, pos: &Position) -> ExpandedSwitch {
         _ = fold_legal_moves(pos, &mut self.data.branches, |acc, m| {
@@ -571,6 +577,7 @@ impl Node<Leaf> {
         else {
             // SAFETY: We just expanded the moves and there are some, so the data has to be
             // of a Branching node.
+            // println!("DATA: {}", self.data.branches.len());
             ExpandedSwitch::Branching(unsafe { Node::<Branching>::new(self.data) })
         }
     }

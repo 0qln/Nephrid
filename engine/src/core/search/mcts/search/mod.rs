@@ -252,8 +252,6 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             match root.into_ct() {
                 NodeSwitch::Leaf(node) => {
                     let _ = node.expand(&self.position);
-                    // Cycle continues so the expanded components can be
-                    // evaluated.
                 }
                 NodeSwitch::Branching(node) => {
                     let turn = self.position.get_turn();
@@ -302,7 +300,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     }
 
     pub fn grow(&mut self, tree: &mut Tree) {
-        self.selection.clear(); // Using the new clear() method!
+        self.selection.clear();
 
         self.select_lines(tree);
         self.eval_batched();
