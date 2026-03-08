@@ -2,6 +2,7 @@ use std::ops::ControlFlow;
 
 use crate::core::search::mcts::{
     eval::Evaluation,
+    node::Tree,
     search::{EvalItem, Selection, SelectionLeaf},
 };
 
@@ -9,6 +10,7 @@ pub trait Backpropagater {
     /// Backpropagate the [eval].
     fn backpropagate<const X: usize, T>(
         &self,
+        tree: &mut Tree,
         selection: &Selection<X, T>,
         leaf: &SelectionLeaf<T>,
     );
@@ -20,6 +22,7 @@ pub struct DefaultBackuper {}
 impl Backpropagater for DefaultBackuper {
     fn backpropagate<const X: usize, T>(
         &self,
+        tree: &mut Tree,
         selection: &Selection<X, T>,
         leaf: &SelectionLeaf<T>,
     ) {
@@ -35,8 +38,8 @@ impl Backpropagater for DefaultBackuper {
             let turn = node.item.turn;
             let value = eval.to_value(turn);
 
-            let mut node = node.item.node.borrow_mut();
-            node.update(value);
+            let node = node.item.node.clone();
+            tree.update_node(node, value);
 
             ControlFlow::Continue::<(), ()>(())
         });
@@ -46,10 +49,10 @@ impl Backpropagater for DefaultBackuper {
         if let Evaluation::Guess(guess) = eval {
             // Terminal nodes don't have trace data (leaf_data is None), so we only
             // set policies for Branching leaf nodes!
-            if let Some(leaf_data) = &leaf.leaf_data {
+            if let Some(data) = &leaf.leaf_data {
                 let policy = &guess.policy;
-                let leaf_node = leaf_data.node.clone();
-                leaf_node.set_policy_raw(policy);
+                let node = data.node.clone();
+                tree.set_policy_raw(node, policy);
             }
         }
     }

@@ -251,7 +251,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             let root = tree.get_root().clone();
             match root.into_ct() {
                 NodeSwitch::Leaf(node) => {
-                    let _ = node.expand(&self.position);
+                    let _ = tree.expand_node(node, &self.position, Depth::new(1).v().into());
                 }
                 NodeSwitch::Branching(node) => {
                     let turn = self.position.get_turn();
@@ -281,7 +281,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                     };
 
                     if let Evaluation::Guess(guess) = eval {
-                        node.set_policy_raw(&guess.policy);
+                        tree.set_policy_raw(node, &guess.policy);
                     }
 
                     self.selection.clear();
@@ -304,7 +304,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         self.select_lines(tree);
         self.eval_batched();
-        self.backup_evals();
+        self.backup_evals(tree);
         self.apply_noise(tree);
         self.iterations += 1;
     }
@@ -313,15 +313,15 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         let root = tree.get_root().clone();
         let turn = self.position.get_turn();
 
-        let root_eval = match root.into_ct() {
+        let root = match root.into_ct() {
             NodeSwitch::Evaluated(n) => n,
             _ => panic!("Root must be evaluated before selecting lines! Did you call init_root?"),
         };
 
-        let eval_data = self.evaluator.trace(root_eval.clone(), &self.position);
+        let eval_data = self.evaluator.trace(root.clone(), &self.position);
 
-        let sel_root_id = self.selection.init_root(root_eval.clone(), turn, eval_data);
-        self.pick_branches(MPV, 0, Depth::MIN, root_eval, sel_root_id);
+        let sel_root_id = self.selection.init_root(root.clone(), turn, eval_data);
+        self.pick_branches(MPV, 0, Depth::MIN, root, tree, sel_root_id);
     }
 
     fn pick_branches(
@@ -330,6 +330,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         line_index: usize,
         depth: Depth,
         parent_node: CtNodeRef<Evaluated>,
+        tree: &mut Tree,
         sel_node_id: NodeId,
     ) -> usize {
         let root_visits = parent_node.borrow().visits();
@@ -349,7 +350,8 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                     break;
                 };
 
-                let used = self.select_branch(curr_budget, line_index, depth, branch, sel_node_id);
+                let used =
+                    self.select_branch(curr_budget, line_index, depth, branch, tree, sel_node_id);
 
                 budget -= curr_budget;
                 branch_index += 1;
@@ -370,6 +372,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         line_index: usize,
         depth: Depth,
         branch: &Branch,
+        tree: &mut Tree,
         parent_sel_id: NodeId,
     ) -> usize {
         self.position.make_move(branch.mov());
@@ -386,9 +389,11 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 let child_id =
                     self.selection
                         .append_parent(parent_sel_id, node.clone(), turn, trace_data);
-                self.pick_branches(budget, line_index, depth, node, child_id)
+                self.pick_branches(budget, line_index, depth, node, tree, child_id)
             }
-            NodeSwitch::Leaf(node) => self.select_leaf(line_index, parent_sel_id, node, depth),
+            NodeSwitch::Leaf(node) => {
+                self.select_leaf(line_index, parent_sel_id, node, tree, depth)
+            }
             NodeSwitch::Terminal(node) => {
                 self.select_terminal(line_index, parent_sel_id, node, depth)
             }
@@ -403,9 +408,10 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         line_index: usize,
         parent_sel_id: NodeId,
         node: CtNodeRef<Leaf>,
+        tree: &mut Tree,
         depth: Depth,
     ) -> usize {
-        let expanded = node.expand(&self.position);
+        let expanded = tree.expand_node(node, &self.position, depth.v().into());
 
         match expanded {
             ExpandedRefSwitch::Terminal(node) => {
@@ -496,9 +502,9 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         }
     }
 
-    fn backup_evals(&mut self) {
+    fn backup_evals(&mut self, tree: &mut Tree) {
         for leaf in self.selection.leafs.iter().flatten() {
-            self.backprop.backpropagate(&self.selection, leaf);
+            self.backprop.backpropagate(tree, &self.selection, leaf);
         }
     }
 
@@ -509,7 +515,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         let root = tree.get_root().clone();
         if let NodeSwitch::Evaluated(node) = root.into_ct() {
-            _ = self.noiser.apply_noise(&mut *node.borrow_mut());
+            _ = self.noiser.apply_noise(node, tree);
         }
     }
 }

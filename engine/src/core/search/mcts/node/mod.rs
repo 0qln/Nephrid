@@ -42,7 +42,51 @@ impl Default for Tree {
     }
 }
 
+// Node mutable operations delegeated through the tree, such that the statistics
+// are always up to date.
 impl Tree {
+    /// Expands a leaf node, creating branches and updating tree size and depth.
+    pub fn expand_node(
+        &mut self,
+        node: CtNodeRef<Leaf>,
+        pos: &Position,
+        depth: u16,
+    ) -> ExpandedRefSwitch {
+        let expanded = node.expand(pos);
+
+        match &expanded {
+            ExpandedRefSwitch::Branching(b) => {
+                let branches_count = b.borrow().branches().len();
+                self.size += branches_count;
+                self.maxdepth = self.maxdepth.max(depth + 1);
+            }
+            ExpandedRefSwitch::Terminal(_) => {}
+        }
+
+        expanded
+    }
+
+    pub fn set_policy_raw(
+        &mut self,
+        node: CtNodeRef<Branching>,
+        raw_policy: &RawPolicy,
+    ) -> CtNodeRef<Evaluated> {
+        node.set_policy_raw(raw_policy)
+    }
+
+    pub fn apply_policy_noise(&mut self, node: CtNodeRef<Evaluated>, noise: &[f32], eps: f32) {
+        node.borrow_mut().apply_policy_noise(noise, eps);
+    }
+
+    pub fn update_node(&mut self, node: CtNodeRef<Evaluated>, value: eval::Value) {
+        node.borrow_mut().update(value);
+    }
+}
+
+// Tree mutating operations, which will require recompute of all stats.
+impl Tree {
+    /// Advnace to the best branch.
+    /// Will cause a costly recompute of the stats.
     pub fn advance_best(&mut self) {
         fn map(node: CtNodeRef<impl HasBranches>) -> RtNodeRef {
             node.borrow().select_best().node()
@@ -58,9 +102,12 @@ impl Tree {
 
         if let Some(node) = node {
             self.root = node;
+            self.compute_stats();
         }
     }
 
+    /// Advnace to the first branch that matches `pred`.
+    /// Will cause a costly recompute of the stats.
     pub fn advance_to<F: Fn(&Branch) -> bool>(&mut self, pred: F) {
         fn map(
             node: CtNodeRef<impl HasBranches>,
@@ -79,9 +126,12 @@ impl Tree {
 
         if let Some(node) = node.flatten() {
             self.root = node;
+            self.compute_stats();
         }
     }
+}
 
+impl Tree {
     /// Returns None if there are no moves.
     pub fn best_move(&self) -> Option<Move> {
         fn map(node: CtNodeRef<impl HasBranches>) -> Move {
@@ -150,6 +200,13 @@ impl Tree {
     /// Returns the min depth of the tree.
     pub fn compute_mindepth(&self) -> usize {
         self.get_root().borrow().data.compute_subtree_mindepth()
+    }
+
+    /// Recompute all stats.
+    fn compute_stats(&mut self) {
+        self.size = self.compute_size();
+        self.maxdepth = self.compute_maxdepth() as u16;
+        self.mindepth = self.compute_mindepth() as u16;
     }
 
     pub fn get_root(&self) -> RtNodeRef {
@@ -221,7 +278,7 @@ impl Branch {
         self.node.borrow().value()
     }
 
-    pub fn set_policy(&mut self, policy: f32) {
+    pub(self) fn set_policy(&mut self, policy: f32) {
         self.policy = policy;
     }
 
@@ -320,7 +377,7 @@ impl<S: node_state::Any + Default> CtNodeRef<S> {
 }
 
 impl CtNodeRef<Leaf> {
-    pub fn expand(self, pos: &Position) -> ExpandedRefSwitch {
+    pub(self) fn expand(self, pos: &Position) -> ExpandedRefSwitch {
         let leaf = self.replace(Default::default());
         let expanded = leaf.expand(pos);
 
@@ -342,7 +399,7 @@ impl CtNodeRef<Leaf> {
 }
 
 impl CtNodeRef<Branching> {
-    pub fn set_policy_raw(self, raw_policy: &RawPolicy) -> CtNodeRef<Evaluated> {
+    pub(self) fn set_policy_raw(self, raw_policy: &RawPolicy) -> CtNodeRef<Evaluated> {
         unsafe { self.transform_with(|node| node.set_policy_raw(raw_policy)) }
     }
 }
@@ -450,7 +507,7 @@ impl NodeData {
         &self.branches
     }
 
-    pub fn update(&mut self, value: eval::Value) {
+    pub(self) fn update(&mut self, value: eval::Value) {
         self.visits += 1;
         self.value += value;
     }
@@ -584,7 +641,7 @@ pub struct Node<State: node_state::Any> {
 impl Node<Leaf> {
     /// Expand the node, consuming the Leaf.
     /// variant.
-    pub fn expand(mut self, pos: &Position) -> ExpandedSwitch {
+    pub(self) fn expand(mut self, pos: &Position) -> ExpandedSwitch {
         _ = fold_legal_moves(pos, &mut self.data.branches, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Branch::new(
@@ -654,7 +711,7 @@ impl<S: node_state::HasBranches> Node<S> {
 }
 
 impl Node<Branching> {
-    pub fn set_policy(mut self, policy: &Policy) -> Node<Evaluated> {
+    pub(self) fn set_policy(mut self, policy: &Policy) -> Node<Evaluated> {
         assert_eq!(
             self.branches().len(),
             policy.len(),
@@ -669,7 +726,7 @@ impl Node<Branching> {
         unsafe { Node::<Evaluated>::new(self.data) }
     }
 
-    pub fn set_policy_raw(self, raw_policy: &RawPolicy) -> Node<Evaluated> {
+    pub(self) fn set_policy_raw(self, raw_policy: &RawPolicy) -> Node<Evaluated> {
         let policy = {
             let moves = self.branches().iter().map(|b| usize::from(b.mov()));
             Policy::from_raw(raw_policy, moves)
@@ -681,7 +738,7 @@ impl Node<Branching> {
 }
 
 impl Node<Evaluated> {
-    pub fn apply_policy_noise(&mut self, noise: &[f32], eps: f32) {
+    pub(self) fn apply_policy_noise(&mut self, noise: &[f32], eps: f32) {
         let total = noise.iter().sum::<f32>();
         for (branch, noise) in self.data.branches.iter_mut().zip(noise) {
             let norm_noise = noise / total;
@@ -716,7 +773,7 @@ impl<S: node_state::Any> Node<S> {
         self.data.value()
     }
 
-    pub fn update(&mut self, value: eval::Value) {
+    pub(self) fn update(&mut self, value: eval::Value) {
         self.data.update(value)
     }
 }

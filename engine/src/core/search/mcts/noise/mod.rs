@@ -3,7 +3,7 @@ use rand::rngs::SmallRng;
 use rand_distr::{Distribution, Gamma, num_traits::Zero};
 use thiserror::Error;
 
-use crate::core::search::mcts::node::{Node, node_state::Evaluated};
+use crate::core::search::mcts::node::{CtNodeRef, Tree, node_state::Evaluated};
 
 #[cfg(test)]
 pub mod test;
@@ -12,7 +12,11 @@ pub trait Noiser {
     type Error;
 
     /// Apply noise to the polices of this node.
-    fn apply_noise(&mut self, node: &mut Node<Evaluated>) -> Result<(), Self::Error>;
+    fn apply_noise(
+        &mut self,
+        node: CtNodeRef<Evaluated>,
+        tree: &mut Tree,
+    ) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -45,9 +49,14 @@ pub enum DirichletNoiseError {
 impl Noiser for DirichletNoiser {
     type Error = DirichletNoiseError;
 
-    fn apply_noise(&mut self, node: &mut Node<Evaluated>) -> Result<(), Self::Error> {
+    fn apply_noise(
+        &mut self,
+        node: CtNodeRef<Evaluated>,
+        tree: &mut Tree,
+    ) -> Result<(), Self::Error> {
         // Generate noise
         let noise = {
+            let node = node.borrow();
             let branches = node.branches();
             let gamma = self.gamma()?;
             let distr = gamma.sample_iter(&mut self.rng);
@@ -63,7 +72,7 @@ impl Noiser for DirichletNoiser {
 
         // Apply noise
         let eps = self.eps;
-        node.apply_policy_noise(&noise, eps);
+        tree.apply_policy_noise(node, &noise, eps);
 
         Ok(())
     }
@@ -75,7 +84,11 @@ pub struct NullNoiser;
 impl Noiser for NullNoiser {
     type Error = ();
 
-    fn apply_noise(&mut self, _node: &mut Node<Evaluated>) -> Result<(), Self::Error> {
+    fn apply_noise(
+        &mut self,
+        _node: CtNodeRef<Evaluated>,
+        _tree: &mut Tree,
+    ) -> Result<(), Self::Error> {
         Ok(())
     }
 }
