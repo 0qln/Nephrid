@@ -68,6 +68,8 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
         parts.noiser(),
     );
 
+    searcher.init_root(tree);
+
     while !ct.is_cancelled()
         && !(limit.is_active()
             && limit.is_reached(
