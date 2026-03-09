@@ -216,17 +216,17 @@ impl Tree {
         Path(buf)
     }
 
-    /// Returns the number of nodes in this tree
+    /// Computes the number of nodes in this tree
     pub fn compute_size(&self) -> usize {
         self.get_root().borrow().data.compute_subtree_size()
     }
 
-    /// Returns the max depth of the tree.
+    /// Computes the max depth of the tree.
     pub fn compute_maxdepth(&self) -> Depth {
         self.get_root().borrow().data.compute_subtree_maxdepth()
     }
 
-    /// Returns the min depth of the tree.
+    /// Computes the min depth of the tree.
     pub fn compute_mindepth(&self) -> Depth {
         self.get_root().borrow().data.compute_subtree_mindepth()
     }
@@ -242,14 +242,17 @@ impl Tree {
         self.root.clone()
     }
 
+    /// Returns the number of nodes in this tree
     pub fn size(&self) -> usize {
         self.size
     }
 
+    /// Returns the min depth of the tree.
     // pub fn mindepth(&self) -> Depth {
     //     self.mindepth
     // }
 
+    /// Returns the max depth of the tree.
     pub fn maxdepth(&self) -> Depth {
         self.maxdepth
     }
@@ -738,7 +741,6 @@ impl Node<Leaf> {
         else {
             // SAFETY: We just expanded the moves and there are some, so the data has to be
             // of a Branching node.
-            // println!("DATA: {}", self.data.branches.len());
             ExpandedSwitch::Branching(unsafe { Node::<Branching>::new(self.data) })
         }
     }
