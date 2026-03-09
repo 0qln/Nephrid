@@ -15,21 +15,20 @@ pub fn tree_grow(c: &mut Criterion) {
 
     c.bench_function("mcts::tree::grow", |b| {
         b.iter_batched(
-            || {
-                (
-                    TreeSearcher::<1, _, _, _, _, _>::new(
-                        Position::start_position(),
-                        PuctSelector::default(),
-                        NoopLimiter::default(),
-                        DummyEvaluator::default(),
-                        DefaultBackuper::default(),
-                        NullNoiser::default(),
-                    ),
-                    Tree::new(),
-                )
-            },
-            |(mut searcher, mut tree)| {
-                searcher.grow(&mut tree);
+            || (Position::start_position(), Tree::default()),
+            |(mut position, mut tree)| {
+                let mut searcher = TreeSearcher::<1, _, _, _, _, _>::new(
+                    &mut position,
+                    PuctSelector::default(),
+                    NoopLimiter::default(),
+                    DummyEvaluator::default(),
+                    DefaultBackuper::default(),
+                    NullNoiser::default(),
+                );
+                searcher.init_root(&mut tree);
+                for _ in 0..1000 {
+                    searcher.grow(&mut tree);
+                }
             },
             BatchSize::SmallInput,
         )
