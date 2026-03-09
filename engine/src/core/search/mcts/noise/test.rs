@@ -1,32 +1,47 @@
 use approx::assert_relative_eq;
-use rand::SeedableRng;
+use rand::{RngCore, SeedableRng};
 
 use crate::core::{
-    r#move::Move,
-    search::mcts::{eval::Policy, node::Branch},
+    depth::Depth,
+    position::Position,
+    search::mcts::{
+        eval::Policy,
+        node::{Node, RtNodeRef},
+    },
 };
 
 use super::*;
 
 #[test]
 fn test_dirichlet_noise_basic() {
-    let rng = SmallRng::seed_from_u64(42);
+    let mut rng = SmallRng::seed_from_u64(42);
+
+    let node = CtNodeRef::new(Node::new_leaf());
+    let mut tree = Tree::new(RtNodeRef::from_ct(node.clone()));
+
+    let pos = Position::start_position();
+    let node = tree.expand_node(node.clone(), &pos, Depth::ROOT);
+    let node = node.branching().expect("startpos should have branches");
+
+    let policy = {
+        let node = node.borrow();
+        let branches = node.branches();
+        Policy::new(branches.iter().map(|_| rng.next_u32() as f32).collect_vec())
+    };
+    let node = tree.set_policy(node.clone(), &policy);
+
     let mut noiser = DirichletNoiser::new(0.03, 0.25, rng);
+    let result = noiser.apply_noise(node.clone(), &mut tree);
 
-    let policy = Policy::new(vec![0.7, 0.2, 0.08, 0.02]);
-    let mut node = Node::leaf();
-    node.set_branches(
-        policy
-            .iter()
-            .map(|p| Branch::new(Move::null(), p))
-            .collect_vec(),
-    );
-
-    let result = noiser.apply_noise(&mut node);
     assert!(result.is_ok());
 
     // Policies should be modified
-    let new_policy = node.iter_branches().map(|b| b.policy()).collect_vec();
+    let new_policy = node
+        .borrow()
+        .branches()
+        .iter()
+        .map(|b| b.policy())
+        .collect_vec();
     assert_ne!(new_policy, policy.iter().collect_vec());
 
     // Policies should still sum to approximately 1

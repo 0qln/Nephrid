@@ -50,6 +50,14 @@ impl Default for Tree {
     }
 }
 
+impl Tree {
+    pub fn new(root: RtNodeRef) -> Self {
+        let mut ret = Self { root, ..Default::default() };
+        ret.compute_stats();
+        ret
+    }
+}
+
 // Node mutable operations delegeated through the tree, such that the statistics
 // are always up to date.
 impl Tree {
@@ -80,6 +88,14 @@ impl Tree {
         raw_policy: &RawPolicy,
     ) -> CtNodeRef<Evaluated> {
         node.set_policy_raw(raw_policy)
+    }
+
+    pub fn set_policy(
+        &mut self,
+        node: CtNodeRef<Branching>,
+        policy: &Policy,
+    ) -> CtNodeRef<Evaluated> {
+        node.set_policy(policy)
     }
 
     pub fn apply_policy_noise(&mut self, node: CtNodeRef<Evaluated>, noise: &[f32], eps: f32) {
@@ -416,6 +432,10 @@ impl CtNodeRef<Branching> {
     pub(self) fn set_policy_raw(self, raw_policy: &RawPolicy) -> CtNodeRef<Evaluated> {
         unsafe { self.transform_with(|node| node.set_policy_raw(raw_policy)) }
     }
+
+    pub(self) fn set_policy(self, policy: &Policy) -> CtNodeRef<Evaluated> {
+        unsafe { self.transform_with(|node| node.set_policy(policy)) }
+    }
 }
 
 /// A node reference with runtime infomration about the state.
@@ -598,6 +618,14 @@ pub mod node_state {
     pub enum ExpandedRefSwitch {
         Terminal(CtNodeRef<Terminal>),
         Branching(CtNodeRef<Branching>),
+    }
+    impl ExpandedRefSwitch {
+        pub fn branching(&self) -> Option<&CtNodeRef<Branching>> {
+            match self {
+                ExpandedRefSwitch::Terminal(_) => None,
+                ExpandedRefSwitch::Branching(x) => Some(x),
+            }
+        }
     }
 
     pub trait Any {}
