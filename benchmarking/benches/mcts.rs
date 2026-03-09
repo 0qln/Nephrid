@@ -26,7 +26,7 @@ pub fn tree_grow(c: &mut Criterion) {
                     NullNoiser::default(),
                 );
                 searcher.init_root(&mut tree);
-                for _ in 0..1000 {
+                for _ in 0..10_000 {
                     searcher.grow(&mut tree);
                 }
             },
