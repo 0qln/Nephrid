@@ -215,7 +215,6 @@ pub struct TreeSearcher<
     evaluator: E,
     backprop: B,
     noiser: N,
-    iterations: u64,
     selection: Selection<MPV, E::TraceData>,
 }
 
@@ -237,28 +236,25 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             evaluator,
             backprop,
             noiser,
-            iterations: 0,
             selection: Default::default(),
         }
     }
 
-    pub fn iterations(&self) -> u64 {
-        self.iterations
-    }
-
+    /// Expands, evaluates, and applies noise to the root node, Such that the
+    /// tree is prepared to be grown.
     pub fn init_root(&mut self, tree: &mut Tree) {
         loop {
-            let root = tree.get_root().clone();
-            match root.into_ct() {
+            match tree.get_root().into_ct() {
+                // If the root is a leaf, expand and transition to next phase.
                 NodeSwitch::Leaf(node) => {
                     let _ = tree.expand_node(node, &self.position, Depth::new(1).v().into());
                 }
+                // If the root is branching, evaluate and transition to next phase.
                 NodeSwitch::Branching(node) => {
+                    // init selection
                     let turn = self.position.get_turn();
                     let trace_data = self.evaluator.trace(node.clone(), &self.position);
-
                     self.selection.clear();
-                    // Place the root node temporarily in the leafs array for evaluating.
                     self.selection.set(
                         0,
                         SelectionLeaf {
@@ -267,11 +263,12 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                                 turn,
                                 trace_data,
                             }),
-                            parent_id: NodeId(0), // Dummy, we bypass backprop and apply manually.
+                            parent_id: NodeId(0),
                             eval: EvalItem::Batched,
                         },
                     );
 
+                    // eval selection
                     let eval = {
                         let leaf = self.selection.leafs[0].as_ref().unwrap();
                         self.evaluator
@@ -280,19 +277,20 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                             .unwrap()
                     };
 
+                    // backpropagation for root
                     if let Evaluation::Guess(guess) = eval {
                         tree.set_policy_raw(node, &guess.policy);
                     }
 
                     self.selection.clear();
+                }
+                // If the node is evaluated, apply noise and we're done.
+                NodeSwitch::Evaluated(node) => {
+                    let _ = self.noiser.apply_noise(node, tree);
                     break;
                 }
-                NodeSwitch::Evaluated(_) => {
-                    break;
-                }
-                NodeSwitch::Terminal(node) => {
-                    // Evaluator::eval_terminal is an associated function without `&self`
-                    let _ = E::eval_terminal(node, &self.position);
+                // If the root node is terminal, we cannot grow it... just break here.
+                NodeSwitch::Terminal(_node) => {
                     break;
                 }
             }
@@ -305,8 +303,6 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         self.select_lines(tree);
         self.eval_batched();
         self.backup_evals(tree);
-        self.apply_noise(tree);
-        self.iterations += 1;
     }
 
     fn select_lines(&mut self, tree: &mut Tree) {
@@ -505,17 +501,6 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     fn backup_evals(&mut self, tree: &mut Tree) {
         for leaf in self.selection.leafs.iter().flatten() {
             self.backprop.backpropagate(tree, &self.selection, leaf);
-        }
-    }
-
-    fn apply_noise(&mut self, tree: &mut Tree) {
-        if self.iterations > 0 {
-            return;
-        }
-
-        let root = tree.get_root().clone();
-        if let NodeSwitch::Evaluated(node) = root.into_ct() {
-            _ = self.noiser.apply_noise(node, tree);
         }
     }
 }

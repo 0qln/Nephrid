@@ -53,6 +53,7 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     let time_per_move = limit.time_per_move(pos);
     let time_limit = Instant::now() + time_per_move;
     let mut tree = state.tree();
+    let mut iterations = 0;
 
     strategy.start(tree);
 
@@ -75,11 +76,12 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
                 tree.size() as u64 - nodes_begin,
                 Instant::now(),
                 time_limit,
-                searcher.iterations(),
+                iterations,
             ))
     {
         searcher.grow(&mut tree);
         strategy.step(tree);
+        iterations += 1;
     }
 
     strategy.result(state.tree())
