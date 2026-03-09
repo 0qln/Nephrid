@@ -28,7 +28,6 @@ pub trait Evaluator {
     /// selection phase.
     fn trace<S: HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData;
 
-    // todo: can we change this to just taking `Node<Terminal>`?
     /// Evaluate a node's terminal state. If the node is terminal, return the
     /// evaluation, else return None.
     fn eval_terminal(_node: CtNodeRef<Terminal>, pos: &Position) -> Evaluation {
