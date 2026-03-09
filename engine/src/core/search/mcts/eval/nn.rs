@@ -130,7 +130,6 @@ impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
         TraceInfo::new(pos)
     }
 
-    // Now correctly borrows the selection arena to read historical states!
     fn eval_batch<const X: usize>(
         &mut self,
         selection: &Selection<X, Self::TraceData>,
@@ -180,7 +179,6 @@ impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
             .zip(values)
             .zip(raw_policies)
             .map(|((&leaf, value), raw_policy)| {
-                // Safely extract the turn from the leaf_data (this is always a branching node)
                 let turn = leaf.leaf_data.as_ref().unwrap().turn;
 
                 Evaluation::Guess(Box::new(Guess {
