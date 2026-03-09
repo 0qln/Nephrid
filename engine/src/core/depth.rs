@@ -1,5 +1,4 @@
-use std::{fmt, ops};
-use std::{num::ParseIntError, str::FromStr};
+use std::{fmt, num::ParseIntError, ops, str::FromStr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Depth {
@@ -38,6 +37,7 @@ impl FromStr for Depth {
 
 impl Depth {
     pub const MIN: Depth = Depth { v: 0 };
+    pub const ROOT: Depth = Depth { v: 1 };
     pub const MAX: Depth = Depth { v: 250 };
     pub const NONE: Depth = Depth { v: 255 };
 
