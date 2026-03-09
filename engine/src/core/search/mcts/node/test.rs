@@ -161,7 +161,7 @@ fn test_tree_best_move_on_empty_tree() {
 
 #[test]
 fn test_tree_advance_best_moves_root() {
-    let pos = create_position("k7/8/8/8/8/8/8/K7 w - - 0 1");
+    let pos = create_position("k7/8/8/8/8/8/2PPPP2/K7 w - - 0 1");
     let mut tree = Tree::default();
 
     let leaf = match tree.get_root().into_ct() {
@@ -191,7 +191,7 @@ fn test_tree_advance_best_moves_root() {
 
 #[test]
 fn test_tree_advance_to_predicate() {
-    let pos = create_position("k7/8/8/8/8/8/8/K7 w - - 0 1");
+    let pos = create_position("k7/8/8/8/8/8/2PPPP2/K7 w - - 0 1");
     let mut tree = Tree::default();
 
     let leaf = match tree.get_root().into_ct() {
