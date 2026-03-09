@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "benchmarking", "engine", "lab", "nephrid", "tuning" ]
+members = [ "benchmarking", "engine", "nephrid", "tuning" ]
 
 [workspace.package]
 documentation = "https://github.com/0qln/Nephrid"
