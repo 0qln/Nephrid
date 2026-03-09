@@ -1,7 +1,7 @@
 use crate::core::{
     depth::Depth,
     search::mcts::node::node_state::{
-        ExpandedRefSwitch, ExpandedSwitch, HasBranches, NodeState, NodeSwitch, Unknown,
+        ExpandedRefSwitch, ExpandedSwitch, HasBranches, HasValue, NodeState, NodeSwitch, Unknown,
     },
 };
 use itertools::Itertools;
@@ -106,7 +106,7 @@ impl Tree {
         node.borrow_mut().apply_policy_noise(noise, eps);
     }
 
-    pub fn update_node(&mut self, node: CtNodeRef<Evaluated>, value: eval::Value) {
+    pub fn update_node<S: HasValue>(&mut self, node: CtNodeRef<S>, value: eval::Value) {
         node.borrow_mut().update(value);
     }
 }
@@ -320,6 +320,8 @@ impl Branch {
 }
 
 /// The value of a node.
+/// - high ~> Winning for the parent node.
+/// - low ~> Losing for the parent node.
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct Value(pub f32);
 
@@ -359,7 +361,7 @@ pub struct CtNodeRef<S: node_state::Any> {
     inner: Rc<NodeInner<S>>,
 }
 
-impl<S: node_state::Any + Clone> Clone for CtNodeRef<S> {
+impl<S: node_state::Any> Clone for CtNodeRef<S> {
     fn clone(&self) -> Self {
         Self { inner: self.inner.clone() }
     }
@@ -384,11 +386,15 @@ impl<S: node_state::Valid> CtNodeRef<S> {
     }
 }
 
-impl<S: node_state::Valid> CtNodeRef<S> {
+impl<S: const node_state::Valid> CtNodeRef<S> {
+    const STATE: NodeState = S::state();
+
     /// Try to transmute this into the specified state. Retruns none if the
     /// state is not the target state.
     pub fn try_into<Target: node_state::Valid>(self) -> Option<CtNodeRef<Target>> {
-        if S::state() == Target::state() {
+        // idk i hope the compiler is smart enough to see that this is resolvable at
+        // comp time x3
+        if Self::STATE == Target::state() {
             Some(unsafe { mem::transmute(self) })
         }
         else {
@@ -648,20 +654,20 @@ pub mod node_state {
         }
     }
 
-    pub trait Any {}
+    pub const trait Any {}
 
     pub const trait Valid: Any {
         fn state() -> NodeState;
     }
 
-    pub trait Expanded: Any {}
+    pub const trait HasBranches: Any + Valid {}
 
-    pub trait HasBranches: Any + Valid {}
+    pub const trait HasValue: Any + Valid {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Leaf;
     impl Any for Leaf {}
-    impl Valid for Leaf {
+    impl const Valid for Leaf {
         fn state() -> NodeState {
             NodeState::Leaf
         }
@@ -670,33 +676,33 @@ pub mod node_state {
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Terminal;
     impl Any for Terminal {}
-    impl Valid for Terminal {
+    impl const Valid for Terminal {
         fn state() -> NodeState {
             NodeState::Terminal
         }
     }
-    impl Expanded for Terminal {}
+    impl HasValue for Terminal {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Branching;
-    impl Any for Branching {}
-    impl Valid for Branching {
+    impl const Any for Branching {}
+    impl const Valid for Branching {
         fn state() -> NodeState {
             NodeState::Branching
         }
     }
-    impl Expanded for Branching {}
-    impl HasBranches for Branching {}
+    impl const HasBranches for Branching {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Evaluated;
     impl Any for Evaluated {}
-    impl Valid for Evaluated {
+    impl const Valid for Evaluated {
         fn state() -> NodeState {
             NodeState::Evaluated
         }
     }
-    impl HasBranches for Evaluated {}
+    impl const HasValue for Evaluated {}
+    impl const HasBranches for Evaluated {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Unknown;
@@ -713,13 +719,31 @@ pub struct Node<State: node_state::Any> {
     _state: PhantomData<State>,
 }
 
+impl<S: node_state::HasBranches> fmt::Display for Node<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Node")
+            .field("value", &self.value())
+            .field("visits", &self.visits())
+            .field(
+                "branches",
+                &self
+                    .branches()
+                    .iter()
+                    .map(|b| format!("{}", b.mov()))
+                    .collect_vec(),
+            )
+            .finish()
+    }
+}
+
 impl Node<Leaf> {
     /// Expand the node, consuming the Leaf.
     /// variant.
     pub(self) fn expand(mut self, pos: &Position) -> ExpandedSwitch {
+        // todo: maybe there is a more efficient way to check this?
         if pos.game_result().is_some() {
             // SAFETY: If there's a gameresult, we can be sure that this is a terminal node.
-            return ExpandedSwitch::Terminal(unsafe { Node::<Terminal>::new(self.data) });
+            return ExpandedSwitch::Terminal(unsafe { Node::new(self.data) });
         }
 
         _ = fold_legal_moves(pos, &mut self.data.branches, |acc, m| {
@@ -852,7 +876,9 @@ impl<S: node_state::Any> Node<S> {
     pub fn value(&self) -> Value {
         self.data.value()
     }
+}
 
+impl<S: HasValue> Node<S> {
     pub(self) fn update(&mut self, value: eval::Value) {
         self.data.update(value)
     }

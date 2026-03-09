@@ -1,6 +1,6 @@
 use crate::core::search::mcts::{
     node::{CtNodeRef, node_state::HasBranches},
-    search::{Selection, SelectionLeaf},
+    search::{BatchItem, Selection},
 };
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 
@@ -51,12 +51,12 @@ impl Evaluator for DummyEvaluator {
     fn eval_batch<const X: usize>(
         &mut self,
         _selection: &Selection<X, Self::TraceData>,
-        leafs: &[&SelectionLeaf<Self::TraceData>],
+        leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
         let mut evaluations = Vec::with_capacity(leafs.len());
 
         for leaf in leafs {
-            let trace_data = &leaf.leaf_data.as_ref().unwrap().trace_data;
+            let trace_data = &leaf.data;
 
             let quality = self.rng.random_range(-1.0..=1.0);
 

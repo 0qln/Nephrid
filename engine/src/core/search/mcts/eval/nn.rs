@@ -8,7 +8,7 @@ use crate::core::search::mcts::{
         board_input, state_input,
     },
     node::CtNodeRef,
-    search::{Selection, SelectionLeaf},
+    search::{BatchItem, Selection},
 };
 
 use super::*;
@@ -63,7 +63,7 @@ impl<'a, 'b, B: Backend> NNEvaluator<'a, 'b, B> {
     fn build_board_batch<'c, const X: usize>(
         &self,
         selection: &Selection<X, TraceInfo>,
-        batch: impl Iterator<Item = &'c SelectionLeaf<TraceInfo>>,
+        batch: impl Iterator<Item = &'c BatchItem<TraceInfo>>,
     ) -> Tensor<B, 4> {
         // concatenate the board inputs along the batch dimension.
         Tensor::cat(
@@ -82,22 +82,20 @@ impl<'a, 'b, B: Backend> NNEvaluator<'a, 'b, B> {
     fn get_node_history<const X: usize>(
         &self,
         selection: &Selection<X, TraceInfo>,
-        leaf: &SelectionLeaf<TraceInfo>,
+        leaf: &BatchItem<TraceInfo>,
     ) -> Vec<BoardInputFloats> {
         let mut vec: Vec<BoardInputFloats> = vec![];
 
         // 1. Insert the leaf's own board input first
-        if let Some(leaf_data) = &leaf.leaf_data {
-            vec.insert(0, leaf_data.trace_data.inputs.board);
-        }
+        vec.insert(0, leaf.data.inputs.board);
 
         // 2. Traverse up the tree to gather parent board inputs
-        _ = selection.try_fold_up(leaf.parent_id, (), |_, node| {
+        _ = selection.try_fold_up(leaf.parent, (), |_, node| {
             if vec.len() == BOARD_INPUT_HISTORY {
                 return ControlFlow::Break(());
             }
 
-            let board_input = node.item.trace_data.inputs.board;
+            let board_input = node.data.inputs.board;
             vec.insert(0, board_input);
 
             ControlFlow::Continue::<(), ()>(())
@@ -108,13 +106,13 @@ impl<'a, 'b, B: Backend> NNEvaluator<'a, 'b, B> {
 
     fn build_state_batch<'c>(
         &self,
-        batch: impl Iterator<Item = &'c SelectionLeaf<TraceInfo>>,
+        batch: impl Iterator<Item = &'c BatchItem<TraceInfo>>,
     ) -> Tensor<B, 2> {
         // concatenate the state inputs along the batch dimension.
         Tensor::cat(
             batch
                 .map(|leaf| {
-                    let state_input = leaf.leaf_data.as_ref().unwrap().trace_data.inputs.state;
+                    let state_input = leaf.data.inputs.state;
                     Tensor::from_floats([state_input], self.device())
                 })
                 .collect_vec(),
@@ -133,7 +131,7 @@ impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
     fn eval_batch<const X: usize>(
         &mut self,
         selection: &Selection<X, Self::TraceData>,
-        leafs: &[&SelectionLeaf<Self::TraceData>],
+        leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
         let batch_size = leafs.len();
 
@@ -179,7 +177,7 @@ impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
             .zip(values)
             .zip(raw_policies)
             .map(|((&leaf, value), raw_policy)| {
-                let turn = leaf.leaf_data.as_ref().unwrap().turn;
+                let turn = leaf.turn;
 
                 Evaluation::Guess(Box::new(Guess {
                     relative_to: turn,

@@ -5,9 +5,9 @@ use crate::core::{
         nn::POLICY_OUTPUTS,
         node::{
             CtNodeRef,
-            node_state::{HasBranches, Terminal},
+            node_state::{HasBranches, Terminal, Valid},
         },
-        search::{Selection, SelectionLeaf},
+        search::{BatchItem, Selection},
     },
 };
 use core::fmt;
@@ -26,7 +26,11 @@ pub trait Evaluator {
     /// Note a trace of a branching node during the selection phase.
     /// `node` may or may not be the node that was just expanded during the
     /// selection phase.
-    fn trace<S: HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData;
+    fn trace<S: const Valid + HasBranches>(
+        &self,
+        node: CtNodeRef<S>,
+        pos: &Position,
+    ) -> Self::TraceData;
 
     /// Evaluate a node's terminal state. If the node is terminal, return the
     /// evaluation, else return None.
@@ -39,7 +43,7 @@ pub trait Evaluator {
     fn eval_batch<const X: usize>(
         &mut self,
         selection: &Selection<X, Self::TraceData>,
-        leafs: &[&SelectionLeaf<Self::TraceData>],
+        leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation>;
 }
 
@@ -62,10 +66,10 @@ impl Guess {
     }
 
     /// Returns the value of the guess relative to `turn`.
-    pub fn to_value(&self, turn: Color) -> Value {
+    pub fn to_value(&self, relative_to: Color) -> Value {
         let value = Value::from(self.quality);
 
-        if self.relative_to == turn {
+        if self.relative_to == relative_to {
             value
         }
         else {
@@ -105,9 +109,9 @@ impl fmt::Display for Evaluation {
 
 impl GameResult {
     /// Returns the value of the game result relative to `turn`.
-    fn to_value(self, turn: Color) -> Value {
+    fn to_value(self, color: Color) -> Value {
         match self {
-            Self::Win { relative_to } if relative_to == turn => Value::win(),
+            Self::Win { relative_to } if relative_to == color => Value::win(),
             Self::Win { .. } => Value::loss(),
             Self::Draw => Value::draw(),
         }
@@ -116,11 +120,11 @@ impl GameResult {
 
 impl Evaluation {
     /// Returns the value of the evaluation relative to `turn`.
-    pub fn to_value(&self, turn: Color) -> Value {
+    pub fn to_value(&self, relative_to: Color) -> Value {
         match self {
-            Self::Terminal(result) => result.to_value(turn),
+            Self::Terminal(result) => result.to_value(relative_to),
             Self::Nope => Value::draw(),
-            Self::Guess(guess) => guess.to_value(turn),
+            Self::Guess(guess) => guess.to_value(relative_to),
         }
     }
 

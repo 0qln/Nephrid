@@ -355,7 +355,11 @@ impl StaticEvaluator {
 impl Evaluator for StaticEvaluator {
     type TraceData = Option<EvalInfo>;
 
-    fn trace<S: HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
+    fn trace<S: const Valid + HasBranches>(
+        &self,
+        node: CtNodeRef<S>,
+        pos: &Position,
+    ) -> Self::TraceData {
         node.try_into::<Branching>()
             .map(|node| EvalInfo::new(node, pos))
     }
@@ -363,16 +367,11 @@ impl Evaluator for StaticEvaluator {
     fn eval_batch<const X: usize>(
         &mut self,
         _selection: &Selection<X, Self::TraceData>,
-        leafs: &[&SelectionLeaf<Self::TraceData>],
+        leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
         leafs
             .iter()
-            .filter_map(|&leaf| {
-                leaf.leaf_data
-                    .as_ref()
-                    .map(|l| (&l.trace_data).as_ref())
-                    .flatten()
-            })
+            .filter_map(|&leaf| leaf.data.as_ref())
             .map(|eval_info| {
                 Evaluation::Guess(Box::new(Guess {
                     relative_to: colors::WHITE,

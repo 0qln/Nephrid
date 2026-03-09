@@ -1,5 +1,7 @@
 use std::ops::Try;
 
+use itertools::Itertools;
+
 use crate::core::{
     Position,
     depth::Depth,
@@ -23,60 +25,52 @@ pub mod test;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NodeId(pub usize);
 
+/// Info about a selected node or it's ascendend in the tree.
 #[derive(Debug)]
-pub struct SelectionItem<T, S: node_state::Any> {
-    /// The selected leaf that was just expanded, but has not yet been evaluated
+pub struct SelNode<T, S: node_state::Any> {
+    /// The node.
     pub node: CtNodeRef<S>,
+
     /// Current player's turn
     pub turn: Turn,
-    /// Context specific data
-    pub trace_data: T,
+
+    /// The sel parent node.
+    pub parent: Option<NodeId>,
+
+    pub data: T,
 }
+
+pub type BatchItem<T> = SelNode<T, Branching>;
+
+pub type EvalItem = SelNode<Evaluation, Branching>;
+
+pub type TerminalItem = SelNode<Evaluation, Terminal>;
 
 #[derive(Debug)]
-pub enum EvalItem {
-    Batched,
-    Evaluated(Evaluation),
+pub enum PhaseItem<T> {
+    Unused,
+    Batched(BatchItem<T>),
+    Evaluated(EvalItem),
+    Terminal(TerminalItem),
 }
 
-impl EvalItem {
-    pub fn is_batched(&self) -> bool {
-        matches!(self, Self::Batched)
+impl<T> PhaseItem<T> {
+    pub fn batch_item(&self) -> Option<&BatchItem<T>> {
+        match self {
+            PhaseItem::Batched(x) => Some(x),
+            _ => None,
+        }
     }
 }
 
-pub type SelParentData<T> = SelectionItem<T, Evaluated>;
-pub type SelLeafData<T> = SelectionItem<T, Branching>;
-
-/// A node allocated within the Selection's bump arena.
-/// Since leaves are stored separately, this is ALWAYS a parent node!
-#[derive(Debug)]
-pub struct SelectionNode<T> {
-    pub item: SelParentData<T>,
-    pub parent: Option<NodeId>,
-    pub children: Vec<NodeId>,
-}
-
-/// The new dedicated Leaf structure.
-#[derive(Debug)]
-pub struct SelectionLeaf<T> {
-    /// Option because Terminal nodes don't have branching trace data!
-    pub leaf_data: Option<SelLeafData<T>>,
-    /// The parent node inside the bump arena
-    pub parent_id: NodeId,
-    pub eval: EvalItem,
-}
-
 pub struct Selection<const X: usize, T> {
-    /// The Bump Arena. Now STRICTLY contains only Parent nodes.
-    pub arena: Vec<SelectionNode<T>>,
+    pub arena: Vec<SelNode<T, Evaluated>>,
     pub root: Option<NodeId>,
-    /// The dedicated arena for our Leaf nodes.
-    pub leafs: [Option<SelectionLeaf<T>>; X],
+    pub leafs: [PhaseItem<T>; X],
 }
 
-const fn empty_leaf<T>() -> Option<SelectionLeaf<T>> {
-    None
+const fn empty_leaf<T>() -> PhaseItem<T> {
+    PhaseItem::<T>::Unused
 }
 
 impl<const X: usize, T> Default for Selection<X, T> {
@@ -97,15 +91,14 @@ impl<const X: usize, T> Selection<X, T> {
         turn: Turn,
         trace_data: T,
     ) -> NodeId {
+        self.clear();
+
         let root_id = NodeId(self.arena.len());
-        self.arena.push(SelectionNode {
-            item: SelectionItem {
-                node: root_node,
-                turn,
-                trace_data,
-            },
+        self.arena.push(SelNode {
+            node: root_node,
+            turn,
             parent: None,
-            children: vec![],
+            data: trace_data,
         });
 
         self.root = Some(root_id);
@@ -120,7 +113,6 @@ impl<const X: usize, T> Selection<X, T> {
     }
 
     /// Allocates a new Parent node in the arena and attaches it to the parent.
-    /// No more Results/Enums needed!
     pub fn append_parent(
         &mut self,
         parent_id: NodeId,
@@ -130,39 +122,32 @@ impl<const X: usize, T> Selection<X, T> {
     ) -> NodeId {
         let child_id = NodeId(self.arena.len());
 
-        // Add the child ID to the parent's children vector
-        self.arena[parent_id.0].children.push(child_id);
-
-        // Bump allocate the new child node
-        self.arena.push(SelectionNode {
-            item: SelectionItem {
-                node: parent_node,
-                turn,
-                trace_data,
-            },
+        self.arena.push(SelNode {
+            node: parent_node,
+            turn,
             parent: Some(parent_id),
-            children: vec![],
+            data: trace_data,
         });
 
         child_id
     }
 
-    pub fn set(&mut self, index: usize, item: SelectionLeaf<T>) {
-        self.leafs[index] = Some(item);
+    pub fn set(&mut self, index: usize, item: PhaseItem<T>) {
+        self.leafs[index] = item;
     }
 
-    pub fn get_node(&self, id: NodeId) -> &SelectionNode<T> {
+    pub fn get_node(&self, id: NodeId) -> &SelNode<T, Evaluated> {
         &self.arena[id.0]
     }
 
-    pub fn get_node_mut(&mut self, id: NodeId) -> &mut SelectionNode<T> {
+    pub fn get_node_mut(&mut self, id: NodeId) -> &mut SelNode<T, Evaluated> {
         &mut self.arena[id.0]
     }
 
     /// Applies `f` to the given node and all parent nodes, moving up the tree.
     pub fn try_fold_up_mut<B, F, R>(&mut self, mut current: NodeId, mut init: B, mut f: F) -> R
     where
-        F: FnMut(B, &mut SelectionNode<T>) -> R,
+        F: FnMut(B, &mut SelNode<T, Evaluated>) -> R,
         R: Try<Output = B>,
     {
         loop {
@@ -179,21 +164,15 @@ impl<const X: usize, T> Selection<X, T> {
         R::from_output(init)
     }
 
-    pub fn try_fold_up<B, F, R>(&self, mut current: NodeId, mut init: B, mut f: F) -> R
+    pub fn try_fold_up<B, F, R>(&self, mut current: Option<NodeId>, mut init: B, mut f: F) -> R
     where
-        F: FnMut(B, &SelectionNode<T>) -> R,
+        F: FnMut(B, &SelNode<T, Evaluated>) -> R,
         R: std::ops::Try<Output = B>,
     {
-        loop {
-            let node = &self.arena[current.0];
+        while let Some(curr) = current {
+            let node = &self.arena[curr.0];
             init = f(init, node)?;
-
-            if let Some(parent_id) = node.parent {
-                current = parent_id;
-            }
-            else {
-                break;
-            }
+            current = node.parent;
         }
         R::from_output(init)
     }
@@ -257,20 +236,17 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                     self.selection.clear();
                     self.selection.set(
                         0,
-                        SelectionLeaf {
-                            leaf_data: Some(SelectionItem {
-                                node: node.clone(),
-                                turn,
-                                trace_data,
-                            }),
-                            parent_id: NodeId(0),
-                            eval: EvalItem::Batched,
-                        },
+                        PhaseItem::Batched(SelNode {
+                            node: node.clone(),
+                            turn,
+                            parent: None,
+                            data: trace_data,
+                        }),
                     );
 
                     // eval selection
                     let eval = {
-                        let leaf = self.selection.leafs[0].as_ref().unwrap();
+                        let leaf = self.selection.leafs[0].batch_item().unwrap();
                         self.evaluator
                             .eval_batch(&self.selection, &[leaf])
                             .next()
@@ -395,9 +371,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             NodeSwitch::Leaf(node) => {
                 self.select_leaf(line_index, parent_sel_id, node, tree, depth)
             }
-            NodeSwitch::Terminal(node) => {
-                self.select_terminal(line_index, parent_sel_id, node, depth)
-            }
+            NodeSwitch::Terminal(node) => self.select_terminal(line_index, parent_sel_id, node),
         };
 
         self.position.unmake_move(branch.mov());
@@ -416,7 +390,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         match expanded {
             ExpandedRefSwitch::Terminal(node) => {
-                self.select_terminal(line_index, parent_sel_id, node, depth)
+                self.select_terminal(line_index, parent_sel_id, node)
             }
             ExpandedRefSwitch::Branching(node) => {
                 self.select_branching(line_index, parent_sel_id, node, depth)
@@ -427,20 +401,18 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     fn select_terminal(
         &mut self,
         line_index: usize,
-        parent_sel_id: NodeId,
+        parent_id: NodeId,
         node: CtNodeRef<Terminal>,
-        _depth: Depth,
     ) -> usize {
-        let eval = E::eval_terminal(node, &self.position);
-
-        // Terminal nodes just set `leaf_data` to None!
+        let eval = E::eval_terminal(node.clone(), &self.position);
         self.selection.set(
             line_index,
-            SelectionLeaf {
-                leaf_data: None,
-                parent_id: parent_sel_id,
-                eval: EvalItem::Evaluated(eval),
-            },
+            PhaseItem::Terminal(SelNode {
+                node,
+                turn: self.position.get_turn(),
+                parent: Some(parent_id),
+                data: eval,
+            }),
         );
         1
     }
@@ -454,58 +426,76 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     ) -> usize {
         let pos = &self.position;
 
-        let (used_budget, eval) = if self.limiter.should_stop(limiter::Params { pos, depth }) {
-            (1, EvalItem::Evaluated(Evaluation::Nope))
+        let (used_budget, item) = if self.limiter.should_stop(limiter::Params { pos, depth }) {
+            (1, PhaseItem::Unused)
         }
         else {
-            (1, EvalItem::Batched)
+            let trace_data = self.evaluator.trace(node.clone(), pos);
+            (
+                1,
+                PhaseItem::Batched(SelNode {
+                    node,
+                    turn: self.position.get_turn(),
+                    parent: Some(parent_id),
+                    data: trace_data,
+                }),
+            )
         };
 
-        let turn = self.position.get_turn();
-        let trace_data = self.evaluator.trace(node.clone(), pos);
-
-        // Put the newly encountered leaf directly into the leafs array
-        self.selection.set(
-            line_index,
-            SelectionLeaf {
-                leaf_data: Some(SelectionItem { node, turn, trace_data }),
-                parent_id,
-                eval,
-            },
-        );
+        self.selection.set(line_index, item);
 
         used_budget
     }
 
     fn eval_batched(&mut self) {
-        let mut batched_indices = Vec::new();
-        for (i, leaf) in self.selection.leafs.iter().enumerate() {
-            if let Some(l) = leaf {
-                if l.eval.is_batched() {
-                    batched_indices.push(i);
-                }
-            }
-        }
+        let batched_indices = self
+            .selection
+            .leafs
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| matches!(l, PhaseItem::Batched(_)))
+            .map(|(i, _)| i)
+            .collect_vec();
 
         let evals: Vec<Evaluation> = {
-            let leafs: Vec<&SelectionLeaf<E::TraceData>> = batched_indices
+            let leafs: Vec<&BatchItem<E::TraceData>> = batched_indices
                 .iter()
-                .map(|&i| self.selection.leafs[i].as_ref().unwrap())
-                .collect();
+                .filter_map(|&i| self.selection.leafs[i].batch_item())
+                .collect_vec();
 
             self.evaluator.eval_batch(&self.selection, &leafs).collect()
         };
 
         for (i, eval) in batched_indices.into_iter().zip(evals) {
-            if let Some(leaf) = &mut self.selection.leafs[i] {
-                leaf.eval = EvalItem::Evaluated(eval);
-            }
+            let batch_item = self.selection.leafs[i].batch_item().unwrap();
+            self.selection.set(
+                i,
+                PhaseItem::Evaluated(SelNode {
+                    node: batch_item.node.clone(),
+                    turn: batch_item.turn,
+                    parent: batch_item.parent,
+                    data: eval,
+                }),
+            )
         }
     }
 
     fn backup_evals(&mut self, tree: &mut Tree) {
-        for leaf in self.selection.leafs.iter().flatten() {
-            self.backprop.backpropagate(tree, &self.selection, leaf);
+        for leaf in self.selection.leafs.iter() {
+            match leaf {
+                // ignore unused slots.
+                PhaseItem::Unused => {}
+
+                // the evaluator is bad.
+                PhaseItem::Batched(_) => todo!(
+                    "the evaluator forgot the eval a batched item. this shouldn't happen, log an \
+                     error or something"
+                ),
+
+                // backup terminals, guesses, etc.
+                PhaseItem::Evaluated(x) => self.backprop.backpropagate(tree, &self.selection, x),
+                PhaseItem::Terminal(x) => self.backprop.backpropagate(tree, &self.selection, x),
+            }
         }
     }
 }

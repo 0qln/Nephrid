@@ -2,17 +2,20 @@ use std::ops::ControlFlow;
 
 use crate::core::search::mcts::{
     eval::{Evaluation, RawPolicy},
-    node::Tree,
-    search::{EvalItem, Selection, SelectionLeaf},
+    node::{
+        Tree,
+        node_state::{self, Branching, Evaluated, Terminal},
+    },
+    search::{SelNode, Selection},
 };
 
 pub trait Backpropagater {
     /// Backpropagate the [eval].
-    fn backpropagate<const X: usize, T>(
+    fn backpropagate<const X: usize, T, S: const node_state::Valid>(
         &self,
         tree: &mut Tree,
         selection: &Selection<X, T>,
-        leaf: &SelectionLeaf<T>,
+        leaf: &SelNode<Evaluation, S>,
     );
 }
 
@@ -20,31 +23,13 @@ pub trait Backpropagater {
 pub struct DefaultBackuper {}
 
 impl Backpropagater for DefaultBackuper {
-    fn backpropagate<const X: usize, T>(
+    fn backpropagate<const X: usize, T, S: const node_state::Valid>(
         &self,
         tree: &mut Tree,
         selection: &Selection<X, T>,
-        leaf: &SelectionLeaf<T>,
+        leaf: &SelNode<Evaluation, S>,
     ) {
-        // Extract the evaluation (we skip if it's batched and not yet evaluated)
-        let eval = match &leaf.eval {
-            EvalItem::Evaluated(e) => e,
-            // this shouldn't happen, log an error or something
-            EvalItem::Batched => return,
-        };
-
-        // Traverse the selected node in reverse, updating the parents along the way.
-        _ = selection.try_fold_up(leaf.parent_id, (), |_, node| {
-            let turn = node.item.turn;
-            let value = eval.to_value(turn);
-
-            let node = node.item.node.clone();
-            tree.update_node(node, value);
-
-            ControlFlow::Continue::<(), ()>(())
-        });
-
-        // make sure to also set the policies of the selected leaf.
+        let eval = &leaf.data;
         let policy = if let Evaluation::Guess(guess) = eval {
             &guess.policy
         }
@@ -52,9 +37,30 @@ impl Backpropagater for DefaultBackuper {
             &RawPolicy::null()
         };
 
-        if let Some(data) = &leaf.leaf_data {
-            let node = data.node.clone();
-            tree.set_policy_raw(node, &policy);
+        // Update the leaf itself.
+        {
+            let node = &leaf.node;
+            let value = eval.to_value(!leaf.turn);
+
+            if let Some(unevaluated) = node.clone().try_into::<Branching>() {
+                let evaluated = tree.set_policy_raw(unevaluated, policy);
+                tree.update_node(evaluated, value);
+            }
+            else if let Some(evaluated) = node.clone().try_into::<Evaluated>() {
+                tree.update_node(evaluated, value);
+            }
+            else if let Some(terminal) = node.clone().try_into::<Terminal>() {
+                tree.update_node(terminal, value);
+            }
         }
+
+        // Update the parents until root.
+        _ = selection.try_fold_up(leaf.parent, (), |_, item| {
+            let node = item.node.clone();
+            let value = eval.to_value(!item.turn);
+            tree.update_node(node.clone(), value);
+
+            ControlFlow::Continue::<(), ()>(())
+        });
     }
 }

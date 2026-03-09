@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use rand::prelude::*;
 
-use crate::core::{move_iter::fold_legal_moves, search::mcts::node::node_state::Branching};
+use crate::core::{move_iter::fold_legal_moves, search::mcts::node::node_state::{Branching, Valid}};
 
 use super::*;
 
@@ -65,7 +65,7 @@ impl Evaluator for PlayoutEvaluator {
     type TraceData = Option<PlayoutTraceData>;
 
     /// Captures the position at the current node.
-    fn trace<S: HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
+    fn trace<S: const Valid + HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
         node.try_into::<Branching>()
             .map(|_node| PlayoutTraceData { start_pos: pos.clone() })
     }
@@ -74,16 +74,11 @@ impl Evaluator for PlayoutEvaluator {
     fn eval_batch<const X: usize>(
         &mut self,
         _selection: &Selection<X, Self::TraceData>,
-        leafs: &[&SelectionLeaf<Self::TraceData>],
+        leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
         leafs
             .iter()
-            .filter_map(|&leaf| {
-                leaf.leaf_data
-                    .as_ref()
-                    .map(|l| (&l.trace_data).as_ref())
-                    .flatten()
-            })
+            .filter_map(|leaf| leaf.data.as_ref())
             .map(|eval_info| {
                 let result = self.playout(eval_info.start_pos.clone());
                 Evaluation::Terminal(result)
