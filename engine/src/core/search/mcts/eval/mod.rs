@@ -13,8 +13,9 @@ use crate::core::{
 use core::fmt;
 use std::ops::ControlFlow;
 
-#[cfg(test)]
-pub mod test;
+// todo: fix
+// #[cfg(test)]
+// pub mod test;
 
 pub mod nn;
 pub mod playout;

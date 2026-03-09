@@ -383,7 +383,6 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         let used = match branch.node().into_ct() {
             NodeSwitch::Branching(node) => {
-                // Now directly goes to select_branching! No appending here.
                 self.select_branching(line_index, parent_sel_id, node, depth)
             }
             NodeSwitch::Evaluated(node) => {

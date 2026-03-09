@@ -248,7 +248,7 @@ fn test_tree_principal_variation_simple_path() {
     let tree = Tree {
         root: root_node,
         size: 3,
-        mindepth: Depth::new(3),
+        // mindepth: Depth::new(3),
         maxdepth: Depth::new(3),
     };
 

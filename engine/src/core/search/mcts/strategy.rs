@@ -80,7 +80,7 @@ impl MctsStrategy for MctsUci {
             let tree_size = tree.size();
             let nodes = Some(format!("nodes {}", tree_size));
             let nps = self.nps(tree_size).map(|x| format!("nps {x}"));
-            let depth = Some(format!("depth {}", tree.mindepth()));
+            // let depth = Some(format!("depth {}", tree.mindepth()));
             let seldepth = Some(format!("seldepth {}", tree.maxdepth()));
             let pv = Some(format!("pv {}", tree.principal_variation()));
             let time = self
@@ -88,7 +88,7 @@ impl MctsStrategy for MctsUci {
                 .map(|t| format!("time {}", t.as_millis()));
             let currmove = Some(format!("currmove {mov}"));
 
-            let args = [currmove, nodes, nps, depth, seldepth, time, pv]
+            let args = [currmove, nodes, nps, /* depth, */ seldepth, time, pv]
                 .into_iter()
                 .flatten()
                 .collect_vec()
