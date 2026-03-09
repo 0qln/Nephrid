@@ -18,7 +18,6 @@ fn bench_perft(pos: Position, depth: Depth) {
         limit,
         CancellationToken::new(),
         DebugMode::default(),
-        // |m, _, _, _| println!("{m:?}"),
     );
 }
 
