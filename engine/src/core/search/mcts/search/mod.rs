@@ -247,7 +247,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             match tree.get_root().into_ct() {
                 // If the root is a leaf, expand and transition to next phase.
                 NodeSwitch::Leaf(node) => {
-                    let _ = tree.expand_node(node, &self.position, Depth::ROOT.v().into());
+                    let _ = tree.expand_node(node, &self.position, Depth::ROOT);
                 }
                 // If the root is branching, evaluate and transition to next phase.
                 NodeSwitch::Branching(node) => {
@@ -413,7 +413,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         tree: &mut Tree,
         depth: Depth,
     ) -> usize {
-        let expanded = tree.expand_node(node, &self.position, depth.v().into());
+        let expanded = tree.expand_node(node, &self.position, depth);
 
         match expanded {
             ExpandedRefSwitch::Terminal(node) => {

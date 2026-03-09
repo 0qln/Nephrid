@@ -1,5 +1,8 @@
-use crate::core::search::mcts::node::node_state::{
-    ExpandedRefSwitch, ExpandedSwitch, HasBranches, NodeState, NodeSwitch, Unknown,
+use crate::core::{
+    depth::Depth,
+    search::mcts::node::node_state::{
+        ExpandedRefSwitch, ExpandedSwitch, HasBranches, NodeState, NodeSwitch, Unknown,
+    },
 };
 use itertools::Itertools;
 use std::{cell::Cell, mem, ops::Deref};
@@ -25,10 +28,15 @@ pub struct Tree {
     /// Root of the tree.
     root: RtNodeRef,
 
-    // todo: incrementally computed versions of the compute_subtree_* functions.
+    // incrementally computed versions of the compute_subtree_* functions.
+    /// The size of the tree (total number of nodes).
     size: usize,
-    mindepth: u16,
-    maxdepth: u16,
+
+    /// The minimum depth of the tree.
+    mindepth: Depth,
+
+    /// The maximum depth of the tree.
+    maxdepth: Depth,
 }
 
 impl Default for Tree {
@@ -36,8 +44,8 @@ impl Default for Tree {
         Self {
             root: Default::default(),
             size: 1,
-            mindepth: 1,
-            maxdepth: 1,
+            mindepth: Depth::ROOT,
+            maxdepth: Depth::ROOT,
         }
     }
 }
@@ -50,7 +58,7 @@ impl Tree {
         &mut self,
         node: CtNodeRef<Leaf>,
         pos: &Position,
-        depth: u16,
+        depth: Depth,
     ) -> ExpandedRefSwitch {
         let expanded = node.expand(pos);
 
@@ -165,7 +173,7 @@ impl Tree {
     /// Returns the current principal variation. The branches are clones, but
     /// contain valid references to their nodes.
     pub fn principal_variation(&self) -> Path {
-        let mut buf = Vec::with_capacity(self.mindepth().into());
+        let mut buf = Vec::with_capacity(self.mindepth().v().into());
         let mut current = self.root.clone();
 
         loop {
@@ -193,20 +201,20 @@ impl Tree {
     }
 
     /// Returns the max depth of the tree.
-    pub fn compute_maxdepth(&self) -> usize {
+    pub fn compute_maxdepth(&self) -> Depth {
         self.get_root().borrow().data.compute_subtree_maxdepth()
     }
 
     /// Returns the min depth of the tree.
-    pub fn compute_mindepth(&self) -> usize {
+    pub fn compute_mindepth(&self) -> Depth {
         self.get_root().borrow().data.compute_subtree_mindepth()
     }
 
     /// Recompute all stats.
     fn compute_stats(&mut self) {
         self.size = self.compute_size();
-        self.maxdepth = self.compute_maxdepth() as u16;
-        self.mindepth = self.compute_mindepth() as u16;
+        self.maxdepth = self.compute_maxdepth();
+        self.mindepth = self.compute_mindepth();
     }
 
     pub fn get_root(&self) -> RtNodeRef {
@@ -217,11 +225,11 @@ impl Tree {
         self.size
     }
 
-    pub fn mindepth(&self) -> u16 {
+    pub fn mindepth(&self) -> Depth {
         self.mindepth
     }
 
-    pub fn maxdepth(&self) -> u16 {
+    pub fn maxdepth(&self) -> Depth {
         self.maxdepth
     }
 }
@@ -526,20 +534,20 @@ impl NodeData {
             .sum::<usize>()
     }
 
-    pub fn compute_subtree_maxdepth(&self) -> usize {
+    pub fn compute_subtree_maxdepth(&self) -> Depth {
         self.branches()
             .iter()
-            .map(|b| 1 + b.node().borrow().data.compute_subtree_maxdepth())
+            .map(|b| b.node().borrow().data.compute_subtree_maxdepth() + 1)
             .max()
-            .unwrap_or(0)
+            .unwrap_or(Depth::MIN)
     }
 
-    pub fn compute_subtree_mindepth(&self) -> usize {
+    pub fn compute_subtree_mindepth(&self) -> Depth {
         self.branches()
             .iter()
-            .map(|b| 1 + b.node().borrow().data.compute_subtree_mindepth())
+            .map(|b| b.node().borrow().data.compute_subtree_mindepth() + 1)
             .min()
-            .unwrap_or(0)
+            .unwrap_or(Depth::MIN)
     }
 
     fn new_leaf() -> NodeData {
