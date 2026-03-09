@@ -4,7 +4,11 @@ use crate::{
     core::{
         Move,
         config::Configuration,
-        search::mcts::{MctsParts, node::Tree},
+        search::mcts::{
+            MctsParts,
+            node::{Tree, node_state::NodeSwitch},
+            select::Selector,
+        },
     },
     uci::sync,
 };
@@ -102,6 +106,46 @@ impl Worker {
                 self.mcts_state.tree = Tree::default();
                 Ok(())
             }
+            Command::MctsDebugTree => {
+                let tree = &self.mcts_state.tree;
+                let root = tree.get_root();
+                println!("({})", root.state());
+                match root.into_ct() {
+                    NodeSwitch::Leaf(_node) => {}
+                    NodeSwitch::Branching(node) => {
+                        for branch in node.borrow().branches() {
+                            let node = branch.node();
+                            let state = node.state();
+                            println!("* ({}) {}", state, branch.mov());
+                        }
+                    }
+                    NodeSwitch::Terminal(_node) => {}
+                    NodeSwitch::Evaluated(node) => {
+                        let root_visits = node.borrow().visits();
+                        for branch in node.borrow().branches() {
+                            let mov = branch.mov();
+                            let node = branch.node();
+                            let state = node.state();
+                            let node = node.borrow();
+                            let parts: &mcts::config::mcts::Parts =
+                                &self.mcts_parts.as_ref().unwrap();
+                            let selector = MctsParts::<{ mcts::config::MPV }>::selector(&parts);
+                            println!(
+                                "{} {: >9} {: <5} v {: >8.2}/{: <8} p {:.3} ~ {}",
+                                if tree.best_move() == Some(mov) { '*' } else { '-' },
+                                state.to_string(),
+                                mov.to_string(),
+                                node.value(),
+                                node.visits(),
+                                branch.policy(),
+                                selector.score(branch, root_visits)
+                            );
+                        }
+                    }
+                }
+
+                Ok(())
+            }
         }
     }
 }
@@ -137,4 +181,5 @@ pub enum Command {
     Configure(Arc<Mutex<Configuration>>),
     Ponder,
     ResetState,
+    MctsDebugTree,
 }

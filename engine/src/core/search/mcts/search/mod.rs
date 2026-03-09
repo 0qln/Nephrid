@@ -5,7 +5,7 @@ use crate::core::{
     depth::Depth,
     search::mcts::{
         back::Backpropagater,
-        eval::{Evaluation, Evaluator},
+        eval::{Evaluation, Evaluator, RawPolicy},
         limiter::{self, Limiter},
         node::{
             Branch, CtNodeRef, Tree,
@@ -278,9 +278,15 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                     };
 
                     // backpropagation for root
-                    if let Evaluation::Guess(guess) = eval {
-                        tree.set_policy_raw(node, &guess.policy);
-                    }
+                    let policy = match eval {
+                        Evaluation::Guess(guess) => guess.policy,
+                        _ => {
+                            // default to null policy, such that we can be sure the state advances
+                            // from here on.
+                            RawPolicy::null()
+                        }
+                    };
+                    let _ = tree.set_policy_raw(node, &policy);
 
                     self.selection.clear();
                 }

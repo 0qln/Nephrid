@@ -1,3 +1,5 @@
+use std::fmt;
+
 use super::*;
 
 pub struct UcbSelector {
@@ -35,6 +37,12 @@ impl Selector for UcbSelector {
 
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct Score(pub f32);
+
+impl fmt::Display for Score {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 impl_op!(-|x: Score| -> Score { Score(-x.0) });
 

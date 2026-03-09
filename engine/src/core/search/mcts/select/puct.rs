@@ -1,3 +1,7 @@
+use core::fmt;
+
+use crate::core::search::mcts::eval;
+
 use super::*;
 
 pub struct PuctSelector {
@@ -29,7 +33,12 @@ impl Selector for PuctSelector {
         // If this node has not yet been visited, we set the quality to 0 and rely
         // completely on exploration factor.
         let value = branch.node().borrow().value();
-        let exploitation = if n_i == 0. { 0. } else { value / n_i };
+        let exploitation = if n_i == 0. {
+            eval::Value::draw().v()
+        }
+        else {
+            value / n_i
+        };
 
         let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1. + n_i);
 
@@ -39,6 +48,12 @@ impl Selector for PuctSelector {
 
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct Score(pub f32);
+
+impl fmt::Display for Score {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 impl_op!(-|x: Score| -> Score { Score(-x.0) });
 

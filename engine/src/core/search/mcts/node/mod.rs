@@ -291,6 +291,12 @@ impl Branch {
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct Value(pub f32);
 
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl PartialOrd for Value {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
@@ -542,6 +548,8 @@ impl NodeData {
 }
 
 pub mod node_state {
+    use std::fmt;
+
     use super::{CtNodeRef, Node};
 
     #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
@@ -551,6 +559,17 @@ pub mod node_state {
         Branching,
         Terminal,
         Evaluated,
+    }
+
+    impl fmt::Display for NodeState {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                NodeState::Leaf => write!(f, "Leaf"),
+                NodeState::Branching => write!(f, "Branching"),
+                NodeState::Terminal => write!(f, "Terminal"),
+                NodeState::Evaluated => write!(f, "Evaluated"),
+            }
+        }
     }
 
     #[derive(Debug, Clone)]
@@ -743,7 +762,8 @@ impl Node<Evaluated> {
         for (branch, noise) in self.data.branches.iter_mut().zip(noise) {
             let norm_noise = noise / total;
             let policy = branch.policy();
-            branch.set_policy(policy * (1. - eps) + eps * norm_noise);
+            let new_policy = policy * (1. - eps) + eps * norm_noise;
+            branch.set_policy(new_policy);
         }
     }
 }

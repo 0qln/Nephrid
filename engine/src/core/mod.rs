@@ -131,6 +131,11 @@ pub fn execute_uci(
 
             Ok(())
         }
+        Some("mcts") => match tokenizer.next_token() {
+            Some("d") => Ok(engine.search_t.tx.send(Command::MctsDebugTree)?),
+            Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
+            None => unimplemented!(),
+        },
         Some("pgn") => {
             let pgn = engine.game.to_pgn();
             let str = format!("{pgn}");

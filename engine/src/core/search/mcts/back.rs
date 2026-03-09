@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::core::search::mcts::{
-    eval::Evaluation,
+    eval::{Evaluation, RawPolicy},
     node::Tree,
     search::{EvalItem, Selection, SelectionLeaf},
 };
@@ -44,16 +44,17 @@ impl Backpropagater for DefaultBackuper {
             ControlFlow::Continue::<(), ()>(())
         });
 
-        // If the eval was a guess, make sure to also set the policies of the selected
-        // leaf.
-        if let Evaluation::Guess(guess) = eval {
-            // Terminal nodes don't have trace data (leaf_data is None), so we only
-            // set policies for Branching leaf nodes!
-            if let Some(data) = &leaf.leaf_data {
-                let policy = &guess.policy;
-                let node = data.node.clone();
-                tree.set_policy_raw(node, policy);
-            }
+        // make sure to also set the policies of the selected leaf.
+        let policy = if let Evaluation::Guess(guess) = eval {
+            &guess.policy
+        }
+        else {
+            &RawPolicy::null()
+        };
+
+        if let Some(data) = &leaf.leaf_data {
+            let node = data.node.clone();
+            tree.set_policy_raw(node, &policy);
         }
     }
 }
