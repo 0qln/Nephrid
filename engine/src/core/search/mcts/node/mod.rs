@@ -636,6 +636,13 @@ pub mod node_state {
                 ExpandedRefSwitch::Branching(x) => Some(x),
             }
         }
+
+        pub fn terminal(&self) -> Option<&CtNodeRef<Terminal>> {
+            match self {
+                ExpandedRefSwitch::Terminal(x) => Some(x),
+                ExpandedRefSwitch::Branching(_) => None,
+            }
+        }
     }
 
     pub trait Any {}
@@ -707,6 +714,11 @@ impl Node<Leaf> {
     /// Expand the node, consuming the Leaf.
     /// variant.
     pub(self) fn expand(mut self, pos: &Position) -> ExpandedSwitch {
+        if pos.game_result().is_some() {
+            // SAFETY: If there's a gameresult, we can be sure that this is a terminal node.
+            return ExpandedSwitch::Terminal(unsafe { Node::<Terminal>::new(self.data) });
+        }
+
         _ = fold_legal_moves(pos, &mut self.data.branches, |acc, m| {
             ControlFlow::Continue::<(), _>({
                 acc.push(Branch::new(
