@@ -247,7 +247,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             match tree.get_root().into_ct() {
                 // If the root is a leaf, expand and transition to next phase.
                 NodeSwitch::Leaf(node) => {
-                    let _ = tree.expand_node(node, &self.position, Depth::new(1).v().into());
+                    let _ = tree.expand_node(node, &self.position, Depth::ROOT.v().into());
                 }
                 // If the root is branching, evaluate and transition to next phase.
                 NodeSwitch::Branching(node) => {
@@ -317,7 +317,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         let eval_data = self.evaluator.trace(root.clone(), &self.position);
 
         let sel_root_id = self.selection.init_root(root.clone(), turn, eval_data);
-        self.pick_branches(MPV, 0, Depth::MIN, root, tree, sel_root_id);
+        self.pick_branches(MPV, 0, Depth::ROOT, root, tree, sel_root_id);
     }
 
     fn pick_branches(
