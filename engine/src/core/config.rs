@@ -224,6 +224,11 @@ pub struct Configuration {
 
     /// Whether to keep the game tree in between `go`-commands.
     game_tree_caching: ConfigOption<Check>,
+
+    /// Assumed lag between the GUI starting the engine's clock, the engine
+    /// receiving the go command, and the engine actually starting the
+    /// search. (in ms)
+    gui_lag: ConfigOption<Spin>,
 }
 
 impl Default for Configuration {
@@ -242,6 +247,7 @@ impl Default for Configuration {
             ),
             weights_path: ConfigOption::new("Weights Path", StringOption::new("./weights")),
             game_tree_caching: ConfigOption::new("Game tree caching", Check::new(true)),
+            gui_lag: ConfigOption::new("Gui Lag", Spin::new(500, 1, 10_000)),
         }
     }
 }
@@ -273,6 +279,10 @@ impl Configuration {
         self.game_tree_caching.value
     }
 
+    pub fn gui_lag(&self) -> u16 {
+        self.gui_lag.value as u16
+    }
+
     // Setter
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -284,6 +294,7 @@ impl Configuration {
             "[dirichlet noise] epsilon" | "dirichlet epsilon" => self.dirichlet_epsilon.set(value),
             "weights path" => Ok(self.weights_path.set(value)),
             "game tree caching" => self.game_tree_caching.set(value),
+            "gui lag" => self.gui_lag.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -296,6 +307,7 @@ impl Configuration {
         sync::out(&format!("{}", self.dirichlet_epsilon));
         sync::out(&format!("{}", self.weights_path));
         sync::out(&format!("{}", self.game_tree_caching));
+        sync::out(&format!("{}", self.gui_lag));
     }
 }
 

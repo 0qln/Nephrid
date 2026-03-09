@@ -169,6 +169,9 @@ pub fn execute_uci(
                 let mut mode = Mode::default();
                 let mut limit = Limit::default();
 
+                let config = engine.config.lock().expect("Config dead :(");
+                limit.lag_buf = config.gui_lag();
+
                 while let Some(token) = tokenizer.next_token() {
                     match token {
                         "perft" => mode = Mode::Perft,

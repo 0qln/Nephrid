@@ -21,6 +21,7 @@ pub struct Limit {
     pub depth: Depth,
     pub iterations: u64,
     pub search_moves: Vec<Move>,
+    pub lag_buf: u16,
 }
 
 impl Limit {
@@ -38,6 +39,7 @@ impl Limit {
             depth: Depth::MAX,
             iterations: u64::MAX,
             search_moves: vec![],
+            lag_buf: 0,
         }
     }
 
@@ -53,14 +55,12 @@ impl Limit {
             _ => unreachable!(),
         };
 
-        let lag_buf = 500;
-
         // assume that no game will be longer than 50 moves.
         let moves_to_go = min(self.movestogo, 50) as u64;
         let time_per_move = time / moves_to_go + inc;
         let time_per_move = min(time_per_move, self.movetime);
 
-        let result = time_per_move.saturating_sub(lag_buf);
+        let result = time_per_move.saturating_sub(self.lag_buf.into());
 
         Duration::from_millis(result)
     }
@@ -95,6 +95,7 @@ impl Default for Limit {
             depth: Depth::MAX,
             iterations: u64::MAX,
             search_moves: vec![],
+            lag_buf: 500,
         }
     }
 }
