@@ -1,6 +1,7 @@
 use std::{
     cmp::min,
     time::{Duration, Instant},
+    u16,
 };
 
 use crate::core::{color::colors, depth::Depth, r#move::Move, position::Position};
@@ -30,7 +31,7 @@ impl Limit {
             btime: u64::MAX,
             winc: u64::MAX,
             binc: u64::MAX,
-            movestogo: 0,
+            movestogo: u16::MAX,
             nodes: u64::MAX,
             movetime: u64::MAX,
             mate: Depth::MAX,
@@ -54,7 +55,9 @@ impl Limit {
 
         let lag_buf = 500;
 
-        let time_per_move = time / 50 + inc;
+        // assume that no game will be longer than 50 moves.
+        let moves_to_go = min(self.movestogo, 50) as u64;
+        let time_per_move = time / moves_to_go + inc;
         let time_per_move = min(time_per_move, self.movetime);
 
         let result = time_per_move.saturating_sub(lag_buf);
@@ -85,7 +88,7 @@ impl Default for Limit {
             btime: u64::MAX,
             winc: 0,
             binc: 0,
-            movestogo: 0,
+            movestogo: u16::MAX,
             nodes: u64::MAX,
             movetime: u64::MAX,
             mate: Depth::MAX,
