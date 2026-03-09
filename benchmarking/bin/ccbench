@@ -8,7 +8,7 @@ out="$4"
 cutechess-cli \
     -engine cmd="$engine1" name="$engine1" \
     -engine cmd="$engine2" name="$engine2" \
-    -each proto=uci tc=40/60 \
+    -each proto=uci tc=20/20 \
     -rounds 200 \
     -concurrency 6 \
     -openings file="$openings" \
