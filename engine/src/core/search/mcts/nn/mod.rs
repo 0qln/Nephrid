@@ -174,7 +174,7 @@ pub fn state_input(pos: &Position) -> StateInputFloats {
         castling.get_float(castling_sides::KING_SIDE, them),
         castling.get_float(castling_sides::QUEEN_SIDE, them),
         // todo: figure out what the right scale is. maybe make it dependent on the max depth at
-        // which the limiter stops the mcts search?
+        // which the limiter stops the mcts search? maybe just a sigmoid or something?
         pos.plys_50().v as f32 / 50.0,
     ]
 }
