@@ -32,7 +32,7 @@ impl DirichletNoiser {
     }
 
     pub fn gamma(&self) -> Result<Gamma<f32>, DirichletNoiseError> {
-        let alpha = self.alpha.into();
+        let alpha = self.alpha;
         Gamma::new(alpha, 1.).map_err(|_| DirichletNoiseError::BadAlpha(alpha))
     }
 }

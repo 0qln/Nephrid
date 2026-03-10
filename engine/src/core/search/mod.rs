@@ -58,6 +58,12 @@ pub enum ExecError {
     RuntimeError(Box<dyn Error>),
 }
 
+impl Default for Worker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Worker {
     pub fn new() -> Self {
         let mcts_state = mcts::SearchState::default();
@@ -77,10 +83,7 @@ impl Worker {
 
                 let result = mcts(&mut pos, parts, state, limit, debug, ct, MctsUci::default());
 
-                match result {
-                    None => todo!("Log error or something: got no result from mcts search."),
-                    Some(_) => {}
-                };
+                if result.is_none() { todo!("Log error or something: got no result from mcts search.") };
 
                 Ok(())
             }
@@ -128,7 +131,7 @@ impl Worker {
                             let state = node.state();
                             let node = node.borrow();
                             let parts: &mcts::config::mcts::Parts =
-                                &self.mcts_parts.as_ref().unwrap();
+                                self.mcts_parts.as_ref().unwrap();
                             let selector = MctsParts::<{ mcts::config::MPV }>::selector(&parts);
                             println!(
                                 "{} {: >9} {: <5} v {: >8.2}/{: <8} p {:.3} ~ {}",

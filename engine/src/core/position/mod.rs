@@ -824,7 +824,7 @@ impl Position {
     }
 
     pub fn state_info(&self) -> &StateInfo {
-        &self.state.get_current()
+        self.state.get_current()
     }
 }
 

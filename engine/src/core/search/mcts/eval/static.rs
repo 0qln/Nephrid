@@ -302,7 +302,7 @@ impl From<&EvalInfo> for RawPolicy {
             let piece = pos.get_piece(from).piece_type();
             let score = PolicyInput::psqt(phase, piece, from, to, color)
                 + PolicyInput::mvv_lva(pos, mov)
-                + PolicyInput::meta(pos, mov, &state);
+                + PolicyInput::meta(pos, mov, state);
 
             policy.set(usize::from(mov), score as f32);
         }
@@ -338,7 +338,7 @@ impl EvalInfo {
         Self {
             pos: pos.piece_info().clone(),
             state: pos.state_info().clone(),
-            phase: TaperValue::from_position(&pos),
+            phase: TaperValue::from_position(pos),
             node,
             turn: pos.get_turn(),
         }

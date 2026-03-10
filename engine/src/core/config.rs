@@ -289,10 +289,16 @@ impl Configuration {
         match name.to_lowercase().as_str() {
             "hash" => self.hash.set(value),
             "threads" => self.threads.set(value),
-            "clear hash" | "clearhash" => Ok(self.clear_hash.trigger()),
+            "clear hash" | "clearhash" => {
+                self.clear_hash.trigger();
+                Ok(())
+            },
             "[dirichlet noise] alpha" | "dirichlet alpha" => self.dirichlet_alpha.set(value),
             "[dirichlet noise] epsilon" | "dirichlet epsilon" => self.dirichlet_epsilon.set(value),
-            "weights path" => Ok(self.weights_path.set(value)),
+            "weights path" => {
+                self.weights_path.set(value);
+                Ok(())
+            },
             "game tree caching" => self.game_tree_caching.set(value),
             "gui lag" => self.gui_lag.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),

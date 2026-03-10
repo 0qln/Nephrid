@@ -1199,6 +1199,12 @@ impl Selector for TrainSelector {
 #[derive(Module, Debug, Clone)]
 pub struct KLDivergenceLoss {}
 
+impl Default for KLDivergenceLoss {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KLDivergenceLoss {
     pub fn new() -> Self {
         Self {}

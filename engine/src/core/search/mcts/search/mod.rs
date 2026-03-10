@@ -226,13 +226,13 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             match tree.get_root().into_ct() {
                 // If the root is a leaf, expand and transition to next phase.
                 NodeSwitch::Leaf(node) => {
-                    let _ = tree.expand_node(node, &self.position, Depth::ROOT);
+                    let _ = tree.expand_node(node, self.position, Depth::ROOT);
                 }
                 // If the root is branching, evaluate and transition to next phase.
                 NodeSwitch::Branching(node) => {
                     // init selection
                     let turn = self.position.get_turn();
-                    let trace_data = self.evaluator.trace(node.clone(), &self.position);
+                    let trace_data = self.evaluator.trace(node.clone(), self.position);
                     self.selection.clear();
                     self.selection.set(
                         0,
@@ -296,7 +296,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             _ => panic!("Root must be evaluated before selecting lines! Did you call init_root?"),
         };
 
-        let eval_data = self.evaluator.trace(root.clone(), &self.position);
+        let eval_data = self.evaluator.trace(root.clone(), self.position);
 
         let sel_root_id = self.selection.init_root(root.clone(), turn, eval_data);
         self.pick_branches(MPV, 0, Depth::ROOT, root, tree, sel_root_id);
@@ -362,7 +362,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 self.select_branching(line_index, parent_sel_id, node, depth)
             }
             NodeSwitch::Evaluated(node) => {
-                let trace_data = self.evaluator.trace(node.clone(), &self.position);
+                let trace_data = self.evaluator.trace(node.clone(), self.position);
                 let child_id =
                     self.selection
                         .append_parent(parent_sel_id, node.clone(), turn, trace_data);
@@ -386,7 +386,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         tree: &mut Tree,
         depth: Depth,
     ) -> usize {
-        let expanded = tree.expand_node(node, &self.position, depth);
+        let expanded = tree.expand_node(node, self.position, depth);
 
         match expanded {
             ExpandedRefSwitch::Terminal(node) => {
@@ -404,7 +404,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         parent_id: NodeId,
         node: CtNodeRef<Terminal>,
     ) -> usize {
-        let eval = E::eval_terminal(node.clone(), &self.position);
+        let eval = E::eval_terminal(node.clone(), self.position);
         self.selection.set(
             line_index,
             PhaseItem::Terminal(SelNode {

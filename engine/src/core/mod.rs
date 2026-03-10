@@ -366,8 +366,7 @@ pub fn execute_uci(
             let dur = tokenizer
                 .next_token()
                 .map(&str::parse::<u64>)
-                .map(Result::ok)
-                .flatten()
+                .and_then(Result::ok)
                 .unwrap_or(5);
             let dur = time::Duration::from_secs(dur);
             thread::sleep(dur);
