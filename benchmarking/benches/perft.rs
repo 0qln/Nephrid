@@ -1,4 +1,7 @@
-use std::fmt::{self, Display, Formatter};
+use std::{
+    fmt::{self, Display, Formatter},
+    time::Duration,
+};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::{
@@ -26,17 +29,16 @@ fn run(c: &mut Criterion, name: &str, Pair(fen, depth): Pair<&str, Depth>) {
 
     let mut group = c.benchmark_group("perft");
 
-    group.sample_size(10).bench_with_input(
-        BenchmarkId::new(name, Pair(fen, depth)),
-        &fen,
-        |b, fen| {
+    group
+        .measurement_time(Duration::from_secs(60))
+        .sample_size(50)
+        .bench_with_input(BenchmarkId::new(name, Pair(fen, depth)), &fen, |b, fen| {
             b.iter_batched(
                 || Position::from_fen(fen).unwrap(),
                 |pos| bench_perft(pos, depth),
                 criterion::BatchSize::LargeInput,
             )
-        },
-    );
+        });
 }
 
 pub fn perft_0(c: &mut Criterion) {
