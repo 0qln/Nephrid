@@ -11,7 +11,6 @@ use engine::{
 };
 
 fn bench_perft(pos: Position, depth: Depth) {
-    println!("{pos:?}");
     let limit = Limit { depth, ..Default::default() };
     _ = engine::core::search::perft::perft(
         pos,
@@ -21,15 +20,19 @@ fn bench_perft(pos: Position, depth: Depth) {
     );
 }
 
-fn run(c: &mut Criterion, name: &str, pairs: &[Pair<&str, Depth>]) {
+fn run(c: &mut Criterion, name: &str, data: &[Pair<&str, Depth>]) {
     magics::init();
     zobrist::init();
 
-    for p in pairs {
-        let pos = Position::from_fen(p.0).unwrap();
-        c.bench_with_input(BenchmarkId::new(name, p), &pos, |b, x| {
-            b.iter(|| bench_perft(x.clone(), p.1))
-        });
+    for &Pair(fen, depth) in data {
+        c.bench_with_input(BenchmarkId::new(name, Pair(fen, depth)), &fen, |b, fen| {
+            b.iter_batched(
+                || Position::from_fen(fen).unwrap(),
+                |pos| bench_perft(pos, depth),
+                criterion::BatchSize::LargeInput,
+            )
+        })
+        .sample_size(10);
     }
 }
 
