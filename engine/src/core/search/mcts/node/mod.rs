@@ -626,6 +626,14 @@ pub mod node_state {
         Terminal(CtNodeRef<Terminal>),
         Evaluated(CtNodeRef<Evaluated>),
     }
+    impl NodeSwitch {
+        pub fn evaluated(&self) -> Option<&CtNodeRef<Evaluated>> {
+            match self {
+                NodeSwitch::Evaluated(x) => Some(x),
+                _ => None,
+            }
+        }
+    }
 
     #[derive(Debug)]
     pub enum ExpandedSwitch {

@@ -125,7 +125,7 @@ pub fn learn_mate_in_1() {
     // test
     let test_fen = FenDataset::new("mate_in_1.edp", "train");
     let fen = Dataset::<FenItemRaw>::get(&test_fen, 0).expect("no fen in dataset");
-    let pos = Position::from_fen(&fen.fen).expect("Bad fen");
+    let mut pos = Position::from_fen(&fen.fen).expect("Bad fen");
     let result = {
         let record = CompactRecorder::new()
             .load(result_weights.into(), &device)
@@ -150,7 +150,7 @@ pub fn learn_mate_in_1() {
         let ct = CancellationToken::new();
 
         mcts(
-            &pos,
+            &mut pos,
             &nn_state,
             &mut mcts_state,
             limit.clone(),
@@ -229,7 +229,7 @@ pub fn learn_mate_in_2() {
 
         // us/mov-1
         let result = mcts(
-            &pos,
+            &mut pos,
             &nn_state,
             &mut mcts_state,
             limit.clone(),
@@ -243,7 +243,7 @@ pub fn learn_mate_in_2() {
 
         // them/mov-1
         let result = mcts(
-            &pos,
+            &mut pos,
             &nn_state,
             &mut mcts_state,
             limit.clone(),
@@ -257,7 +257,7 @@ pub fn learn_mate_in_2() {
 
         // us/mov-2
         let result = mcts(
-            &pos,
+            &mut pos,
             &nn_state,
             &mut mcts_state,
             limit.clone(),
@@ -269,7 +269,13 @@ pub fn learn_mate_in_2() {
         pos.make_move(mov);
         mcts_state.tree.advance_to(|b| b.mov() == mov);
 
-        result.1.get_root().borrow().iter_branches().count()
+        let root = mcts_state.tree.get_root();
+        let root = root.into_ct();
+        let root = root.evaluated().expect("Root should be evaluated");
+        let root = root.borrow();
+
+        let branches = root.branches();
+        branches.iter().count()
     };
 
     // result should be a mating position

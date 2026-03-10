@@ -189,6 +189,10 @@ impl RawPolicy {
     pub fn iter(&self) -> impl Iterator<Item = f32> {
         self.0.iter().cloned()
     }
+
+    pub fn inner_mut(&mut self) -> &mut [f32] {
+        &mut self.0
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]

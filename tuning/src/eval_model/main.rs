@@ -1,16 +1,16 @@
 #![feature(assert_matches)]
+use engine::core::search::mcts::eval::normalize;
 
-// use std::env::var;
 use burn::{nn::loss::BinaryCrossEntropyLossConfig, train::MultiLabelClassificationOutput};
 use engine::core::{
     config::Configuration,
     search::mcts::{
         CreateNNPartsError, MctsParts, SearchState,
-        back::{Backpropagater, DefaultBackuper},
-        eval::{Evaluation, Evaluator, GameResult, Guess, RawPolicy, nn::NNEvaluator},
+        back::DefaultBackuper,
+        eval::{GameResult, Guess, RawPolicy, nn::NNEvaluator},
         mcts,
         nn::{BOARD_INPUT_HISTORY, POLICY_OUTPUTS, board_history_input},
-        node::{Branch, Node, Value},
+        node::{Branch, Value},
         select::puct,
         strategy::{MctsFindBest, MctsStrategy},
     },
@@ -65,7 +65,6 @@ use engine::{
                 },
                 node::Tree,
                 noise::DirichletNoiser,
-                search::SelectionNodeRef,
                 select::Selector,
             },
         },
@@ -888,15 +887,22 @@ struct ExactLossTarget {
     raw_policy: RawPolicy,
 }
 
-impl<'a> From<&'a Tree> for ExactLossTarget {
-    fn from(tree: &'a Tree) -> Self {
+impl From<&Tree> for ExactLossTarget {
+    fn from(tree: &Tree) -> Self {
         Self {
             raw_policy: {
+                let root = tree.get_root();
+                let root = root.into_ct();
+                let root = root.evaluated().expect("Root should be evaluated");
+                let root = root.borrow();
+
+                let branches = root.branches();
+
                 let mut raw_policy = RawPolicy::null();
-                for branch in tree.get_root().borrow().iter_branches() {
+                for branch in branches.iter() {
                     raw_policy.set(usize::from(branch.mov()), branch.visits() as f32);
                 }
-                raw_policy.normalize();
+                normalize(raw_policy.inner_mut());
                 raw_policy
             },
         }
@@ -1003,7 +1009,7 @@ where
             }
             let turn = pos.get_turn();
             let result = mcts(
-                &pos,
+                &mut pos,
                 &nn_state,
                 &mut mcts_state,
                 limit.clone(),
@@ -1015,10 +1021,8 @@ where
             let mov = result.0;
             let tree = result.1;
 
-            if let Some(Evaluation::Terminal(x)) =
-                NNEvaluator::<B, 1>::eval_terminal(&tree.get_root().borrow(), &pos)
-            {
-                game_result = x;
+            if let Some(result) = pos.game_result() {
+                game_result = result;
                 break;
             }
 
@@ -1080,10 +1084,10 @@ pub struct TrainParts<B: Backend> {
     epsilon: f32,
 }
 
-impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a TrainParts<B> {
+impl<'a, B: Backend> MctsParts for &'a TrainParts<B> {
     type Selector = TrainSelector;
-    type Backprop = TrainBackprop;
-    type Evaluator = NNEvaluator<'a, 'a, B, X>;
+    type Backprop = DefaultBackuper;
+    type Evaluator = NNEvaluator<'a, 'a, B>;
     type Noiser = DirichletNoiser;
     type Instance = TrainParts<B>;
 
@@ -1092,7 +1096,7 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a TrainParts<B> {
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        NNEvaluator::<_, X>::new(&self.nn, &self.device)
+        NNEvaluator::<_>::new(&self.nn, &self.device)
     }
 
     fn backprop(&self) -> Self::Backprop {
@@ -1172,24 +1176,24 @@ impl Selector for TrainSelector {
     }
 }
 
-#[derive(Default)]
-pub struct TrainBackprop {
-    default: DefaultBackuper,
-}
+// #[derive(Default)]
+// pub struct TrainBackprop {
+//     default: DefaultBackuper,
+// }
 
-impl Backpropagater for TrainBackprop {
-    fn update(_node: &mut Node, _value: f32) {
-        ()
-    }
+// impl Backpropagater for TrainBackprop {
+//     fn update(_node: &mut Node, _value: f32) {
+//         ()
+//     }
 
-    fn backpropagate<T>(&self, leaf: SelectionNodeRef<T>, eval: &Evaluation) {
-        // default backup
-        self.default.backpropagate(leaf.clone(), eval);
+//     fn backpropagate<T>(&self, leaf: SelectionNodeRef<T>, eval: &Evaluation)
+// {         // default backup
+//         self.default.backpropagate(leaf.clone(), eval);
 
-        // update our diagnostics or something ...
-        if let Evaluation::Terminal(_result) = eval {}
-    }
-}
+//         // update our diagnostics or something ...
+//         if let Evaluation::Terminal(_result) = eval {}
+//     }
+// }
 
 /// Calculate the KL divergence loss from predictions and probabilistic targets.
 #[derive(Module, Debug, Clone)]
