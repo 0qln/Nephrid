@@ -1,337 +1,327 @@
-use itertools::Itertools;
-use rand::{rng, Rng};
-use std::assert_matches::assert_matches;
-use std::cmp::Ordering;
-use std::fmt;
-use std::ops::{AddAssign, ControlFlow};
-use std::ptr::NonNull;
+use burn::prelude::Backend;
+use rand::{SeedableRng, rngs::SmallRng};
+use thiserror::Error;
 
-use crate::core::move_iter::king::King;
-use crate::core::piece::IPieceType;
-use crate::core::r#move::MoveList;
-use crate::core::{color::Color, move_iter::fold_legal_moves, position::Position, r#move::Move};
+use crate::{
+    core::{
+        Limit,
+        config::Configuration,
+        position::Position,
+        search::mcts::{
+            back::{Backpropagater, DefaultBackuper},
+            eval::{
+                Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator, r#static::StaticEvaluator,
+            },
+            limiter::DefaultLimiter,
+            nn::{LoadNNError, Model},
+            node::Tree,
+            noise::{DirichletNoiser, Noiser, NullNoiser},
+            search::TreeSearcher,
+            select::{Selector, puct::PuctSelector, ucb::UcbSelector},
+            strategy::MctsStrategy,
+        },
+    },
+    misc::DebugMode,
+    uci::sync::CancellationToken,
+};
 
-#[cfg(test)]
-mod test;
+use std::{path::PathBuf, time::Instant};
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum PlayoutResult {
-    Win { relative_to: Color },
-    Draw,
+pub mod back;
+pub mod eval;
+pub mod limiter;
+pub mod nn;
+pub mod node;
+pub mod noise;
+pub mod search;
+pub mod select;
+pub mod strategy;
+
+pub mod test;
+
+pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
+    pos: &mut Position,
+    parts: P,
+    state: &mut M,
+    limit: Limit,
+    _debug: DebugMode,
+    ct: CancellationToken,
+    mut strategy: S,
+) -> S::Result {
+    let limiter = DefaultLimiter::new(limit.clone());
+
+    let time_per_move = limit.time_per_move(pos);
+    let time_limit = Instant::now() + time_per_move;
+    let tree = state.tree();
+    let mut iterations = 0;
+
+    strategy.start(tree);
+
+    let nodes_begin = tree.size() as u64;
+
+    let mut searcher = TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new(
+        pos,
+        parts.selector(),
+        limiter.clone(),
+        parts.evaluator(),
+        parts.backprop(),
+        parts.noiser(),
+    );
+
+    searcher.init_root(tree);
+
+    while !(ct.is_cancelled()
+        || limit.is_active()
+            && limit.is_reached(
+                tree.size() as u64 - nodes_begin,
+                Instant::now(),
+                time_limit,
+                iterations,
+            ))
+    {
+        searcher.grow(tree);
+        strategy.step(tree);
+        iterations += 1;
+    }
+
+    strategy.result(state.tree())
 }
 
-impl PlayoutResult {
-    pub fn maybe_new(pos: &Position, move_cnt: u8) -> Option<Self> {
-        if pos.has_threefold_repetition() || pos.fifty_move_rule() {
-            return Some(Self::Draw);
-        }
+pub trait MctsParts<const X: usize = { config::MPV }> {
+    type Selector: Selector;
+    type Evaluator: Evaluator;
+    type Backprop: Backpropagater;
+    type Noiser: Noiser;
+    type Instance: for<'a> TryFrom<&'a Configuration>;
 
-        if move_cnt == 0 {
-            return Some({
-                let us = pos.get_turn();
-                let king = pos.get_bitboard(King::ID, us);
-                let nstm_attacks = pos.get_nstm_attacks();
-                let in_check = !(king & nstm_attacks).is_empty();
-                if in_check {
-                    // If in check and no moves, it's a loss for the current player
-                    Self::Win { relative_to: !us }
-                }
-                else {
-                    Self::Draw
-                }
-            });
-        }
-
-        None
-    }
+    fn selector(&self) -> Self::Selector;
+    fn evaluator(&self) -> Self::Evaluator;
+    fn backprop(&self) -> Self::Backprop;
+    fn noiser(&self) -> Self::Noiser;
 }
 
-#[derive(Default, Debug, Clone)]
-pub struct Tree {
-    /// Root of the tree.
-    root: Node,
-
-    /// Stack of nodes that were selected during the selection phase.
-    selection_buffer: Vec<NonNull<Node>>,
-
-    /// Buffers used during simulation.
-    simulation_stack_buffer: Vec<Move>,
-    simulation_moves_buffer: MoveList,
+pub trait MctsState {
+    fn tree(&mut self) -> &mut Tree;
 }
 
-impl Tree {
-    pub fn new(pos: &Position) -> Self {
-        let root = Node::root(pos);
-        Self { root, ..Default::default() }
-    }
+// todo:
+// instead of storing the gametree in between moves, try using bump-allocation
+// to allocate all the nodes. Maybe the speed up is better than storing the
+// compute? (We can't do both, since with bump allocation we either would have
+// to move the subtree to a new `Bump`, or we would just not be
+// able to deallocate the unused nodes. If our search is *that* slow that we
+// aren't even using that much memory for the Tree, maybe just risc having a
+// huge memory leak for each `ucinewgame` then :3 idk) or copy all the used
+// nodes to a new bump arena... you'd have to do that node by node which could
+// be really slow. <todo:benchmark />
+//
+/// # The search state.
+///
+/// Either we have ownership of a search-tree, or we have the join handle of the
+/// thread that will give us back the ownership of the search-tree.
+///
+/// (An option because maybe we just started something else like perft or some
+/// sht)
+#[derive(Default, Debug)]
+pub struct SearchState {
+    /// The game tree.
+    pub tree: Tree,
+}
 
-    pub fn best_move(&self) -> Option<Move> {
-        if self.root.children.iter().any(|n| n.score.v().is_none()) {
-            return None;
-        }
-        Some(
-            self.root
-                .children
-                .iter()
-                .max_by(|a, b| {
-                    a.score
-                        .partial_cmp(&b.score)
-                        .expect("not all root nodes have been searched yet")
-                })
-                .expect("Root need's to have children.")
-                .mov,
-        )
-    }
-
-    pub fn dbg(&self) {
-        println!("root: {:#?}", self.root);
-        println!("\r\n");
-    }
-
-    pub fn grow(&mut self, pos: &mut Position) {
-        self.select_leaf_mut(pos);
-        let leaf = unsafe { self.selected_leaf().as_mut() };
-        let result = leaf.simulate(
-            pos,
-            &mut self.simulation_stack_buffer,
-            &mut self.simulation_moves_buffer,
-            &mut rng(),
-        );
-        self.backpropagate(pos, result);
-    }
-
-    pub fn selected_leaf(&mut self) -> NonNull<Node> {
-        *self
-            .selection_buffer
-            .last_mut()
-            .expect("This is only None, if root.state == Leaf, which is not the case.")
-    }
-
-    pub fn advance(&mut self, mov: Move) {
-        self.root = self
-            .root
-            .children
-            .iter()
-            .find(|n| n.mov == mov)
-            .unwrap()
-            .clone();
-    }
-
-    fn backpropagate(&mut self, pos: &mut Position, result: PlayoutResult) {
-        unsafe {
-            for node in self.selection_buffer.iter_mut().rev().map(|n| n.as_mut()) {
-                pos.unmake_move(node.mov);
-                node.score += (result, pos.get_turn());
-            }
-        }
-        self.root.score += (result, pos.get_turn());
-    }
-
-    pub fn select_leaf_mut(&mut self, pos: &mut Position) {
-        self.selection_buffer.clear();
-        let mut current = unsafe { NonNull::from_ref(&self.root).as_mut() };
-        loop {
-            match current.state {
-                NodeState::Branch => {
-                    current = current.select_mut();
-                    pos.make_move(current.mov);
-                    self.selection_buffer.push(NonNull::from_ref(current));
-                }
-                NodeState::Leaf if current.score.playouts != 0 => {
-                    current.expand(pos);
-                }
-                NodeState::Leaf | NodeState::Terminal => {
-                    break;
-                }
-            }
-        }
+impl MctsState for SearchState {
+    fn tree(&mut self) -> &mut Tree {
+        &mut self.tree
     }
 }
 
-#[derive(Debug, Default, Clone)]
-struct Score {
-    playouts: u32,
-    wins: f32,
+/// Mcts parts for mcts with puct + nn analysis.
+#[derive(Debug)]
+pub struct NNParts<B: Backend> {
+    /// NN Model
+    pub nn: Box<Model<B>>,
+
+    /// Hardware abstraction for the nn model
+    pub device: B::Device,
+
+    // Noiser
+    alpha: f32,
+    epsilon: f32,
 }
 
-impl Score {
-    pub fn v(&self) -> Option<f32> {
-        match self.playouts {
-            0 => None,
-            _ => Some(self.wins / self.playouts as f32),
-        }
+impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
+    type Selector = PuctSelector;
+    type Evaluator = NNEvaluator<'a, 'a, B>;
+    type Backprop = DefaultBackuper;
+    type Noiser = DirichletNoiser;
+    type Instance = NNParts<B>;
+
+    fn selector(&self) -> Self::Selector {
+        PuctSelector::default()
+    }
+
+    fn evaluator(&self) -> Self::Evaluator {
+        NNEvaluator::new(&self.nn, &self.device)
+    }
+
+    fn backprop(&self) -> Self::Backprop {
+        Default::default()
+    }
+
+    fn noiser(&self) -> Self::Noiser {
+        let rng = SmallRng::from_os_rng();
+        DirichletNoiser::new(self.alpha, self.epsilon, rng)
     }
 }
 
-impl AddAssign<(PlayoutResult, Color)> for Score {
-    #[inline(always)]
-    fn add_assign(&mut self, rhs: (PlayoutResult, Color)) {
-        self.playouts += 1;
-        self.wins += match rhs.0 {
-            PlayoutResult::Win { relative_to } if relative_to == rhs.1 => 1.0,
-            PlayoutResult::Win { relative_to: _ } => 0.0,
-            PlayoutResult::Draw => 0.5,
-        };
+#[derive(Error, Debug)]
+pub enum CreateNNPartsError {
+    #[error("Error while creating nn-parts: {0}")]
+    LoadNNError(LoadNNError),
+}
+
+impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
+    type Error = CreateNNPartsError;
+
+    fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
+        let alpha = config.dirichlet_alpha();
+        let epsilon = config.dirichlet_epsilon();
+        let weights = PathBuf::from(config.weights_path());
+        let device = B::Device::default();
+        let nn = Model::try_from((weights, &device)).map_err(Self::Error::LoadNNError)?;
+        Ok(Self::new(nn, device, alpha, epsilon))
     }
 }
 
-impl PartialEq for Score {
-    fn eq(&self, other: &Self) -> bool {
-        self.v().eq(&other.v())
-    }
-}
-
-impl PartialOrd for Score {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.v()?.partial_cmp(&other.v()?)
-    }
-}
-
-#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
-enum NodeState {
-    Leaf,
-    Branch,
-    #[default]
-    Terminal,
-}
-
-#[derive(Clone, Default)]
-pub struct Node {
-    score: Score,
-    mov: Move,
-    state: NodeState,
-    children: Vec<Self>,
-}
-
-impl fmt::Debug for Node {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Node")
-            .field("score", &self.score)
-            .field("mov", &self.mov)
-            .field("state", &self.state)
-            .field(
-                "children",
-                &self
-                    .children
-                    .iter()
-                    .filter(|c| c.score.playouts != 0)
-                    .collect_vec(),
-            )
-            .finish()
-    }
-}
-
-impl Node {
-    pub fn root(pos: &Position) -> Self {
-        let mut children = Vec::new();
-        let _ = fold_legal_moves(pos, &mut children, |acc, m| {
-            ControlFlow::Continue::<(), _>({
-                acc.push(Node::leaf(m));
-                acc
-            })
-        });
-        assert!(
-            !children.is_empty(),
-            "A root node cannot be a terminal node."
-        );
-
+impl<B: Backend> NNParts<B> {
+    pub fn new(nn: Model<B>, device: B::Device, alpha: f32, epsilon: f32) -> Self {
         Self {
-            score: Score::default(),
-            mov: Move::null(),
-            state: NodeState::Branch,
-            children,
+            nn: Box::new(nn),
+            device,
+            alpha,
+            epsilon,
         }
     }
+}
 
-    pub fn leaf(mov: Move) -> Self {
-        Self {
-            score: Score::default(),
-            mov,
-            state: NodeState::Leaf,
-            children: Vec::new(),
-        }
+/// Mcts parts for mcts with puct + static analysis.
+#[derive(Debug, Default)]
+pub struct StaticParts {
+    alpha: f32,
+    epsilon: f32,
+}
+
+impl<const X: usize> MctsParts<X> for &StaticParts {
+    type Selector = PuctSelector;
+    type Evaluator = StaticEvaluator;
+    type Backprop = DefaultBackuper;
+    type Noiser = DirichletNoiser;
+    type Instance = StaticParts;
+
+    fn selector(&self) -> Self::Selector {
+        Default::default()
     }
 
-    fn ucb(&self, cap_n_i: u32) -> f32 {
-        match self.score.playouts {
-            0 => f32::INFINITY,
-            n_i => {
-                let w_i = self.score.wins;
-                let n_i = n_i as f32;
-                let exploitation = w_i / n_i;
-
-                let c = f32::sqrt(2.0);
-                let exploration = c * f32::sqrt((cap_n_i as f32).ln() / n_i);
-
-                exploitation + exploration
-            }
-        }
+    fn evaluator(&self) -> Self::Evaluator {
+        Default::default()
     }
 
-    pub fn select_mut(&mut self) -> &mut Self {
-        assert_matches!(self.state, NodeState::Branch);
-
-        self.children
-            .iter_mut()
-            .max_by(|a, b| {
-                let a_ucb = a.ucb(self.score.playouts);
-                let b_ucb = b.ucb(self.score.playouts);
-                a_ucb.partial_cmp(&b_ucb).expect("UCB comparison failed!")
-            })
-            .expect(
-                "This is either a branch or a root node, which implies that this is not a \
-                 terminal node, so there has to be atleast on child.",
-            )
+    fn backprop(&self) -> Self::Backprop {
+        Default::default()
     }
 
-    pub fn simulate(
-        &self,
-        pos: &mut Position,
-        stack: &mut Vec<Move>,
-        moves: &mut MoveList,
-        rng: &mut impl Rng,
-    ) -> PlayoutResult {
-        assert_matches!(self.state, NodeState::Leaf | NodeState::Terminal);
+    fn noiser(&self) -> Self::Noiser {
+        let rng = SmallRng::from_os_rng();
+        DirichletNoiser::new(self.alpha, self.epsilon, rng)
+    }
+}
 
-        stack.clear();
+impl From<&Configuration> for StaticParts {
+    fn from(config: &Configuration) -> Self {
+        let alpha = config.dirichlet_alpha();
+        let epsilon = config.dirichlet_epsilon();
+        Self::new(alpha, epsilon)
+    }
+}
 
-        loop {
-            let mut move_cnt = 0;
-            let _ = fold_legal_moves(pos, &mut *moves, |acc, m| {
-                ControlFlow::Continue::<(), _>({
-                    acc[move_cnt] = m;
-                    move_cnt += 1;
-                    acc
-                })
-            });
+impl StaticParts {
+    pub fn new(alpha: f32, epsilon: f32) -> Self {
+        Self { alpha, epsilon }
+    }
+}
 
-            if let Some(result) = PlayoutResult::maybe_new(pos, move_cnt) {
-                while let Some(m) = stack.pop() {
-                    pos.unmake_move(m);
-                }
-                return result;
-            }
+/// Mcts parts for pure mcts.
+#[derive(Debug, Default)]
+pub struct PureParts;
 
-            let mov = moves[rng.random_range(0..move_cnt)];
-            pos.make_move(mov);
-            stack.push(mov);
-        }
+impl<const X: usize> MctsParts<X> for &PureParts {
+    type Selector = UcbSelector;
+    type Evaluator = PlayoutEvaluator;
+    type Backprop = DefaultBackuper;
+    type Noiser = NullNoiser;
+    type Instance = PureParts;
+
+    fn selector(&self) -> Self::Selector {
+        Default::default()
     }
 
-    fn expand(&mut self, pos: &Position) {
-        assert_matches!(self.state, NodeState::Leaf);
+    fn evaluator(&self) -> Self::Evaluator {
+        let rng = SmallRng::seed_from_u64(0x_dead_beef_u64);
+        PlayoutEvaluator::new(rng)
+    }
 
-        let _ = fold_legal_moves(pos, &mut self.children, |acc, m| {
-            ControlFlow::Continue::<(), _>({
-                acc.push(Node::leaf(m));
-                acc
-            })
-        });
-        self.state = if self.children.is_empty() {
-            NodeState::Terminal
-        }
-        else {
-            NodeState::Branch
-        };
+    fn backprop(&self) -> Self::Backprop {
+        Default::default()
+    }
+
+    fn noiser(&self) -> Self::Noiser {
+        Default::default()
+    }
+}
+
+impl From<&Configuration> for PureParts {
+    fn from(_config: &Configuration) -> Self {
+        Self {}
+    }
+}
+
+pub mod config {
+    #[cfg(feature = "mcts-pure")]
+    pub const MPV: usize = 1;
+
+    #[cfg(all(feature = "nn-backend-cuda", not(feature = "mcts-pure")))]
+    pub const MPV: usize = 32;
+
+    #[cfg(all(feature = "nn-backend-ndarray", not(feature = "mcts-pure")))]
+    pub const MPV: usize = 1;
+
+    #[cfg(feature = "nn-backend-cuda")]
+    pub mod nn_backend {
+        pub type Backend = burn_cuda::Cuda<f32>;
+        pub type Device = <self::Backend as burn::prelude::Backend>::Device;
+    }
+
+    #[cfg(feature = "nn-backend-ndarray")]
+    pub mod nn_backend {
+        use burn::backend::NdArray;
+        pub type Backend = NdArray;
+        pub type Device = <self::Backend as burn::prelude::Backend>::Device;
+    }
+
+    #[cfg(feature = "mcts-nn")]
+    pub mod mcts {
+        use crate::core::search::mcts::NNParts;
+        pub type Parts = NNParts<super::nn_backend::Backend>;
+    }
+
+    #[cfg(feature = "mcts-sa")]
+    pub mod mcts {
+        use crate::core::search::mcts::StaticParts;
+        pub type Parts = StaticParts;
+    }
+
+    #[cfg(feature = "mcts-pure")]
+    pub mod mcts {
+        use crate::core::search::mcts::PureParts;
+        pub type Parts = PureParts;
     }
 }

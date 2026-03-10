@@ -1,14 +1,14 @@
 use core::fmt;
 use std::{fmt::Display, ops::ControlFlow};
 
-use criterion::{criterion_group, criterion_main, BatchSize, BenchmarkId, Criterion};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::{
     core::{
         color::colors,
         coordinates::squares,
         move_iter::{fold_legal_moves, sliding_piece::magics},
-        piece::{piece_type, Piece},
-        position::Position,
+        piece::{Piece, piece_type},
+        position::{FenImport, Position},
         zobrist,
     },
     misc::ConstFrom,
@@ -128,8 +128,8 @@ pub fn make_move(c: &mut Criterion) {
     magics::init();
     zobrist::init();
 
-    let mut fen = Tokenizer::new("2n1k3/1P6/8/4pP2/8/6B1/P2P4/R3K2R w KQ e6 0 1");
-    let pos = Position::try_from(&mut fen).unwrap();
+    let fen = "2n1k3/1P6/8/4pP2/8/6B1/P2P4/R3K2R w KQ e6 0 1";
+    let pos = Position::from_fen(fen).unwrap();
     let moves = fold_legal_moves(&pos, Vec::new(), |mut acc, m| {
         acc.push(m);
         ControlFlow::Continue::<(), _>(acc)

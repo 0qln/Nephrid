@@ -1,17 +1,17 @@
 use std::ops::ControlFlow;
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use engine::{
     core::{
         color::colors,
         coordinates::squares,
+        r#move::Move,
         move_iter::{
-            pawn::{lookup_attacks, Pawn},
-            sliding_piece::magics,
             FoldMoves, NoCheck,
+            pawn::{Pawn, lookup_attacks},
+            sliding_piece::magics,
         },
         position::Position,
-        r#move::Move,
         zobrist,
     },
     uci::tokens::Tokenizer,
@@ -35,8 +35,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
     let inputs = ["K4n1n/6P1/k7/1p1pP3/2P5/8/5P2/8 w - d6 0 1"];
 
     for &input in &mut inputs.iter() {
-        let mut fen = Tokenizer::new(input);
-        let pos = Position::try_from(&mut fen).unwrap();
+        let pos = Position::from_fen(input).unwrap();
         c.bench_with_input(
             BenchmarkId::new("pawn::move_iter::check_none", input),
             &pos,

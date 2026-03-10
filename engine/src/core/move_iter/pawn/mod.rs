@@ -1,17 +1,17 @@
 use super::{
-    bishop::Bishop, king::King, pin_mask, rook::Rook, sliding_piece::SlidingAttacks, FoldMoves,
-    NoDoubleCheck,
+    FoldMoves, NoDoubleCheck, bishop::Bishop, king::King, pin_mask, rook::Rook,
+    sliding_piece::SlidingAttacks,
 };
 use crate::{
     core::{
         bitboard::Bitboard,
-        color::{colors, Color, TColor},
+        color::{Color, TColor, colors},
         coordinates::{
-            compass_rose, files, squares, CompassRose, EpTargetSquare, File, Square, TCompassRose,
+            CompassRose, EpTargetSquare, File, Square, TCompassRose, compass_rose, files, squares,
         },
-        piece::{piece_type, IPieceType},
+        r#move::{Move, MoveFlag, move_flags},
+        piece::{IPieceType, piece_type},
         position::Position,
-        r#move::{move_flags, Move, MoveFlag},
     },
     misc::ConstFrom,
 };
@@ -172,8 +172,7 @@ impl<'a> PawnMoves<'a> {
         let mut to = Bitboard::from_c(target.v());
         let from = if to.is_empty() {
             Bitboard::empty()
-        }
-        else {
+        } else {
             let capture_dir = capture(color, CompassRose::new(DIR));
             let pawns = pos.get_bitboard(piece_type::PAWN, color);
             let capturing_pawns = pawns & !Bitboard::from_c(File::edge::<DIR>());
@@ -181,8 +180,7 @@ impl<'a> PawnMoves<'a> {
             if from.is_empty() {
                 to = Bitboard::empty();
                 Bitboard::empty()
-            }
-            else {
+            } else {
                 // Safety: king the board has no king, but gen_legal is used,
                 // the context is broken anyway.
                 let king_bb = pos.get_bitboard(King::ID, color);
@@ -202,8 +200,7 @@ impl<'a> PawnMoves<'a> {
                 if check {
                     to = Bitboard::empty();
                     Bitboard::empty()
-                }
-                else {
+                } else {
                     from
                 }
             }
@@ -338,6 +335,51 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
     unsafe {
         // Safety: sq is in range 0..64 and color is in range 0..2
         *ATTACKS
+            .get_unchecked(color.v() as usize)
+            .get_unchecked(sq.v() as usize)
+    }
+}
+
+const fn compute_moves<const C: TColor>(pawns: Bitboard) -> Bitboard {
+    Color::assert_variant(C); // Safety
+    let color = unsafe { Color::from_v(C) };
+
+    // double step
+    let dpp_pawns = Bitboard {
+        v: Bitboard::from_c(dpp_rank(color)).v & pawns.v,
+    };
+    let dpp_moves = forward(dpp_pawns, double_step(color));
+
+    // single step
+    let moves = forward(pawns, single_step(color));
+
+    Bitboard { v: dpp_moves.v | moves.v }
+}
+
+#[inline(always)]
+pub fn lookup_moves(sq: Square, color: Color) -> Bitboard {
+    static MOVES_W: [Bitboard; 64] = {
+        let mut result = [Bitboard::empty(); 64];
+        const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
+            let sq = unsafe { Square::from_v(sq) };
+            let pawn = Bitboard::from_c(sq);
+            result[sq.v() as usize] = compute_moves::<{ colors::WHITE_C }>(pawn);
+        });
+        result
+    };
+    static MOVES_B: [Bitboard; 64] = {
+        let mut result = [Bitboard::empty(); 64];
+        const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
+            let sq = unsafe { Square::from_v(sq) };
+            let pawn = Bitboard::from_c(sq);
+            result[sq.v() as usize] = compute_moves::<{ colors::BLACK_C }>(pawn);
+        });
+        result
+    };
+    static MOVES: [[Bitboard; 64]; 2] = [MOVES_W, MOVES_B];
+    unsafe {
+        // Safety: sq is in range 0..64 and color is in range 0..2
+        *MOVES
             .get_unchecked(color.v() as usize)
             .get_unchecked(sq.v() as usize)
     }

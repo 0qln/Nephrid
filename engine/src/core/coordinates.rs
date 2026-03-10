@@ -4,8 +4,14 @@ use crate::{
     uci::tokens::Tokenizer,
 };
 use core::{fmt, panic};
-use std::ops;
-use std::{any::type_name, error::Error, fmt::Debug, iter::Step, marker::PhantomData};
+use std::{
+    any::type_name,
+    error::Error,
+    fmt::{Debug, Write},
+    iter::Step,
+    marker::PhantomData,
+    ops,
+};
 
 use super::color::Color;
 use compass_rose::*;
@@ -213,6 +219,8 @@ impl Step for Square {
     }
 }
 
+/// En passant target square is the square to which the capturing pawn is beeing
+/// moved.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct EpTargetSquare {
     v: Option<Square>,
@@ -273,6 +281,15 @@ impl TryFrom<&mut Tokenizer<'_>> for EpTargetSquare {
     }
 }
 
+impl fmt::Display for EpTargetSquare {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.v() {
+            Some(sq) => write!(f, "{sq}"),
+            None => f.write_char('-'),
+        }
+    }
+}
+
 // the color is the color of the pawn being captured
 impl From<(EpCaptureSquare, Color)> for EpTargetSquare {
     #[inline]
@@ -285,6 +302,8 @@ impl From<(EpCaptureSquare, Color)> for EpTargetSquare {
     }
 }
 
+/// En passant capture square is the square on which the pawn captured is beeing
+/// removed.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct EpCaptureSquare {
     v: Option<Square>,

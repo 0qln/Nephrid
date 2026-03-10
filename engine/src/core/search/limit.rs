@@ -1,7 +1,11 @@
-use std::time::Duration;
+use std::{
+    cmp::min,
+    time::{Duration, Instant},
+};
 
-use crate::core::{color::colors, position::Position};
+use crate::core::{color::colors, depth::Depth, r#move::Move, position::Position};
 
+/// A struct to hold all by the UCI defined search limits and targets.
 #[derive(Debug, Clone)]
 pub struct Limit {
     pub is_active: bool,
@@ -12,6 +16,11 @@ pub struct Limit {
     pub movestogo: u16,
     pub nodes: u64,
     pub movetime: u64,
+    pub mate: Depth,
+    pub depth: Depth,
+    pub iterations: u64,
+    pub search_moves: Vec<Move>,
+    pub lag_buf: u16,
 }
 
 impl Limit {
@@ -22,9 +31,14 @@ impl Limit {
             btime: u64::MAX,
             winc: u64::MAX,
             binc: u64::MAX,
-            movestogo: 0,
+            movestogo: u16::MAX,
             nodes: u64::MAX,
             movetime: u64::MAX,
+            mate: Depth::MAX,
+            depth: Depth::MAX,
+            iterations: u64::MAX,
+            search_moves: vec![],
+            lag_buf: 0,
         }
     }
 
@@ -40,7 +54,28 @@ impl Limit {
             _ => unreachable!(),
         };
 
-        Duration::from_millis(time / 50 + inc)
+        // assume that no game will be longer than 50 moves.
+        let moves_to_go = min(self.movestogo, 50) as u64;
+        let time_per_move = time / moves_to_go + inc;
+        let time_per_move = min(time_per_move, self.movetime);
+
+        let result = time_per_move.saturating_sub(self.lag_buf.into());
+
+        Duration::from_millis(result)
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.is_active
+    }
+
+    pub fn is_reached(
+        &self,
+        nodes: u64,
+        curr_time: Instant,
+        time_limit: Instant,
+        iterations: u64,
+    ) -> bool {
+        nodes >= self.nodes || curr_time >= time_limit || iterations >= self.iterations
     }
 }
 
@@ -52,9 +87,14 @@ impl Default for Limit {
             btime: u64::MAX,
             winc: 0,
             binc: 0,
-            movestogo: 0,
+            movestogo: u16::MAX,
             nodes: u64::MAX,
             movetime: u64::MAX,
+            mate: Depth::MAX,
+            depth: Depth::MAX,
+            iterations: u64::MAX,
+            search_moves: vec![],
+            lag_buf: 500,
         }
     }
 }

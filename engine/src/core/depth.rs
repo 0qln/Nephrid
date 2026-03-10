@@ -1,7 +1,6 @@
-use std::{fmt, ops};
-use std::{num::ParseIntError, str::FromStr};
+use std::{fmt, num::ParseIntError, ops, str::FromStr};
 
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Depth {
     v: u8,
 }
@@ -13,6 +12,9 @@ impl fmt::Display for Depth {
 }
 
 impl_op!(-|a: Depth, b: u8| -> Depth { Depth { v: a.v - b } });
+impl_op!(+|a: Depth, b: u8| -> Depth { Depth { v: a.v + b } });
+impl_op!(+|a: Depth, b: Depth| -> Depth { Depth { v: a.v + b.v } });
+impl_op!(+=|a: &mut Depth, b: u8| { a.v += b });
 impl_op!(-|a: Depth, b: Depth| -> Depth { Depth { v: a.v - b.v } });
 
 impl TryFrom<&str> for Depth {
@@ -36,6 +38,7 @@ impl FromStr for Depth {
 
 impl Depth {
     pub const MIN: Depth = Depth { v: 0 };
+    pub const ROOT: Depth = Depth { v: 1 };
     pub const MAX: Depth = Depth { v: 250 };
     pub const NONE: Depth = Depth { v: 255 };
 

@@ -1,127 +1,193 @@
-use std::cell::UnsafeCell;
-use std::ops::ControlFlow;
-use std::time::Instant;
+use thiserror::Error;
 
-use crate::misc::DebugMode;
-use crate::uci::sync::{self, CancellationToken};
-use limit::Limit;
-use mode::Mode;
-use target::Target;
+use crate::{
+    core::{
+        Move,
+        config::Configuration,
+        search::mcts::{
+            MctsParts,
+            node::{Tree, node_state::NodeSwitch},
+            select::Selector,
+        },
+    },
+    uci::sync,
+};
+use std::{
+    error::Error,
+    sync::{
+        Arc, Mutex,
+        mpsc::{Sender, channel},
+    },
+    thread,
+};
 
-use crate::core::position::Position;
-
-use super::depth::Depth;
-use super::move_iter::fold_legal_moves;
-use super::r#move::Move;
+use crate::{
+    core::{
+        position::Position,
+        search::{
+            limit::Limit,
+            mcts::{mcts, strategy::MctsUci},
+            perft::perft,
+        },
+    },
+    misc::DebugMode,
+    uci::sync::CancellationToken,
+};
 
 pub mod limit;
 pub mod mcts;
 pub mod mode;
-pub mod target;
+pub mod perft;
 
-#[derive(Default, Debug, Clone)]
-pub struct Search {
-    pub limit: Limit,
-    pub target: Target,
-    pub mode: Mode,
-    pub debug: DebugMode,
+pub struct Thread {
+    pub tx: Sender<Command>,
 }
 
-impl Search {
-    pub fn new(limit: Limit, target: Target, mode: Mode, debug: DebugMode) -> Self {
-        Self { limit, target, mode, debug }
+pub struct Worker {
+    mcts_parts: Option<mcts::config::mcts::Parts>,
+    mcts_state: mcts::SearchState,
+}
+
+#[derive(Error, Debug)]
+pub enum ExecError {
+    #[error("Uninitialized state")]
+    UninitState(),
+    #[error("Bad config: {0}")]
+    BadConfig(Box<dyn Error>),
+    #[error("Runtime error: {0}")]
+    RuntimeError(Box<dyn Error>),
+}
+
+impl Default for Worker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Worker {
+    pub fn new() -> Self {
+        let mcts_state = mcts::SearchState::default();
+        let mcts_parts = None;
+        Self { mcts_parts, mcts_state }
     }
 
-    pub fn reset() {
-        todo!()
-    }
+    pub fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
+        match cmd {
+            Command::Perft(pos, limit, ct, debug) => {
+                perft(pos, limit, ct, debug);
+                Ok(())
+            }
+            Command::Normal(mut pos, limit, ct, debug) => {
+                let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
+                let state = &mut self.mcts_state;
 
-    pub fn perft(
-        &self,
-        pos: &mut UnsafeCell<Position>,
-        depth: Depth,
-        cancellation_token: CancellationToken,
-        f: fn(Move, u64, Depth, bool) -> (),
-    ) -> u64 {
-        if cancellation_token.is_cancelled() {
-            return 0;
-        }
+                let result = mcts(&mut pos, parts, state, limit, debug, ct, MctsUci::default());
 
-        if depth <= Depth::MIN {
-            return 1;
-        }
+                if result.is_none() {
+                    todo!("Log error or something: got no result from mcts search.")
+                };
 
-        // Safety:
-        // This is safe iff unmake_move perfectly reverses the muations made by
-        // make_move.
-        unsafe {
-            fold_legal_moves::<_, _, _>(&*pos.get(), 0, |acc, m| {
-                pos.get_mut().make_move(m);
-                let c = self.perft(
-                    pos,
-                    depth - 1,
-                    cancellation_token.clone(),
-                    if self.debug.get() { f } else { |_, _, _, _| {} },
-                );
-                f(m, c, self.target.depth - depth, self.debug.get());
-                pos.get_mut().unmake_move(m);
-                ControlFlow::Continue::<(), _>(acc + c)
-            })
-            .continue_value()
-            .unwrap()
-        }
-    }
+                Ok(())
+            }
+            Command::Ponder => {
+                unimplemented!("todo");
+            }
+            Command::Configure(config) => {
+                let config_lock = config.lock();
+                let cfg = match config_lock {
+                    Ok(ref cfg) => cfg,
+                    Err(_) => &Configuration::default(),
+                };
 
-    pub fn mcts(&self, mut pos: Position, cancellation_token: CancellationToken) -> Move {
-        let mut tree = mcts::Tree::new(&pos);
-        let mut last_best_move = None;
+                #[allow(clippy::unnecessary_fallible_conversions)]
+                let parts = <&mcts::config::mcts::Parts as MctsParts>::Instance::try_from(cfg)
+                    .map_err(|e| ExecError::BadConfig(Box::new(e)))?;
 
-        let time_per_move = self.limit.time_per_move(&pos);
-        let time_limit = Instant::now() + time_per_move;
-
-        while {
-            !cancellation_token.is_cancelled()
-                && (!self.limit.is_active || Instant::now() < time_limit)
-        } {
-            tree.grow(&mut pos);
-
-            let curr_best_move = tree.best_move();
-            if last_best_move != curr_best_move {
-                if let Some(best_move) = curr_best_move {
-                    sync::out(&format!("currmove {best_move}"));
+                self.mcts_parts = Some(parts);
+                Ok(())
+            }
+            Command::AdvanceState(mov) => {
+                self.mcts_state.tree.advance_to(|b| b.mov() == mov);
+                Ok(())
+            }
+            Command::ResetState => {
+                self.mcts_state.tree = Tree::default();
+                Ok(())
+            }
+            Command::MctsDebugTree => {
+                let tree = &self.mcts_state.tree;
+                let root = tree.get_root();
+                println!("({})", root.state());
+                match root.into_ct() {
+                    NodeSwitch::Leaf(_node) => {}
+                    NodeSwitch::Branching(node) => {
+                        for branch in node.borrow().branches() {
+                            let node = branch.node();
+                            let state = node.state();
+                            println!("* ({}) {}", state, branch.mov());
+                        }
+                    }
+                    NodeSwitch::Terminal(_node) => {}
+                    NodeSwitch::Evaluated(node) => {
+                        let root_visits = node.borrow().visits();
+                        for branch in node.borrow().branches() {
+                            let mov = branch.mov();
+                            let node = branch.node();
+                            let state = node.state();
+                            let node = node.borrow();
+                            let parts: &mcts::config::mcts::Parts =
+                                self.mcts_parts.as_ref().unwrap();
+                            let selector = MctsParts::<{ mcts::config::MPV }>::selector(&parts);
+                            println!(
+                                "{} {: >9} {: <5} v {: >8.2}/{: <8} p {:.3} ~ {}",
+                                if tree.best_move() == Some(mov) { '*' } else { '-' },
+                                state.to_string(),
+                                mov.to_string(),
+                                node.value(),
+                                node.visits(),
+                                branch.policy(),
+                                selector.score(branch, root_visits)
+                            );
+                        }
+                    }
                 }
-                last_best_move = curr_best_move;
+
+                Ok(())
             }
         }
-
-        last_best_move.expect("search did not complete")
     }
+}
 
-    pub fn go(&self, position: &mut Position, cancellation_token: CancellationToken) {
-        match self.mode {
-            Mode::Perft => {
-                let nodes = self.perft(
-                    &mut UnsafeCell::new(position.clone()),
-                    self.target.depth,
-                    cancellation_token,
-                    |mov, count, depth, debug| {
-                        if debug {
-                            let indent =
-                                itertools::repeat_n(' ', depth.v().into()).collect::<String>();
-                            sync::out(&format!("{}{mov:?}: {count}", indent));
-                        }
-                        else {
-                            sync::out(&format!("{mov}: {count}"));
-                        }
-                    },
-                );
-                sync::out(&format!("\nNodes searched: {nodes}"));
+pub fn init() -> Thread {
+    let (tx, rx) = channel::<Command>();
+    thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || {
+            let mut worker = Worker::new();
+            loop {
+                let cmd = rx.recv().expect("Should be able to receive data");
+                let result = worker.exec(cmd);
+                if let Err(e) = result {
+                    sync::out(&format!("Error executing command: {e}"));
+                }
             }
-            Mode::Normal => {
-                let result = self.mcts(position.clone(), cancellation_token);
-                sync::out(&format!("bestmove {result}"));
-            }
-            _ => unimplemented!(),
-        };
-    }
+        })
+        .expect("Failed to spawn search thread.");
+
+    _ = tx.send(Command::Configure(Arc::new(Mutex::new(
+        Configuration::default(),
+    ))));
+
+    Thread { tx }
+}
+
+#[derive(Debug, Clone)]
+pub enum Command {
+    Perft(Position, Limit, CancellationToken, DebugMode),
+    Normal(Position, Limit, CancellationToken, DebugMode),
+    AdvanceState(Move),
+    Configure(Arc<Mutex<Configuration>>),
+    Ponder,
+    ResetState,
+    MctsDebugTree,
 }

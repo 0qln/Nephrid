@@ -1,12 +1,15 @@
 use core::fmt;
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    iter::Step,
+};
 
 use thiserror::Error;
 
 use crate::{
-    core::color::{colors, Color},
+    core::color::{Color, colors},
     impl_variants,
-    misc::{ConstFrom, InvalidValueError, ValueOutOfSetError},
+    misc::{ConstFrom, InvalidValueError, ValueOutOfRangeError, ValueOutOfSetError},
     uci::tokens::Tokenizer,
 };
 
@@ -24,6 +27,20 @@ pub type TPieceType = u8;
 #[derive(Copy, Clone, Default, PartialEq, PartialOrd)]
 pub struct PieceType {
     v: TPieceType,
+}
+
+impl Step for PieceType {
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
+        Step::steps_between(&start.v, &end.v)
+    }
+
+    fn forward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::forward_checked(start.v, count)?).ok()
+    }
+
+    fn backward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::backward_checked(start.v, count)?).ok()
+    }
 }
 
 impl_variants! {
@@ -56,6 +73,22 @@ impl PieceType {
     #[inline]
     pub const fn is_promo(&self) -> bool {
         self.v >= piece_type::KNIGHT.v && self.v <= piece_type::QUEEN.v
+    }
+}
+
+pub type PieceTypeUpgradeError = ValueOutOfRangeError<TPieceType>;
+
+impl TryFrom<TPieceType> for PieceType {
+    type Error = PieceTypeUpgradeError;
+
+    #[inline]
+    fn try_from(value: TPieceType) -> Result<Self, Self::Error> {
+        const MIN: TPieceType = piece_type::NONE.v();
+        const MAX: TPieceType = piece_type::KING.v();
+        match value {
+            MIN..=MAX => Ok(Self { v: value }),
+            x => Err(Self::Error::new(x, MIN..=MAX)),
+        }
     }
 }
 
@@ -160,8 +193,7 @@ impl TryFrom<MoveFlag> for PromoPieceType {
     fn try_from(flag: MoveFlag) -> Result<Self, Self::Error> {
         if !flag.is_promo() {
             Err(Self::Error::new(flag))
-        }
-        else {
+        } else {
             let v = (flag.v() - 2) % 4 + 2;
             let pt = PieceType { v };
             Ok(PromoPieceType { v: pt })

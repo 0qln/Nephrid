@@ -13,9 +13,9 @@ use crate::misc::ConstFrom;
 use super::bitboard::Bitboard;
 use super::color::Color;
 use super::coordinates::Square;
+use super::r#move::Move;
 use super::piece::IPieceType;
 use super::position::{CheckState, Position};
-use super::r#move::Move;
 
 pub mod bishop;
 pub mod king;
@@ -158,18 +158,18 @@ pub fn is_blocker(pos: &Position, piece: Square) -> bool {
 
 #[inline]
 pub fn pin_mask(pos: &Position, piece: Square) -> Bitboard {
-    is_blocker(pos, piece)
-        .then(|| {
-            // Safety: We check if the bb is empty of not.
-            let king = unsafe {
-                let color = pos.get_turn();
-                // todo: safely remove branching
-                let bb = pos.get_bitboard(King::ID, color)?;
-                bb.lsb().unwrap_unchecked()
-            };
-            Bitboard::ray(piece, king)
-        })
-        .unwrap_or(Bitboard::full())
+    if is_blocker(pos, piece) {
+        // Safety: We check if the bb is empty of not.
+        let king = unsafe {
+            let color = pos.get_turn();
+            // todo: safely remove branching
+            let bb = pos.get_bitboard(King::ID, color)?;
+            bb.lsb().unwrap_unchecked()
+        };
+        Bitboard::ray(piece, king)
+    } else {
+        Bitboard::full()
+    }
 }
 
 #[inline]

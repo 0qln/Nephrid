@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        coordinates::{compass_rose::*, files, ranks, CompassRose, File, Rank, Square},
+        coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks, squares},
         move_iter::{bishop, rook},
     },
     misc::ConstFrom,
@@ -12,7 +12,7 @@ use std::{
 
 use const_for::const_for;
 
-use super::coordinates::{squares::*, DiagA1H8, DiagA8H1, TCompassRose};
+use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose, squares::*};
 
 #[cfg(test)]
 pub mod tests;
@@ -21,6 +21,8 @@ pub mod tests;
 pub struct Bitboard {
     pub v: u64,
 }
+
+pub type Floats = [[f32; files::N_VARIANTS]; ranks::N_VARIANTS];
 
 impl Try for Bitboard {
     type Output = Self;
@@ -35,8 +37,7 @@ impl Try for Bitboard {
     fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
         if self.is_empty() {
             ControlFlow::Break(self)
-        }
-        else {
+        } else {
             ControlFlow::Continue(self)
         }
     }
@@ -62,7 +63,7 @@ impl Debug for Bitboard {
                         let file = File::try_from(file as u8).unwrap();
                         let rank = Rank::try_from(rank as u8).unwrap();
                         let sq = Square::from_c((file, rank));
-                        let bit = if self.get_bit(sq) { "x " } else { ". " };
+                        let bit = if self.is_bit_set(sq) { "x " } else { ". " };
                         f.write_str(bit)?;
                     }
                     Ok(())
@@ -151,7 +152,12 @@ impl Bitboard {
     }
 
     #[inline]
-    pub const fn get_bit(&self, sq: Square) -> bool {
+    pub const fn get_bit(&self, sq: Square) -> u64 {
+        (self.v & Self::from_c(sq).v) >> sq.v() as u32
+    }
+
+    #[inline]
+    pub const fn is_bit_set(&self, sq: Square) -> bool {
         self.v & Self::from_c(sq).v != 0
     }
 
@@ -288,12 +294,26 @@ impl Bitboard {
 
     #[inline]
     pub fn pop_cnt_gt_1(&self) -> bool {
-        let this = self.to_owned();
-        !(this & (this - 1_u64)).is_empty()
+        let this = *self;
+        let result = !(this & Self { v: (this.v.overflowing_sub(1).0) }).is_empty();
+        debug_assert_eq!(result, self.pop_cnt() > 1);
+        result
     }
 
     pub const fn edges() -> Self {
         Self { v: !0x007E7E7E7E7E7E00_u64 }
+    }
+
+    pub fn into_floats(self, upside_down: bool) -> Floats {
+        let mut data: Floats = Default::default();
+        for sq in squares::A1_C..squares::H8_C {
+            let sq = unsafe { Square::from_v(sq) };
+            let bit = self.get_bit(if upside_down { sq.flip_v() } else { sq });
+            let rank = Rank::from_c(sq).v() as usize;
+            let file = File::from_c(sq).v() as usize;
+            data[file][rank] = bit as f32;
+        }
+        data
     }
 }
 

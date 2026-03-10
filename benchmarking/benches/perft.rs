@@ -1,23 +1,23 @@
-use std::cell::UnsafeCell;
 use std::fmt::{self, Display, Formatter};
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use engine::core::depth::Depth;
-use engine::core::move_iter::sliding_piece::magics;
-use engine::core::position::Position;
-use engine::core::search::Search;
-use engine::core::zobrist;
-use engine::uci::sync::CancellationToken;
-use engine::uci::tokens::Tokenizer;
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use engine::{
+    core::{
+        depth::Depth, move_iter::sliding_piece::magics, position::Position, search::limit::Limit,
+        zobrist,
+    },
+    misc::DebugMode,
+    uci::sync::CancellationToken,
+};
 
 fn bench_perft(pos: Position, depth: Depth) {
     println!("{pos:?}");
-    let search = Search::default();
-    _ = search.perft(
-        &mut UnsafeCell::new(pos),
-        depth,
+    let limit = Limit { depth, ..Default::default() };
+    _ = engine::core::search::perft::perft(
+        pos,
+        limit,
         CancellationToken::new(),
-        |m, _, _, _| println!("{m:?}"),
+        DebugMode::default(),
     );
 }
 
@@ -26,8 +26,7 @@ fn run(c: &mut Criterion, name: &str, pairs: &[Pair<&str, Depth>]) {
     zobrist::init();
 
     for p in pairs {
-        let mut fen = Tokenizer::new(p.0);
-        let pos = Position::try_from(&mut fen).unwrap();
+        let pos = Position::from_fen(p.0).unwrap();
         c.bench_with_input(BenchmarkId::new(name, p), &pos, |b, x| {
             b.iter(|| bench_perft(x.clone(), p.1))
         });

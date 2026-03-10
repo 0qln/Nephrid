@@ -14,11 +14,16 @@ Cargo.lock
 *.pdb
 
 # Added by cargo
-
 /target
 
 # Editors
 /.vscode
 /.idea
 
+# Python
+.venv
+
+# direnv
 .direnv
+
+*.log

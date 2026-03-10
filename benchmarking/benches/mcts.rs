@@ -1,38 +1,40 @@
-use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use engine::core::{
-    move_iter::sliding_piece::magics, position::Position, r#move::MoveList, search::mcts::Node,
+    move_iter::sliding_piece::magics,
+    position::Position,
+    search::mcts::{
+        back::DefaultBackuper, limiter::NoopLimiter, node::Tree, noise::NullNoiser,
+        search::TreeSearcher, select::puct::PuctSelector, test::DummyEvaluator,
+    },
     zobrist,
 };
-use rand::{rngs::SmallRng, SeedableRng};
 
-pub fn node_simulate(c: &mut Criterion) {
+pub fn tree_grow(c: &mut Criterion) {
     magics::init();
     zobrist::init();
 
-    let pos = Position::start_position();
-    let mut root = Node::root(&pos);
-    let leaf = root.select_mut();
-
-    c.bench_function("mcts::node_simulate", |b| {
+    c.bench_function("mcts::tree::grow", |b| {
         b.iter_batched(
-            || {
-                (
-                    (
-                        Vec::with_capacity(256),
-                        MoveList::default(),
-                        SmallRng::seed_from_u64(1),
-                    ),
-                    ({ (pos.clone(), leaf.clone()) }),
-                )
+            || (Position::start_position(), Tree::default()),
+            |(mut position, mut tree)| {
+                let mut searcher = TreeSearcher::<1, _, _, _, _, _>::new(
+                    &mut position,
+                    PuctSelector::default(),
+                    NoopLimiter::default(),
+                    DummyEvaluator::default(),
+                    DefaultBackuper::default(),
+                    NullNoiser::default(),
+                );
+                searcher.init_root(&mut tree);
+                for _ in 0..10_000 {
+                    searcher.grow(&mut tree);
+                }
             },
-            |((mut stack, mut moves, mut rng), (mut pos, leaf))| {
-                leaf.simulate(&mut pos, &mut stack, &mut moves, &mut rng)
-            },
-            BatchSize::PerIteration,
+            BatchSize::SmallInput,
         )
     });
 }
 
-criterion_group!(benches, node_simulate,);
+criterion_group!(benches, tree_grow,);
 
 criterion_main!(benches);

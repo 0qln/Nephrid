@@ -1,9 +1,9 @@
 use std::{
     fmt::Debug,
-    io::{stdout, Write},
+    io::{Write, stdout},
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
 };
 
@@ -23,8 +23,8 @@ pub enum UciError {
     #[error("Invalid command: {0}")]
     InvalidCommand(String),
 
-    #[error("Unknown option")]
-    UnknownOption,
+    #[error("Unknown option: {0}")]
+    UnknownOption(String),
 }
 
 pub fn out(msg: &str) {
@@ -32,7 +32,7 @@ pub fn out(msg: &str) {
     let _ = writeln!(&mut stdout.lock(), "{}", msg);
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct CancellationToken {
     v: Arc<AtomicBool>,
 }

@@ -3,7 +3,7 @@ use core::fmt;
 
 use crate::{
     core::{
-        color::{colors::*, Color},
+        color::{Color, colors::*},
         coordinates::files,
         piece::piece_type,
     },
@@ -129,5 +129,10 @@ impl CastlingRights {
     #[inline]
     pub const fn v(&self) -> u8 {
         self.v
+    }
+
+    #[inline]
+    pub const fn get_float(&self, side: CastlingSide, color: Color) -> f32 {
+        if self.is_true(side, color) { 1.0 } else { 0.0 }
     }
 }

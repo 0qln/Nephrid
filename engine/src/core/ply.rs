@@ -2,11 +2,18 @@ use thiserror::Error;
 
 use super::turn::Turn;
 use crate::{core::color::colors, uci::tokens::Tokenizer};
+use core::fmt;
 use std::{num::ParseIntError, ops};
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct FullMoveCount {
     pub v: u16,
+}
+
+impl fmt::Display for FullMoveCount {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.v)
+    }
 }
 
 pub type FullMoveCountParseError = ParseIntError;
@@ -19,6 +26,12 @@ impl TryFrom<&str> for FullMoveCount {
             Ok(v) => Ok(FullMoveCount { v }),
             Err(e) => Err(e),
         }
+    }
+}
+
+impl From<Ply> for FullMoveCount {
+    fn from(ply: Ply) -> Self {
+        Self { v: ply.v / 2 }
     }
 }
 
@@ -45,6 +58,12 @@ impl TryFrom<&mut Tokenizer<'_>> for FullMoveCount {
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Ply {
     pub v: u16,
+}
+
+impl fmt::Display for Ply {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.v)
+    }
 }
 
 impl_op!(-|a: Ply, b: Ply| -> Ply { Ply { v: a.v - b.v } });

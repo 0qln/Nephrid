@@ -1,6 +1,7 @@
-use engine::core::move_iter::sliding_piece::magics;
-use engine::core::{execute_uci, zobrist, Engine};
-use engine::uci::sync::{self, CancellationToken};
+use engine::{
+    core::{Engine, execute_uci, move_iter::sliding_piece::magics, zobrist},
+    uci::sync::{self, CancellationToken},
+};
 use std::io::stdin;
 
 fn main() {
@@ -8,7 +9,7 @@ fn main() {
     zobrist::init();
 
     let input_stream = stdin();
-    let mut engine = Engine::default();
+    let mut engine = Engine::new();
     let mut cmd_cancellation = CancellationToken::new();
 
     execute_uci(
@@ -18,15 +19,12 @@ fn main() {
     )
     .unwrap();
 
-    // execute_uci(
-    //     &mut engine,
-    //     &mut Tokenizer::new("position startpos"),
-    //     cmd_cancellation.clone());
-
-    // execute_uci(
-    //     &mut engine,
-    //     &mut Tokenizer::new("go infinite"),
-    //     cmd_cancellation.clone());
+    execute_uci(
+        &mut engine,
+        "position startpos".to_string(),
+        cmd_cancellation.clone(),
+    )
+    .unwrap();
 
     loop {
         let mut input = String::new();

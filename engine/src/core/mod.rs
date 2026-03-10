@@ -1,23 +1,25 @@
-use search::{limit::Limit, mode::Mode, target::Target, Search};
+use search::{limit::Limit, mode::Mode};
+use std::{
+    sync::{Arc, Mutex},
+    thread, time,
+};
 
 use self::r#move::LongAlgebraicUciNotation;
 use crate::{
     core::{
-        config::{ConfigOptionType, Configuration},
+        config::Configuration,
         depth::Depth,
-        position::Position,
         r#move::Move,
+        position::{FenImport, PgnExport, Position},
+        search::{Command, Thread},
     },
-    misc::trim_newline,
-};
-use crate::{
-    misc::DebugMode,
+    misc::{DebugMode, trim_newline},
     uci::{
         sync::{self, CancellationToken, UciError},
         tokens::Tokenizer,
     },
 };
-use std::{error::Error, process, thread};
+use std::{error::Error, process};
 
 pub mod bitboard;
 pub mod castling;
@@ -34,12 +36,78 @@ pub mod search;
 pub mod turn;
 pub mod zobrist;
 
-#[derive(Default)]
-pub struct Engine {
-    config: Configuration,
-    debug: DebugMode,
+#[derive(Debug, Default, Clone)]
+pub struct Game {
+    /// The moves that have been made.
+    history: Vec<Move>,
+
+    /// The currently set position of the engine. Changing this during a search
+    /// should not immediatly affect the search tree.
     position: Position,
-    pos_src: String,
+}
+
+impl Game {
+    pub fn new(position: Position) -> Self {
+        Self { position, ..Default::default() }
+    }
+
+    pub fn moves(&self) -> &[Move] {
+        &self.history
+    }
+
+    pub fn position(&self) -> &Position {
+        &self.position
+    }
+
+    pub fn position_mut(&mut self) -> &mut Position {
+        &mut self.position
+    }
+
+    pub fn push_move(&mut self, mov: Move) {
+        self.history.push(mov);
+        self.position.make_move(mov);
+    }
+
+    pub fn to_pgn(&self) -> PgnExport {
+        PgnExport::from_current_pos(self.position.clone(), &self.history[..])
+    }
+}
+
+/// Stores relevant information of the chess engine.
+pub struct Engine {
+    /// Current engine configuration.
+    config: Arc<Mutex<Configuration>>,
+
+    /// Search thread
+    search_t: Thread,
+
+    /// Whether the engine runs in debug mode.
+    debug: DebugMode,
+
+    /// Current game state.
+    game: Game,
+
+    /// Cached position source string to improve position decoding speed.
+    _pos_src: String,
+}
+
+impl Engine {
+    pub fn new() -> Self {
+        let search_t = search::init();
+        Self {
+            config: Default::default(),
+            search_t,
+            debug: Default::default(),
+            game: Default::default(),
+            _pos_src: Default::default(),
+        }
+    }
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 pub fn execute_uci(
@@ -50,8 +118,8 @@ pub fn execute_uci(
     trim_newline(&mut command);
     let mut tokenizer = Tokenizer::new(command.as_str());
     match tokenizer.next_token() {
-        Some("d") => {
-            let pos = &engine.position;
+        Some("d") | Some("print") => {
+            let pos = &engine.game.position();
             let str = if engine.debug.get() {
                 format!("{pos:?}")
             }
@@ -63,16 +131,31 @@ pub fn execute_uci(
 
             Ok(())
         }
+        Some("mcts") => match tokenizer.next_token() {
+            Some("d") => Ok(engine.search_t.tx.send(Command::MctsDebugTree)?),
+            Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
+            None => unimplemented!(),
+        },
+        Some("pgn") => {
+            let pgn = engine.game.to_pgn();
+            let str = format!("{pgn}");
+
+            sync::out(&str);
+
+            Ok(())
+        }
         Some("quit") => {
             process::exit(0);
         }
         Some("stop") => {
+            // signal the thread the finish safely.
             cancellation_token.cancel();
+
             Ok(())
         }
         Some("go") => {
             let token = cancellation_token.clone();
-            let mut position = engine.position.clone();
+            let position = engine.game.position().clone();
             let debug = engine.debug.clone();
 
             macro_rules! collect_and_parse {
@@ -82,83 +165,126 @@ pub fn execute_uci(
                 }};
             }
 
-            let mut mode = Mode::default();
-            let mut limit = Limit::default();
-            let mut target = Target::default();
+            let (mode, limit) = {
+                let mut mode = Mode::default();
+                let mut limit = Limit::default();
 
-            while let Some(token) = tokenizer.next_token() {
-                match token {
-                    "perft" => mode = Mode::Perft,
-                    "ponder" => mode = Mode::Ponder,
-                    "wtime" => collect_and_parse!(limit.wtime),
-                    "btime" => collect_and_parse!(limit.btime),
-                    "winc" => collect_and_parse!(limit.winc),
-                    "binc" => collect_and_parse!(limit.binc),
-                    "movestogo" => collect_and_parse!(limit.movestogo),
-                    "depth" => collect_and_parse!(target.depth),
-                    "nodes" => collect_and_parse!(limit.nodes),
-                    "mate" => collect_and_parse!(target.mate),
-                    "movetime" => collect_and_parse!(limit.movetime),
-                    "infinite" => limit.is_active = false,
-                    // to be compatible with stockfish
-                    depth if Depth::try_from(depth).is_ok() => {
-                        target.depth = depth.try_into().unwrap()
-                    }
-                    /* searchmoves */
-                    _ => {
-                        let move_notation =
-                            LongAlgebraicUciNotation::new(&mut tokenizer, &position);
-                        match Move::try_from(move_notation) {
-                            Ok(m) => target.search_moves.push(m),
-                            Err(e) => sync::out(&format!("Error: {e}")),
+                let config = engine.config.lock().expect("Config dead :(");
+                limit.lag_buf = config.gui_lag();
+
+                while let Some(token) = tokenizer.next_token() {
+                    match token {
+                        "perft" => mode = Mode::Perft,
+                        "ponder" => mode = Mode::Ponder,
+                        "wtime" => collect_and_parse!(limit.wtime),
+                        "btime" => collect_and_parse!(limit.btime),
+                        "winc" => collect_and_parse!(limit.winc),
+                        "binc" => collect_and_parse!(limit.binc),
+                        "movestogo" => collect_and_parse!(limit.movestogo),
+                        "depth" => collect_and_parse!(limit.depth),
+                        "iterations" => collect_and_parse!(limit.iterations),
+                        "nodes" => collect_and_parse!(limit.nodes),
+                        "mate" => collect_and_parse!(limit.mate),
+                        "movetime" => collect_and_parse!(limit.movetime),
+                        "infinite" => limit.is_active = false,
+                        "searchmoves" => {
+                            // interpret all remaining arguments as moves.
+                            while let Some(token) = tokenizer.next_token() {
+                                let mut token = Tokenizer::new(token);
+                                let mov = LongAlgebraicUciNotation::new(&mut token, &position);
+                                limit.search_moves.push(Move::try_from(mov)?);
+                            }
+                            break;
                         }
-                    }
-                };
-            }
+                        // to be compatible with stockfish syntax
+                        // e.g. "go 7" is interpreted as "go depth 7"
+                        depth if let Ok(depth) = Depth::try_from(depth) => limit.depth = depth,
+                        o => return Err(UciError::UnknownOption(o.to_owned()).into()),
+                    };
+                }
 
-            thread::spawn(move || {
-                let search = Search::new(limit, target, mode, debug);
-                search.go(&mut position, token);
-            });
+                (mode, limit)
+            };
+
+            let cmd = match mode {
+                Mode::Normal => Command::Normal(position, limit, token, debug),
+                Mode::Ponder => Command::Ponder,
+                Mode::Perft => Command::Perft(position, limit, token, debug),
+            };
+
+            engine.search_t.tx.send(cmd)?;
+
             Ok(())
         }
         Some("position") => {
-            if command.len() > engine.pos_src.len()
-                && !engine.pos_src.is_empty()
-                && command[..engine.pos_src.len()] == engine.pos_src
-            {
-                let new_moves = &command[engine.pos_src.len()..];
+            let process_move = |engine: &mut Engine, mov| -> Result<(), Box<dyn Error>> {
+                // decode move
+                let mov = Move::from_lan(mov, engine.game.position())?;
+
+                // advance the position
+                engine.game.push_move(mov);
+
+                // also advance the mcts game tree
+                let game_tree_caching = engine
+                    .config
+                    .lock()
+                    .map(|c| c.game_tree_caching())
+                    .unwrap_or(false);
+
+                engine.search_t.tx.send(match game_tree_caching {
+                    true => Command::AdvanceState(mov),
+                    false => Command::ResetState,
+                })?;
+
+                Ok(())
+            };
+
+            let cached = command.len() > engine._pos_src.len()
+                && !engine._pos_src.is_empty()
+                && command[..engine._pos_src.len()] == engine._pos_src;
+
+            // First, try to simply update the current position with new moves.
+            if cached {
+                let new_moves = &command[engine._pos_src.len()..];
                 for tok in Tokenizer::new(new_moves).tokens() {
                     if tok == "moves" {
                         continue;
                     }
-                    let tok = &mut Tokenizer::new(tok);
-                    let mov = LongAlgebraicUciNotation::new(tok, &engine.position);
-                    engine.position.make_move(Move::try_from(mov)?);
-                }
-                engine.pos_src = command;
-                return Ok(());
-            }
-            match tokenizer.next_token() {
-                Some("fen") => engine.position = Position::try_from(&mut tokenizer)?,
-                Some("startpos") => engine.position = Position::start_position(),
-                None => return Err(UciError::MissingArgument("value").into()),
-                Some(x) => {
-                    return Err(UciError::InvalidValue(
-                        x.to_string(),
-                        vec!["fen".to_string(), "startpos".to_string()],
-                    )
-                    .into());
-                }
-            };
-            if tokenizer.next_token() == Some("moves") {
-                for tok in tokenizer.tokens() {
-                    let tok = &mut Tokenizer::new(tok);
-                    let mov = LongAlgebraicUciNotation::new(tok, &engine.position);
-                    engine.position.make_move(Move::try_from(mov)?);
+                    process_move(engine, tok)?;
                 }
             }
-            engine.pos_src = command;
+            // Otherwise build a new position
+            else {
+                engine.game = Game::new(match tokenizer.next_token() {
+                    Some("fen") => Position::try_from(FenImport(&mut tokenizer))?,
+                    Some("startpos") => Position::start_position(),
+                    None => return Err(UciError::MissingArgument("value").into()),
+                    Some(x) => {
+                        return Err(UciError::InvalidValue(
+                            x.to_string(),
+                            vec!["fen".to_string(), "startpos".to_string()],
+                        )
+                        .into());
+                    }
+                });
+
+                if tokenizer.next_token() == Some("moves") {
+                    for tok in tokenizer.tokens() {
+                        process_move(engine, tok)?;
+                    }
+                }
+            }
+
+            engine._pos_src = command;
+
+            Ok(())
+        }
+        Some("ucinewgame") => {
+            engine._pos_src = "".to_string();
+
+            // also advance the mcts game tree
+            engine.search_t.tx.send(Command::ResetState)?;
+
             Ok(())
         }
         Some("uci") => {
@@ -166,9 +292,7 @@ pub fn execute_uci(
             sync::out("id name Nephrid");
             sync::out("id author 0qln");
             // Option response
-            for option in &engine.config.0 {
-                sync::out(&option.to_string());
-            }
+            engine.config.lock().expect("Config dead :(").print_uci();
             // Uciok response
             sync::out("uciok");
             Ok(())
@@ -182,13 +306,12 @@ pub fn execute_uci(
                     "value" => break,
                     part => {
                         name.push_str(part);
-                        // Reintroduce spaces between parts
-                        if !name.is_empty() {
-                            name.push(' ')
-                        }
+                        name.push(' ');
                     }
                 };
             }
+
+            let name = name.trim();
 
             if name.is_empty() {
                 return Err(UciError::MissingArgument("name").into());
@@ -198,53 +321,22 @@ pub fn execute_uci(
             let mut new_value = String::new();
             while let Some(token) = tokenizer.next_token() {
                 new_value.push_str(token);
-                // Reintroduce spaces between parts
-                if !new_value.is_empty() {
-                    new_value.push(' ')
-                }
+                new_value.push(' ');
             }
 
             let new_value = new_value.trim();
 
-            match engine.config.find_mut(name.trim()) {
-                None => Err(UciError::UnknownOption)?,
-                Some(option) => match &mut option.cfg_type {
-                    ConfigOptionType::Check { value, .. } => {
-                        if new_value.is_empty() {
-                            return Err(UciError::MissingArgument("value").into());
-                        }
-                        *value = new_value.parse()?;
-                    }
-                    ConfigOptionType::Spin { min, max, value, .. } => {
-                        if new_value.is_empty() {
-                            return Err(UciError::MissingArgument("value").into());
-                        }
-                        let parsed = new_value.parse()?;
-                        if parsed < *min || parsed > *max {
-                            return Err(UciError::InputOutOfRange(
-                                new_value.to_string(),
-                                min.to_string(),
-                                max.to_string(),
-                            )
-                            .into());
-                        }
-                        *value = parsed;
-                    }
-                    ConfigOptionType::Combo { options, value, .. } => {
-                        let new_value = new_value.to_string();
-                        if !options.0.contains(&new_value) {
-                            return Err(UciError::InvalidValue(new_value, options.clone().0).into());
-                        }
-                        *value = new_value;
-                    }
-                    ConfigOptionType::Button { callback } => callback(),
-                    ConfigOptionType::String(value) => *value = new_value.into(),
-                },
-            };
-            Ok(())
-        }
-        Some("ucinewgame") => {
-            engine.pos_src = "".to_string();
+            engine
+                .config
+                .lock()
+                .expect("Config dead :(")
+                .set(name, new_value)?;
+
+            // update search thread config.
+            let cfg = engine.config.clone();
+            let cmd = Command::Configure(cfg);
+            engine.search_t.tx.send(cmd)?;
+
             Ok(())
         }
         Some("debug") => {
@@ -266,6 +358,20 @@ pub fn execute_uci(
         Some("isready") => {
             sync::out("readyok");
             Ok(())
+        }
+        Some("perf") => {
+            execute_uci(engine, "go".to_owned(), cancellation_token.clone())?;
+            execute_uci(engine, "go".to_owned(), cancellation_token.clone())?;
+
+            let dur = tokenizer
+                .next_token()
+                .map(&str::parse::<u64>)
+                .and_then(Result::ok)
+                .unwrap_or(5);
+            let dur = time::Duration::from_secs(dur);
+            thread::sleep(dur);
+
+            execute_uci(engine, "quit".to_owned(), cancellation_token)
         }
         Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
         None => Ok(()),
