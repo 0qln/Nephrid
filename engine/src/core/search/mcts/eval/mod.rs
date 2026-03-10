@@ -328,9 +328,6 @@ impl Quality {
     }
 }
 
-/// tmp
-// pub type Value = Quality;
-
 impl From<Value> for Quality {
     fn from(v: Value) -> Self {
         Self::new((v.0 - 0.5) * 2.)

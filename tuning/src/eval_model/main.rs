@@ -412,7 +412,7 @@ pub fn forward_with_loss_mlc<B: Backend>(
     )
 }
 
-/// Multi-label classification output adapted for multiple metrics.
+// /// Multi-label classification output adapted for multiple metrics.
 // pub struct ExactProbsClassificationOutput<B: Backend> {
 //     /// The loss.
 //     pub loss: Tensor<B, 1>,
@@ -833,7 +833,10 @@ impl MctsStrategy for MctsTrain {
         let inference_result = self.infer.result(tree);
         let tree = tree.to_owned();
         log::info!(target: "games", "Completed MCTS Iterations: {}", self.steps);
-        (); // log::info!(target: "games", "Base Policy: {:#?}", tree.get_root().borrow().iter_branches().map(|b| format!("[{}] p: {}, WDL found: {}", b.mov(), b.policy(), todo!("Gather how many w/d/l we have found in the game tree during mcts"))).collect_vec());
+        // todo: log::info!(target: "games", "Base Policy: {:#?}",
+        // tree.get_root().borrow().iter_branches().map(|b| format!("[{}] p: {}, WDL
+        // found: {}", b.mov(), b.policy(), todo!("Gather how many w/d/l we have found
+        // in the game tree during mcts"))).collect_vec());
         (inference_result, tree)
     }
 

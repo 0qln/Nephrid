@@ -5,7 +5,7 @@ use crate::core::{
     },
 };
 use itertools::Itertools;
-use std::{cell::Cell, mem, ops::Deref};
+use std::{cell::Cell, mem::transmute, ops::Deref};
 
 use crate::core::{
     Move, Position,
@@ -32,9 +32,8 @@ pub struct Tree {
     /// The size of the tree (total number of nodes).
     size: usize,
 
-    /// The minimum depth of the tree.
+    // /// The minimum depth of the tree.
     // mindepth: Depth,
-
     /// The maximum depth of the tree.
     maxdepth: Depth,
 }
@@ -247,7 +246,7 @@ impl Tree {
         self.size
     }
 
-    /// Returns the min depth of the tree.
+    // /// Returns the min depth of the tree.
     // pub fn mindepth(&self) -> Depth {
     //     self.mindepth
     // }
@@ -395,7 +394,7 @@ impl<S: const node_state::Valid> CtNodeRef<S> {
         // idk i hope the compiler is smart enough to see that this is resolvable at
         // comp time x3
         if Self::STATE == Target::state() {
-            Some(unsafe { mem::transmute(self) })
+            Some(unsafe { transmute::<Self, CtNodeRef<Target>>(self) })
         }
         else {
             None
@@ -414,7 +413,7 @@ impl<S: node_state::Any + Default> CtNodeRef<S> {
 
         self.inner.state.set(TargetState::state());
 
-        let ret: CtNodeRef<TargetState> = unsafe { mem::transmute(self) };
+        let ret: CtNodeRef<TargetState> = unsafe { transmute(self) };
         ret.replace(transformed);
         ret
     }
@@ -428,13 +427,13 @@ impl CtNodeRef<Leaf> {
         match expanded {
             ExpandedSwitch::Terminal(node) => {
                 self.inner.state.set(NodeState::Terminal);
-                let ret: CtNodeRef<Terminal> = unsafe { mem::transmute(self) };
+                let ret: CtNodeRef<Terminal> = unsafe { transmute(self) };
                 ret.replace(node);
                 ExpandedRefSwitch::Terminal(ret)
             }
             ExpandedSwitch::Branching(node) => {
                 self.inner.state.set(NodeState::Branching);
-                let ret: CtNodeRef<Branching> = unsafe { mem::transmute(self) };
+                let ret: CtNodeRef<Branching> = unsafe { transmute(self) };
                 ret.replace(node);
                 ExpandedRefSwitch::Branching(ret)
             }
@@ -481,19 +480,26 @@ impl RtNodeRef {
         Self {
             // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
             // another state.
-            node: unsafe { mem::transmute(node) },
+            node: unsafe { transmute::<CtNodeRef<S>, CtNodeRef<Unknown>>(node) },
         }
     }
 
     pub fn into_ct(self) -> NodeSwitch {
+        type Switch = NodeSwitch;
+        type State = NodeState;
+        type Ref<S> = CtNodeRef<S>;
+        type AnyRef = CtNodeRef<Unknown>;
+
         // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
         // another state.
         unsafe {
-            match self.state() {
-                NodeState::Leaf => NodeSwitch::Leaf(mem::transmute(self.node)),
-                NodeState::Branching => NodeSwitch::Branching(mem::transmute(self.node)),
-                NodeState::Terminal => NodeSwitch::Terminal(mem::transmute(self.node)),
-                NodeState::Evaluated => NodeSwitch::Evaluated(mem::transmute(self.node)),
+            let state = self.state();
+            let node = self.node;
+            match state {
+                State::Leaf => Switch::Leaf(transmute::<AnyRef, Ref<Leaf>>(node)),
+                State::Branching => Switch::Branching(transmute::<AnyRef, Ref<Branching>>(node)),
+                State::Terminal => Switch::Terminal(transmute::<AnyRef, Ref<Terminal>>(node)),
+                State::Evaluated => Switch::Evaluated(transmute::<AnyRef, Ref<Evaluated>>(node)),
             }
         }
     }

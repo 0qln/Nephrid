@@ -83,7 +83,9 @@ impl Worker {
 
                 let result = mcts(&mut pos, parts, state, limit, debug, ct, MctsUci::default());
 
-                if result.is_none() { todo!("Log error or something: got no result from mcts search.") };
+                if result.is_none() {
+                    todo!("Log error or something: got no result from mcts search.")
+                };
 
                 Ok(())
             }
@@ -96,8 +98,11 @@ impl Worker {
                     Ok(ref cfg) => cfg,
                     Err(_) => &Configuration::default(),
                 };
+
+                #[allow(clippy::unnecessary_fallible_conversions)]
                 let parts = <&mcts::config::mcts::Parts as MctsParts>::Instance::try_from(cfg)
                     .map_err(|e| ExecError::BadConfig(Box::new(e)))?;
+
                 self.mcts_parts = Some(parts);
                 Ok(())
             }

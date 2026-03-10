@@ -70,8 +70,8 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
 
     searcher.init_root(tree);
 
-    while !ct.is_cancelled()
-        && !(limit.is_active()
+    while !(ct.is_cancelled()
+        || limit.is_active()
             && limit.is_reached(
                 tree.size() as u64 - nodes_begin,
                 Instant::now(),

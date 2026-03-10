@@ -1,7 +1,6 @@
 use std::{
     cmp::min,
     time::{Duration, Instant},
-    u16,
 };
 
 use crate::core::{color::colors, depth::Depth, r#move::Move, position::Position};
