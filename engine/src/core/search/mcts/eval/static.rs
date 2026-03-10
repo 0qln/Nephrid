@@ -307,7 +307,9 @@ impl From<&EvalInfo> for RawPolicy {
             policy.set(usize::from(mov), score as f32);
         }
 
+        // todo use softmax or normalize?
         softmax(&mut policy.0, 10.);
+        // normalize(&mut policy.0);
 
         policy
     }
