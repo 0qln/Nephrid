@@ -24,6 +24,7 @@ pub fn perft(mut pos: Position, limit: Limit, ct: CancellationToken, debug: Debu
     )
 }
 
+#[allow(unused)]
 fn perft_inner_iter(
     pos: &mut UnsafeCell<Position>,
     depth: Depth,
