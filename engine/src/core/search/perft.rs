@@ -1,20 +1,17 @@
-use crate::core::Depth;
-use crate::core::Limit;
-use crate::core::Move;
-use crate::core::move_iter::fold_legal_moves;
-use crate::core::position::Position;
-use crate::misc::DebugMode;
-use crate::uci::sync::{self, CancellationToken};
-use std::cell::UnsafeCell;
-use std::ops::ControlFlow;
+use crate::{
+    core::{Depth, Limit, Move, r#move::MoveList, move_iter::fold_legal_moves, position::Position},
+    misc::DebugMode,
+    uci::sync::{self, CancellationToken},
+};
+use std::{cell::UnsafeCell, ops::ControlFlow};
 
 pub fn perft(pos: Position, limit: Limit, ct: CancellationToken, debug: DebugMode) -> u64 {
     perft_inner(
         &mut UnsafeCell::new(pos),
         limit.depth,
-        limit,
-        ct.clone(),
-        debug,
+        &limit,
+        &ct,
+        &debug,
         |mov, count, depth: Depth, debug| {
             if debug {
                 let indent = itertools::repeat_n(' ', depth.v().into()).collect::<String>();
@@ -29,9 +26,9 @@ pub fn perft(pos: Position, limit: Limit, ct: CancellationToken, debug: DebugMod
 fn perft_inner(
     pos: &mut UnsafeCell<Position>,
     depth: Depth,
-    limit: Limit,
-    cancellation_token: CancellationToken,
-    debug: DebugMode,
+    limit: &Limit,
+    cancellation_token: &CancellationToken,
+    debug: &DebugMode,
     f: fn(Move, u64, Depth, bool) -> (),
 ) -> u64 {
     if cancellation_token.is_cancelled() {
@@ -42,18 +39,21 @@ fn perft_inner(
         return 1;
     }
 
-    // Safety:
-    // This is safe iff unmake_move perfectly reverses the muations made by
-    // make_move.
+    // todo:
+    // this is actually not sound :-)
+    // you'd have to create and destroy the &*pos.get() pointer each time when you
+    // want to read inside fold_legal_moves instead of holding it across the
+    // pos.get_mut() pointer aliases.
+    // see: https://doc.rust-lang.org/nightly/core/cell/struct.UnsafeCell.html#aliasing-rules
     unsafe {
         fold_legal_moves::<_, _, _>(&*pos.get(), 0, |acc, m| {
             pos.get_mut().make_move(m);
             let c = perft_inner(
                 pos,
                 depth - 1,
-                limit.clone(),
-                cancellation_token.clone(),
-                debug.clone(),
+                limit,
+                cancellation_token,
+                debug,
                 if debug.get() { f } else { |_, _, _, _| {} },
             );
             f(m, c, limit.depth - depth, debug.get());
