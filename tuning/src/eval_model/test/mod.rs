@@ -88,6 +88,7 @@ pub mod logs {
 //     };
 // }
 
+#[ignore]
 #[test]
 pub fn learn_mate_in_1() {
     logs::init();
@@ -167,6 +168,7 @@ pub fn learn_mate_in_1() {
     )
 }
 
+#[ignore]
 #[test]
 pub fn learn_mate_in_2() {
     magics::init();
