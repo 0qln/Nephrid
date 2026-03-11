@@ -31,7 +31,7 @@ fn run(c: &mut Criterion, name: &str, Pair(fen, depth): Pair<&str, Depth>) {
 
     group
         .measurement_time(Duration::from_secs(60))
-        .sample_size(50)
+        .sample_size(20)
         .bench_with_input(BenchmarkId::new(name, Pair(fen, depth)), &fen, |b, fen| {
             b.iter_batched(
                 || Position::from_fen(fen).unwrap(),
