@@ -234,20 +234,14 @@ pub struct Configuration {
 impl Default for Configuration {
     fn default() -> Self {
         Self {
-            hash: ConfigOption::new("Hash", Spin::new(16, 1, 64 * 1024 * 1024)),
-            threads: ConfigOption::new("Threads", Spin::new(1, 1, 1)),
-            clear_hash: ConfigOption::new("Clear Hash", Button::new(clear_hash_impl)),
-            dirichlet_alpha: ConfigOption::new(
-                "[Dirichlet Noise] alpha in percentage",
-                Spin::new(30, 0, 1000),
-            ),
-            dirichlet_epsilon: ConfigOption::new(
-                "[Dirichlet Noise] epsilon in percentage",
-                Spin::new(25, 0, 100),
-            ),
-            weights_path: ConfigOption::new("Weights Path", StringOption::new("./weights")),
-            game_tree_caching: ConfigOption::new("Game tree caching", Check::new(true)),
-            gui_lag: ConfigOption::new("Gui Lag", Spin::new(500, 1, 10_000)),
+            hash: ConfigOption::new("hash", Spin::new(16, 1, 64 * 1024 * 1024)),
+            threads: ConfigOption::new("threads", Spin::new(1, 1, 1)),
+            clear_hash: ConfigOption::new("clearhash", Button::new(clear_hash_impl)),
+            dirichlet_alpha: ConfigOption::new("dirichlet-alpha", Spin::new(30, 0, 1000)),
+            dirichlet_epsilon: ConfigOption::new("dirichlet-epsilon", Spin::new(25, 0, 100)),
+            weights_path: ConfigOption::new("weights-path", StringOption::new("./weights")),
+            game_tree_caching: ConfigOption::new("game-tree-caching", Check::new(true)),
+            gui_lag: ConfigOption::new("gui-lag", Spin::new(100, 1, 10_000)),
         }
     }
 }
@@ -289,18 +283,12 @@ impl Configuration {
         match name.to_lowercase().as_str() {
             "hash" => self.hash.set(value),
             "threads" => self.threads.set(value),
-            "clear hash" | "clearhash" => {
-                self.clear_hash.trigger();
-                Ok(())
-            },
-            "[dirichlet noise] alpha" | "dirichlet alpha" => self.dirichlet_alpha.set(value),
-            "[dirichlet noise] epsilon" | "dirichlet epsilon" => self.dirichlet_epsilon.set(value),
-            "weights path" => {
-                self.weights_path.set(value);
-                Ok(())
-            },
-            "game tree caching" => self.game_tree_caching.set(value),
-            "gui lag" => self.gui_lag.set(value),
+            "clearhash" => Ok(self.clear_hash.trigger()),
+            "dirichlet-alpha" => self.dirichlet_alpha.set(value),
+            "dirichlet-epsilon" => self.dirichlet_epsilon.set(value),
+            "weights-path" => Ok(self.weights_path.set(value)),
+            "game-tree-caching" => self.game_tree_caching.set(value),
+            "gui-lag" => self.gui_lag.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
