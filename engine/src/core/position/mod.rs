@@ -38,8 +38,6 @@ pub enum CheckState {
     Double,
 }
 
-pub mod repetitions;
-
 #[cfg(test)]
 mod test;
 
@@ -207,8 +205,6 @@ impl StateStack {
     }
 }
 
-type Repetitions = repetitions::RepetitionTable<16>;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PieceInfo {
     c_bitboards: [Bitboard; 2],
@@ -304,7 +300,6 @@ impl PieceInfo {
 pub struct Position {
     piece_info: PieceInfo,
     state: StateStack,
-    repetitions: Repetitions,
 }
 
 impl Default for Position {
@@ -313,7 +308,6 @@ impl Default for Position {
         Self {
             piece_info: Default::default(),
             state: Default::default(),
-            repetitions: Default::default(),
         }
     }
 }
@@ -379,28 +373,34 @@ impl Position {
 
     #[inline]
     pub fn has_threefold_repetition(&self) -> bool {
-        let hash = self.get_key();
-        self.repetitions.get(hash) >= Some(3)
-    }
+        // cannot have the same position 3 times if the same player has only moved
+        // twice after the last irriversible move.
+        let plys50 = self.plys_50().v;
+        if plys50 < 4 {
+            return false;
+        }
 
-    #[inline]
-    pub fn repetition_table_collisions(&self) -> usize {
-        self.repetitions.collisions()
-    }
-
-    #[inline]
-    pub fn repetition_table_free(&self) -> usize {
-        self.repetitions.free()
+        let mut i = 2;
+        let current_key = self.get_key();
+        let mut repetitions = 0;
+        while let Some(state) = self.state.get_prev(i)
+            && ((i as u16) < plys50)
+        {
+            if state.key == current_key {
+                repetitions += 1;
+                if repetitions >= 2 {
+                    return true;
+                }
+            }
+            // only compare same color, so skip 2
+            i += 2;
+        }
+        false
     }
 
     #[inline]
     pub fn is_insufficient_material(&self) -> bool {
         self.piece_info.piece_counts.iter().sum::<i8>() <= 2
-    }
-
-    #[inline]
-    pub fn repetition_table_capacity(&self) -> usize {
-        Repetitions::capacity()
     }
 
     #[inline]
@@ -685,7 +685,6 @@ impl Position {
         }
 
         next_state.init(self);
-        self.repetitions.push(next_state.key);
         self.state.incr();
 
         #[inline(always)]
@@ -707,8 +706,6 @@ impl Position {
         // Safety: During the lifetime of this pointer, no other pointer
         // writes to the memory location of the popped state.
         let popped_state = unsafe { self.state.pop_current().as_ref() };
-
-        self.repetitions.pop(popped_state.key);
 
         match flag.v() {
             // castling
