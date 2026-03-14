@@ -95,7 +95,7 @@ impl Tree {
         pos: &Position,
         search_depth: Depth,
     ) -> ExpandedRefSwitch {
-        let expanded = node.expand(pos, search_depth);
+        let expanded = node.expand(pos);
 
         let height: Height = search_depth.into();
 
@@ -446,9 +446,9 @@ impl<S: node_state::Any + Default> CtNodeRef<S> {
 }
 
 impl CtNodeRef<Leaf> {
-    pub(self) fn expand(self, pos: &Position, search_depth: Depth) -> ExpandedRefSwitch {
+    pub(self) fn expand(self, pos: &Position) -> ExpandedRefSwitch {
         let leaf = self.replace(Default::default());
-        let expanded = leaf.expand(pos, search_depth);
+        let expanded = leaf.expand(pos);
 
         match expanded {
             ExpandedSwitch::Terminal(node) => {
@@ -780,10 +780,16 @@ impl<S: node_state::HasBranches> fmt::Display for Node<S> {
 impl Node<Leaf> {
     /// Expand the node, consuming the Leaf.
     /// variant.
-    pub(self) fn expand(mut self, pos: &Position, search_depth: Depth) -> ExpandedSwitch {
+    pub(self) fn expand(mut self, pos: &Position) -> ExpandedSwitch {
         // todo: save the game_result in the node data, such that it doesn't have to be
         // evaluated each time we encounter the terminal node in the search.
-        if pos.search_result(search_depth).is_some() {
+        //
+        // note: do not switch this for search_result. The tree has to remain an
+        // accurate representation of the game rules.
+        // e.g. if we mark this as Terminal after 2 repetitions and the opponened
+        // actually plays this later on down the line, the tree root will be
+        // Terminal, even though it should be Branching.
+        if pos.game_result().is_some() {
             // SAFETY: If there's a gameresult, we can be sure that this is a terminal node.
             return ExpandedSwitch::Terminal(unsafe { Node::new(self.data) });
         }
