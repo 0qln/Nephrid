@@ -27,7 +27,7 @@ fn test(pos: Position, expected_result: Option<GameResult>) {
 
     if let Some(expected_result) = expected_result {
         let node = node.terminal().expect("startpos should have branches");
-        let result = DummyEvaluator::eval_terminal(node.clone(), &pos);
+        let result = DummyEvaluator::eval_terminal(node.clone(), Depth::MIN, &pos);
         assert_eq!(result, Evaluation::Terminal(expected_result));
     }
 }

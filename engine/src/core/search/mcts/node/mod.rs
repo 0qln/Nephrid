@@ -23,6 +23,34 @@ use std::{cell::RefCell, cmp::Ordering, fmt, marker::PhantomData, ops, rc::Rc};
 #[cfg(test)]
 pub mod test;
 
+/// The height of the tree. The root is at height 1, and the height of an empty
+/// tree is 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Height(pub u16);
+
+impl Height {
+    /// The height of an empty.
+    pub const EMPTY: Height = Height(0);
+
+    /// The height.
+    pub const ROOT: Height = Height(1);
+}
+
+impl From<Depth> for Height {
+    fn from(value: Depth) -> Self {
+        Height(value.v() as u16 + 1)
+    }
+}
+
+impl fmt::Display for Height {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl_op!(+|a: Height, b: Height| -> Height { Height(a.0 + b.0) });
+impl_op!(+|a: Height, b: u16| -> Height { Height(a.0 + b) });
+
 #[derive(Debug, Clone)]
 pub struct Tree {
     /// Root of the tree.
@@ -32,10 +60,11 @@ pub struct Tree {
     /// The size of the tree (total number of nodes).
     size: usize,
 
-    // /// The minimum depth of the tree.
-    // mindepth: Depth,
-    /// The maximum depth of the tree.
-    maxdepth: Depth,
+    // todo: figure out a way to track the minheight stat, such that we don't have to recompute it
+    // each time we expand a node. maybe we can track the minheight of each subtree in the node
+    // data, and update it when we expand a node? (That'd would be specially expensive tho)
+    /// The maximum height of the tree.
+    maxheight: Height,
 }
 
 impl Default for Tree {
@@ -43,8 +72,7 @@ impl Default for Tree {
         Self {
             root: Default::default(),
             size: 1,
-            // mindepth: Depth::ROOT,
-            maxdepth: Depth::ROOT,
+            maxheight: Height::ROOT,
         }
     }
 }
@@ -60,24 +88,22 @@ impl Tree {
 // Node mutable operations delegeated through the tree, such that the statistics
 // are always up to date.
 impl Tree {
-    /// Expands a leaf node, creating branches and updating tree size and depth.
+    /// Expands a leaf node, creating branches and updating tree statistics.
     pub fn expand_node(
         &mut self,
         node: CtNodeRef<Leaf>,
         pos: &Position,
-        depth: Depth,
+        search_depth: Depth,
     ) -> ExpandedRefSwitch {
-        let expanded = node.expand(pos);
+        let expanded = node.expand(pos, search_depth);
+
+        let height: Height = search_depth.into();
 
         match &expanded {
             ExpandedRefSwitch::Branching(b) => {
                 let branches_count = b.borrow().branches().len();
                 self.size += branches_count;
-                self.maxdepth = self.maxdepth.max(depth + 1);
-                // todo: this is too expensive...
-                // if self.mindepth == depth {
-                //     self.mindepth = self.compute_mindepth();
-                // }
+                self.maxheight = self.maxheight.max(height + 1);
             }
             ExpandedRefSwitch::Terminal(_) => {}
         }
@@ -220,20 +246,20 @@ impl Tree {
         self.get_root().borrow().data.compute_subtree_size()
     }
 
-    /// Computes the max depth of the tree.
-    pub fn compute_maxdepth(&self) -> Depth {
-        self.get_root().borrow().data.compute_subtree_maxdepth()
+    /// Computes the max height of the tree.
+    pub fn compute_maxheight(&self) -> Height {
+        self.get_root().borrow().data.compute_subtree_maxheight()
     }
 
-    /// Computes the min depth of the tree.
-    pub fn compute_mindepth(&self) -> Depth {
-        self.get_root().borrow().data.compute_subtree_mindepth()
+    /// Computes the min height of the tree.
+    pub fn compute_minheight(&self) -> Height {
+        self.get_root().borrow().data.compute_subtree_minheight()
     }
 
     /// Recompute all stats.
     fn compute_stats(&mut self) {
         self.size = self.compute_size();
-        self.maxdepth = self.compute_maxdepth();
+        self.maxheight = self.compute_maxheight();
         // self.mindepth = self.compute_mindepth();
     }
 
@@ -251,9 +277,9 @@ impl Tree {
     //     self.mindepth
     // }
 
-    /// Returns the max depth of the tree.
-    pub fn maxdepth(&self) -> Depth {
-        self.maxdepth
+    /// Returns the max height of the tree.
+    pub fn maxheight(&self) -> Height {
+        self.maxheight
     }
 }
 
@@ -420,9 +446,9 @@ impl<S: node_state::Any + Default> CtNodeRef<S> {
 }
 
 impl CtNodeRef<Leaf> {
-    pub(self) fn expand(self, pos: &Position) -> ExpandedRefSwitch {
+    pub(self) fn expand(self, pos: &Position, search_depth: Depth) -> ExpandedRefSwitch {
         let leaf = self.replace(Default::default());
-        let expanded = leaf.expand(pos);
+        let expanded = leaf.expand(pos, search_depth);
 
         match expanded {
             ExpandedSwitch::Terminal(node) => {
@@ -511,6 +537,7 @@ impl RtNodeRef {
 
 #[derive(Clone, Default)]
 pub struct NodeData {
+    // todo: use a boxed slice instead. the branches will not change once set.
     /// All the branches from this node.
     branches: Vec<Branch>,
 
@@ -574,25 +601,25 @@ impl NodeData {
             .sum::<usize>()
     }
 
-    pub fn compute_subtree_maxdepth(&self) -> Depth {
-        Depth::ROOT
+    pub fn compute_subtree_maxheight(&self) -> Height {
+        Height::ROOT
             + self
                 .branches()
                 .iter()
-                .map(|b| b.node().borrow().data.compute_subtree_maxdepth())
+                .map(|b| b.node().borrow().data.compute_subtree_maxheight())
                 .max()
-                .unwrap_or(Depth::MIN)
+                .unwrap_or(Height::EMPTY)
     }
 
-    pub fn compute_subtree_mindepth(&self) -> Depth {
+    pub fn compute_subtree_minheight(&self) -> Height {
         // we ourselves are 1-nodes deep.
-        Depth::ROOT
+        Height::ROOT
             + self
                 .branches()
                 .iter()
-                .map(|b| b.node().borrow().data.compute_subtree_mindepth())
+                .map(|b| b.node().borrow().data.compute_subtree_minheight())
                 .min()
-                .unwrap_or(Depth::MIN)
+                .unwrap_or(Height::EMPTY)
     }
 
     fn new_leaf() -> NodeData {
@@ -753,9 +780,10 @@ impl<S: node_state::HasBranches> fmt::Display for Node<S> {
 impl Node<Leaf> {
     /// Expand the node, consuming the Leaf.
     /// variant.
-    pub(self) fn expand(mut self, pos: &Position) -> ExpandedSwitch {
-        // todo: maybe there is a more efficient way to check this?
-        if pos.game_result().is_some() {
+    pub(self) fn expand(mut self, pos: &Position, search_depth: Depth) -> ExpandedSwitch {
+        // todo: save the game_result in the node data, such that it doesn't have to be
+        // evaluated each time we encounter the terminal node in the search.
+        if pos.search_result(search_depth).is_some() {
             // SAFETY: If there's a gameresult, we can be sure that this is a terminal node.
             return ExpandedSwitch::Terminal(unsafe { Node::new(self.data) });
         }

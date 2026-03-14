@@ -371,7 +371,9 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             NodeSwitch::Leaf(node) => {
                 self.select_leaf(line_index, parent_sel_id, node, tree, depth)
             }
-            NodeSwitch::Terminal(node) => self.select_terminal(line_index, parent_sel_id, node),
+            NodeSwitch::Terminal(node) => {
+                self.select_terminal(line_index, parent_sel_id, node, depth)
+            }
         };
 
         self.position.unmake_move(branch.mov());
@@ -390,7 +392,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         match expanded {
             ExpandedRefSwitch::Terminal(node) => {
-                self.select_terminal(line_index, parent_sel_id, node)
+                self.select_terminal(line_index, parent_sel_id, node, depth)
             }
             ExpandedRefSwitch::Branching(node) => {
                 self.select_branching(line_index, parent_sel_id, node, depth)
@@ -403,8 +405,9 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         line_index: usize,
         parent_id: NodeId,
         node: CtNodeRef<Terminal>,
+        depth: Depth,
     ) -> usize {
-        let eval = E::eval_terminal(node.clone(), self.position);
+        let eval = E::eval_terminal(node.clone(), depth, self.position);
         self.selection.set(
             line_index,
             PhaseItem::Terminal(SelNode {

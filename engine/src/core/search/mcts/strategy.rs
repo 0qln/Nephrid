@@ -81,7 +81,7 @@ impl MctsStrategy for MctsUci {
             let nodes = Some(format!("nodes {}", tree_size));
             let nps = self.nps(tree_size).map(|x| format!("nps {x}"));
             // let depth = Some(format!("depth {}", tree.mindepth()));
-            let seldepth = Some(format!("seldepth {}", tree.maxdepth()));
+            let seldepth = Some(format!("seldepth {}", tree.maxheight()));
             let pv = Some(format!("pv {}", tree.principal_variation()));
             let time = self
                 .search_time()

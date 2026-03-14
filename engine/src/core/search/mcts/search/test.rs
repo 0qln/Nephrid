@@ -47,7 +47,7 @@ where
             assert_eq!(&pos, &pos_clone);
             assert_eq!(tree.size(), tree.compute_size());
             // assert_eq!(tree.mindepth(), tree.compute_mindepth());
-            assert_eq!(tree.maxdepth(), tree.compute_maxdepth());
+            assert_eq!(tree.maxdepth(), tree.compute_maxheight());
         })
         .expect("Couldn't spawn thread")
         .join()

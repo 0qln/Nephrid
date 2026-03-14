@@ -12,6 +12,7 @@ use crate::{
             EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, ranks,
             squares,
         },
+        depth::Depth,
         r#move::{Move, SAN, move_flags},
         move_iter::{bishop, fold_legal_moves, king, knight, pawn, rook},
         piece::{Piece, PieceParseError, PieceType, PromoPieceType, piece_type},
@@ -374,9 +375,9 @@ impl Position {
     #[inline]
     pub fn has_threefold_repetition(&self) -> bool {
         // cannot have the same position 3 times if the same player has only moved
-        // twice after the last irriversible move.
+        // 4 times after the last irriversible move.
         let plys50 = self.plys_50().v;
-        if plys50 < 4 {
+        if plys50 < 8 {
             return false;
         }
 
@@ -384,13 +385,34 @@ impl Position {
         let current_key = self.get_key();
         let mut repetitions = 0;
         while let Some(state) = self.state.get_prev(i)
-            && ((i as u16) < plys50)
+            && ((i as u16) <= plys50)
         {
             if state.key == current_key {
                 repetitions += 1;
                 if repetitions >= 2 {
                     return true;
                 }
+            }
+            // only compare same color, so skip 2
+            i += 2;
+        }
+        false
+    }
+
+    #[inline]
+    pub fn has_twofold_repetition(&self) -> bool {
+        let plys50 = self.plys_50().v;
+        if plys50 < 4 {
+            return false;
+        }
+
+        let mut i = 2;
+        let current_key = self.get_key();
+        while let Some(state) = self.state.get_prev(i)
+            && ((i as u16) <= plys50)
+        {
+            if state.key == current_key {
+                return true;
             }
             // only compare same color, so skip 2
             i += 2;
@@ -452,9 +474,51 @@ impl Position {
         }
     }
 
+    /// Returns the game result if the position is in a terminal state or looks
+    /// to be a terminal state found in search, else None.
+    /// has_moves: Whether this position has subsequent moves.
+    /// search_depth: The current search depth.
+    pub fn search_result_with(&self, has_moves: bool, search_depth: Depth) -> Option<GameResult> {
+        let stm = self.get_turn();
+        let check_state = self.get_check_state();
+
+        // First check if the position is a normal game ending.
+        if !has_moves {
+            Some(if check_state != CheckState::None {
+                // If in check and no moves, it's a loss for the current player
+                GameResult::Win { relative_to: !stm }
+            }
+            else {
+                // Stalemate
+                GameResult::Draw
+            })
+        }
+        // Then check if the position has reached some of the extra-rule endings.
+        //
+        // regarding 2-fold usage:
+        //   Apply the 2-fold heuristic ONLY if we are safely inside the search tree.
+        //   `search_ply > 0` prevents the engine from scoring a move directly from the
+        //   root as a draw just because it repeats the position once.
+        else if (search_depth > Depth::ROOT && self.has_twofold_repetition())
+            || self.fifty_move_rule()
+            || self.is_insufficient_material()
+        {
+            Some(GameResult::Draw)
+        }
+        // Otherwise no game result.
+        else {
+            None
+        }
+    }
+
     pub fn game_result(&self) -> Option<GameResult> {
         let has_moves = self.has_legal_moves();
         self.game_result_with(has_moves)
+    }
+
+    pub fn search_result(&self, search_depth: Depth) -> Option<GameResult> {
+        let has_moves = self.has_legal_moves();
+        self.search_result_with(has_moves, search_depth)
     }
 
     pub fn has_legal_moves(&self) -> bool {

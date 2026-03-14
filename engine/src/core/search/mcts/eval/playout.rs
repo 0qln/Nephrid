@@ -1,7 +1,11 @@
 use itertools::Itertools;
 use rand::prelude::*;
 
-use crate::core::{move_iter::fold_legal_moves, search::mcts::node::node_state::{Branching, Valid}};
+use crate::core::{
+    depth::Depth,
+    move_iter::fold_legal_moves,
+    search::mcts::node::node_state::{Branching, Valid},
+};
 
 use super::*;
 
@@ -20,8 +24,7 @@ impl PlayoutEvaluator {
     /// Executes a random playout from the given position until a terminal state
     /// or depth limit.
     fn playout(&mut self, mut pos: Position) -> GameResult {
-        let mut depth = 0;
-        const MAX_DEPTH: usize = 256;
+        let mut depth = Depth::MIN;
 
         loop {
             let moves = {
@@ -36,12 +39,12 @@ impl PlayoutEvaluator {
             };
 
             // 1. Check for Terminal State / Draw Rules
-            if let Some(result) = pos.game_result_with(!moves.is_empty()) {
+            if let Some(result) = pos.search_result_with(!moves.is_empty(), depth) {
                 return result;
             }
 
             // 2. Check Depth Limit (treat as Draw)
-            if depth >= MAX_DEPTH {
+            if depth >= Depth::MAX {
                 return GameResult::Draw;
             }
 
@@ -65,7 +68,11 @@ impl Evaluator for PlayoutEvaluator {
     type TraceData = Option<PlayoutTraceData>;
 
     /// Captures the position at the current node.
-    fn trace<S: const Valid + HasBranches>(&self, node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
+    fn trace<S: const Valid + HasBranches>(
+        &self,
+        node: CtNodeRef<S>,
+        pos: &Position,
+    ) -> Self::TraceData {
         node.try_into::<Branching>()
             .map(|_node| PlayoutTraceData { start_pos: pos.clone() })
     }

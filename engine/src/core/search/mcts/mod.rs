@@ -55,6 +55,8 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     let tree = state.tree();
     let mut iterations = 0;
 
+    println!("time: {}", time_per_move.as_secs_f32());
+
     strategy.start(tree);
 
     let nodes_begin = tree.size() as u64;
