@@ -2,22 +2,27 @@ use std::ops::Try;
 
 use itertools::Itertools;
 
-use crate::core::{
-    Position,
-    depth::Depth,
-    search::mcts::{
-        back::Backpropagater,
-        eval::{Evaluation, Evaluator, RawPolicy},
-        limiter::{self, Limiter},
-        node::{
-            Branch, CtNodeRef, Tree,
-            node_state::{self, *},
+use crate::{
+    core::{
+        Position,
+        depth::Depth,
+        search::mcts::{
+            back::Backpropagater,
+            eval::{Evaluation, Evaluator, RawPolicy},
+            limiter::{self, Limiter},
+            node::{
+                Branch, CtNodeRef, Tree,
+                node_state::{self, *},
+            },
+            noise::Noiser,
+            select::Selector,
         },
-        noise::Noiser,
-        select::Selector,
+        turn::Turn,
     },
-    turn::Turn,
+    uci::sync::CancellationToken,
 };
+
+use super::eval::GameResult;
 
 #[cfg(test)]
 pub mod test;
@@ -46,12 +51,15 @@ pub type EvalItem = SelNode<Evaluation, Branching>;
 
 pub type TerminalItem = SelNode<Evaluation, Terminal>;
 
+pub type ShortcutItem = SelNode<Evaluation, Leaf>;
+
 #[derive(Debug)]
 pub enum PhaseItem<T> {
     Unused,
     Batched(BatchItem<T>),
     Evaluated(EvalItem),
     Terminal(TerminalItem),
+    Shortcut(ShortcutItem),
 }
 
 impl<T> PhaseItem<T> {
@@ -279,11 +287,19 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         }
     }
 
-    pub fn grow(&mut self, tree: &mut Tree) {
+    pub fn grow(&mut self, tree: &mut Tree, ct: CancellationToken) {
         self.selection.clear();
-
+        if ct.is_cancelled() {
+            return;
+        }
         self.select_lines(tree);
+        if ct.is_cancelled() {
+            return;
+        }
         self.eval_batched();
+        if ct.is_cancelled() {
+            return;
+        }
         self.backup_evals(tree);
     }
 
@@ -369,7 +385,13 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 self.pick_branches(budget, line_index, depth, node, tree, child_id)
             }
             NodeSwitch::Leaf(node) => {
-                self.select_leaf(line_index, parent_sel_id, node, tree, depth)
+                if depth > Depth::ROOT && self.position.has_twofold_repetition() {
+                    let eval = Evaluation::Terminal(GameResult::Draw);
+                    self.select_shortcut(line_index, parent_sel_id, node, eval, depth)
+                }
+                else {
+                    self.select_leaf(line_index, parent_sel_id, node, tree, depth)
+                }
             }
             NodeSwitch::Terminal(node) => {
                 self.select_terminal(line_index, parent_sel_id, node, depth)
@@ -398,6 +420,27 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 self.select_branching(line_index, parent_sel_id, node, depth)
             }
         }
+    }
+
+    /// Select a shortcut to a node that can be considered terminal.
+    fn select_shortcut(
+        &mut self,
+        line_index: usize,
+        parent_id: NodeId,
+        node: CtNodeRef<Leaf>,
+        eval: Evaluation,
+        _depth: Depth,
+    ) -> usize {
+        self.selection.set(
+            line_index,
+            PhaseItem::Shortcut(SelNode {
+                node,
+                turn: self.position.get_turn(),
+                parent: Some(parent_id),
+                data: eval,
+            }),
+        );
+        1
     }
 
     fn select_terminal(
@@ -498,6 +541,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 // backup terminals, guesses, etc.
                 PhaseItem::Evaluated(x) => self.backprop.backpropagate(tree, &self.selection, x),
                 PhaseItem::Terminal(x) => self.backprop.backpropagate(tree, &self.selection, x),
+                PhaseItem::Shortcut(x) => self.backprop.backpropagate(tree, &self.selection, x),
             }
         }
     }
