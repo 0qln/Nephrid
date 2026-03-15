@@ -86,7 +86,7 @@ fn perft_inner_collect(
     }
 
     let mut move_list = MoveList::default();
-    let n_moves = fold_legal_moves::<_, _, _>(&pos, 0_u8, |curr, m| {
+    let n_moves = fold_legal_moves::<_, _, _>(pos, 0_u8, |curr, m| {
         move_list[curr] = m;
         ControlFlow::Continue::<(), _>(curr + 1)
     })
