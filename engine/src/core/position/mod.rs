@@ -500,10 +500,10 @@ impl Position {
         // Then check if the position has reached some of the extra-rule endings.
         //
         // regarding 2-fold usage:
-        //   Apply the 2-fold heuristic ONLY if we are safely inside the search tree.
-        //   `search_depth > Depth::ROOT` prevents the engine from scoring a move directly
-        //   from the root as a draw just because it repeats the position once.
+        //   Apply the 2-fold heuristic deep in the tree.
+        //   At the root, fall back to the strict 3-fold rule to catch actual draws.
         else if (search_depth > Depth::ROOT && self.has_twofold_repetition())
+            || (search_depth == Depth::ROOT && self.has_threefold_repetition())
             || self.fifty_move_rule()
             || self.is_insufficient_material()
         {
