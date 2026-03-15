@@ -379,7 +379,7 @@ impl Position {
     #[inline]
     pub fn has_threefold_repetition(&self) -> bool {
         // cannot have the same position 3 times if the same player has only moved
-        // 4 times after the last irriversible move.
+        // 4 times after the last irreversible move.
         let plys50 = self.plys_50().v;
         if plys50 < 8 {
             return false;
