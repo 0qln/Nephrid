@@ -1,12 +1,15 @@
-use crate::core::{
-    config::Configuration,
-    move_iter::sliding_piece::magics,
-    position::Position,
-    search::mcts::{
-        MctsParts, NullNoiser, StaticParts, back::DefaultBackuper, limiter::NoopLimiter,
-        node::Tree, search::TreeSearcher, select::ucb::UcbSelector, test::DummyEvaluator,
+use crate::{
+    core::{
+        config::Configuration,
+        move_iter::sliding_piece::magics,
+        position::Position,
+        search::mcts::{
+            MctsParts, NullNoiser, StaticParts, back::DefaultBackuper, limiter::NoopLimiter,
+            node::Tree, search::TreeSearcher, select::ucb::UcbSelector, test::DummyEvaluator,
+        },
+        zobrist,
     },
-    zobrist,
+    uci::sync::CancellationToken,
 };
 
 use std::{error::Error, thread};
@@ -21,6 +24,8 @@ where
     thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
+            let ct = CancellationToken::new();
+
             let pos = Position::from_fen(pos).unwrap();
 
             let mut tree = Tree::default();
@@ -41,13 +46,13 @@ where
             searcher.init_root(&mut tree);
 
             for _i in 0..(rounds / X) {
-                searcher.grow(&mut tree);
+                searcher.grow(&mut tree, ct.clone());
             }
 
             assert_eq!(&pos, &pos_clone);
             assert_eq!(tree.size(), tree.compute_size());
             // assert_eq!(tree.mindepth(), tree.compute_mindepth());
-            assert_eq!(tree.maxdepth(), tree.compute_maxheight());
+            assert_eq!(tree.maxheight(), tree.compute_maxheight());
         })
         .expect("Couldn't spawn thread")
         .join()

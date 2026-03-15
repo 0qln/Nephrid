@@ -249,7 +249,7 @@ fn test_tree_principal_variation_simple_path() {
         root: root_node,
         size: 3,
         // mindepth: Depth::new(3),
-        maxheight: Depth::new(3),
+        maxheight: Height(3),
     };
 
     // Synthetically inflate visits to force `select_best` behavior for PV
