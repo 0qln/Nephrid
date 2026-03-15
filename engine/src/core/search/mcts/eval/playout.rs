@@ -24,7 +24,7 @@ impl PlayoutEvaluator {
     /// Executes a random playout from the given position until a terminal state
     /// or depth limit.
     fn playout(&mut self, mut pos: Position) -> GameResult {
-        let mut depth = Depth::MIN;
+        let mut depth = Depth::ROOT;
 
         loop {
             let moves = {

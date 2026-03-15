@@ -37,7 +37,7 @@ fn perft_inner_iter(
         return 0;
     }
 
-    if depth <= Depth::MIN {
+    if depth <= Depth::ROOT {
         return 1;
     }
 
@@ -81,7 +81,7 @@ fn perft_inner_collect(
         return 0;
     }
 
-    if depth <= Depth::MIN {
+    if depth <= Depth::ROOT {
         return 1;
     }
 
