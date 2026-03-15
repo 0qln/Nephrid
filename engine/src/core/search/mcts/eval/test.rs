@@ -1,7 +1,6 @@
 use crate::core::{
     color::colors,
     coordinates::squares,
-    depth::Depth,
     r#move::{Move, move_flags},
     move_iter::sliding_piece::magics,
     position::Position,
@@ -16,7 +15,7 @@ use crate::core::{
 fn test(pos: Position, expected_result: Option<GameResult>) {
     let node = CtNodeRef::new(Node::new_leaf());
     let mut tree = Tree::new(RtNodeRef::from_ct(node.clone()));
-    let node = tree.expand_node(node.clone(), &pos, Depth::ROOT);
+    let node = tree.expand_node(node.clone(), &pos, pos.ply().into());
 
     assert_eq!(
         node.terminal().is_some(),
@@ -26,8 +25,10 @@ fn test(pos: Position, expected_result: Option<GameResult>) {
     );
 
     if let Some(expected_result) = expected_result {
-        let node = node.terminal().expect("startpos should have branches");
-        let result = DummyEvaluator::eval_terminal(node.clone(), Depth::ROOT, &pos);
+        let node = node
+            .terminal()
+            .expect("if we have a result, the node should be terminal");
+        let result = DummyEvaluator::eval_terminal(node.clone(), pos.ply().into(), &pos);
         assert_eq!(result, Evaluation::Terminal(expected_result));
     }
 }
@@ -88,7 +89,7 @@ fn three_fold_repetition() {
     let mov_b0 = Move::new(squares::G8, squares::F6, move_flags::QUIET);
     let mov_b1 = Move::new(squares::F6, squares::G8, move_flags::QUIET);
 
-    for _ in 0..3 {
+    for _ in 0..2 {
         // make some moves
         pos.make_move(mov_w0);
         pos.make_move(mov_b0);
