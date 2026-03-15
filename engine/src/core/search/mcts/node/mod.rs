@@ -786,7 +786,7 @@ impl Node<Leaf> {
         //
         // note: do not switch this for search_result. The tree has to remain an
         // accurate representation of the game rules.
-        // e.g. if we mark this as Terminal after 2 repetitions and the opponened
+        // e.g. if we mark this as Terminal after 2 repetitions and the opponent
         // actually plays this later on down the line, the tree root will be
         // Terminal, even though it should be Branching.
         if pos.game_result().is_some() {
