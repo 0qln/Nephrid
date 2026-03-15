@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+cargo build --profile profiling --bin nephrid
+perf record -g bash -c "echo perf | cargo run --bin nephrid --profile profiling -- "

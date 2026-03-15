@@ -1,5 +1,7 @@
 use std::{fmt, num::ParseIntError, ops, str::FromStr};
 
+use crate::core::ply::Ply;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Depth {
     v: u8,
@@ -37,8 +39,7 @@ impl FromStr for Depth {
 }
 
 impl Depth {
-    pub const MIN: Depth = Depth { v: 0 };
-    pub const ROOT: Depth = Depth { v: 1 };
+    pub const ROOT: Depth = Depth { v: 0 };
     pub const MAX: Depth = Depth { v: 250 };
     pub const NONE: Depth = Depth { v: 255 };
 
@@ -54,5 +55,11 @@ impl Depth {
 impl Default for Depth {
     fn default() -> Self {
         Depth::NONE
+    }
+}
+
+impl From<Ply> for Depth {
+    fn from(ply: Ply) -> Self {
+        Depth { v: ply.v as u8 }
     }
 }

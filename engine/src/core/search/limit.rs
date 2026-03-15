@@ -54,7 +54,6 @@ impl Limit {
             _ => unreachable!(),
         };
 
-        // assume that no game will be longer than 50 moves.
         let moves_to_go = min(self.movestogo, 50) as u64;
         let time_per_move = time / moves_to_go + inc;
         let time_per_move = min(time_per_move, self.movetime);

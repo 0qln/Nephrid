@@ -57,12 +57,19 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
                 pos.make_move(mov);
             }
 
-            let collisions_per_ply = pos.repetition_table_collisions() as f32 / pos.ply().v as f32;
-            let collisions_per_ply_threshold = 0.002142857 * pos.repetition_table_capacity() as f32;
-            if collisions_per_ply > collisions_per_ply_threshold {
-                return ControlFlow::Break(());
-            }
-            ControlFlow::Continue(acc + pos.repetition_table_collisions())
+            todo!(
+                "The repetition_table does not exist anymore. If you want to tune the zobrist \
+                 seeds, you're gonna have to implement your own hash-collision counting and/or \
+                 statistics here."
+            );
+            // let collisions_per_ply = pos.repetition_table_collisions() as f32
+            // / pos.ply().v as f32;
+            // let collisions_per_ply_threshold = 0.002142857 *
+            // pos.repetition_table_capacity() as f32;
+            // if collisions_per_ply > collisions_per_ply_threshold {
+            //     return ControlFlow::Break(());
+            // }
+            // ControlFlow::Continue(acc + pos.repetition_table_collisions())
         })
         .continue_value()
         .unwrap_or(usize::MAX);

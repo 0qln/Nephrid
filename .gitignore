@@ -27,3 +27,8 @@ Cargo.lock
 .direnv
 
 *.log
+
+# perf
+perf.data
+perf.data*
+flamegraph.svg

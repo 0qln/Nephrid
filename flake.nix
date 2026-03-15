@@ -118,6 +118,7 @@
               ''
                 # PATH
                 export PATH="$PWD/benchmarking/bin:$PATH"
+                export PATH="$PWD/bin:$PATH"
               '';
           };
         };

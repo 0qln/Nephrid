@@ -12,6 +12,7 @@ use crate::{
             EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, ranks,
             squares,
         },
+        depth::Depth,
         r#move::{Move, SAN, move_flags},
         move_iter::{bishop, fold_legal_moves, king, knight, pawn, rook},
         piece::{Piece, PieceParseError, PieceType, PromoPieceType, piece_type},
@@ -37,8 +38,6 @@ pub enum CheckState {
     Single,
     Double,
 }
-
-pub mod repetitions;
 
 #[cfg(test)]
 mod test;
@@ -157,7 +156,11 @@ impl StateStack {
     }
 
     pub fn get_prev(&self, go_back: usize) -> Option<&StateInfo> {
-        self.states.get(self.current - go_back)
+        if go_back > self.current {
+            return None;
+        }
+        // Safety: We checked above
+        unsafe { Some(self.states.get_unchecked(self.current - go_back)) }
     }
 
     /// Returns a mutable reference to the current state.
@@ -206,8 +209,6 @@ impl StateStack {
         ret
     }
 }
-
-type Repetitions = repetitions::RepetitionTable<16>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PieceInfo {
@@ -304,7 +305,6 @@ impl PieceInfo {
 pub struct Position {
     piece_info: PieceInfo,
     state: StateStack,
-    repetitions: Repetitions,
 }
 
 impl Default for Position {
@@ -313,7 +313,6 @@ impl Default for Position {
         Self {
             piece_info: Default::default(),
             state: Default::default(),
-            repetitions: Default::default(),
         }
     }
 }
@@ -379,28 +378,55 @@ impl Position {
 
     #[inline]
     pub fn has_threefold_repetition(&self) -> bool {
-        let hash = self.get_key();
-        self.repetitions.get(hash) >= Some(3)
+        // cannot have the same position 3 times if the same player has only moved
+        // 4 times after the last irreversible move.
+        let plys50 = self.plys_50().v;
+        if plys50 < 8 {
+            return false;
+        }
+
+        let mut i = 2;
+        let current_key = self.get_key();
+        let mut repetitions = 0;
+        while let Some(state) = self.state.get_prev(i)
+            && ((i as u16) <= plys50)
+        {
+            if state.key == current_key {
+                repetitions += 1;
+                if repetitions >= 2 {
+                    return true;
+                }
+            }
+            // only compare same color, so skip 2
+            i += 2;
+        }
+        false
     }
 
     #[inline]
-    pub fn repetition_table_collisions(&self) -> usize {
-        self.repetitions.collisions()
-    }
+    pub fn has_twofold_repetition(&self) -> bool {
+        let plys50 = self.plys_50().v;
+        if plys50 < 4 {
+            return false;
+        }
 
-    #[inline]
-    pub fn repetition_table_free(&self) -> usize {
-        self.repetitions.free()
+        let mut i = 2;
+        let current_key = self.get_key();
+        while let Some(state) = self.state.get_prev(i)
+            && ((i as u16) <= plys50)
+        {
+            if state.key == current_key {
+                return true;
+            }
+            // only compare same color, so skip 2
+            i += 2;
+        }
+        false
     }
 
     #[inline]
     pub fn is_insufficient_material(&self) -> bool {
         self.piece_info.piece_counts.iter().sum::<i8>() <= 2
-    }
-
-    #[inline]
-    pub fn repetition_table_capacity(&self) -> usize {
-        Repetitions::capacity()
     }
 
     #[inline]
@@ -452,9 +478,51 @@ impl Position {
         }
     }
 
+    /// Returns the game result if the position is in a terminal state or looks
+    /// to be a terminal state found in search, else None.
+    /// has_moves: Whether this position has subsequent moves.
+    /// search_depth: The current search depth.
+    pub fn search_result_with(&self, has_moves: bool, search_depth: Depth) -> Option<GameResult> {
+        let stm = self.get_turn();
+        let check_state = self.get_check_state();
+
+        // First check if the position is a normal game ending.
+        if !has_moves {
+            Some(if check_state != CheckState::None {
+                // If in check and no moves, it's a loss for the current player
+                GameResult::Win { relative_to: !stm }
+            }
+            else {
+                // Stalemate
+                GameResult::Draw
+            })
+        }
+        // Then check if the position has reached some of the extra-rule endings.
+        //
+        // regarding 2-fold usage:
+        //   Apply the 2-fold heuristic deep in the tree.
+        //   At the root, fall back to the strict 3-fold rule to catch actual draws.
+        else if (search_depth > Depth::ROOT && self.has_twofold_repetition())
+            || (search_depth == Depth::ROOT && self.has_threefold_repetition())
+            || self.fifty_move_rule()
+            || self.is_insufficient_material()
+        {
+            Some(GameResult::Draw)
+        }
+        // Otherwise no game result.
+        else {
+            None
+        }
+    }
+
     pub fn game_result(&self) -> Option<GameResult> {
         let has_moves = self.has_legal_moves();
         self.game_result_with(has_moves)
+    }
+
+    pub fn search_result(&self, search_depth: Depth) -> Option<GameResult> {
+        let has_moves = self.has_legal_moves();
+        self.search_result_with(has_moves, search_depth)
     }
 
     pub fn has_legal_moves(&self) -> bool {
@@ -685,7 +753,6 @@ impl Position {
         }
 
         next_state.init(self);
-        self.repetitions.push(next_state.key);
         self.state.incr();
 
         #[inline(always)]
@@ -707,8 +774,6 @@ impl Position {
         // Safety: During the lifetime of this pointer, no other pointer
         // writes to the memory location of the popped state.
         let popped_state = unsafe { self.state.pop_current().as_ref() };
-
-        self.repetitions.pop(popped_state.key);
 
         match flag.v() {
             // castling

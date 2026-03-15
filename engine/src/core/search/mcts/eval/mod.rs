@@ -1,6 +1,7 @@
 use crate::core::{
     Position,
     color::Color,
+    depth::Depth,
     search::mcts::{
         nn::POLICY_OUTPUTS,
         node::{
@@ -34,9 +35,9 @@ pub trait Evaluator {
 
     /// Evaluate a node's terminal state. If the node is terminal, return the
     /// evaluation, else return None.
-    fn eval_terminal(_node: CtNodeRef<Terminal>, pos: &Position) -> Evaluation {
-        let game_result = pos.game_result_with(false);
-        let game_result = game_result.expect("A position with no moves has to have a game result.");
+    fn eval_terminal(_node: CtNodeRef<Terminal>, depth: Depth, pos: &Position) -> Evaluation {
+        let game_result = pos.search_result(depth);
+        let game_result = game_result.expect("Input requires a terminal node.");
         Evaluation::Terminal(game_result)
     }
 

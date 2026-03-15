@@ -1,9 +1,11 @@
 use super::*;
-use crate::core::{
-    bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics,
-    piece::piece_type, ply::Ply, zobrist,
+use crate::{
+    core::{
+        bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics,
+        piece::piece_type, ply::Ply, zobrist,
+    },
+    misc::ConstFrom,
 };
-use crate::misc::ConstFrom;
 
 #[test]
 fn cloning() {
@@ -155,7 +157,8 @@ fn pgn_encoding_san_disambiguation() {
             Move::new(E1, D1, QUIET),
             Move::new(D3, C5, QUIET),
         ],
-        "1. e4 c5 2. e5 d5 3. exd6 Nh6 4. g4 Nd7 5. h4 Nxg4 6. Rh3 Nge5 7. a4 c4 8. Raa3 c3 9. Bg2 cxb2 10. d3 bxc1=N 11. Kf1 Ncxd3 12. Qe1 Nc4 13. Qd1 Na5 14. Qe1 Nb3 15. Qd1 Nd3c5",
+        "1. e4 c5 2. e5 d5 3. exd6 Nh6 4. g4 Nd7 5. h4 Nxg4 6. Rh3 Nge5 7. a4 c4 8. Raa3 c3 9. \
+         Bg2 cxb2 10. d3 bxc1=N 11. Kf1 Ncxd3 12. Qe1 Nc4 13. Qd1 Na5 14. Qe1 Nb3 15. Qd1 Nd3c5",
     );
 }
 
@@ -171,5 +174,83 @@ fn pgn_encoding_san_castling() {
             Move::new(E8, C8, QUEEN_CASTLE),
         ],
         "1. O-O O-O-O",
+    );
+}
+
+/// Helper to construct a position that has just reached a simple 2-fold
+/// repetition.
+fn build_twofold_repetition_position() -> Position {
+    use move_flags::*;
+    use squares::*;
+
+    // Start from the default starting position.
+    let mut pos = Position::start_position();
+
+    // Construct moves that move knights out and back, returning to the same
+    // position.
+    //
+    // Sequence (from the start position):
+    //   1. Ng1f3   1... Ng8f6
+    //   2. Nf3g1   2... Nf6g8
+    //
+    // After these 4 plies, the board and side-to-move are the same as at the start,
+    // so the initial position has occurred twice (a 2-fold repetition).
+    let moves = [
+        Move::new(G1, F3, QUIET),
+        Move::new(G8, F6, QUIET),
+        Move::new(F3, G1, QUIET),
+        Move::new(F6, G8, QUIET),
+    ];
+    for mv in moves {
+        pos.make_move(mv);
+    }
+    pos
+}
+
+#[test]
+fn twofold_repetition_is_detected() {
+    // Sanity: a fresh starting position should not have a recorded twofold
+    // repetition.
+    let fresh = Position::start_position();
+    assert!(
+        !fresh.has_twofold_repetition(),
+        "fresh position must not have twofold repetition"
+    );
+
+    // After the back-and-forth sequence, the same position has occurred twice, so
+    // the 2-fold repetition detector should report true.
+    let pos = build_twofold_repetition_position();
+    assert!(
+        pos.has_twofold_repetition(),
+        "position after repetition sequence should report twofold repetition"
+    );
+}
+
+#[test]
+fn twofold_heuristic_applies_only_beyond_root() {
+    let pos = build_twofold_repetition_position();
+
+    // `has_moves` here is explicitly passed as `true` because in this constructed
+    // position there are still plenty of legal moves available; we only care about
+    // how repetition and depth affect the result.
+    let has_moves = true;
+
+    // At the root depth, the 2-fold heuristic must *not* treat the position as a
+    // draw.
+    let result_at_root = pos.search_result_with(has_moves, Depth::ROOT);
+    assert!(
+        result_at_root.is_none(),
+        "2-fold repetition should not be scored as draw at ROOT depth"
+    );
+
+    // For a depth strictly greater than ROOT, the 2-fold heuristic should kick in
+    // and treat the position as a draw, assuming no 50-move or
+    // insufficient-material draw.
+    let deeper_depth = Depth::ROOT + 1;
+    let result_deeper = pos.search_result_with(has_moves, deeper_depth);
+    assert_eq!(
+        result_deeper,
+        Some(GameResult::Draw),
+        "2-fold repetition should be scored as draw only for search_depth > ROOT"
     );
 }

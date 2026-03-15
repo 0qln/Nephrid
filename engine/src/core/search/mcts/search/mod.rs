@@ -19,6 +19,8 @@ use crate::core::{
     turn::Turn,
 };
 
+use super::eval::GameResult;
+
 #[cfg(test)]
 pub mod test;
 
@@ -46,12 +48,15 @@ pub type EvalItem = SelNode<Evaluation, Branching>;
 
 pub type TerminalItem = SelNode<Evaluation, Terminal>;
 
+pub type ShortcutItem = SelNode<Evaluation, Leaf>;
+
 #[derive(Debug)]
 pub enum PhaseItem<T> {
     Unused,
     Batched(BatchItem<T>),
     Evaluated(EvalItem),
     Terminal(TerminalItem),
+    Shortcut(ShortcutItem),
 }
 
 impl<T> PhaseItem<T> {
@@ -281,7 +286,6 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
     pub fn grow(&mut self, tree: &mut Tree) {
         self.selection.clear();
-
         self.select_lines(tree);
         self.eval_batched();
         self.backup_evals(tree);
@@ -369,9 +373,17 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 self.pick_branches(budget, line_index, depth, node, tree, child_id)
             }
             NodeSwitch::Leaf(node) => {
-                self.select_leaf(line_index, parent_sel_id, node, tree, depth)
+                if depth > Depth::ROOT && self.position.has_twofold_repetition() {
+                    let eval = Evaluation::Terminal(GameResult::Draw);
+                    self.select_shortcut(line_index, parent_sel_id, node, eval, depth)
+                }
+                else {
+                    self.select_leaf(line_index, parent_sel_id, node, tree, depth)
+                }
             }
-            NodeSwitch::Terminal(node) => self.select_terminal(line_index, parent_sel_id, node),
+            NodeSwitch::Terminal(node) => {
+                self.select_terminal(line_index, parent_sel_id, node, depth)
+            }
         };
 
         self.position.unmake_move(branch.mov());
@@ -390,7 +402,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         match expanded {
             ExpandedRefSwitch::Terminal(node) => {
-                self.select_terminal(line_index, parent_sel_id, node)
+                self.select_terminal(line_index, parent_sel_id, node, depth)
             }
             ExpandedRefSwitch::Branching(node) => {
                 self.select_branching(line_index, parent_sel_id, node, depth)
@@ -398,13 +410,35 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         }
     }
 
+    /// Select a shortcut to a node that can be considered terminal.
+    fn select_shortcut(
+        &mut self,
+        line_index: usize,
+        parent_id: NodeId,
+        node: CtNodeRef<Leaf>,
+        eval: Evaluation,
+        _depth: Depth,
+    ) -> usize {
+        self.selection.set(
+            line_index,
+            PhaseItem::Shortcut(SelNode {
+                node,
+                turn: self.position.get_turn(),
+                parent: Some(parent_id),
+                data: eval,
+            }),
+        );
+        1
+    }
+
     fn select_terminal(
         &mut self,
         line_index: usize,
         parent_id: NodeId,
         node: CtNodeRef<Terminal>,
+        depth: Depth,
     ) -> usize {
-        let eval = E::eval_terminal(node.clone(), self.position);
+        let eval = E::eval_terminal(node.clone(), depth, self.position);
         self.selection.set(
             line_index,
             PhaseItem::Terminal(SelNode {
@@ -495,6 +529,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 // backup terminals, guesses, etc.
                 PhaseItem::Evaluated(x) => self.backprop.backpropagate(tree, &self.selection, x),
                 PhaseItem::Terminal(x) => self.backprop.backpropagate(tree, &self.selection, x),
+                PhaseItem::Shortcut(x) => self.backprop.backpropagate(tree, &self.selection, x),
             }
         }
     }
