@@ -194,6 +194,10 @@ impl RawPolicy {
     pub fn inner_mut(&mut self) -> &mut [f32] {
         &mut self.0
     }
+
+    pub fn normalize(&mut self) {
+        normalize(&mut self.0);
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -231,12 +235,13 @@ impl Policy {
     pub fn new(policy: Vec<f32>) -> Self {
         debug_assert!(!policy.is_empty(), "Should have atleast one policy item");
         let mut result = Self(policy);
-        normalize(&mut result.0);
+        softmax(&mut result.0, 10.);
         result
     }
 }
 
-pub fn normalize(xs: &mut [f32]) {
+#[allow(unused)]
+fn normalize(xs: &mut [f32]) {
     let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
 
     // make sure all values are positive.

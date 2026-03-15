@@ -1,6 +1,4 @@
 #![feature(assert_matches)]
-use engine::core::search::mcts::eval::normalize;
-
 use burn::{nn::loss::BinaryCrossEntropyLossConfig, train::MultiLabelClassificationOutput};
 use engine::core::{
     config::Configuration,
@@ -905,7 +903,7 @@ impl From<&Tree> for ExactLossTarget {
                 for branch in branches.iter() {
                     raw_policy.set(usize::from(branch.mov()), branch.visits() as f32);
                 }
-                normalize(raw_policy.inner_mut());
+                raw_policy.normalize();
                 raw_policy
             },
         }
