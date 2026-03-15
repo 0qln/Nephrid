@@ -29,10 +29,10 @@ pub mod test;
 pub struct Height(pub u16);
 
 impl Height {
-    /// The height of an empty.
+    /// The height of an empty tree.
     pub const EMPTY: Height = Height(0);
 
-    /// The height.
+    /// The height of a tree with only a root node.
     pub const ROOT: Height = Height(1);
 }
 
