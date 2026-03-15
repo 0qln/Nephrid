@@ -156,7 +156,11 @@ impl StateStack {
     }
 
     pub fn get_prev(&self, go_back: usize) -> Option<&StateInfo> {
-        self.states.get(self.current - go_back)
+        if go_back > self.current {
+            return None;
+        }
+        // Safety: We checked above
+        unsafe { Some(self.states.get_unchecked(self.current - go_back)) }
     }
 
     /// Returns a mutable reference to the current state.
