@@ -501,8 +501,8 @@ impl Position {
         //
         // regarding 2-fold usage:
         //   Apply the 2-fold heuristic ONLY if we are safely inside the search tree.
-        //   `search_ply > 0` prevents the engine from scoring a move directly from the
-        //   root as a draw just because it repeats the position once.
+        //   `search_depth > Depth::ROOT` prevents the engine from scoring a move directly
+        //   from the root as a draw just because it repeats the position once.
         else if (search_depth > Depth::ROOT && self.has_twofold_repetition())
             || self.fifty_move_rule()
             || self.is_insufficient_material()
