@@ -1,15 +1,12 @@
-use crate::{
-    core::{
-        config::Configuration,
-        move_iter::sliding_piece::magics,
-        position::Position,
-        search::mcts::{
-            MctsParts, NullNoiser, StaticParts, back::DefaultBackuper, limiter::NoopLimiter,
-            node::Tree, search::TreeSearcher, select::ucb::UcbSelector, test::DummyEvaluator,
-        },
-        zobrist,
+use crate::core::{
+    config::Configuration,
+    move_iter::sliding_piece::magics,
+    position::Position,
+    search::mcts::{
+        MctsParts, NullNoiser, StaticParts, back::DefaultBackuper, limiter::NoopLimiter,
+        node::Tree, search::TreeSearcher, select::ucb::UcbSelector, test::DummyEvaluator,
     },
-    uci::sync::CancellationToken,
+    zobrist,
 };
 
 use std::{error::Error, thread};
@@ -24,8 +21,6 @@ where
     thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            let ct = CancellationToken::new();
-
             let pos = Position::from_fen(pos).unwrap();
 
             let mut tree = Tree::default();
@@ -46,7 +41,7 @@ where
             searcher.init_root(&mut tree);
 
             for _i in 0..(rounds / X) {
-                searcher.grow(&mut tree, ct.clone());
+                searcher.grow(&mut tree);
             }
 
             assert_eq!(&pos, &pos_clone);

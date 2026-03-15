@@ -79,7 +79,7 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
                 iterations,
             ))
     {
-        searcher.grow(tree, ct.clone());
+        searcher.grow(tree);
         strategy.step(tree);
         iterations += 1;
     }

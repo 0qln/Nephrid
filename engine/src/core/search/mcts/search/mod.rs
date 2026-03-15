@@ -2,24 +2,21 @@ use std::ops::Try;
 
 use itertools::Itertools;
 
-use crate::{
-    core::{
-        Position,
-        depth::Depth,
-        search::mcts::{
-            back::Backpropagater,
-            eval::{Evaluation, Evaluator, RawPolicy},
-            limiter::{self, Limiter},
-            node::{
-                Branch, CtNodeRef, Tree,
-                node_state::{self, *},
-            },
-            noise::Noiser,
-            select::Selector,
+use crate::core::{
+    Position,
+    depth::Depth,
+    search::mcts::{
+        back::Backpropagater,
+        eval::{Evaluation, Evaluator, RawPolicy},
+        limiter::{self, Limiter},
+        node::{
+            Branch, CtNodeRef, Tree,
+            node_state::{self, *},
         },
-        turn::Turn,
+        noise::Noiser,
+        select::Selector,
     },
-    uci::sync::CancellationToken,
+    turn::Turn,
 };
 
 use super::eval::GameResult;
@@ -287,19 +284,10 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         }
     }
 
-    pub fn grow(&mut self, tree: &mut Tree, ct: CancellationToken) {
+    pub fn grow(&mut self, tree: &mut Tree) {
         self.selection.clear();
-        if ct.is_cancelled() {
-            return;
-        }
         self.select_lines(tree);
-        if ct.is_cancelled() {
-            return;
-        }
         self.eval_batched();
-        if ct.is_cancelled() {
-            return;
-        }
         self.backup_evals(tree);
     }
 
