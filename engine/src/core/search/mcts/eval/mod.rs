@@ -151,7 +151,7 @@ pub trait PolicySource {
 }
 
 #[derive(PartialEq, Clone)]
-pub struct RawPolicy(pub [f32; POLICY_OUTPUTS]);
+pub struct RawPolicy([f32; POLICY_OUTPUTS]);
 
 impl std::fmt::Debug for RawPolicy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -180,6 +180,11 @@ impl RawPolicy {
 
     pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
         Self(p)
+    }
+
+    /// Returns an immutable view of the underlying policy values.
+    pub fn as_slice(&self) -> &[f32] {
+        &self.0
     }
 
     pub fn sum(&self) -> f32 {
