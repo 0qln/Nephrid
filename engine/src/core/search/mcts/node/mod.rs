@@ -299,7 +299,7 @@ impl fmt::Display for Path {
 }
 
 #[derive(Clone, Default, Debug)]
-pub struct Branch {
+pub struct Branch<'brand> {
     /// The node that this branch leads to.
     node: RtNodeRef,
 
@@ -372,7 +372,7 @@ impl Ord for Value {
 #[derive(Debug)]
 pub struct NodeInner<S: node_state::Any> {
     state: Cell<NodeState>,
-    data: RefCell<Node<S>>,
+    data: Cell<Node<S>>,
 }
 
 /// A node reference with compile time information about the state.
@@ -531,10 +531,10 @@ impl RtNodeRef {
 }
 
 #[derive(Clone, Default)]
-pub struct NodeData {
+pub struct NodeData<'brand> {
     // todo: use a boxed slice instead. the branches will not change once set.
     /// All the branches from this node.
-    branches: Vec<Branch>,
+    branches: Vec<Branch<'brand>>,
 
     /// The number of times this node was visited.
     visits: u32,
