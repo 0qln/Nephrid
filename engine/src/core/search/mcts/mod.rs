@@ -204,7 +204,7 @@ impl<B: Backend> NNParts<B> {
 }
 
 /// Mcts parts for mcts with puct + static analysis.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct StaticParts {
     alpha: f32,
     epsilon: f32,
@@ -240,6 +240,12 @@ impl From<&Configuration> for StaticParts {
         let alpha = config.dirichlet_alpha();
         let epsilon = config.dirichlet_epsilon();
         Self::new(alpha, epsilon)
+    }
+}
+
+impl Default for StaticParts {
+    fn default() -> Self {
+        Self::new(0.3, 0.25)
     }
 }
 
