@@ -903,7 +903,7 @@ impl From<&Tree> for ExactLossTarget {
                 for branch in branches.iter() {
                     raw_policy.set(usize::from(branch.mov()), branch.visits() as f32);
                 }
-                softmax(&mut raw_policy.0, 10.);
+                softmax(raw_policy.inner_mut(), 10.);
                 raw_policy
             },
         }
