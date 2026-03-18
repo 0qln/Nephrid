@@ -178,11 +178,13 @@ impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
             .zip(raw_policies)
             .map(|((&leaf, value), raw_policy)| {
                 let turn = leaf.turn;
+                let node = leaf.node.borrow();
+                let moves = node.move_indices();
 
                 Evaluation::Guess(Box::new(Guess {
                     relative_to: turn,
                     quality: Quality::new(value[0]),
-                    policy: raw_policy,
+                    policy: Policy::from_raw(&raw_policy, moves).expect("a policy"),
                 }))
             })
             .collect_vec()

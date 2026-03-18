@@ -1,7 +1,7 @@
 use std::ops::ControlFlow;
 
 use crate::core::search::mcts::{
-    eval::{Evaluation, RawPolicy},
+    eval::Evaluation,
     node::{
         Tree,
         node_state::{self, Branching, Evaluated, Terminal},
@@ -30,12 +30,6 @@ impl Backpropagater for DefaultBackuper {
         leaf: &SelNode<Evaluation, S>,
     ) {
         let eval = &leaf.data;
-        let policy = if let Evaluation::Guess(guess) = eval {
-            &guess.policy
-        }
-        else {
-            &RawPolicy::null()
-        };
 
         // Update the leaf itself.
         {
@@ -43,7 +37,12 @@ impl Backpropagater for DefaultBackuper {
             let value = eval.to_value(!leaf.turn);
 
             if let Some(unevaluated) = node.clone().try_into::<Branching>() {
-                let evaluated = tree.set_policy_raw(unevaluated, policy);
+                let evaluated = if let Evaluation::Guess(guess) = eval {
+                    tree.set_policy(unevaluated, &guess.policy)
+                }
+                else {
+                    tree.skip_policy(unevaluated)
+                };
                 tree.update_node(evaluated, value);
             }
             else if let Some(evaluated) = node.clone().try_into::<Evaluated>() {

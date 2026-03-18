@@ -58,11 +58,11 @@ pub enum GameResult {
 pub struct Guess {
     pub relative_to: Color,
     pub quality: Quality,
-    pub policy: RawPolicy,
+    pub policy: Policy,
 }
 
 impl Guess {
-    pub fn policy(&self) -> &RawPolicy {
+    pub fn policy(&self) -> &Policy {
         &self.policy
     }
 
@@ -146,8 +146,12 @@ impl Evaluation {
     }
 }
 
+pub trait PolicySource {
+    fn into<I: IntoIterator<Item = usize>>(&self, move_indices: I) -> Policy;
+}
+
 #[derive(PartialEq, Clone)]
-pub struct RawPolicy([f32; POLICY_OUTPUTS]);
+pub struct RawPolicy(pub [f32; POLICY_OUTPUTS]);
 
 impl std::fmt::Debug for RawPolicy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -194,10 +198,6 @@ impl RawPolicy {
     pub fn inner_mut(&mut self) -> &mut [f32] {
         &mut self.0
     }
-
-    pub fn normalize(&mut self) {
-        normalize(&mut self.0);
-    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -212,6 +212,18 @@ impl Policy {
         self.0.len()
     }
 
+    pub fn sum(&self) -> f32 {
+        self.0.iter().sum::<f32>()
+    }
+
+    pub fn new_even(len: usize) -> Self {
+        let len_f = len as f32;
+        let probability = 1. / len_f;
+        Self(vec![probability; len])
+    }
+
+    /// Construct a `Policy` from probability-like values by normalizing them to
+    /// sum to 1.
     pub fn from_raw<I>(raw_policy: &RawPolicy, indeces_of_interest: I) -> Option<Self>
     where
         I: Iterator<Item = usize>,
@@ -221,7 +233,20 @@ impl Policy {
             policy.push(raw_policy.get(index)?);
         }
 
-        Some(Self::new(policy))
+        let mut result = Self(policy);
+
+        normalize(&mut result.0);
+
+        Some(result)
+    }
+
+    /// Construct a `Policy` from logits by applying softmax.
+    pub fn from_logits(logits: Vec<f32>) -> Self {
+        debug_assert!(!logits.is_empty(), "Should have atleast one policy item");
+
+        let mut result = Self(logits);
+        softmax(&mut result.0, 10.);
+        result
     }
 
     pub fn iter(&self) -> impl Iterator<Item = f32> {
@@ -231,17 +256,9 @@ impl Policy {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {
         self.0.iter_mut()
     }
-
-    pub fn new(policy: Vec<f32>) -> Self {
-        debug_assert!(!policy.is_empty(), "Should have atleast one policy item");
-        let mut result = Self(policy);
-        softmax(&mut result.0, 10.);
-        result
-    }
 }
 
-#[allow(unused)]
-fn normalize(xs: &mut [f32]) {
+pub fn normalize(xs: &mut [f32]) {
     let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
 
     // make sure all values are positive.
@@ -277,7 +294,7 @@ fn normalize(xs: &mut [f32]) {
     }
 }
 
-fn softmax(xs: &mut [f32], temperature: f32) {
+pub fn softmax(xs: &mut [f32], temperature: f32) {
     let max = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
     let exps: Vec<f32> = xs.iter().map(|x| ((x - max) / temperature).exp()).collect();
     let sum: f32 = exps.iter().sum();

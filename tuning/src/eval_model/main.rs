@@ -5,7 +5,7 @@ use engine::core::{
     search::mcts::{
         CreateNNPartsError, MctsParts, SearchState,
         back::DefaultBackuper,
-        eval::{GameResult, Guess, RawPolicy, nn::NNEvaluator},
+        eval::{GameResult, Guess, RawPolicy, nn::NNEvaluator, softmax},
         mcts,
         nn::{BOARD_INPUT_HISTORY, POLICY_OUTPUTS, board_history_input},
         node::{Branch, Value},
@@ -903,7 +903,7 @@ impl From<&Tree> for ExactLossTarget {
                 for branch in branches.iter() {
                     raw_policy.set(usize::from(branch.mov()), branch.visits() as f32);
                 }
-                raw_policy.normalize();
+                softmax(&mut raw_policy.0, 10.);
                 raw_policy
             },
         }
