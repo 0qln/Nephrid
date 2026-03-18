@@ -2,6 +2,7 @@ use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand_distr::{Distribution, Gamma, num_traits::Zero};
 use thiserror::Error;
+use std::convert::Infallible;
 
 use crate::core::search::mcts::node::{CtNodeRef, Tree, node_state::Evaluated};
 
@@ -9,7 +10,7 @@ use crate::core::search::mcts::node::{CtNodeRef, Tree, node_state::Evaluated};
 pub mod test;
 
 pub trait Noiser {
-    type Error;
+    type Error: std::error::Error;
 
     /// Apply noise to the polices of this node.
     fn apply_noise(
@@ -82,7 +83,7 @@ impl Noiser for DirichletNoiser {
 pub struct NullNoiser;
 
 impl Noiser for NullNoiser {
-    type Error = ();
+    type Error = Infallible;
 
     fn apply_noise(
         &mut self,

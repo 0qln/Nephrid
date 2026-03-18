@@ -273,7 +273,9 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 }
                 // If the node is evaluated, apply noise and we're done.
                 NodeSwitch::Evaluated(node) => {
-                    let _ = self.noiser.apply_noise(node, tree);
+                    if let Err(err) = self.noiser.apply_noise(node, tree) {
+                        println!("Failed to apply noise to root node: {err}");
+                    }
                     break;
                 }
                 // If the root node is terminal, we cannot grow it... just break here.
