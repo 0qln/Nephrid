@@ -222,6 +222,14 @@ impl Policy {
     }
 
     pub fn new_even(len: usize) -> Self {
+        debug_assert!(len > 0, "Policy::new_even called with len == 0");
+        if len == 0 {
+            // Avoid division by zero; callers should generally not request an
+            // even policy over zero elements, but returning an empty policy
+            // is safer than producing infinities.
+            return Self(Vec::new());
+        }
+
         let len_f = len as f32;
         let probability = 1. / len_f;
         Self(vec![probability; len])
