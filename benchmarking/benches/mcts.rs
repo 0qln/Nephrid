@@ -5,20 +5,19 @@ use engine::core::{
     move_iter::sliding_piece::magics,
     position::Position,
     search::mcts::{
-        back::DefaultBackuper, limiter::NoopLimiter, node::Tree, noise::NullNoiser,
-        search::TreeSearcher, select::puct::PuctSelector, test::DummyEvaluator,
+        MctsParts, StaticParts, limiter::DefaultLimiter, node::Tree, search::TreeSearcher,
     },
     zobrist,
 };
 
-fn bench_mcts(mut pos: Position, mut tree: Tree) {
+fn bench_mcts<P: MctsParts>(mut pos: Position, mut tree: Tree, parts: P) {
     let mut searcher = TreeSearcher::<1, _, _, _, _, _>::new(
         &mut pos,
-        PuctSelector::default(),
-        NoopLimiter::default(),
-        DummyEvaluator::default(),
-        DefaultBackuper::default(),
-        NullNoiser::default(),
+        parts.selector(),
+        DefaultLimiter::default(),
+        parts.evaluator(),
+        parts.backprop(),
+        parts.noiser(),
     );
     searcher.init_root(&mut tree);
     for _ in 0..20_000 {
@@ -54,8 +53,14 @@ pub fn mcts_benches(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new(name, fen), &fen, |b, &fen| {
             b.iter_batched(
-                || (Position::from_fen(fen).unwrap(), Tree::default()),
-                |(pos, tree)| bench_mcts(pos, tree),
+                || {
+                    (
+                        Position::from_fen(fen).unwrap(),
+                        Tree::default(),
+                        StaticParts::default(),
+                    )
+                },
+                |(pos, tree, parts)| bench_mcts(pos, tree, &parts),
                 BatchSize::LargeInput,
             )
         });

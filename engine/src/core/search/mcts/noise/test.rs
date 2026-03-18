@@ -26,7 +26,7 @@ fn test_dirichlet_noise_basic() {
     let policy = {
         let node = node.borrow();
         let branches = node.branches();
-        Policy::new(branches.iter().map(|_| rng.next_u32() as f32).collect_vec())
+        Policy::from_logits(branches.iter().map(|_| rng.next_u32() as f32).collect_vec())
     };
     let node = tree.set_policy(node.clone(), &policy);
 

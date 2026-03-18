@@ -7,7 +7,7 @@ use crate::core::{
     depth::Depth,
     search::mcts::{
         back::Backpropagater,
-        eval::{Evaluation, Evaluator, RawPolicy},
+        eval::{Evaluation, Evaluator},
         limiter::{self, Limiter},
         node::{
             Branch, CtNodeRef, Tree,
@@ -259,21 +259,18 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                     };
 
                     // backpropagation for root
-                    let policy = match eval {
-                        Evaluation::Guess(guess) => guess.policy,
-                        _ => {
-                            // default to null policy, such that we can be sure the state advances
-                            // from here on.
-                            RawPolicy::null()
-                        }
+                    let _evaluated = match eval {
+                        Evaluation::Guess(guess) => tree.set_policy(node, &guess.policy),
+                        _ => tree.skip_policy(node),
                     };
-                    let _ = tree.set_policy_raw(node, &policy);
 
                     self.selection.clear();
                 }
                 // If the node is evaluated, apply noise and we're done.
                 NodeSwitch::Evaluated(node) => {
-                    let _ = self.noiser.apply_noise(node, tree);
+                    if let Err(err) = self.noiser.apply_noise(node, tree) {
+                        println!("Failed to apply noise to root node: {err}");
+                    }
                     break;
                 }
                 // If the root node is terminal, we cannot grow it... just break here.

@@ -11,7 +11,7 @@ use crate::core::{
     Move, Position,
     move_iter::fold_legal_moves,
     search::mcts::{
-        eval::{self, Policy, RawPolicy},
+        eval::{self, Policy},
         node::{
             node_state::{Branching, Evaluated, Leaf, Terminal},
             ops::ControlFlow,
@@ -111,12 +111,8 @@ impl Tree {
         expanded
     }
 
-    pub fn set_policy_raw(
-        &mut self,
-        node: CtNodeRef<Branching>,
-        raw_policy: &RawPolicy,
-    ) -> CtNodeRef<Evaluated> {
-        node.set_policy_raw(raw_policy)
+    pub fn skip_policy(&mut self, node: CtNodeRef<Branching>) -> CtNodeRef<Evaluated> {
+        node.skip_policy()
     }
 
     pub fn set_policy(
@@ -468,12 +464,11 @@ impl CtNodeRef<Leaf> {
 }
 
 impl CtNodeRef<Branching> {
-    pub(self) fn set_policy_raw(self, raw_policy: &RawPolicy) -> CtNodeRef<Evaluated> {
-        unsafe { self.transform_with(|node| node.set_policy_raw(raw_policy)) }
-    }
-
     pub(self) fn set_policy(self, policy: &Policy) -> CtNodeRef<Evaluated> {
         unsafe { self.transform_with(|node| node.set_policy(policy)) }
+    }
+    pub(self) fn skip_policy(self) -> CtNodeRef<Evaluated> {
+        unsafe { self.transform_with(|node| node.skip_policy()) }
     }
 }
 
@@ -828,6 +823,10 @@ impl<S: node_state::HasBranches> Node<S> {
         &self.data.branches
     }
 
+    pub fn move_indices(&self) -> impl Iterator<Item = usize> {
+        self.branches().iter().map(|b| usize::from(b.mov()))
+    }
+
     pub fn sort_by<T: Ord>(&mut self, f: impl Fn(&Branch) -> T) {
         self.data.branches.sort_by_key(f);
     }
@@ -870,20 +869,17 @@ impl Node<Branching> {
         );
 
         for (i, branch) in self.data.branches.iter_mut().enumerate() {
-            branch.set_policy(policy.get(i).unwrap());
+            let p = policy.get(i).expect("Policy should contain this move.");
+            branch.set_policy(p);
         }
 
         // SAFETY: we just set the policy for each branch. It has to be valid.
         unsafe { Node::<Evaluated>::new(self.data) }
     }
 
-    pub(self) fn set_policy_raw(self, raw_policy: &RawPolicy) -> Node<Evaluated> {
-        let policy = {
-            let moves = self.branches().iter().map(|b| usize::from(b.mov()));
-            Policy::from_raw(raw_policy, moves)
-                .expect("Shouldn't be None, since the moves are correct for this node.")
-        };
-
+    /// Sets the policy to an even probability for all branches.
+    pub(self) fn skip_policy(self) -> Node<Evaluated> {
+        let policy = Policy::new_even(self.data.branches.len());
         self.set_policy(&policy)
     }
 }

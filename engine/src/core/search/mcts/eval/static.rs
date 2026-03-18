@@ -189,7 +189,7 @@ impl TaperValue {
             .map(|p| pos.get_piece_bb(p).pop_cnt() * PIECE_PHASES[p.v() as usize].v())
             .sum::<u32>();
 
-        Self(piece_phases::TOTAL_C - inv_phase)
+        Self(piece_phases::TOTAL_C.saturating_sub(inv_phase))
     }
 
     pub fn weighted_eval(&self, mg_eval: i32, eg_eval: i32) -> i32 {
@@ -227,18 +227,6 @@ impl QualityInput {
 
     fn value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
         Self::material(pos, color) + Self::psqt(pos, color, phase)
-    }
-}
-
-/// Convert QualityInput into Quality, where the Quality is relative to white.
-impl From<&EvalInfo> for Quality {
-    fn from(input: &EvalInfo) -> Self {
-        // get delta
-        let w_q = QualityInput::value(&input.pos, colors::WHITE, input.phase);
-        let b_q = QualityInput::value(&input.pos, colors::BLACK, input.phase);
-        let d = (w_q - b_q) as f32;
-
-        Quality::squish(d)
     }
 }
 
@@ -284,37 +272,6 @@ impl PolicyInput {
     }
 }
 
-impl From<&EvalInfo> for RawPolicy {
-    fn from(input: &EvalInfo) -> Self {
-        let node = &input.node.borrow();
-        let pos = &input.pos;
-        let phase = input.phase;
-        let state = &input.state;
-        let color = input.turn;
-
-        let mut policy = RawPolicy::null();
-        for mov in node.branches().iter().map(|b: &Branch| b.mov()) {
-            // policy for each move in the position is the difference of the psqt score from
-            // the previous position and the psqt score of the next position that is
-            // achieved by the move.
-            let from = mov.get_from();
-            let to = mov.get_to();
-            let piece = pos.get_piece(from).piece_type();
-            let score = PolicyInput::psqt(phase, piece, from, to, color)
-                + PolicyInput::mvv_lva(pos, mov)
-                + PolicyInput::meta(pos, mov, state);
-
-            policy.set(usize::from(mov), score as f32);
-        }
-
-        // todo use softmax or normalize?
-        softmax(&mut policy.0, 10.);
-        // normalize(&mut policy.0);
-
-        policy
-    }
-}
-
 #[derive(Debug)]
 pub struct EvalInfo {
     /// The to-be-evaluated that this eval info is for.
@@ -342,6 +299,42 @@ impl EvalInfo {
             node,
             turn: pos.get_turn(),
         }
+    }
+
+    /// Convert QualityInput into Quality, where the Quality is relative to
+    /// white.
+    fn quality(&self) -> Quality {
+        // get delta
+        let w_q = QualityInput::value(&self.pos, colors::WHITE, self.phase);
+        let b_q = QualityInput::value(&self.pos, colors::BLACK, self.phase);
+        let d = (w_q - b_q) as f32;
+
+        Quality::squish(d)
+    }
+
+    fn policy(&self) -> Policy {
+        let node = &self.node.borrow();
+        let pos = &self.pos;
+        let phase = self.phase;
+        let state = &self.state;
+        let color = self.turn;
+
+        let mut logits = Vec::new();
+        for mov in node.branches().iter().map(|b: &Branch| b.mov()) {
+            // policy for each move in the position is the difference of the psqt score from
+            // the previous position and the psqt score of the next position that is
+            // achieved by the move.
+            let from = mov.get_from();
+            let to = mov.get_to();
+            let piece = pos.get_piece(from).piece_type();
+            let score = PolicyInput::psqt(phase, piece, from, to, color)
+                + PolicyInput::mvv_lva(pos, mov)
+                + PolicyInput::meta(pos, mov, state);
+
+            logits.push(score as f32);
+        }
+
+        Policy::from_logits(logits)
     }
 }
 
@@ -371,15 +364,13 @@ impl Evaluator for StaticEvaluator {
         _selection: &Selection<X, Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
-        leafs
-            .iter()
-            .filter_map(|&leaf| leaf.data.as_ref())
-            .map(|eval_info| {
-                Evaluation::Guess(Box::new(Guess {
-                    relative_to: colors::WHITE,
-                    quality: eval_info.into(),
-                    policy: eval_info.into(),
-                }))
-            })
+        leafs.iter().filter_map(|&leaf| {
+            let eval_info = leaf.data.as_ref()?;
+            Some(Evaluation::Guess(Box::new(Guess {
+                relative_to: colors::WHITE,
+                quality: eval_info.quality(),
+                policy: eval_info.policy(),
+            })))
+        })
     }
 }

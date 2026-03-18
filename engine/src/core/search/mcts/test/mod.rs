@@ -1,4 +1,5 @@
 use crate::core::search::mcts::{
+    eval::Policy,
     node::{CtNodeRef, node_state::HasBranches},
     search::{BatchItem, Selection},
 };
@@ -66,10 +67,13 @@ impl Evaluator for DummyEvaluator {
 
             let raw_policy = RawPolicy::new(policy_arr);
 
+            let node = leaf.node.borrow();
+            let moves = node.move_indices();
+
             evaluations.push(Evaluation::Guess(Box::new(Guess {
                 relative_to: trace_data.turn,
                 quality: Quality::new(quality),
-                policy: raw_policy,
+                policy: Policy::from_raw(&raw_policy, moves).expect("a policy"),
             })));
         }
 
