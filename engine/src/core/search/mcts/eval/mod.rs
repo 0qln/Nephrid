@@ -255,7 +255,7 @@ impl Policy {
 
     /// Construct a `Policy` from logits by applying softmax.
     pub fn from_logits(logits: Vec<f32>) -> Self {
-        debug_assert!(!logits.is_empty(), "Should have atleast one policy item");
+        debug_assert!(!logits.is_empty(), "Should have at least one policy item");
 
         let mut result = Self(logits);
         softmax(&mut result.0, 10.);
