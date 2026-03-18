@@ -189,7 +189,7 @@ impl TaperValue {
             .map(|p| pos.get_piece_bb(p).pop_cnt() * PIECE_PHASES[p.v() as usize].v())
             .sum::<u32>();
 
-        Self(piece_phases::TOTAL_C - inv_phase)
+        Self(piece_phases::TOTAL_C.saturating_sub(inv_phase))
     }
 
     pub fn weighted_eval(&self, mg_eval: i32, eg_eval: i32) -> i32 {
