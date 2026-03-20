@@ -110,7 +110,7 @@ impl fmt::Display for Evaluation {
 
 impl GameResult {
     /// Returns the value of the game result relative to `turn`.
-    fn to_value(self, color: Color) -> Value {
+    pub fn to_value(self, color: Color) -> Value {
         match self {
             Self::Win { relative_to } if relative_to == color => Value::win(),
             Self::Win { .. } => Value::loss(),

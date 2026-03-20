@@ -130,6 +130,10 @@ impl Tree {
     pub fn update_node<S: HasValue>(&mut self, node: CtNodeRef<S>, value: eval::Value) {
         node.borrow_mut().update(value);
     }
+
+    pub fn set_proven<S: HasValue>(&mut self, node: CtNodeRef<S>, state: Proven) {
+        node.borrow_mut().set_proven(state);
+    }
 }
 
 // Tree mutating operations, which will require recompute of all stats.
@@ -343,8 +347,28 @@ impl Branch {
 /// The value of a node.
 /// - high ~> Winning for the parent node.
 /// - low ~> Losing for the parent node.
+/// - +inf ~> Proven win for the parent node.
+/// - -inf ~> Proven loss for the parent node.
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct Value(pub f32);
+
+impl Value {
+    pub const fn proven_win() -> Self {
+        Self(f32::INFINITY)
+    }
+
+    pub const fn proven_loss() -> Self {
+        Self(f32::NEG_INFINITY)
+    }
+
+    pub fn is_proven_win(&self) -> bool {
+        *self == Self::proven_win()
+    }
+
+    pub(crate) fn is_proven_loss(&self) -> bool {
+        *self == Self::proven_loss()
+    }
+}
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -366,6 +390,21 @@ impl Eq for Value {}
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         f32::partial_cmp(&self.0, &other.0).unwrap_or(Ordering::Equal)
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Proven {
+    Win,
+    Loss,
+}
+
+impl From<Proven> for Value {
+    fn from(x: Proven) -> Self {
+        match x {
+            Proven::Win => Value::proven_win(),
+            Proven::Loss => Value::proven_loss(),
+        }
     }
 }
 
@@ -586,6 +625,11 @@ impl NodeData {
     pub(self) fn update(&mut self, value: eval::Value) {
         self.visits += 1;
         self.value += value;
+    }
+
+    pub(self) fn set_proven(&mut self, state: Proven) {
+        self.visits += 1;
+        self.value = state.into();
     }
 
     pub fn compute_subtree_size(&self) -> usize {
@@ -925,5 +969,9 @@ impl<S: node_state::Any> Node<S> {
 impl<S: HasValue> Node<S> {
     pub(self) fn update(&mut self, value: eval::Value) {
         self.data.update(value)
+    }
+
+    pub(self) fn set_proven(&mut self, state: Proven) {
+        self.data.set_proven(state)
     }
 }
