@@ -397,6 +397,7 @@ impl Ord for Value {
 pub enum Proven {
     Win,
     Loss,
+    // todo: Draw ?
 }
 
 impl From<Proven> for Value {
