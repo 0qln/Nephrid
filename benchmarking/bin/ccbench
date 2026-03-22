@@ -14,10 +14,12 @@ cutechess-cli \
     -engine cmd="$engine1" name="$engine1" option.gui-lag=200 \
     -engine cmd="$engine2" name="$engine2" option.gui-lag=200 \
     -each proto=uci tc=20+0.2 \
-    -rounds 250 -games 2 \
+    -rounds 1000 -games 2 \
     -openings file="$openings" format=epd order=random -repeat \
     -recover \
     -concurrency 6 \
     -sprt elo0=0 elo1=2.0 alpha=0.05 beta=0.05 \
+    -ratinginterval 20 \
+    -outcomeinterval 20 \
     -pgnout "$out" \
     "$@"
