@@ -318,7 +318,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         let root_visits = parent_node.borrow().visits();
         parent_node.borrow_mut().sort_by(|b| {
             let score = {
-                let visit_threshold = 4; // todo: make this a config option
+                let visit_threshold = 4; // todo: fine-tune this
                 let is_proven_loss = b.node().borrow().value().is_proven_loss();
 
                 // make sure that we don't prune this node before it has been visited some
