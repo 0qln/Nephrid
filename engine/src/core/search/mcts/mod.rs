@@ -77,7 +77,8 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
                 Instant::now(),
                 time_limit,
                 iterations,
-            ))
+            )
+        || strategy.should_stop(tree))
     {
         searcher.grow(tree);
         strategy.step(tree);

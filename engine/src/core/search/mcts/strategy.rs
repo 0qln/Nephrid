@@ -18,6 +18,9 @@ pub trait MctsStrategy {
     fn start(&mut self, tree: &mut Tree);
     fn result(&mut self, tree: &mut Tree) -> Self::Result;
     fn step(&mut self, tree: &mut Tree) -> Self::Step;
+    fn should_stop(&mut self, _tree: &Tree) -> bool {
+        false
+    }
 }
 
 #[derive(Default, Debug)]
@@ -221,6 +224,13 @@ impl MctsStrategy for MctsUci {
             ));
         }
         step
+    }
+
+    fn should_stop(&mut self, tree: &Tree) -> bool {
+        // stop if we have a proven win or loss at the root
+        let root = tree.get_root();
+        let root_value = root.borrow().value();
+        root_value.is_proven_win() || root_value.is_proven_loss()
     }
 
     fn start(&mut self, _tree: &mut Tree) {
