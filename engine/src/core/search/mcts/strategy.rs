@@ -6,7 +6,11 @@ use crate::{
         Move,
         depth::Depth,
         ply::Ply,
-        search::mcts::{Tree, node},
+        search::mcts::{
+            Tree,
+            eval::Cp,
+            node::{self, WinRate, node_state::Evaluated},
+        },
     },
     uci::sync,
 };
@@ -51,20 +55,29 @@ impl MctsStrategy for MctsFindBest {
 }
 
 #[derive(Debug)]
+pub struct UciCp(Cp);
+
+impl fmt::Display for UciCp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "cp {}", self.0)
+    }
+}
+
+#[derive(Debug)]
 pub enum UciScore {
     Mate(i32),
-    Centipawns(i32),
-    LowerBound(i32),
-    UpperBound(i32),
+    Centipawns(UciCp),
+    LowerBound(UciCp),
+    UpperBound(UciCp),
 }
 
 impl fmt::Display for UciScore {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Mate(mate) => write!(f, "score mate {mate}"),
-            Self::Centipawns(cp) => write!(f, "score cp {cp}"),
-            Self::LowerBound(cp) => write!(f, "score cp {cp} lowerbound"),
-            Self::UpperBound(cp) => write!(f, "score cp {cp} upperbound"),
+            Self::Centipawns(cp) => write!(f, "score {cp}"),
+            Self::LowerBound(cp) => write!(f, "score {cp} lowerbound"),
+            Self::UpperBound(cp) => write!(f, "score {cp} upperbound"),
         }
     }
 }
@@ -184,8 +197,13 @@ impl MctsUci {
             // => set sign negative.
             Some(UciScore::Mate(-mate_in_plies.to_mate_score()))
         }
+        else if let Some(evaluated) = root.clone().try_into::<Evaluated>() {
+            // (invert bc it's relative to parent node)
+            let win_rate = -WinRate::from(evaluated);
+            let cp = UciCp(Cp::from(win_rate));
+            Some(UciScore::Centipawns(cp))
+        }
         else {
-            // todo: return centipawns here
             None
         }
     }

@@ -592,6 +592,21 @@ impl RtNodeRef {
         }
     }
 
+    /// Try to transmute this into the specified state. Retruns none if the
+    /// state is not the target state.
+    pub fn try_into<Target: node_state::Valid>(self) -> Option<CtNodeRef<Target>> {
+        let state = self.state();
+        let node = self.node;
+        if state == Target::state() {
+            // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
+            // another state.
+            Some(unsafe { transmute::<CtNodeRef<Unknown>, CtNodeRef<Target>>(node) })
+        }
+        else {
+            None
+        }
+    }
+
     pub fn state(&self) -> NodeState {
         self.node.inner.state.get()
     }
@@ -1009,5 +1024,37 @@ impl<S: HasValue> Node<S> {
 
     pub(self) fn set_proven(&mut self, state: Proven) {
         self.data.set_proven(state)
+    }
+}
+
+/// The winrate of a node in range [0; 1];
+#[derive(Debug, Clone, Copy)]
+pub struct WinRate(pub f32);
+
+impl_op!(-|x: WinRate| -> WinRate { WinRate(1. - x.0) });
+
+impl Default for WinRate {
+    fn default() -> Self {
+        Self(0.5)
+    }
+}
+
+impl From<CtNodeRef<Evaluated>> for WinRate {
+    fn from(node: CtNodeRef<Evaluated>) -> Self {
+        let node = node.borrow();
+        let visits = node.visits();
+        let value = node.value();
+        if visits == 0 {
+            Self::default()
+        }
+        else {
+            Self(value / visits as f32)
+        }
+    }
+}
+
+impl fmt::Display for WinRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2}%", self.0 * 100.)
     }
 }

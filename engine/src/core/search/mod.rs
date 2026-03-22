@@ -6,7 +6,11 @@ use crate::{
         config::Configuration,
         search::mcts::{
             MctsParts,
-            node::{Tree, node_state::NodeSwitch},
+            eval::Cp,
+            node::{
+                Tree, WinRate,
+                node_state::{Evaluated, NodeSwitch},
+            },
             select::Selector,
         },
     },
@@ -117,7 +121,20 @@ impl Worker {
             Command::MctsDebugTree => {
                 let tree = &self.mcts_state.tree;
                 let root = tree.get_root();
-                println!("({})", root.state());
+                println!(
+                    "({}) ----  v {: >8.2}/{: <8} w {} cp {}",
+                    root.state(),
+                    root.clone().borrow().value(),
+                    root.clone().borrow().visits(),
+                    root.clone()
+                        .try_into::<Evaluated>()
+                        .map(|x| (-WinRate::from(x)).to_string())
+                        .unwrap_or("/".to_string()),
+                    root.clone()
+                        .try_into::<Evaluated>()
+                        .map(|x| Cp::from(-WinRate::from(x)).to_string())
+                        .unwrap_or("/".to_string())
+                );
                 match root.into_ct() {
                     NodeSwitch::Leaf(_node) => {}
                     NodeSwitch::Branching(node) => {
