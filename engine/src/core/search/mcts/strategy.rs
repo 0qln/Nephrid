@@ -32,8 +32,8 @@ impl MctsStrategy for MctsFindBest {
     type Result = Option<Move>;
     type Step = Option<Move>;
 
-    fn result(&mut self, _tree: &mut Tree) -> Self::Result {
-        self.last_best_move
+    fn result(&mut self, tree: &mut Tree) -> Self::Result {
+        self.last_best_move.or_else(|| tree.best_move())
     }
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
