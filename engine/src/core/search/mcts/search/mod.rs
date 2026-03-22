@@ -320,12 +320,13 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             let score = {
                 let visit_threshold = 4; // todo: fine-tune this
                 let is_proven_loss = b.node().borrow().value().is_proven_loss();
+                let visits = b.node().borrow().visits();
 
                 // make sure that we don't prune this node before it has been visited some
                 // times, to allow the parent node to pick up on some of the value
                 // of this node. otherwise this node's (bad) score wouldn't be propagated up the
                 // tree and the parent node would have an overestimated value.
-                if is_proven_loss && root_visits >= visit_threshold {
+                if is_proven_loss && visits >= visit_threshold {
                     self.selector.min_score()
                 }
                 else {
