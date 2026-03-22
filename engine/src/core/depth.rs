@@ -1,4 +1,4 @@
-use std::{cmp::max, fmt, num::ParseIntError, ops, str::FromStr};
+use std::{cmp::min, fmt, num::ParseIntError, ops, str::FromStr};
 
 use crate::core::{ply::Ply, search::mcts::node::Height};
 
@@ -66,8 +66,8 @@ impl From<Ply> for Depth {
 
 impl From<Height> for Depth {
     fn from(value: Height) -> Self {
-        let v = value.0.saturating_add(1);
+        let v = value.0.saturating_sub(1);
         let cap = Self::MAX.v as u16;
-        Depth { v: max(v, cap) as u8 }
+        Depth { v: min(v, cap) as u8 }
     }
 }
