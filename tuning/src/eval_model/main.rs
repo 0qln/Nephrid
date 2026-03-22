@@ -1175,6 +1175,10 @@ impl Selector for TrainSelector {
         let exploration = self.c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);
         puct::Score(exploitation + exploration)
     }
+
+    fn min_score(&self) -> Self::Score {
+        puct::Score(f32::NEG_INFINITY)
+    }
 }
 
 // #[derive(Default)]
