@@ -63,8 +63,8 @@ impl fmt::Display for UciScore {
         match self {
             Self::Mate(mate) => write!(f, "score mate {mate}"),
             Self::Centipawns(cp) => write!(f, "score cp {cp}"),
-            Self::LowerBound(cp) => write!(f, "score lowerbound {cp}"),
-            Self::UpperBound(cp) => write!(f, "score upperbound {cp}"),
+            Self::LowerBound(cp) => write!(f, "score cp {cp} lowerbound"),
+            Self::UpperBound(cp) => write!(f, "score cp {cp} upperbound"),
         }
     }
 }
