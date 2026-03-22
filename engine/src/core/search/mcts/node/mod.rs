@@ -539,7 +539,7 @@ impl CtNodeRef<Branching> {
     }
 }
 
-/// A node reference with runtime infomration about the state.
+/// A node reference with runtime information about the state.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RtNodeRef {
     node: CtNodeRef<node_state::Unknown>,
@@ -592,7 +592,7 @@ impl RtNodeRef {
         }
     }
 
-    /// Try to transmute this into the specified state. Retruns none if the
+    /// Try to transmute this into the specified state. Returns none if the
     /// state is not the target state.
     pub fn try_into<Target: node_state::Valid>(self) -> Option<CtNodeRef<Target>> {
         let state = self.state();
@@ -947,7 +947,7 @@ impl<S: node_state::HasBranches> Node<S> {
                     .partial_cmp(&b.node())
                     .expect("Node comparison failed!")
             })
-            .expect("An expanded node has to have atleast one branch.")
+            .expect("An expanded node has to have at least one branch.")
     }
 
     fn find_branch(&self, mut pred: impl FnMut(&Branch) -> bool) -> Option<&Branch> {
