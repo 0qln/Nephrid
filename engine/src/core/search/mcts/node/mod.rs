@@ -420,17 +420,18 @@ impl From<Proven> for Value {
     }
 }
 
-impl From<Value> for Proven {
-    fn from(val: Value) -> Self {
+impl TryFrom<Value> for Proven {
+    type Error = ();
+
+    fn try_from(val: Value) -> Result<Self, Self::Error> {
         if val.is_proven_win() {
-            Proven { v: proven::WIN_C }
+            Ok(proven::WIN)
         }
         else if val.is_proven_loss() {
-            Proven { v: proven::LOSS_C }
+            Ok(proven::LOSS)
         }
         else {
-            // acts as the neutral/unproven tier
-            Proven { v: proven::DRAW_C }
+            Err(())
         }
     }
 }
@@ -828,11 +829,12 @@ pub struct Node<State: node_state::Any> {
 
 impl<S: node_state::Any> PartialOrd for Node<S> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let tier_self = Proven::from(self.value());
-        let tier_other = Proven::from(other.value());
-
         // compare the proven-tiers (WIN > DRAW/UNPROVEN > LOSS)
-        match tier_self.cmp(&tier_other) {
+        let tier_self = Proven::try_from(self.value()).ok().unwrap_or(proven::DRAW);
+        let tier_other = Proven::try_from(other.value()).ok().unwrap_or(proven::DRAW);
+        let tier_ord = tier_self.cmp(&tier_other);
+
+        match tier_ord {
             // fall back to standard mcts visits comparison
             Ordering::Equal => self.visits().partial_cmp(&other.visits()),
             // otherwise, strictly obey the proven ranking.
