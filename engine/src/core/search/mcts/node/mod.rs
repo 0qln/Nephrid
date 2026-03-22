@@ -1,8 +1,12 @@
-use crate::core::{
-    depth::Depth,
-    search::mcts::node::node_state::{
-        ExpandedRefSwitch, ExpandedSwitch, HasBranches, HasValue, NodeState, NodeSwitch, Unknown,
+use crate::{
+    core::{
+        depth::Depth,
+        search::mcts::node::node_state::{
+            ExpandedRefSwitch, ExpandedSwitch, HasBranches, HasValue, NodeState, NodeSwitch,
+            Unknown,
+        },
     },
+    impl_variants,
 };
 use itertools::Itertools;
 use std::{cell::Cell, mem::transmute, ops::Deref};
@@ -302,7 +306,7 @@ impl fmt::Display for Path {
     }
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct Branch {
     /// The node that this branch leads to.
     node: RtNodeRef,
@@ -365,7 +369,7 @@ impl Value {
         *self == Self::proven_win()
     }
 
-    pub(crate) fn is_proven_loss(&self) -> bool {
+    pub fn is_proven_loss(&self) -> bool {
         *self == Self::proven_loss()
     }
 }
@@ -393,23 +397,45 @@ impl Ord for Value {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum Proven {
-    Win,
-    Loss,
-    // todo: Draw ?
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub struct Proven {
+    v: i32,
+}
+
+impl_variants! {
+    i32 as Proven in proven {
+        LOSS = -1,
+        DRAW = 0,
+        WIN = 1,
+    }
 }
 
 impl From<Proven> for Value {
     fn from(x: Proven) -> Self {
-        match x {
-            Proven::Win => Value::proven_win(),
-            Proven::Loss => Value::proven_loss(),
+        match x.v() {
+            proven::WIN_C => Value::proven_win(),
+            proven::LOSS_C => Value::proven_loss(),
+            _ => Value(0.),
         }
     }
 }
 
-#[derive(Debug)]
+impl From<Value> for Proven {
+    fn from(val: Value) -> Self {
+        if val.is_proven_win() {
+            Proven { v: proven::WIN_C }
+        }
+        else if val.is_proven_loss() {
+            Proven { v: proven::LOSS_C }
+        }
+        else {
+            // acts as the neutral/unproven tier
+            Proven { v: proven::DRAW_C }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct NodeInner<S: node_state::Any> {
     state: Cell<NodeState>,
     data: RefCell<Node<S>>,
@@ -417,7 +443,7 @@ pub struct NodeInner<S: node_state::Any> {
 
 /// A node reference with compile time information about the state.
 #[repr(transparent)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct CtNodeRef<S: node_state::Any> {
     inner: Rc<NodeInner<S>>,
 }
@@ -513,7 +539,7 @@ impl CtNodeRef<Branching> {
 }
 
 /// A node reference with runtime infomration about the state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RtNodeRef {
     node: CtNodeRef<node_state::Unknown>,
 }
@@ -570,7 +596,7 @@ impl RtNodeRef {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct NodeData {
     // todo: use a boxed slice instead. the branches will not change once set.
     /// All the branches from this node.
@@ -735,7 +761,7 @@ pub mod node_state {
         }
     }
 
-    pub const trait Any {}
+    pub const trait Any: PartialEq {}
 
     pub const trait Valid: Any {
         fn state() -> NodeState;
@@ -791,13 +817,28 @@ pub mod node_state {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Node<State: node_state::Any> {
     /// The data.
     data: NodeData,
 
     /// The current state of this node.
     _state: PhantomData<State>,
+}
+
+impl<S: node_state::Any> PartialOrd for Node<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let tier_self = Proven::from(self.value());
+        let tier_other = Proven::from(other.value());
+
+        // compare the proven-tiers (WIN > DRAW/UNPROVEN > LOSS)
+        match tier_self.cmp(&tier_other) {
+            // fall back to standard mcts visits comparison
+            Ordering::Equal => self.visits().partial_cmp(&other.visits()),
+            // otherwise, strictly obey the proven ranking.
+            ordering => Some(ordering),
+        }
+    }
 }
 
 impl<S: node_state::HasBranches> fmt::Display for Node<S> {
@@ -881,27 +922,19 @@ impl<S: node_state::HasBranches> Node<S> {
     }
 
     fn select_best(&self) -> &Branch {
-        self.select(|b| b.visits())
+        self.data
+            .branches
+            .iter()
+            .max_by(|&a, &b| {
+                a.node()
+                    .partial_cmp(&b.node())
+                    .expect("Node comparison failed!")
+            })
+            .expect("An expanded node has to have atleast one branch.")
     }
 
     fn find_branch(&self, mut pred: impl FnMut(&Branch) -> bool) -> Option<&Branch> {
         self.data.branches.iter().find(|&b| pred(b))
-    }
-
-    fn select<F, T>(&self, transform: F) -> &Branch
-    where
-        F: Fn(&Branch) -> T,
-        T: PartialOrd,
-    {
-        self.data
-            .branches
-            .iter()
-            .max_by(|a, b| {
-                let a = transform(a);
-                let b = transform(b);
-                a.partial_cmp(&b).expect("Node comparison failed!")
-            })
-            .expect("An expanded node has to have atleast one branch.")
     }
 }
 

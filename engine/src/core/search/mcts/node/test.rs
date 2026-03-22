@@ -268,3 +268,102 @@ fn test_tree_principal_variation_simple_path() {
         Move::new(squares::E7, squares::E5, move_flags::QUIET)
     );
 }
+
+fn proven_mock_node(tier: Proven, visits: u32) -> Node<node_state::Leaf> {
+    let value = Value::from(tier);
+    let mut node = Node::new_leaf();
+    node.data.visits = visits;
+    node.data.value = value;
+    node
+}
+
+// ================================================
+// 1. TIER COMPARISONS (Tier takes strict priority)
+// ================================================
+
+#[test]
+fn test_tier_win_beats_draw_unproven() {
+    use proven::*;
+    let win_node = proven_mock_node(WIN, 10);
+    let draw_node = proven_mock_node(DRAW, 5000); // 5000 visits, but still unproven!
+
+    // The proven win MUST be selected over the highly-visited unproven move
+    assert_eq!(win_node.partial_cmp(&draw_node), Some(Ordering::Greater));
+    assert_eq!(draw_node.partial_cmp(&win_node), Some(Ordering::Less));
+}
+
+#[test]
+fn test_tier_win_beats_loss() {
+    use proven::*;
+    let win_node = proven_mock_node(WIN, 10);
+    let loss_node = proven_mock_node(LOSS, 5000);
+
+    // Win strictly beats loss
+    assert_eq!(win_node.partial_cmp(&loss_node), Some(Ordering::Greater));
+    assert_eq!(loss_node.partial_cmp(&win_node), Some(Ordering::Less));
+}
+
+#[test]
+fn test_tier_draw_unproven_beats_loss() {
+    use proven::*;
+    let draw_node = proven_mock_node(DRAW, 10);
+    let loss_node = proven_mock_node(LOSS, 5000);
+
+    // We MUST prefer an unexplored/unproven move over a guaranteed, proven loss!
+    assert_eq!(draw_node.partial_cmp(&loss_node), Some(Ordering::Greater));
+    assert_eq!(loss_node.partial_cmp(&draw_node), Some(Ordering::Less));
+}
+
+// =============================================
+// 2. TIEBREAKERS (Same tier fallback to visits)
+// =============================================
+
+#[test]
+fn test_tiebreak_win_uses_visits() {
+    use proven::*;
+    let win_high = proven_mock_node(WIN, 100);
+    let win_low = proven_mock_node(WIN, 50);
+
+    // Both guarantee a win, pick the one with higher visits (usually faster/more
+    // robust)
+    assert_eq!(win_high.partial_cmp(&win_low), Some(Ordering::Greater));
+    assert_eq!(win_low.partial_cmp(&win_high), Some(Ordering::Less));
+}
+
+#[test]
+fn test_tiebreak_draw_unproven_uses_visits() {
+    use proven::*;
+    let draw_high = proven_mock_node(DRAW, 100);
+    let draw_low = proven_mock_node(DRAW, 50);
+
+    // Standard MCTS behavior for normal unproven branches
+    assert_eq!(draw_high.partial_cmp(&draw_low), Some(Ordering::Greater));
+    assert_eq!(draw_low.partial_cmp(&draw_high), Some(Ordering::Less));
+}
+
+#[test]
+fn test_tiebreak_loss_uses_visits() {
+    use proven::*;
+    let loss_high = proven_mock_node(LOSS, 100);
+    let loss_low = proven_mock_node(LOSS, 50);
+
+    // If forced to choose between two guaranteed losses, pick the one with higher
+    // visits. This naturally makes the engine play the most stubborn,
+    // longest-delaying defense.
+    assert_eq!(loss_high.partial_cmp(&loss_low), Some(Ordering::Greater));
+    assert_eq!(loss_low.partial_cmp(&loss_high), Some(Ordering::Less));
+}
+
+// ==========================================
+// 3. EXACT EQUALITY
+// ==========================================
+
+#[test]
+fn test_exact_equality() {
+    use proven::*;
+    let node_a = proven_mock_node(DRAW, 100);
+    let node_b = proven_mock_node(DRAW, 100);
+
+    // Tiers match, visits match -> exactly equal
+    assert_eq!(node_a.partial_cmp(&node_b), Some(Ordering::Equal));
+}

@@ -3,8 +3,9 @@ use std::ops::ControlFlow;
 use crate::core::search::mcts::{
     eval::{self, Evaluation, GameResult},
     node::{
-        Proven, Tree,
+        Tree,
         node_state::{self, Branching, Evaluated, Terminal},
+        proven,
     },
     search::{SelNode, Selection},
 };
@@ -98,10 +99,10 @@ impl Backpropagater for MctsSolver {
                 match eval {
                     Evaluation::Terminal(game_result) => match *game_result {
                         GameResult::Win { relative_to } if relative_to == turn => {
-                            tree.set_proven(terminal, Proven::Loss)
+                            tree.set_proven(terminal, proven::LOSS)
                         }
                         GameResult::Win { relative_to } if relative_to != turn => {
-                            tree.set_proven(terminal, Proven::Win)
+                            tree.set_proven(terminal, proven::WIN)
                         }
                         _ => tree.update_node(terminal, value),
                     },
@@ -125,7 +126,7 @@ impl Backpropagater for MctsSolver {
                                 .iter()
                                 .any(|b| b.node().borrow().value().is_proven_win()) =>
                         {
-                            tree.set_proven(node.clone(), Proven::Loss)
+                            tree.set_proven(node.clone(), proven::LOSS)
                         }
 
                         GameResult::Win { .. }
@@ -135,7 +136,7 @@ impl Backpropagater for MctsSolver {
                                 .iter()
                                 .all(|b| b.node().borrow().value().is_proven_loss()) =>
                         {
-                            tree.set_proven(node.clone(), Proven::Win)
+                            tree.set_proven(node.clone(), proven::WIN)
                         }
 
                         x => tree.update_node(node.clone(), x.to_value(!turn)),

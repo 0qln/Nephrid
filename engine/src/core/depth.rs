@@ -1,6 +1,6 @@
-use std::{fmt, num::ParseIntError, ops, str::FromStr};
+use std::{cmp::max, fmt, num::ParseIntError, ops, str::FromStr};
 
-use crate::core::ply::Ply;
+use crate::core::{ply::Ply, search::mcts::node::Height};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Depth {
@@ -61,5 +61,13 @@ impl Default for Depth {
 impl From<Ply> for Depth {
     fn from(ply: Ply) -> Self {
         Depth { v: ply.v as u8 }
+    }
+}
+
+impl From<Height> for Depth {
+    fn from(value: Height) -> Self {
+        let v = value.0.saturating_add(1);
+        let cap = Self::MAX.v as u16;
+        Depth { v: max(v, cap) as u8 }
     }
 }
