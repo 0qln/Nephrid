@@ -489,6 +489,25 @@ impl<S: const node_state::Valid> CtNodeRef<S> {
             None
         }
     }
+
+    /// Useful for when you have a CtNodeRef<of some Trait impl (e.g. HasValue)>
+    pub fn into_ct(self) -> NodeSwitch {
+        type Switch = NodeSwitch;
+        type State = NodeState;
+        type Ref<S> = CtNodeRef<S>;
+
+        // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
+        // another state.
+        unsafe {
+            let node = self;
+            match Self::STATE {
+                State::Leaf => Switch::Leaf(transmute::<Self, Ref<Leaf>>(node)),
+                State::Branching => Switch::Branching(transmute::<Self, Ref<Branching>>(node)),
+                State::Terminal => Switch::Terminal(transmute::<Self, Ref<Terminal>>(node)),
+                State::Evaluated => Switch::Evaluated(transmute::<Self, Ref<Evaluated>>(node)),
+            }
+        }
+    }
 }
 
 impl<S: node_state::Any + Default> CtNodeRef<S> {
@@ -795,6 +814,7 @@ pub mod node_state {
             NodeState::Leaf
         }
     }
+    impl const HasValue for Leaf {}
 
     #[derive(Clone, Default, Debug, PartialEq)]
     pub struct Terminal;
