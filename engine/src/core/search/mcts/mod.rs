@@ -8,7 +8,7 @@ use crate::{
         config::Configuration,
         position::Position,
         search::mcts::{
-            back::{Backpropagater, DefaultBackuper},
+            back::{Backpropagater, MctsSolver},
             eval::{
                 Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator, r#static::StaticEvaluator,
             },
@@ -77,7 +77,8 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
                 Instant::now(),
                 time_limit,
                 iterations,
-            ))
+            )
+        || strategy.should_stop(tree))
     {
         searcher.grow(tree);
         strategy.step(tree);
@@ -151,7 +152,7 @@ pub struct NNParts<B: Backend> {
 impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
     type Selector = PuctSelector;
     type Evaluator = NNEvaluator<'a, 'a, B>;
-    type Backprop = DefaultBackuper;
+    type Backprop = MctsSolver;
     type Noiser = DirichletNoiser;
     type Instance = NNParts<B>;
 
@@ -213,7 +214,7 @@ pub struct StaticParts {
 impl<const X: usize> MctsParts<X> for &StaticParts {
     type Selector = PuctSelector;
     type Evaluator = StaticEvaluator;
-    type Backprop = DefaultBackuper;
+    type Backprop = MctsSolver;
     type Noiser = DirichletNoiser;
     type Instance = StaticParts;
 
@@ -262,7 +263,7 @@ pub struct PureParts;
 impl<const X: usize> MctsParts<X> for &PureParts {
     type Selector = UcbSelector;
     type Evaluator = PlayoutEvaluator;
-    type Backprop = DefaultBackuper;
+    type Backprop = MctsSolver;
     type Noiser = NullNoiser;
     type Instance = PureParts;
 

@@ -33,6 +33,10 @@ impl Selector for UcbSelector {
             }
         }
     }
+
+    fn min_score(&self) -> Self::Score {
+        Score(f32::NEG_INFINITY)
+    }
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Default)]

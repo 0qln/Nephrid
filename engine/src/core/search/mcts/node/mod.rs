@@ -1,8 +1,12 @@
-use crate::core::{
-    depth::Depth,
-    search::mcts::node::node_state::{
-        ExpandedRefSwitch, ExpandedSwitch, HasBranches, HasValue, NodeState, NodeSwitch, Unknown,
+use crate::{
+    core::{
+        depth::Depth,
+        search::mcts::node::node_state::{
+            ExpandedRefSwitch, ExpandedSwitch, HasBranches, HasValue, NodeState, NodeSwitch,
+            Unknown,
+        },
     },
+    impl_variants,
 };
 use itertools::Itertools;
 use std::{cell::Cell, mem::transmute, ops::Deref};
@@ -129,6 +133,10 @@ impl Tree {
 
     pub fn update_node<S: HasValue>(&mut self, node: CtNodeRef<S>, value: eval::Value) {
         node.borrow_mut().update(value);
+    }
+
+    pub fn set_proven<S: HasValue>(&mut self, node: CtNodeRef<S>, state: Proven) {
+        node.borrow_mut().set_proven(state);
     }
 }
 
@@ -298,7 +306,7 @@ impl fmt::Display for Path {
     }
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct Branch {
     /// The node that this branch leads to.
     node: RtNodeRef,
@@ -343,8 +351,28 @@ impl Branch {
 /// The value of a node.
 /// - high ~> Winning for the parent node.
 /// - low ~> Losing for the parent node.
+/// - +inf ~> Proven win for the parent node.
+/// - -inf ~> Proven loss for the parent node.
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct Value(pub f32);
+
+impl Value {
+    pub const fn proven_win() -> Self {
+        Self(f32::INFINITY)
+    }
+
+    pub const fn proven_loss() -> Self {
+        Self(f32::NEG_INFINITY)
+    }
+
+    pub fn is_proven_win(&self) -> bool {
+        *self == Self::proven_win()
+    }
+
+    pub fn is_proven_loss(&self) -> bool {
+        *self == Self::proven_loss()
+    }
+}
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -369,7 +397,46 @@ impl Ord for Value {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub struct Proven {
+    v: i32,
+}
+
+impl_variants! {
+    i32 as Proven in proven {
+        LOSS = -1,
+        DRAW = 0,
+        WIN = 1,
+    }
+}
+
+impl From<Proven> for Value {
+    fn from(x: Proven) -> Self {
+        match x.v() {
+            proven::WIN_C => Value::proven_win(),
+            proven::LOSS_C => Value::proven_loss(),
+            _ => Value(0.),
+        }
+    }
+}
+
+impl TryFrom<Value> for Proven {
+    type Error = ();
+
+    fn try_from(val: Value) -> Result<Self, Self::Error> {
+        if val.is_proven_win() {
+            Ok(proven::WIN)
+        }
+        else if val.is_proven_loss() {
+            Ok(proven::LOSS)
+        }
+        else {
+            Err(())
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub struct NodeInner<S: node_state::Any> {
     state: Cell<NodeState>,
     data: RefCell<Node<S>>,
@@ -377,7 +444,7 @@ pub struct NodeInner<S: node_state::Any> {
 
 /// A node reference with compile time information about the state.
 #[repr(transparent)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct CtNodeRef<S: node_state::Any> {
     inner: Rc<NodeInner<S>>,
 }
@@ -472,8 +539,8 @@ impl CtNodeRef<Branching> {
     }
 }
 
-/// A node reference with runtime infomration about the state.
-#[derive(Debug, Clone)]
+/// A node reference with runtime information about the state.
+#[derive(Debug, Clone, PartialEq)]
 pub struct RtNodeRef {
     node: CtNodeRef<node_state::Unknown>,
 }
@@ -525,12 +592,27 @@ impl RtNodeRef {
         }
     }
 
+    /// Try to transmute this into the specified state. Returns none if the
+    /// state is not the target state.
+    pub fn try_into<Target: node_state::Valid>(self) -> Option<CtNodeRef<Target>> {
+        let state = self.state();
+        let node = self.node;
+        if state == Target::state() {
+            // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
+            // another state.
+            Some(unsafe { transmute::<CtNodeRef<Unknown>, CtNodeRef<Target>>(node) })
+        }
+        else {
+            None
+        }
+    }
+
     pub fn state(&self) -> NodeState {
         self.node.inner.state.get()
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, PartialEq)]
 pub struct NodeData {
     // todo: use a boxed slice instead. the branches will not change once set.
     /// All the branches from this node.
@@ -586,6 +668,11 @@ impl NodeData {
     pub(self) fn update(&mut self, value: eval::Value) {
         self.visits += 1;
         self.value += value;
+    }
+
+    pub(self) fn set_proven(&mut self, state: Proven) {
+        self.visits += 1;
+        self.value = state.into();
     }
 
     pub fn compute_subtree_size(&self) -> usize {
@@ -690,7 +777,7 @@ pub mod node_state {
         }
     }
 
-    pub const trait Any {}
+    pub const trait Any: PartialEq {}
 
     pub const trait Valid: Any {
         fn state() -> NodeState;
@@ -746,13 +833,29 @@ pub mod node_state {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Node<State: node_state::Any> {
     /// The data.
     data: NodeData,
 
     /// The current state of this node.
     _state: PhantomData<State>,
+}
+
+impl<S: node_state::Any> PartialOrd for Node<S> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        // compare the proven-tiers (WIN > DRAW/UNPROVEN > LOSS)
+        let tier_self = Proven::try_from(self.value()).ok().unwrap_or(proven::DRAW);
+        let tier_other = Proven::try_from(other.value()).ok().unwrap_or(proven::DRAW);
+        let tier_ord = tier_self.cmp(&tier_other);
+
+        match tier_ord {
+            // fall back to standard mcts visits comparison
+            Ordering::Equal => self.visits().partial_cmp(&other.visits()),
+            // otherwise, strictly obey the proven ranking.
+            ordering => Some(ordering),
+        }
+    }
 }
 
 impl<S: node_state::HasBranches> fmt::Display for Node<S> {
@@ -836,27 +939,19 @@ impl<S: node_state::HasBranches> Node<S> {
     }
 
     fn select_best(&self) -> &Branch {
-        self.select(|b| b.visits())
+        self.data
+            .branches
+            .iter()
+            .max_by(|&a, &b| {
+                a.node()
+                    .partial_cmp(&b.node())
+                    .expect("Node comparison failed!")
+            })
+            .expect("An expanded node has to have at least one branch.")
     }
 
     fn find_branch(&self, mut pred: impl FnMut(&Branch) -> bool) -> Option<&Branch> {
         self.data.branches.iter().find(|&b| pred(b))
-    }
-
-    fn select<F, T>(&self, transform: F) -> &Branch
-    where
-        F: Fn(&Branch) -> T,
-        T: PartialOrd,
-    {
-        self.data
-            .branches
-            .iter()
-            .max_by(|a, b| {
-                let a = transform(a);
-                let b = transform(b);
-                a.partial_cmp(&b).expect("Node comparison failed!")
-            })
-            .expect("An expanded node has to have atleast one branch.")
     }
 }
 
@@ -925,5 +1020,41 @@ impl<S: node_state::Any> Node<S> {
 impl<S: HasValue> Node<S> {
     pub(self) fn update(&mut self, value: eval::Value) {
         self.data.update(value)
+    }
+
+    pub(self) fn set_proven(&mut self, state: Proven) {
+        self.data.set_proven(state)
+    }
+}
+
+/// The winrate of a node in range [0; 1];
+#[derive(Debug, Clone, Copy)]
+pub struct WinRate(pub f32);
+
+impl_op!(-|x: WinRate| -> WinRate { WinRate(1. - x.0) });
+
+impl Default for WinRate {
+    fn default() -> Self {
+        Self(0.5)
+    }
+}
+
+impl From<CtNodeRef<Evaluated>> for WinRate {
+    fn from(node: CtNodeRef<Evaluated>) -> Self {
+        let node = node.borrow();
+        let visits = node.visits();
+        let value = node.value();
+        if visits == 0 {
+            Self::default()
+        }
+        else {
+            Self(value / visits as f32)
+        }
+    }
+}
+
+impl fmt::Display for WinRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2}%", self.0 * 100.)
     }
 }

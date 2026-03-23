@@ -308,8 +308,8 @@ impl EvalInfo {
         let w_q = QualityInput::value(&self.pos, colors::WHITE, self.phase);
         let b_q = QualityInput::value(&self.pos, colors::BLACK, self.phase);
         let d = (w_q - b_q) as f32;
-
-        Quality::squish(d)
+        let cp = Cp(d as i16);
+        Quality::from(cp)
     }
 
     fn policy(&self) -> Policy {
