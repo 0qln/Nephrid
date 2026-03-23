@@ -354,15 +354,17 @@ impl Branch {
 /// - +inf ~> Proven win for the parent node.
 /// - -inf ~> Proven loss for the parent node.
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
-pub struct Value(pub f32);
+pub struct Value(pub TValue);
+
+pub type TValue = f64;
 
 impl Value {
     pub const fn proven_win() -> Self {
-        Self(f32::INFINITY)
+        Self(TValue::INFINITY)
     }
 
     pub const fn proven_loss() -> Self {
-        Self(f32::NEG_INFINITY)
+        Self(TValue::NEG_INFINITY)
     }
 
     pub fn is_proven_win(&self) -> bool {
@@ -386,14 +388,14 @@ impl PartialOrd for Value {
     }
 }
 
-impl_op!(/ |l: Value, r: f32| -> f32 { l.0 / r });
-impl_op!(+= |l: &mut Value, r: eval::Value| { l.0 += r.v() } );
+impl_op!(/ |l: Value, r: TValue| -> TValue { l.0 / r });
+impl_op!(+= |l: &mut Value, r: eval::Value| { l.0 += r.v() as f64 } );
 
 impl Eq for Value {}
 
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        f32::partial_cmp(&self.0, &other.0).unwrap_or(Ordering::Equal)
+        TValue::partial_cmp(&self.0, &other.0).unwrap_or(Ordering::Equal)
     }
 }
 
@@ -1059,17 +1061,23 @@ impl Default for WinRate {
     }
 }
 
-impl From<CtNodeRef<Evaluated>> for WinRate {
-    fn from(node: CtNodeRef<Evaluated>) -> Self {
-        let node = node.borrow();
-        let visits = node.visits();
-        let value = node.value();
+impl WinRate {
+    pub fn new(value: Value, visits: u32) -> Self {
         if visits == 0 {
             Self::default()
         }
         else {
-            Self(value / visits as f32)
+            Self((value / visits as TValue) as f32)
         }
+    }
+}
+
+impl<S: HasValue> From<CtNodeRef<S>> for WinRate {
+    fn from(node: CtNodeRef<S>) -> Self {
+        let node = node.borrow();
+        let visits = node.visits();
+        let value = node.value();
+        Self::new(value, visits)
     }
 }
 

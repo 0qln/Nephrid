@@ -8,7 +8,7 @@ use engine::core::{
         eval::{GameResult, Guess, RawPolicy, nn::NNEvaluator, softmax},
         mcts,
         nn::{BOARD_INPUT_HISTORY, POLICY_OUTPUTS, board_history_input},
-        node::{Branch, Value},
+        node::{self, Branch, Value},
         select::puct,
         strategy::{MctsFindBest, MctsStrategy},
     },
@@ -1168,11 +1168,12 @@ impl Selector for TrainSelector {
     type Score = puct::Score;
 
     fn score(&self, branch: &Branch, cap_n_i: u32) -> Self::Score {
-        let n_i = branch.visits() as f32;
+        let n_i = branch.visits() as node::TValue;
+        let cap_n_i = cap_n_i as node::TValue;
         let value = branch.node().borrow().value();
         let policy = Self::weighted_policy(branch.policy(), self.policy_weight);
-        let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
-        let exploration = self.c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);
+        let exploitation = if n_i == 0. { 0. } else { (value / n_i) as f32 };
+        let exploration = self.c * policy * ((cap_n_i).sqrt() / (1. + n_i)) as f32;
         puct::Score(exploitation + exploration)
     }
 

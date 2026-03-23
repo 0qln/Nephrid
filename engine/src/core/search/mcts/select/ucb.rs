@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::core::search::mcts::node;
+
 use super::*;
 
 pub struct UcbSelector {
@@ -26,9 +28,10 @@ impl Selector for UcbSelector {
             0 => Score(f32::INFINITY),
             n_i => {
                 let w_i = branch.value();
-                let n_i = n_i as f32;
-                let exploitation = w_i / n_i;
-                let exploration = self.c * f32::sqrt((cap_n_i as f32).ln() / n_i);
+                let n_i = n_i as node::TValue;
+                let cap_n_i = cap_n_i as node::TValue;
+                let exploitation = (w_i / n_i) as f32;
+                let exploration = self.c * (node::TValue::sqrt((cap_n_i).ln() / n_i)) as f32;
                 Score(exploitation + exploration)
             }
         }

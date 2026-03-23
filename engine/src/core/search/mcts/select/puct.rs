@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::core::search::mcts::eval;
+use crate::core::search::mcts::{eval, node};
 
 use super::*;
 
@@ -25,7 +25,8 @@ impl Selector for PuctSelector {
     type Score = Score;
 
     fn score(&self, branch: &Branch, cap_n_i: u32) -> Score {
-        let n_i = branch.visits() as f32;
+        let n_i = branch.visits() as node::TValue;
+        let cap_n_i = cap_n_i as node::TValue;
 
         // The quality is updated incrementally as the tree is explored.
         // Because of this, we have to divide by the number of playouts
@@ -37,10 +38,10 @@ impl Selector for PuctSelector {
             eval::Value::draw().v()
         }
         else {
-            value / n_i
+            (value / n_i) as f32
         };
 
-        let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1. + n_i);
+        let exploration = self.c * branch.policy() * ((cap_n_i).sqrt() / (1. + n_i)) as f32;
 
         Score(exploitation + exploration)
     }
