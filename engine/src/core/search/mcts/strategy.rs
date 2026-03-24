@@ -101,6 +101,15 @@ impl fmt::Display for UciNps {
 }
 
 #[derive(Default, Debug)]
+pub struct UciPondermove(Move);
+
+impl fmt::Display for UciPondermove {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ponder {}", self.0)
+    }
+}
+
+#[derive(Default, Debug)]
 pub struct UciSeldepth(Depth);
 
 impl fmt::Display for UciSeldepth {
@@ -135,12 +144,12 @@ impl fmt::Display for UciCurrmove {
     }
 }
 
-pub enum UciInfoArg<T: fmt::Display> {
+pub enum UciArg<T: fmt::Display> {
     None,
     Some(T),
 }
 
-impl<T: fmt::Display> fmt::Display for UciInfoArg<T> {
+impl<T: fmt::Display> fmt::Display for UciArg<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Self::Some(arg) = &self {
             write!(f, "{} ", arg)
@@ -151,7 +160,7 @@ impl<T: fmt::Display> fmt::Display for UciInfoArg<T> {
     }
 }
 
-impl<T: fmt::Display> From<Option<T>> for UciInfoArg<T> {
+impl<T: fmt::Display> From<Option<T>> for UciArg<T> {
     fn from(opt: Option<T>) -> Self {
         if let Some(arg) = opt {
             Self::Some(arg)
@@ -207,6 +216,42 @@ impl MctsUci {
             None
         }
     }
+    
+    /// Send the UCI info command.
+    fn uci_info(&self, tree: &Tree, mov: Move) {
+        let tree_size = tree.size();
+        let pv = tree.principal_variation();
+
+        let currmove = UciArg::Some(UciCurrmove(mov));
+        let score = UciArg::from(self.determine_score(tree, pv.len()));
+        let nodes = UciArg::Some(UciNodes(tree_size));
+        let nps = UciArg::from(self.nps(tree_size));
+        let depth = UciArg::<Depth>::None; // Some(format!("depth {}", tree.mindepth()));
+        let seldepth = UciArg::Some(UciSeldepth(tree.maxheight().into()));
+        let pv = UciArg::Some(UciPv(pv));
+        let time = UciArg::from(self.search_time());
+        let string = UciArg::<String>::None;
+
+        sync::out(&format!(
+            "info {currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}"
+        ));
+    }
+    
+    /// # UCI
+    ///
+    /// * bestmove <move1> [ ponder <move2> ]
+    ///	the engine has stopped searching and found the move <move> best in this position.
+    ///	the engine can send the move it likes to ponder on. The engine must not start pondering automatically.
+    ///	this command must always be sent if the engine stops searching, also in pondering mode if there is a
+    ///	"stop" command, so for every "go" command a "bestmove" command is needed!
+    ///	Directly before that the engine should send a final "info" command with the final search information,
+    ///	the the GUI has the complete statistics about the last search.
+    fn uci_bestmove(&self, tree: &Tree, mov: Move) {
+        let pv = tree.principal_variation();
+        let ponder_move = UciArg::from(pv.0.get(1).map(|b| UciPondermove(b.mov())));
+
+        sync::out(&format!("bestmove {mov} {ponder_move}"));
+    }
 }
 
 impl MctsStrategy for MctsUci {
@@ -215,8 +260,9 @@ impl MctsStrategy for MctsUci {
 
     fn result(&mut self, tree: &mut Tree) -> Self::Result {
         let result = self.find_best.result(tree);
-        if let Some(best_move) = result {
-            sync::out(&format!("bestmove {best_move}"));
+        if let Some(mov) = result {
+            self.uci_info(tree, mov);
+            self.uci_bestmove(tree, mov);
         }
         result
     }
@@ -224,22 +270,7 @@ impl MctsStrategy for MctsUci {
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
         let step = self.find_best.step(tree);
         if let Some(mov) = step {
-            let tree_size = tree.size();
-            let pv = tree.principal_variation();
-
-            let currmove = UciInfoArg::Some(UciCurrmove(mov));
-            let score = UciInfoArg::from(self.determine_score(tree, pv.len()));
-            let nodes = UciInfoArg::Some(UciNodes(tree_size));
-            let nps = UciInfoArg::from(self.nps(tree_size));
-            let depth = UciInfoArg::<Depth>::None; // Some(format!("depth {}", tree.mindepth()));
-            let seldepth = UciInfoArg::Some(UciSeldepth(tree.maxheight().into()));
-            let pv = UciInfoArg::Some(UciPv(pv));
-            let time = UciInfoArg::from(self.search_time());
-            let string = UciInfoArg::<String>::None;
-
-            sync::out(&format!(
-                "info {currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}"
-            ));
+            self.uci_info(tree, mov);
         }
         step
     }
