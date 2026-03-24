@@ -7,19 +7,19 @@ use crate::{
         Limit,
         config::Configuration,
         position::Position,
-        search::mcts::{
+        search::{PonderToken, mcts::{
             back::{Backpropagater, MctsSolver},
             eval::{
                 Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator, r#static::StaticEvaluator,
             },
             limiter::DefaultLimiter,
             nn::{LoadNNError, Model},
-            node::Tree,
+            node::{RtNodeRef, Tree},
             noise::{DirichletNoiser, Noiser, NullNoiser},
             search::TreeSearcher,
             select::{Selector, puct::PuctSelector, ucb::UcbSelector},
             strategy::MctsStrategy,
-        },
+        }},
     },
     misc::DebugMode,
     uci::sync::CancellationToken,
@@ -46,14 +46,17 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     limit: Limit,
     _debug: DebugMode,
     ct: CancellationToken,
+    ponder_tok: Option<PonderToken>,
     mut strategy: S,
 ) -> S::Result {
     let limiter = DefaultLimiter::new(limit.clone());
+    
+    let mut is_not_pondering = ponder_tok.is_none();
 
     let time_per_move = limit.time_per_move(pos);
-    let time_limit = Instant::now() + time_per_move;
-    let tree = state.tree();
+    let mut time_limit = Instant::now() + time_per_move;
     let mut iterations = 0;
+    let tree = state.tree();
 
     strategy.start(tree);
 
@@ -72,6 +75,7 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
 
     while !(ct.is_cancelled()
         || limit.is_active()
+            && is_not_pondering
             && limit.is_reached(
                 tree.size() as u64 - nodes_begin,
                 Instant::now(),
@@ -80,6 +84,12 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
             )
         || strategy.should_stop(tree))
     {
+        // check if we should still be pondering
+        if let Some(ponder_tok) = &ponder_tok && !is_not_pondering && !ponder_tok.should_ponder() {
+            time_limit = Instant::now() + time_per_move;
+            is_not_pondering = true;
+        }
+
         searcher.grow(tree);
         strategy.step(tree);
         iterations += 1;

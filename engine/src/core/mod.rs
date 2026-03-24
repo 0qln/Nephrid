@@ -11,7 +11,7 @@ use crate::{
         depth::Depth,
         r#move::Move,
         position::{FenImport, PgnExport, Position},
-        search::{Command, Thread},
+        search::{Command, PonderToken, Thread},
     },
     misc::{DebugMode, trim_newline},
     uci::{
@@ -80,6 +80,9 @@ pub struct Engine {
 
     /// Search thread
     search_t: Thread,
+    
+    /// A token to trigger the transition from pondering to normal search.
+    ponder_hit: PonderToken,
 
     /// Whether the engine runs in debug mode.
     debug: DebugMode,
@@ -100,6 +103,7 @@ impl Engine {
             debug: Default::default(),
             game: Default::default(),
             _pos_src: Default::default(),
+            ponder_hit: Default::default(),
         }
     }
 }
@@ -208,12 +212,20 @@ pub fn execute_uci(
 
             let cmd = match mode {
                 Mode::Normal => Command::Normal(position, limit, token, debug),
-                Mode::Ponder => Command::Ponder,
+                Mode::Ponder => {
+                    let ponder_hit = engine.ponder_hit.clone();
+                    ponder_hit.start_ponder();
+                    Command::Ponder(position, limit, token, debug, ponder_hit)
+                },
                 Mode::Perft => Command::Perft(position, limit, token, debug),
             };
 
             engine.search_t.tx.send(cmd)?;
 
+            Ok(())
+        }
+        Some("ponderhit") => {
+            engine.ponder_hit.stop_ponder();
             Ok(())
         }
         Some("position") => {
@@ -243,7 +255,7 @@ pub fn execute_uci(
                 && !engine._pos_src.is_empty()
                 && command[..engine._pos_src.len()] == engine._pos_src;
 
-            // First, try to simply update the current position with new moves.
+            // First, try to simply update the current position with new appended moves.
             if cached {
                 let new_moves = &command[engine._pos_src.len()..];
                 for tok in Tokenizer::new(new_moves).tokens() {
@@ -253,9 +265,10 @@ pub fn execute_uci(
                     process_move(engine, tok)?;
                 }
             }
-            // Otherwise build a new position
+            // Otherwise, we have a diverging position string. 
             else {
-                engine.game = Game::new(match tokenizer.next_token() {
+                // 1. Parse the new base position into a temporary game state
+                let mut new_game = Game::new(match tokenizer.next_token() {
                     Some("fen") => Position::try_from(FenImport(&mut tokenizer))?,
                     Some("startpos") => Position::start_position(),
                     None => return Err(UciError::MissingArgument("value").into()),
@@ -268,11 +281,40 @@ pub fn execute_uci(
                     }
                 });
 
+                // 2. Parse all the new moves into our temporary game state
                 if tokenizer.next_token() == Some("moves") {
                     for tok in tokenizer.tokens() {
-                        process_move(engine, tok)?;
+                        let mov = Move::from_lan(tok, new_game.position())?;
+                        new_game.push_move(mov);
                     }
                 }
+
+                // 3. Compare the histories to detect a 1-ply divergence (Ponder Miss)
+                let old_moves = engine.game.moves();
+                let new_moves = new_game.moves();
+
+                let is_ponder_miss = old_moves.len() > 0 
+                    && new_moves.len() == old_moves.len()
+                    && old_moves[..old_moves.len() - 1] == new_moves[..new_moves.len() - 1]
+                    && old_moves.last() != new_moves.last();
+
+                let game_tree_caching = engine
+                    .config
+                    .lock()
+                    .map(|c| c.game_tree_caching())
+                    .unwrap_or(false);
+
+                if is_ponder_miss && game_tree_caching {
+                    // Ponder Miss detected! Restore the 1-ply backup and advance down the actual move.
+                    let actual_move = *new_moves.last().unwrap();
+                    engine.search_t.tx.send(Command::RollbackAndAdvance(actual_move))?;
+                } else {
+                    // Completely new game or caching disabled: safely reset the tree entirely.
+                    engine.search_t.tx.send(Command::ResetState)?;
+                }
+
+                // 4. Officially update the engine's game state
+                engine.game = new_game;
             }
 
             engine._pos_src = command;
