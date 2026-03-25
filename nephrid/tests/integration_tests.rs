@@ -1,5 +1,5 @@
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Command, Stdio};
+use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 
 const ENGINE_BIN: &str = env!("CARGO_BIN_EXE_NEPHRID");
 
@@ -14,51 +14,23 @@ fn test_ponder_miss_outputs_ponder_move() {
     let mut stdin = child.stdin.take().expect("Failed to open stdin");
     let stdout = child.stdout.take().expect("Failed to open stdout");
     let mut reader = BufReader::new(stdout);
-    let mut line = String::new();
-
-    // Helper closure to read the next line, handle EOF, and print for debugging
-    let mut read_engine_line = || -> String {
-        line.clear();
-        reader.read_line(&mut line).expect("Failed to read from engine");
-        let trimmed = line.trim().to_string();
-        if !trimmed.is_empty() {
-            println!("Engine: {}", trimmed);
-        }
-        trimmed
-    };
 
     // 1. Send uci and wait for uciok
-    writeln!(stdin, "uci").unwrap();
-    stdin.flush().unwrap();
-    loop {
-        let out = read_engine_line();
-        if out == "uciok" {
-            break;
-        }
-    }
+    write_engine_line(&mut stdin, "uci");
+    loop { if read_engine_line(&mut reader) == "uciok" { break; } }
 
-    // 2. Send isready and wait for readyok (Ensures engine is fully initialized)
-    writeln!(stdin, "isready").unwrap();
-    stdin.flush().unwrap();
-    loop {
-        let out = read_engine_line();
-        if out == "readyok" {
-            break;
-        }
-    }
+    write_engine_line(&mut stdin, "isready");
+    loop { if read_engine_line(&mut reader) == "readyok" { break; } }
 
     // 3. Start pondering
-    writeln!(stdin, "position startpos").unwrap();
-    writeln!(stdin, "go ponder wtime 300000 btime 300000").unwrap();
-    stdin.flush().unwrap();
+    write_engine_line(&mut stdin, "position startpos");
+    write_engine_line(&mut stdin, "go ponder wtime 300000 btime 300000");
 
     // 4. Wait for the engine to prove it is searching, then send stop.
     loop {
-        let out = read_engine_line();
-        if out.starts_with("info") {
+        if read_engine_line(&mut reader).starts_with("info") {
             // Engine is actively searching! We can now simulate the ponder miss.
-            writeln!(stdin, "stop").unwrap();
-            stdin.flush().unwrap();
+            write_engine_line(&mut stdin, "stop");
             break;
         }
     }
@@ -66,7 +38,7 @@ fn test_ponder_miss_outputs_ponder_move() {
     // 5. Read lines until we find "bestmove"
     let bestmove_line;
     loop {
-        let out = read_engine_line();
+        let out = read_engine_line(&mut reader);
         if out.starts_with("bestmove") {
             bestmove_line = out;
             break;
@@ -85,8 +57,7 @@ fn test_ponder_miss_outputs_ponder_move() {
     );
 
     // 7. Cleanly shut down the engine
-    writeln!(stdin, "quit").unwrap();
-    stdin.flush().unwrap();
+    write_engine_line(&mut stdin, "quit");
 
     // Wait for the process to exit to avoid zombie processes
     let _ = child.wait();
@@ -104,6 +75,23 @@ fn extract_nodes(line: &str) -> Option<u64> {
     None
 }
 
+fn read_engine_line(reader: &mut BufReader<ChildStdout>) -> String {
+    let mut line = String::new();
+    line.clear();
+    reader.read_line(&mut line).expect("Failed to read from engine");
+    let trimmed = line.trim().to_string();
+    if !trimmed.is_empty() {
+        println!("Engine: {}", trimmed);
+    }
+    trimmed
+}
+
+fn write_engine_line(stdin: &mut ChildStdin, line: &str) {
+    writeln!(stdin, "{line}").unwrap();
+    println!("Gui: {}", line);
+    stdin.flush().unwrap();
+}
+
 #[test]
 fn test_ponder_miss_retains_cached_tree() {
     let mut child = Command::new(ENGINE_BIN)
@@ -115,41 +103,26 @@ fn test_ponder_miss_retains_cached_tree() {
     let mut stdin = child.stdin.take().expect("Failed to open stdin");
     let stdout = child.stdout.take().expect("Failed to open stdout");
     let mut reader = BufReader::new(stdout);
-    let mut line = String::new();
-
-    let mut read_engine_line = || -> String {
-        line.clear();
-        reader.read_line(&mut line).expect("Failed to read from engine");
-        let trimmed = line.trim().to_string();
-        if !trimmed.is_empty() {
-            println!("Engine: {}", trimmed); // Prints to test output for debugging
-        }
-        trimmed
-    };
 
     // 1. Boot up
-    writeln!(stdin, "uci").unwrap();
-    stdin.flush().unwrap();
-    loop { if read_engine_line() == "uciok" { break; } }
+    write_engine_line(&mut stdin, "uci");
+    loop { if read_engine_line(&mut reader) == "uciok" { break; } }
 
-    writeln!(stdin, "isready").unwrap();
-    stdin.flush().unwrap();
-    loop { if read_engine_line() == "readyok" { break; } }
+    write_engine_line(&mut stdin, "isready");
+    loop { if read_engine_line(&mut reader) == "readyok" { break; } }
 
     // 2. Setup the predicted line (e.g., White played e2e4, we guess Black plays e7e5)
-    writeln!(stdin, "position startpos moves e2e4 e7e5").unwrap();
-    writeln!(stdin, "go ponder wtime 30000 btime 30000").unwrap();
-    stdin.flush().unwrap();
+    write_engine_line(&mut stdin, "position startpos moves e2e4 e7e5");
+    write_engine_line(&mut stdin, "go ponder wtime 30000 btime 30000");
 
     // 3. Wait until the engine has built a sizable tree (>2000 nodes)
     loop {
-        let out = read_engine_line();
+        let out = read_engine_line(&mut reader);
         if out.starts_with("info") {
             if let Some(nodes) = extract_nodes(&out) {
                 if nodes > 2000 {
                     // Tree is sufficiently populated! Interrupt the ponder.
-                    writeln!(stdin, "stop").unwrap();
-                    stdin.flush().unwrap();
+                    write_engine_line(&mut stdin, "stop");
                     break;
                 }
             }
@@ -158,21 +131,20 @@ fn test_ponder_miss_retains_cached_tree() {
 
     // 4. Wait for the engine to acknowledge the stop and output bestmove
     loop {
-        if read_engine_line().starts_with("bestmove") {
+        if read_engine_line(&mut reader).starts_with("bestmove") {
             break;
         }
     }
 
     // 5. Simulate the Ponder Miss! (Black actually played c7c5)
     // This is exactly a 1-ply divergence, which should trigger the Rollback logic.
-    writeln!(stdin, "position startpos moves e2e4 c7c5").unwrap();
-    writeln!(stdin, "go wtime 295000 btime 295000").unwrap();
-    stdin.flush().unwrap();
+    write_engine_line(&mut stdin, "position startpos moves e2e4 c7c5");
+    write_engine_line(&mut stdin, "go wtime 295000 btime 295000");
 
     // 6. Capture the first info line of the new search
     let first_search_nodes;
     loop {
-        let out = read_engine_line();
+        let out = read_engine_line(&mut reader);
         if out.starts_with("info") {
             if let Some(nodes) = extract_nodes(&out) {
                 first_search_nodes = nodes;
@@ -182,13 +154,10 @@ fn test_ponder_miss_retains_cached_tree() {
     }
 
     // 7. Stop the second search and quit cleanly
-    writeln!(stdin, "stop").unwrap();
-    stdin.flush().unwrap();
-    loop {
-        if read_engine_line().starts_with("bestmove") { break; }
-    }
-    writeln!(stdin, "quit").unwrap();
-    stdin.flush().unwrap();
+    write_engine_line(&mut stdin, "stop");
+    loop { if read_engine_line(&mut reader).starts_with("bestmove") { break; } }
+
+    write_engine_line(&mut stdin, "quit");
     let _ = child.wait();
 
     // 8. Assert that the tree was retained!
