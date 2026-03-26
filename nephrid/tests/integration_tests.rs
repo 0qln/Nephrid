@@ -135,13 +135,12 @@ fn test_ponder_miss_retains_cached_tree() {
     let re = Regex::new(pattern).unwrap();
 
     write_engine_line(&mut stdin, "mcts d");
-    write_engine_line(&mut stdin, "isready");
 
     let mut child_nodes: Vec<(String, u64)> = Vec::new();
     loop {
         let out = read_engine_line(&mut reader);
 
-        if out == "readyok" { break; }
+        if out == "---" { break; }
         
         if let Some(captures) = re.captures(&out) {
             let mov = captures.name("move").map(|m| m.as_str()).unwrap_or("");
