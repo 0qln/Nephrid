@@ -1,9 +1,11 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
+use ntest::timeout;
 
 const ENGINE_BIN: &str = env!("CARGO_BIN_EXE_NEPHRID");
 
 #[test]
+#[timeout(10000)]
 fn test_ponder_miss_outputs_ponder_move() {
     let mut child = Command::new(ENGINE_BIN)
         .stdin(Stdio::piped())
@@ -28,7 +30,17 @@ fn test_ponder_miss_outputs_ponder_move() {
 
     // 4. Wait for the engine to prove it is searching, then send stop.
     loop {
-        if read_engine_line(&mut reader).starts_with("info") {
+        let line = read_engine_line(&mut reader);
+        if line.starts_with("info") {
+            // Only stop once we have an info line with a PV containing at least two moves,  
+            // so the engine has a chance to produce a ponder move.  
+            if let Some(pv_start) = line.find(" pv ") {  
+                let pv = &line[pv_start + 4..];  
+                if pv.split_whitespace().count() >= 2 {  
+                    write_engine_line(&mut stdin, "stop");  
+                    break;  
+                }  
+            } 
             // Engine is actively searching! We can now simulate the ponder miss.
             write_engine_line(&mut stdin, "stop");
             break;
@@ -93,6 +105,7 @@ fn write_engine_line(stdin: &mut ChildStdin, line: &str) {
 }
 
 #[test]
+#[timeout(10000)]
 fn test_ponder_miss_retains_cached_tree() {
     let mut child = Command::new(ENGINE_BIN)
         .stdin(Stdio::piped())
@@ -112,8 +125,8 @@ fn test_ponder_miss_retains_cached_tree() {
     loop { if read_engine_line(&mut reader) == "readyok" { break; } }
 
     // 2. Setup the predicted line (e.g., White played e2e4, we guess Black plays e7e5)
-    write_engine_line(&mut stdin, "position startpos moves e2e4 e7e5");
-    write_engine_line(&mut stdin, "go ponder wtime 30000 btime 30000");
+    write_engine_line(&mut stdin, "position startpos moves e2e4");
+    write_engine_line(&mut stdin, "go nodes 5000000");
 
     // 3. Wait until the engine has built a sizable tree (>2000 nodes)
     loop {
@@ -128,6 +141,9 @@ fn test_ponder_miss_retains_cached_tree() {
             }
         }
     }
+
+    write_engine_line(&mut stdin, "position startpos moves e2e4 e7e5");
+    write_engine_line(&mut stdin, "go ponder wtime 295000 btime 295000");
 
     // 4. Wait for the engine to acknowledge the stop and output bestmove
     loop {
