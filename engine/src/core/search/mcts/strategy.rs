@@ -152,7 +152,7 @@ pub enum UciArg<T: fmt::Display> {
 impl<T: fmt::Display> fmt::Display for UciArg<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if let Self::Some(arg) = &self {
-            write!(f, "{} ", arg)
+            write!(f, " {}", arg)
         }
         else {
             Ok(())
@@ -299,13 +299,13 @@ impl MctsUci {
         let nodes = UciArg::Some(UciNodes(tree_size));
         let nps = UciArg::from(self.nps(tree_size));
         let depth = UciArg::<Depth>::None; // Some(format!("depth {}", tree.mindepth()));
-        let seldepth = UciArg::Some(UciSeldepth(tree.maxheight().into()));
+        let seldepth = UciArg::<UciSeldepth>::None; //UciArg::Some(UciSeldepth(tree.maxheight().into()));
         let pv = UciArg::Some(UciPv(pv));
         let time = UciArg::from(self.search_time());
         let string = UciArg::<String>::None;
 
         sync::out(&format!(
-            "info {currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}"
+            "info{currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}"
         ));
     }
     
@@ -325,9 +325,10 @@ impl MctsUci {
     ///	the the GUI has the complete statistics about the last search.
     fn uci_bestmove(&self, tree: &Tree, mov: Move) {
         let pv = tree.principal_variation();
+        let best_move = UciArg::Some(mov);
         let ponder_move = UciArg::from(pv.0.get(1).map(|b| UciPondermove(b.mov())));
 
-        sync::out(&format!("bestmove {mov} {ponder_move}"));
+        sync::out(&format!("bestmove{best_move}{ponder_move}"));
     }
 }
 
