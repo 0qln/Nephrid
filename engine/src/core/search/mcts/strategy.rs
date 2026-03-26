@@ -218,7 +218,7 @@ impl MctsUci {
         }
     }
     
-    /// # uci_bestmove
+    /// # uci_info
     ///
     /// Send the UCI info command.
     ///
