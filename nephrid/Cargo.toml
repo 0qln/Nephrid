@@ -14,4 +14,7 @@ default = ["cpu", "mcts-sa"]
 
 [dependencies]
 engine = { version = "*", path = "../engine", default-features = false }
+
+[dev-dependencies]
+assert_cmd = "2.0"
 ntest = "0.9.5"

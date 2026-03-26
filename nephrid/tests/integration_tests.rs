@@ -1,13 +1,12 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use ntest::timeout;
-
-const ENGINE_BIN: &str = env!("CARGO_BIN_EXE_NEPHRID");
+use assert_cmd::prelude::*;
 
 #[test]
 #[timeout(10000)]
 fn test_ponder_miss_outputs_ponder_move() {
-    let mut child = Command::new(ENGINE_BIN)
+    let mut child = Command::cargo_bin("nephrid").unwrap()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -107,7 +106,7 @@ fn write_engine_line(stdin: &mut ChildStdin, line: &str) {
 #[test]
 #[timeout(10000)]
 fn test_ponder_miss_retains_cached_tree() {
-    let mut child = Command::new(ENGINE_BIN)
+    let mut child = Command::cargo_bin("nephrid").unwrap()
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
