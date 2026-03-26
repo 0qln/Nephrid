@@ -229,6 +229,9 @@ pub struct Configuration {
     /// receiving the go command, and the engine actually starting the
     /// search. (in ms)
     gui_lag: ConfigOption<Spin>,
+    
+    /// Whether to enable ponder mode (i.e., keep searching on the opponent's time until the opponent actually moves).
+    ponder: ConfigOption<Check>,
 }
 
 impl Default for Configuration {
@@ -242,6 +245,7 @@ impl Default for Configuration {
             weights_path: ConfigOption::new("weights-path", StringOption::new("./weights")),
             game_tree_caching: ConfigOption::new("game-tree-caching", Check::new(true)),
             gui_lag: ConfigOption::new("gui-lag", Spin::new(100, 1, 10_000)),
+            ponder: ConfigOption::new("ponder", Check::new(true)),
         }
     }
 }
@@ -277,6 +281,10 @@ impl Configuration {
         self.gui_lag.value as u16
     }
 
+    pub fn ponder(&self) -> bool {
+        self.ponder.value
+    }
+
     // Setter
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -295,6 +303,7 @@ impl Configuration {
             },
             "game-tree-caching" => self.game_tree_caching.set(value),
             "gui-lag" => self.gui_lag.set(value),
+            "ponder" => self.ponder.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -308,6 +317,7 @@ impl Configuration {
         sync::out(&format!("{}", self.weights_path));
         sync::out(&format!("{}", self.game_tree_caching));
         sync::out(&format!("{}", self.gui_lag));
+        sync::out(&format!("{}", self.ponder));
     }
 }
 
