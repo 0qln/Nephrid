@@ -157,6 +157,7 @@ pub fn learn_mate_in_1() {
             limit.clone(),
             debug.clone(),
             ct.clone(),
+            None,
             MctsTrain::default(),
         )
     };
@@ -237,6 +238,7 @@ pub fn learn_mate_in_2() {
             limit.clone(),
             debug.clone(),
             ct.clone(),
+            None,
             MctsTrain::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
@@ -251,6 +253,7 @@ pub fn learn_mate_in_2() {
             limit.clone(),
             debug.clone(),
             ct.clone(),
+            None,
             MctsTrain::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
@@ -265,6 +268,7 @@ pub fn learn_mate_in_2() {
             limit.clone(),
             debug.clone(),
             ct.clone(),
+            None,
             MctsTrain::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
