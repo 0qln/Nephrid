@@ -2,6 +2,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use ntest::timeout;
 use assert_cmd::prelude::*;
+use regex::Regex;
 
 #[test]
 #[timeout(10000)]
@@ -123,17 +124,52 @@ fn test_ponder_miss_retains_cached_tree() {
     write_engine_line(&mut stdin, "isready");
     loop { if read_engine_line(&mut reader) == "readyok" { break; } }
 
-    // 2. Setup the predicted line (e.g., White played e2e4, we guess Black plays e7e5)
+    // 2. Wait until the engine has built a sizable tree on the base move
     write_engine_line(&mut stdin, "position startpos moves e2e4");
     write_engine_line(&mut stdin, "go nodes 5000000");
+    loop { if read_engine_line(&mut reader).starts_with("bestmove") { break; } }
 
-    // 3. Wait until the engine has built a sizable tree (>2000 nodes)
+    let hit_move;
+    let miss_move;
+    let pattern = r"(?P<prefix>[-*])\s(?P<state>\w*)\s(?P<move>[a-z1-8]{4,5})\s+v\s+(?P<value>[\d.]*)/(?P<visits>\d*)\s+";
+    let re = Regex::new(pattern).unwrap();
+
+    write_engine_line(&mut stdin, "mcts d");
+    write_engine_line(&mut stdin, "isready");
+
+    let mut child_nodes: Vec<(String, u64)> = Vec::new();
+    loop {
+        let out = read_engine_line(&mut reader);
+
+        if out == "readyok" { break; }
+        
+        if let Some(captures) = re.captures(&out) {
+            let mov = captures.name("move").map(|m| m.as_str()).unwrap_or("");
+            let visits_str = captures.name("visits").map(|m| m.as_str()).unwrap_or("0");
+            let visits = visits_str.parse::<u64>().unwrap_or(0);
+            child_nodes.push((mov.to_string(), visits));
+        }
+    }
+
+    child_nodes.sort_by(|a, b| b.1.cmp(&a.1));
+    if child_nodes.len() >= 2 {
+        hit_move = child_nodes[0].0.clone();  // Most visited (Ponder move)
+        miss_move = child_nodes[1].0.clone(); // Second most visited (Actual move)
+        
+        println!("Most visited (hit): {} with {} visits", hit_move, child_nodes[0].1);
+        println!("Second visited (miss): {} with {} visits", miss_move, child_nodes[1].1);
+    } else {
+        panic!("Not enough child nodes dumped by MCTS to pick a hit and a miss!");
+    }
+
+    // 3. Setup the predicted line (e.g., White played e2e4, we guess Black plays e7e5)
+    write_engine_line(&mut stdin, &format!("position startpos moves e2e4 {miss_move}"));
+    write_engine_line(&mut stdin, "go ponder wtime 295000 btime 295000");
     loop {
         let out = read_engine_line(&mut reader);
         if out.starts_with("info") {
             if let Some(nodes) = extract_nodes(&out) {
                 if nodes > 2000 {
-                    // Tree is sufficiently populated! Interrupt the ponder.
                     write_engine_line(&mut stdin, "stop");
                     break;
                 }
@@ -141,19 +177,12 @@ fn test_ponder_miss_retains_cached_tree() {
         }
     }
 
-    write_engine_line(&mut stdin, "position startpos moves e2e4 e7e5");
-    write_engine_line(&mut stdin, "go ponder wtime 295000 btime 295000");
-
     // 4. Wait for the engine to acknowledge the stop and output bestmove
-    loop {
-        if read_engine_line(&mut reader).starts_with("bestmove") {
-            break;
-        }
-    }
+    loop { if read_engine_line(&mut reader).starts_with("bestmove") { break; } }
 
     // 5. Simulate the Ponder Miss! (Black actually played c7c5)
     // This is exactly a 1-ply divergence, which should trigger the Rollback logic.
-    write_engine_line(&mut stdin, "position startpos moves e2e4 c7c5");
+    write_engine_line(&mut stdin, &format!("position startpos moves e2e4 {hit_move}"));
     write_engine_line(&mut stdin, "go wtime 295000 btime 295000");
 
     // 6. Capture the first info line of the new search
