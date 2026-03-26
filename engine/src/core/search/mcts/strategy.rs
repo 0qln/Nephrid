@@ -175,6 +175,7 @@ impl<T: fmt::Display> From<Option<T>> for UciArg<T> {
 pub struct MctsUci {
     find_best: MctsFindBest,
     search_start: Option<Instant>,
+    last_uci_out: Option<Instant>,
 }
 
 impl MctsUci {
@@ -345,8 +346,12 @@ impl MctsStrategy for MctsUci {
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
         let step = self.find_best.step(tree);
-        if let Some(mov) = step {
+        let now = Instant::now();
+        let last_out = self.last_uci_out;
+        if let Some(mov) = self.find_best.last_best_move 
+            && last_out.is_none_or(|x| now - x > Duration::from_millis(500)) {
             self.uci_info(tree, mov);
+            self.last_uci_out = Some(now);
         }
         step
     }
