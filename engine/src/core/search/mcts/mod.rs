@@ -14,7 +14,7 @@ use crate::{
             },
             limiter::DefaultLimiter,
             nn::{LoadNNError, Model},
-            node::{RtNodeRef, Tree},
+            node::Tree,
             noise::{DirichletNoiser, Noiser, NullNoiser},
             search::TreeSearcher,
             select::{Selector, puct::PuctSelector, ucb::UcbSelector},
