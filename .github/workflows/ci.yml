@@ -17,20 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Install Nix
+      # Install Nix
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
-      # 2. Add Nix Cache (Highly recommended to speed up evaluations/builds)
-      - name: Setup Magic Nix Cache
-        uses: DeterminateSystems/magic-nix-cache-action@main
-
-      # 3. Lint with Clippy (Fails the build if there are warnings)
+      # Lint with Clippy (Fails the build if there are warnings)
       - name: Run Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
         shell: nix develop . --command bash -e {0}
 
-      # 4. Run tests natively inside the Nix devshell
+      # Run tests natively inside the Nix devshell
       - name: Run Unit Tests
         run: cargo test --workspace --verbose
         shell: nix develop . --command bash -e {0}
