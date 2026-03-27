@@ -293,7 +293,7 @@ pub fn execute_uci(
                 let old_moves = engine.game.moves();
                 let new_moves = new_game.moves();
 
-                let is_ponder_miss = old_moves.len() > 0 
+                let is_ponder_miss = !old_moves.is_empty() 
                     && new_moves.len() == old_moves.len()
                     && old_moves[..old_moves.len() - 1] == new_moves[..new_moves.len() - 1]
                     && old_moves.last() != new_moves.last();

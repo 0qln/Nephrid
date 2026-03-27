@@ -180,7 +180,7 @@ pub struct MctsUci {
 
 impl MctsUci {
     pub fn search_time(&self) -> Option<UciSearchtime> {
-        Some(Instant::now() - self.search_start?).map(UciSearchtime)
+        Some(UciSearchtime(Instant::now() - self.search_start?))
     }
 
     /// Number of nodes per second since start of the search, given the current
