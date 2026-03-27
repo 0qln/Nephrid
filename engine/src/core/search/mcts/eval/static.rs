@@ -248,6 +248,8 @@ impl<P: Perspective> Score<P> {
     }
 }
 
+// not using the `-` operator because this is not really just arithmetic
+// negation, but also a perspective flip.
 impl<P: Perspective> ops::Not for Score<P> {
     type Output = Score<P::Opponent>;
 
