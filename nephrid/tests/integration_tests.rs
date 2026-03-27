@@ -3,18 +3,88 @@ use ntest::timeout;
 use regex::Regex;
 use std::{
     io::{BufRead, BufReader, Write},
-    process::{ChildStdin, ChildStdout, Command, Stdio},
+    ops::{Deref, DerefMut},
+    process::{Child, ChildStdin, ChildStdout, Command, Stdio},
 };
+
+pub struct GuardedChild(pub Child);
+
+impl Drop for GuardedChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+impl Deref for GuardedChild {
+    type Target = Child;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for GuardedChild {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+/// Helper function to extract the `nodes` value from an `info` string
+/// e.g., "info depth 5 nodes 2540 nps 120000" -> Some(2540)
+fn extract_nodes(line: &str) -> Option<u64> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    if let Some(pos) = parts.iter().position(|&s| s == "nodes") {
+        if pos + 1 < parts.len() {
+            return parts[pos + 1].parse::<u64>().ok();
+        }
+    }
+    None
+}
+
+fn read_engine_line(reader: &mut BufReader<ChildStdout>) -> String {
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .expect("Failed to read from engine");
+    let trimmed = line.trim().to_string();
+    if !trimmed.is_empty() {
+        println!("Engine: {}", trimmed);
+    }
+    trimmed
+}
+
+/// Block the engine until a line is read that fullfills pred.
+/// Returns that line.
+fn block_engine_line(
+    reader: &mut BufReader<ChildStdout>,
+    mut pred: impl FnMut(&str) -> bool,
+) -> String {
+    loop {
+        let out = read_engine_line(reader);
+        if pred(&out) {
+            return out;
+        }
+    }
+}
+
+fn write_engine_line(stdin: &mut ChildStdin, line: &str) {
+    writeln!(stdin, "{line}").unwrap();
+    println!("Gui: {}", line);
+    stdin.flush().unwrap();
+}
 
 #[test]
 #[timeout(10000)]
 fn test_ponder_miss_outputs_ponder_move() {
-    let mut child = Command::cargo_bin("nephrid")
-        .unwrap()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed to spawn engine binary");
+    let mut child = GuardedChild(
+        Command::cargo_bin("nephrid")
+            .unwrap()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn engine binary"),
+    );
 
     let mut stdin = child.stdin.take().expect("Failed to open stdin");
     let stdout = child.stdout.take().expect("Failed to open stdout");
@@ -66,64 +136,19 @@ fn test_ponder_miss_outputs_ponder_move() {
 
     // 7. Cleanly shut down the engine
     write_engine_line(&mut stdin, "quit");
-
-    // Wait for the process to exit to avoid zombie processes
-    let _ = child.wait();
-}
-
-/// Helper function to extract the `nodes` value from an `info` string
-/// e.g., "info depth 5 nodes 2540 nps 120000" -> Some(2540)
-fn extract_nodes(line: &str) -> Option<u64> {
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    if let Some(pos) = parts.iter().position(|&s| s == "nodes") {
-        if pos + 1 < parts.len() {
-            return parts[pos + 1].parse::<u64>().ok();
-        }
-    }
-    None
-}
-
-fn read_engine_line(reader: &mut BufReader<ChildStdout>) -> String {
-    let mut line = String::new();
-    reader
-        .read_line(&mut line)
-        .expect("Failed to read from engine");
-    let trimmed = line.trim().to_string();
-    if !trimmed.is_empty() {
-        println!("Engine: {}", trimmed);
-    }
-    trimmed
-}
-
-/// Block the engine until a line is read that fullfills pred.
-/// Returns that line.
-fn block_engine_line(
-    reader: &mut BufReader<ChildStdout>,
-    mut pred: impl FnMut(&str) -> bool,
-) -> String {
-    loop {
-        let out = read_engine_line(reader);
-        if pred(&out) {
-            return out;
-        }
-    }
-}
-
-fn write_engine_line(stdin: &mut ChildStdin, line: &str) {
-    writeln!(stdin, "{line}").unwrap();
-    println!("Gui: {}", line);
-    stdin.flush().unwrap();
 }
 
 #[test]
 #[timeout(10000)]
 fn test_ponder_miss_retains_cached_tree() {
-    let mut child = Command::cargo_bin("nephrid")
-        .unwrap()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed to spawn engine binary");
+    let mut child = GuardedChild(
+        Command::cargo_bin("nephrid")
+            .unwrap()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn engine binary"),
+    );
 
     let mut stdin = child.stdin.take().expect("Failed to open stdin");
     let stdout = child.stdout.take().expect("Failed to open stdout");
@@ -217,7 +242,6 @@ fn test_ponder_miss_retains_cached_tree() {
     block_engine_line(&mut reader, |l| l.starts_with("bestmove"));
 
     write_engine_line(&mut stdin, "quit");
-    let _ = child.wait();
 
     // 8. Assert that the tree was retained!
     // If it dropped the tree, `nodes` would be around 1-50.
@@ -234,12 +258,14 @@ fn test_ponder_miss_retains_cached_tree() {
 #[test]
 #[timeout(10000)]
 fn test_ponderhit_applies_limits_and_stops() {
-    let mut child = Command::cargo_bin("nephrid")
-        .unwrap()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed to spawn engine");
+    let mut child = GuardedChild(
+        Command::cargo_bin("nephrid")
+            .unwrap()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn engine"),
+    );
 
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
@@ -274,18 +300,19 @@ fn test_ponderhit_applies_limits_and_stops() {
     );
 
     write_engine_line(&mut stdin, "quit");
-    let _ = child.wait();
 }
 
 #[test]
 #[timeout(10000)]
 fn test_ponder_miss_complete_divergence_resets_tree() {
-    let mut child = Command::cargo_bin("nephrid")
-        .unwrap()
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("Failed to spawn engine");
+    let mut child = GuardedChild(
+        Command::cargo_bin("nephrid")
+            .unwrap()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn engine"),
+    );
 
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
@@ -336,6 +363,5 @@ fn test_ponder_miss_complete_divergence_resets_tree() {
     );
 
     write_engine_line(&mut stdin, "quit");
-    let _ = child.wait();
 }
 
