@@ -1,4 +1,4 @@
-use crate::core::turn::Turn;
+use crate::core::{r#move::MoveList, move_iter::fold_legal_moves, turn::Turn};
 
 use crate::{
     core::{
@@ -184,7 +184,7 @@ const PIECE_PHASES: [PiecePhase; piece_type::N_VARIANTS] = {
 pub struct TaperValue(u32);
 
 impl TaperValue {
-    pub fn from_position(pos: &Position) -> Self {
+    pub fn from_position(pos: &PieceInfo) -> Self {
         let inv_phase = (piece_type::PAWN..piece_type::KING)
             .map(|p| pos.get_piece_bb(p).pop_cnt() * PIECE_PHASES[p.v() as usize].v())
             .sum::<u32>();
@@ -197,6 +197,54 @@ impl TaperValue {
         let total = piece_phases::TOTAL_C as i32;
         ((mg_eval * (total - phase)) + (eg_eval * phase)) / total
     }
+}
+
+/// # Q-Search
+///
+/// Make the position quiet.
+///
+/// [q-search](https://www.chessprogramming.org/Quiescence_Search)
+fn quiesce(pos: &mut Position, mut alpha: i32, beta: i32) -> i32 {
+    let static_eval = static_eval(pos.piece_info());
+
+    // Stand Pat
+    let mut best_value = static_eval;
+    if best_value >= beta {
+        return best_value;
+    }
+    if best_value > alpha {
+        alpha = best_value;
+    }
+
+    let mut move_list = MoveList::default();
+    // todo: just generate captures
+    let n_moves = fold_legal_moves::<_, _, _>(pos, 0_u8, |curr, m| {
+        if m.get_flag().is_capture() {
+            move_list[curr] = m;
+        }
+        ControlFlow::Continue::<(), _>(curr + 1)
+    })
+    .continue_value()
+    .unwrap();
+
+    for i in 0..n_moves {
+        let m = move_list[i];
+        pos.make_move(m);
+        let score = -quiesce(pos, -beta, -alpha);
+        pos.unmake_move(m);
+
+        if score >= beta {
+            return score;
+        }
+        if score > best_value {
+            best_value = score;
+        }
+        if score > alpha {
+            alpha = score;
+        }
+    }
+
+    return best_value;
 }
 
 #[derive(Debug, PartialEq, Default)]
@@ -272,6 +320,13 @@ impl PolicyInput {
     }
 }
 
+fn static_eval(pos: &PieceInfo) -> i32 {
+    let phase = TaperValue::from_position(pos);
+    let w_q = QualityInput::value(pos, colors::WHITE, phase);
+    let b_q = QualityInput::value(pos, colors::BLACK, phase);
+    w_q - b_q
+}
+
 #[derive(Debug)]
 pub struct EvalInfo {
     /// The to-be-evaluated that this eval info is for.
@@ -288,14 +343,19 @@ pub struct EvalInfo {
 
     /// Current position state info.
     state: StateInfo,
+
+    /// State info of the position after quieting it.
+    quality: i32,
 }
 
 impl EvalInfo {
-    pub fn new(node: CtNodeRef<Branching>, pos: &Position) -> Self {
+    pub fn new(node: CtNodeRef<Branching>, pos: &mut Position) -> Self {
+        let quality = quiesce(pos, i32::MAX, i32::MIN);
         Self {
+            quality,
             pos: pos.piece_info().clone(),
             state: pos.state_info().clone(),
-            phase: TaperValue::from_position(pos),
+            phase: TaperValue::from_position(pos.piece_info()),
             node,
             turn: pos.get_turn(),
         }
@@ -304,11 +364,7 @@ impl EvalInfo {
     /// Convert QualityInput into Quality, where the Quality is relative to
     /// white.
     fn quality(&self) -> Quality {
-        // get delta
-        let w_q = QualityInput::value(&self.pos, colors::WHITE, self.phase);
-        let b_q = QualityInput::value(&self.pos, colors::BLACK, self.phase);
-        let d = (w_q - b_q) as f32;
-        let cp = Cp(d as i16);
+        let cp = Cp(self.quality as i16);
         Quality::from(cp)
     }
 
@@ -353,7 +409,7 @@ impl Evaluator for StaticEvaluator {
     fn trace<S: const Valid + HasBranches>(
         &self,
         node: CtNodeRef<S>,
-        pos: &Position,
+        pos: &mut Position,
     ) -> Self::TraceData {
         node.try_into::<Branching>()
             .map(|node| EvalInfo::new(node, pos))

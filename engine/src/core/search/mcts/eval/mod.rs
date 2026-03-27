@@ -30,7 +30,7 @@ pub trait Evaluator {
     fn trace<S: const Valid + HasBranches>(
         &self,
         node: CtNodeRef<S>,
-        pos: &Position,
+        pos: &mut Position,
     ) -> Self::TraceData;
 
     /// Evaluate a node's terminal state. If the node is terminal, return the
