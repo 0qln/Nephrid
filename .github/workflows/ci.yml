@@ -1,5 +1,4 @@
-
-name: "Nephrid $(version)"
+name: "Nephrid CI/CD"
 
 on:
   push:
@@ -12,25 +11,38 @@ env:
   RUST_BACKTRACE: full
 
 jobs:
-        
   test:
-    name: Tests    
+    name: Tests
     runs-on: ubuntu-latest
-    steps:      
-      - uses: actions/checkout@v4          
-      - name: Rustup Nightly
-        run: rustup toolchain update nightly
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Install Nix
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      # 2. Add Nix Cache (Highly recommended to speed up evaluations/builds)
+      - name: Setup Magic Nix Cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      # 3. Lint with Clippy (Fails the build if there are warnings)
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+        shell: nix develop . --command bash -e {0}
+
+      # 4. Run tests natively inside the Nix devshell
       - name: Run Unit Tests
         run: cargo test --workspace --verbose
-      - name: Dry Run Benchmarks 
+        shell: nix develop . --command bash -e {0}
+
+      - name: Dry Run Benchmarks
         run: cargo test --benches --workspace --verbose
-            
+        shell: nix develop . --command bash -e {0}
 
   versioning:
     name: Versioning
-    # This job needs to wait for important jobs like (e.g. testing) to complete. 
-    # Otherwise the versioning commit will the commits in the PR to 
-    needs: [test] 
+    # This job needs to wait for important jobs (e.g., testing and linting) to complete.
+    needs: [test]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -42,21 +54,21 @@ jobs:
 
       - name: Generate version number
         run: |
-          DATE=$(date +'%Y.%-m.%-d')          
+          DATE=$(date +'%Y.%-m.%-d')
           COMMIT_SHA=$(git rev-parse --short HEAD)
           VERSION="${DATE#20}+$COMMIT_SHA"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Announce CI/CD
         run: echo "Running CI/CD for Nephrid Version ${{ env.VERSION }}"
-      
+
       - name: Bump engine crate version
         uses: thomaseizinger/set-crate-version@master
         with:
           version: ${{ env.VERSION }}
           manifest: ./engine/Cargo.toml
-          
-      - name: Bump nephrid crate version 
+
+      - name: Bump nephrid crate version
         uses: thomaseizinger/set-crate-version@master
         with:
           version: ${{ env.VERSION }}
@@ -64,9 +76,6 @@ jobs:
 
       - name: Commit Changes
         uses: stefanzweifel/git-auto-commit-action@v5
-        with: 
+        with:
           commit_message: Bump up crate version to ${{ env.VERSION }}
           tagging_message: ${{ env.VERSION }}
-
-          
-      # todo: clippy
