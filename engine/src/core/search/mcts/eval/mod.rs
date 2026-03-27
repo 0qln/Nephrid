@@ -416,7 +416,11 @@ impl From<Quality> for Value {
 
 /// Centi pawns
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Cp(i16);
+pub struct Cp {
+    v: TCp,
+}
+
+pub type TCp = i16;
 
 impl Cp {
     const SCALE: f32 = 350.;
@@ -424,7 +428,7 @@ impl Cp {
 
 impl fmt::Display for Cp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "{}", self.v)
     }
 }
 
@@ -432,13 +436,13 @@ impl From<WinRate> for Cp {
     fn from(win_rate: WinRate) -> Self {
         let w = win_rate.0.clamp(0.001, 0.999);
         let cp = Cp::SCALE * (w / (1.0 - w)).ln();
-        Self(cp as i16)
+        Self { v: cp as TCp }
     }
 }
 
 impl From<Cp> for Quality {
     fn from(cp: Cp) -> Self {
-        let q = (cp.0 as f32 / (Cp::SCALE * 2.)).tanh();
+        let q = (cp.v as f32 / (Cp::SCALE * 2.)).tanh();
         Self::new(q)
     }
 }

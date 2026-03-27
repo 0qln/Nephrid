@@ -1,4 +1,4 @@
-use std::cmp::Reverse;
+use std::{cmp::Reverse, marker::PhantomData};
 
 use crate::core::{r#move::MoveList, move_iter::fold_legal_moves, turn::Turn};
 
@@ -201,16 +201,82 @@ impl TaperValue {
     }
 }
 
+pub trait Perspective: Clone + Copy {
+    const IS_WHITE: bool;
+    type Opponent: Perspective<Opponent = Self>;
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct WhiteP;
+impl Perspective for WhiteP {
+    const IS_WHITE: bool = true;
+    type Opponent = BlackP;
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct BlackP;
+impl Perspective for BlackP {
+    const IS_WHITE: bool = false;
+    type Opponent = WhiteP;
+}
+
+#[derive(Debug, Copy, Clone, Eq, Ord)]
+pub struct Score<P: Perspective>(pub i32, PhantomData<P>);
+
+impl<P: Perspective> PartialOrd for Score<P> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self.0.partial_cmp(&other.0) {
+            Some(core::cmp::Ordering::Equal) => {}
+            ord => return ord,
+        }
+        self.1.partial_cmp(&other.1)
+    }
+}
+
+impl<P: Perspective> PartialEq for Score<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0 && self.1 == other.1
+    }
+}
+
+impl<P: Perspective> Score<P> {
+    pub const POS_INF: Self = Self::new(30_000);
+    pub const NEG_INF: Self = Self::new(-30_000);
+
+    pub const fn new(val: i32) -> Self {
+        Self(val, PhantomData)
+    }
+}
+
+impl<P: Perspective> std::ops::Neg for Score<P> {
+    type Output = Score<P::Opponent>;
+
+    fn neg(self) -> Self::Output {
+        Score::new(-self.0)
+    }
+}
+
+impl<P: Perspective> From<Score<P>> for Cp {
+    fn from(value: Score<P>) -> Self {
+        if P::IS_WHITE {
+            Cp { v: value.0 as i16 }
+        }
+        else {
+            Cp { v: (-value.0) as i16 }
+        }
+    }
+}
+
 /// # Q-Search
 ///
 /// Make the position quiet.
 ///
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
-fn qsearch(pos: &mut Position, mut alpha: i32, beta: i32) -> i32 {
-    let color_multiplier = if pos.get_turn() == colors::WHITE { 1 } else { -1 };
-    let static_eval = static_eval(pos.piece_info()) * color_multiplier;
+fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<P>) -> Score<P> {
+    // Evaluated at compile time!
+    let color_multiplier = if P::IS_WHITE { 1 } else { -1 };
+    let static_eval = Score::<P>::new(static_eval(pos.piece_info()) * color_multiplier);
 
-    // Stand Pat
     let mut best_value = static_eval;
     if best_value >= beta {
         return best_value;
@@ -242,7 +308,11 @@ fn qsearch(pos: &mut Position, mut alpha: i32, beta: i32) -> i32 {
     for i in 0..n_moves {
         let m = move_list[i];
         pos.make_move(m);
-        let score = -qsearch(pos, -beta, -alpha);
+
+        // Notice the type parameter flips to P::Opponent!
+        // The trait implementation of Neg handles flipping the type back to P.
+        let score = -qsearch::<P::Opponent>(pos, -beta, -alpha);
+
         pos.unmake_move(m);
 
         if score >= beta {
@@ -256,7 +326,7 @@ fn qsearch(pos: &mut Position, mut alpha: i32, beta: i32) -> i32 {
         }
     }
 
-    return best_value;
+    best_value
 }
 
 #[derive(Debug, PartialEq, Default)]
@@ -357,21 +427,20 @@ pub struct EvalInfo {
     state: StateInfo,
 
     /// State info of the position after quieting it.
-    quality: i32,
+    quality: Cp,
 }
+
+mod values {}
 
 impl EvalInfo {
     pub fn new(node: CtNodeRef<Branching>, pos: &mut Position) -> Self {
-        const INFINITY: i32 = 30000;
-        let stm_quality = qsearch(pos, -INFINITY, INFINITY);
-        let absolute_quality = if pos.get_turn() == colors::WHITE {
-            stm_quality
-        }
-        else {
-            -stm_quality
+        let quality: Cp = match pos.get_turn().v() {
+            colors::WHITE_C => qsearch::<WhiteP>(pos, Score::NEG_INF, Score::POS_INF).into(),
+            colors::BLACK_C => qsearch::<BlackP>(pos, Score::NEG_INF, Score::POS_INF).into(),
+            _ => unreachable!(),
         };
         Self {
-            quality: absolute_quality,
+            quality,
             pos: pos.piece_info().clone(),
             state: pos.state_info().clone(),
             phase: TaperValue::from_position(pos.piece_info()),
@@ -383,8 +452,7 @@ impl EvalInfo {
     /// Convert QualityInput into Quality, where the Quality is relative to
     /// white.
     fn quality(&self) -> Quality {
-        let cp = Cp(self.quality as i16);
-        Quality::from(cp)
+        Quality::from(self.quality)
     }
 
     fn policy(&self) -> Policy {
