@@ -9,20 +9,16 @@ use burn::{
     record::{CompactRecorder, Recorder},
 };
 use burn_cuda::{Cuda, CudaDevice};
-use engine::{
-    core::{
-        coordinates::squares,
-        r#move::{Move, move_flags},
-        move_iter::sliding_piece::magics,
-        position::Position,
-        search::{
-            limit::Limit,
-            mcts::{NNParts, SearchState, mcts, nn::ModelConfig},
-        },
-        zobrist,
+use engine::core::{
+    coordinates::squares,
+    r#move::{Move, move_flags},
+    move_iter::sliding_piece::magics,
+    position::Position,
+    search::{
+        limit::Limit,
+        mcts::{NNParts, SearchState, mcts, nn::ModelConfig},
     },
-    misc::DebugMode,
-    uci::sync::CancellationToken,
+    zobrist,
 };
 
 const OUT_DIR: &'static str = "tuning/out/eval_model/test";
@@ -147,17 +143,12 @@ pub fn learn_mate_in_1() {
             btime: 0,
             ..Default::default()
         };
-        let debug = DebugMode::default();
-        let ct = CancellationToken::new();
 
         mcts(
             &mut pos,
             &nn_state,
             &mut mcts_state,
-            limit.clone(),
-            debug.clone(),
-            ct.clone(),
-            None,
+            &limit,
             MctsTrain::default(),
         )
     };
@@ -224,8 +215,6 @@ pub fn learn_mate_in_2() {
             btime: 0,
             ..Default::default()
         };
-        let debug = DebugMode::default();
-        let ct = CancellationToken::new();
 
         let mut mcts_state = SearchState::default();
         let nn_state = NNParts::new(model, device, DIRICHLET_ALPHA, DIRICHLET_EPS);
@@ -235,10 +224,7 @@ pub fn learn_mate_in_2() {
             &mut pos,
             &nn_state,
             &mut mcts_state,
-            limit.clone(),
-            debug.clone(),
-            ct.clone(),
-            None,
+            &limit,
             MctsTrain::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
@@ -250,10 +236,7 @@ pub fn learn_mate_in_2() {
             &mut pos,
             &nn_state,
             &mut mcts_state,
-            limit.clone(),
-            debug.clone(),
-            ct.clone(),
-            None,
+            &limit,
             MctsTrain::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
@@ -265,10 +248,7 @@ pub fn learn_mate_in_2() {
             &mut pos,
             &nn_state,
             &mut mcts_state,
-            limit.clone(),
-            debug.clone(),
-            ct.clone(),
-            None,
+            &limit,
             MctsTrain::default(),
         );
         let mov = result.0.expect("Search should have completed by now");

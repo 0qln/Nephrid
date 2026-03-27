@@ -19,7 +19,9 @@ use crate::{
 use std::{
     error::Error,
     sync::{
-        Arc, Mutex, atomic::{AtomicBool, Ordering}, mpsc::{Sender, channel}
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc::{Sender, channel},
     },
     thread,
 };
@@ -49,7 +51,7 @@ pub struct Thread {
 pub struct Worker {
     mcts_parts: Option<mcts::config::mcts::Parts>,
     mcts_state: mcts::SearchState,
-    backup_tree: Option<Tree>
+    backup_tree: Option<Tree>,
 }
 
 #[derive(Error, Debug)]
@@ -73,7 +75,11 @@ impl Worker {
         let mcts_state = mcts::SearchState::default();
         let mcts_parts = None;
         let backup_tree = None;
-        Self { mcts_parts, mcts_state, backup_tree }
+        Self {
+            mcts_parts,
+            mcts_state,
+            backup_tree,
+        }
     }
 
     pub fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
@@ -85,8 +91,9 @@ impl Worker {
             Command::Normal(mut pos, limit, ct, debug) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
+                let strat = MctsUci::new(debug, ct, None);
 
-                let result = mcts(&mut pos, parts, state, limit, debug, ct, None, MctsUci::default());
+                let result = mcts(&mut pos, parts, state, &limit, strat);
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -97,8 +104,9 @@ impl Worker {
             Command::Ponder(mut pos, limit, ct, debug, ponder) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
+                let strat = MctsUci::new(debug, ct, Some(ponder));
 
-                let result = mcts(&mut pos, parts, state, limit, debug, ct, Some(ponder), MctsUci::default());
+                let result = mcts(&mut pos, parts, state, &limit, strat);
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -129,7 +137,8 @@ impl Worker {
                 if let Some(backup) = self.backup_tree.take() {
                     self.mcts_state.tree = backup;
                     self.mcts_state.tree.advance_to(|b| b.mov() == mov);
-                } else {
+                }
+                else {
                     self.mcts_state.tree = Tree::default();
                 }
                 Ok(())
@@ -243,12 +252,13 @@ impl PonderToken {
     pub fn should_ponder(&self) -> bool {
         !self.0.load(Ordering::Relaxed)
     }
-    
+
     pub fn stop_ponder(&self) {
         self.0.store(true, Ordering::Relaxed)
     }
-    
+
     pub fn start_ponder(&self) {
         self.0.store(false, Ordering::Relaxed)
     }
 }
+
