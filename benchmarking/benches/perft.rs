@@ -65,7 +65,7 @@ pub fn perft_benches(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new(name, Pair(fen, depth)), &fen, |b, fen| {
             b.iter_batched(
-                || Position::from_fen(*fen).unwrap(),
+                || Position::from_fen(fen).unwrap(),
                 |pos| bench_perft(pos, depth),
                 criterion::BatchSize::LargeInput,
             )

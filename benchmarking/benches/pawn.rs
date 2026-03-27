@@ -1,20 +1,17 @@
-use std::ops::ControlFlow;
+use std::{hint::black_box, ops::ControlFlow};
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use engine::{
-    core::{
-        color::colors,
-        coordinates::squares,
-        r#move::Move,
-        move_iter::{
-            FoldMoves, NoCheck,
-            pawn::{Pawn, lookup_attacks},
-            sliding_piece::magics,
-        },
-        position::Position,
-        zobrist,
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use engine::core::{
+    color::colors,
+    coordinates::squares,
+    r#move::Move,
+    move_iter::{
+        FoldMoves, NoCheck,
+        pawn::{Pawn, lookup_attacks},
+        sliding_piece::magics,
     },
-    uci::tokens::Tokenizer,
+    position::Position,
+    zobrist,
 };
 
 pub fn pawn_attacks(c: &mut Criterion) {

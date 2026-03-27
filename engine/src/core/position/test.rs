@@ -107,7 +107,7 @@ fn test_pgn_encoding_move_section(fen: &str, moves: &[Move], expected: &str) {
     let mut expected = Tokenizer::new(expected);
 
     let mut pos = Position::from_fen(fen).unwrap();
-    let pgn = PgnExport::from_initial_pos(&mut pos, &moves);
+    let pgn = PgnExport::from_initial_pos(&mut pos, moves);
     let moves_sec = format!("{}", pgn.1);
     let mut actual = Tokenizer::new(&moves_sec);
 

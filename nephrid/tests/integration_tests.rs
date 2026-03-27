@@ -34,11 +34,10 @@ impl DerefMut for GuardedChild {
 /// e.g., "info depth 5 nodes 2540 nps 120000" -> Some(2540)
 fn extract_nodes(line: &str) -> Option<u64> {
     let parts: Vec<&str> = line.split_whitespace().collect();
-    if let Some(pos) = parts.iter().position(|&s| s == "nodes") {
-        if pos + 1 < parts.len() {
+    if let Some(pos) = parts.iter().position(|&s| s == "nodes")
+        && pos + 1 < parts.len() {
             return parts[pos + 1].parse::<u64>().ok();
         }
-    }
     None
 }
 
@@ -232,10 +231,8 @@ fn test_ponder_miss_retains_cached_tree() {
 
     // 6. Capture the first info line of the new search
     let first_info_line = block_engine_line(&mut reader, |l| l.starts_with("info"));
-    let first_search_nodes = extract_nodes(&first_info_line).expect(&format!(
-        "Failed to extract nodes from first info line of new search! Line: {}",
-        first_info_line,
-    ));
+    let first_search_nodes = extract_nodes(&first_info_line).unwrap_or_else(|| panic!("Failed to extract nodes from first info line of new search! Line: {}",
+        first_info_line));
 
     // 7. Stop the second search and quit cleanly
     write_engine_line(&mut stdin, "stop");
@@ -344,10 +341,8 @@ fn test_ponder_miss_complete_divergence_resets_tree() {
     let first_info_line = block_engine_line(&mut reader, |l| {
         l.starts_with("info") && extract_nodes(l).is_some()
     });
-    let first_search_nodes = extract_nodes(&first_info_line).expect(&format!(
-        "Failed to extract nodes from first info line of new search! Line: {}",
-        first_info_line,
-    ));
+    let first_search_nodes = extract_nodes(&first_info_line).unwrap_or_else(|| panic!("Failed to extract nodes from first info line of new search! Line: {}",
+        first_info_line));
 
     write_engine_line(&mut stdin, "stop");
     block_engine_line(&mut reader, |l| l.starts_with("bestmove"));

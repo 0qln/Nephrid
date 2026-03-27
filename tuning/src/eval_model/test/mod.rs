@@ -21,7 +21,7 @@ use engine::core::{
     zobrist,
 };
 
-const OUT_DIR: &'static str = "tuning/out/eval_model/test";
+const OUT_DIR: &str = "tuning/out/eval_model/test";
 const DIRICHLET_ALPHA: f32 = 0.3;
 const DIRICHLET_EPS: f32 = 0.25;
 
@@ -102,13 +102,11 @@ pub fn learn_mate_in_1() {
         config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
         config_path.push("tuning/src/eval_model/test/config.json");
 
-        let config = TrainingConfig::load(&config_path).expect(&format!(
-            "Couldn't load config.json at {:?}",
-            config_path.to_str()
-        ));
+        let config = TrainingConfig::load(&config_path).unwrap_or_else(|_| panic!("Couldn't load config.json at {:?}",
+            config_path.to_str()));
 
         config
-            .save(&format!("{OUT_DIR}/config.json"))
+            .save(format!("{OUT_DIR}/config.json"))
             .expect("Failed to save config.");
 
         train::<AutodiffBackend>(
@@ -177,13 +175,11 @@ pub fn learn_mate_in_2() {
         config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
         config_path.push("tuning/src/eval_model/test/config.json");
 
-        let config = TrainingConfig::load(&config_path).expect(&format!(
-            "Couldn't load config.json at {:?}",
-            config_path.to_str()
-        ));
+        let config = TrainingConfig::load(&config_path).unwrap_or_else(|_| panic!("Couldn't load config.json at {:?}",
+            config_path.to_str()));
 
         config
-            .save(&format!("{OUT_DIR}/config.json"))
+            .save(format!("{OUT_DIR}/config.json"))
             .expect("Failed to save config.");
 
         train::<AutodiffBackend>(
@@ -261,7 +257,7 @@ pub fn learn_mate_in_2() {
         let root = root.borrow();
 
         let branches = root.branches();
-        branches.iter().count()
+        branches.len()
     };
 
     // result should be a mating position
