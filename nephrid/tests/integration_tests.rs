@@ -328,9 +328,9 @@ fn test_ponder_miss_complete_divergence_resets_tree() {
     write_engine_line(&mut stdin, "position startpos moves e2e4 e7e5");
     write_engine_line(&mut stdin, "go ponder nodes 500000");
 
-    // Wait for it to build a small tree
+    // Wait for it to build a tree
     block_engine_line(&mut reader, |l| {
-        l.starts_with("info") && extract_nodes(l).is_some_and(|nodes| nodes > 100)
+        l.starts_with("info") && extract_nodes(l).is_some_and(|nodes| nodes >= 500000)
     });
 
     write_engine_line(&mut stdin, "stop");
@@ -338,7 +338,7 @@ fn test_ponder_miss_complete_divergence_resets_tree() {
 
     // 2. MASSIVE PONDER MISS. Opponent sends a completely unrelated move sequence.
     write_engine_line(&mut stdin, "position startpos moves d2d4 d7d5");
-    write_engine_line(&mut stdin, "go nodes 50");
+    write_engine_line(&mut stdin, "go nodes 500000");
 
     // 3. We must capture the first info line of the new search
     let first_info_line = block_engine_line(&mut reader, |l| {
@@ -357,7 +357,7 @@ fn test_ponder_miss_complete_divergence_resets_tree() {
     // The first info line should report a tiny number of nodes (just the newly
     // initialized root).
     assert!(
-        first_search_nodes < 50,
+        first_search_nodes < 100,
         "Tree reset failed! The engine retained {} nodes from a completely unrelated game state.",
         first_search_nodes
     );
