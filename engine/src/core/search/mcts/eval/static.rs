@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, marker::PhantomData};
+use std::{cmp::Reverse, marker::PhantomData, ops};
 
 use crate::core::{r#move::MoveList, move_iter::fold_legal_moves, turn::Turn};
 
@@ -248,10 +248,11 @@ impl<P: Perspective> Score<P> {
     }
 }
 
-impl<P: Perspective> std::ops::Neg for Score<P> {
+impl<P: Perspective> ops::Not for Score<P> {
     type Output = Score<P::Opponent>;
 
-    fn neg(self) -> Self::Output {
+    /// Negate the score and flip the perspective to the opponent.
+    fn not(self) -> Self::Output {
         Score::new(-self.0)
     }
 }
@@ -309,9 +310,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
         let m = move_list[i];
         pos.make_move(m);
 
-        // Notice the type parameter flips to P::Opponent!
-        // The trait implementation of Neg handles flipping the type back to P.
-        let score = -qsearch::<P::Opponent>(pos, -beta, -alpha);
+        let score = !qsearch(pos, !beta, !alpha);
 
         pos.unmake_move(m);
 
