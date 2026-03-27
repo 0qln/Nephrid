@@ -482,6 +482,14 @@ impl From<Move> for usize {
 #[derive(Debug, Clone)]
 pub struct MoveList([Move; 256]);
 
+impl MoveList {
+    /// Returns a mutable slice of the initialized moves up to `len`.
+    pub fn as_mut_slice(&mut self, len: u8) -> &mut [Move] {
+        // SAFETY: len is guaranteed to be <= 256 because it's a u8.
+        unsafe { self.0.get_unchecked_mut(..len as usize) }
+    }
+}
+
 impl Default for MoveList {
     fn default() -> Self {
         Self([Move::default(); 256])

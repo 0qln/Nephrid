@@ -1,3 +1,5 @@
+use std::cmp::Reverse;
+
 use crate::core::{r#move::MoveList, move_iter::fold_legal_moves, turn::Turn};
 
 use crate::{
@@ -204,8 +206,9 @@ impl TaperValue {
 /// Make the position quiet.
 ///
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
-fn quiesce(pos: &mut Position, mut alpha: i32, beta: i32) -> i32 {
-    let static_eval = static_eval(pos.piece_info());
+fn qsearch(pos: &mut Position, mut alpha: i32, beta: i32) -> i32 {
+    let color_multiplier = if pos.get_turn() == colors::WHITE { 1 } else { -1 };
+    let static_eval = static_eval(pos.piece_info()) * color_multiplier;
 
     // Stand Pat
     let mut best_value = static_eval;
@@ -221,16 +224,25 @@ fn quiesce(pos: &mut Position, mut alpha: i32, beta: i32) -> i32 {
     let n_moves = fold_legal_moves::<_, _, _>(pos, 0_u8, |curr, m| {
         if m.get_flag().is_capture() {
             move_list[curr] = m;
+            ControlFlow::Continue::<(), _>(curr + 1)
         }
-        ControlFlow::Continue::<(), _>(curr + 1)
+        else {
+            ControlFlow::Continue::<(), _>(curr)
+        }
     })
     .continue_value()
     .unwrap();
 
+    let moves = &mut move_list.as_mut_slice(n_moves);
+    moves.sort_unstable_by_key(|&m| {
+        // Reverse sorts it in descending order (highest MVV-LVA score first)
+        Reverse(PolicyInput::mvv_lva(pos.piece_info(), m))
+    });
+
     for i in 0..n_moves {
         let m = move_list[i];
         pos.make_move(m);
-        let score = -quiesce(pos, -beta, -alpha);
+        let score = -qsearch(pos, -beta, -alpha);
         pos.unmake_move(m);
 
         if score >= beta {
@@ -350,9 +362,16 @@ pub struct EvalInfo {
 
 impl EvalInfo {
     pub fn new(node: CtNodeRef<Branching>, pos: &mut Position) -> Self {
-        let quality = quiesce(pos, i32::MAX, i32::MIN);
+        const INFINITY: i32 = 30000;
+        let stm_quality = qsearch(pos, -INFINITY, INFINITY);
+        let absolute_quality = if pos.get_turn() == colors::WHITE {
+            stm_quality
+        }
+        else {
+            -stm_quality
+        };
         Self {
-            quality,
+            quality: absolute_quality,
             pos: pos.piece_info().clone(),
             state: pos.state_info().clone(),
             phase: TaperValue::from_position(pos.piece_info()),
