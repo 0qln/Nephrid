@@ -212,3 +212,125 @@ fn test_ponder_miss_retains_cached_tree() {
         first_search_nodes
     );
 }
+
+#[test]
+#[timeout(10000)]
+fn test_ponderhit_applies_limits_and_stops() {
+    let mut child = Command::cargo_bin("nephrid").unwrap()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn engine");
+
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout);
+
+    write_engine_line(&mut stdin, "uci");
+    loop { if read_engine_line(&mut reader) == "uciok" { break; } }
+    write_engine_line(&mut stdin, "isready");
+    loop { if read_engine_line(&mut reader) == "readyok" { break; } }
+
+    // 1. Tell the engine to ponder with a strict limit of 500 nodes
+    write_engine_line(&mut stdin, "position startpos moves e2e4 e7e5");
+    write_engine_line(&mut stdin, "go ponder nodes 500");
+
+    // 2. Wait until the engine passes 1000 nodes. 
+    // This proves the engine is correctly IGNORING the limit while pondering.
+    loop {
+        let out = read_engine_line(&mut reader);
+        if out.starts_with("info") {
+            if let Some(nodes) = extract_nodes(&out) {
+                if nodes > 1000 {
+                    break;
+                }
+            }
+        }
+    }
+
+    // 3. PONDER HIT! The opponent played e7e5!
+    write_engine_line(&mut stdin, "ponderhit");
+
+    // 4. The engine should immediately realize 1000 > 500 and halt on its own.
+    // We do NOT send "stop" here. We just wait for bestmove.
+    let bestmove_line;
+    loop {
+        let out = read_engine_line(&mut reader);
+        if out.starts_with("bestmove") {
+            bestmove_line = out;
+            break;
+        }
+    }
+
+    assert!(
+        !bestmove_line.is_empty(),
+        "Engine failed to stop on its own after ponderhit!"
+    );
+
+    write_engine_line(&mut stdin, "quit");
+    let _ = child.wait();
+}
+
+#[test]
+#[timeout(10000)]
+fn test_ponder_miss_complete_divergence_resets_tree() {
+    let mut child = Command::cargo_bin("nephrid").unwrap()
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to spawn engine");
+
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout);
+
+    write_engine_line(&mut stdin, "uci");
+    loop { if read_engine_line(&mut reader) == "uciok" { break; } }
+    write_engine_line(&mut stdin, "isready");
+    loop { if read_engine_line(&mut reader) == "readyok" { break; } }
+
+    // 1. Start pondering a standard opening
+    write_engine_line(&mut stdin, "position startpos moves e2e4 e7e5");
+    write_engine_line(&mut stdin, "go ponder nodes 500000");
+
+    // Wait for it to build a small tree
+    loop {
+        let out = read_engine_line(&mut reader);
+        if let Some(nodes) = extract_nodes(&out) {
+            if nodes > 100 { break; }
+        }
+    }
+    
+    write_engine_line(&mut stdin, "stop");
+    loop { if read_engine_line(&mut reader).starts_with("bestmove") { break; } }
+
+    // 2. MASSIVE PONDER MISS. Opponent sends a completely unrelated move sequence.
+    write_engine_line(&mut stdin, "position startpos moves d2d4 d7d5");
+    write_engine_line(&mut stdin, "go nodes 50");
+
+    // 3. We must capture the first info line of the new search
+    let first_search_nodes;
+    loop {
+        let out = read_engine_line(&mut reader);
+        if out.starts_with("info") {
+            if let Some(nodes) = extract_nodes(&out) {
+                first_search_nodes = nodes;
+                break; // Only capture the first print
+            }
+        }
+    }
+
+    write_engine_line(&mut stdin, "stop");
+    loop { if read_engine_line(&mut reader).starts_with("bestmove") { break; } }
+
+    // 4. Because there were 0 common moves, the tree should have been completely erased.
+    // The first info line should report a tiny number of nodes (just the newly initialized root).
+    assert!(
+        first_search_nodes < 50,
+        "Tree reset failed! The engine retained {} nodes from a completely unrelated game state.",
+        first_search_nodes
+    );
+
+    write_engine_line(&mut stdin, "quit");
+    let _ = child.wait();
+}
