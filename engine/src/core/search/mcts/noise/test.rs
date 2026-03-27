@@ -49,5 +49,5 @@ fn test_dirichlet_noise_basic() {
     assert_relative_eq!(sum, 1.0, epsilon = 1e-5);
 
     // All policies should be non-negative
-    assert!(new_policy.iter().all(|&p| p >= 0. && p < 1.));
+    assert!(new_policy.iter().all(|&p| (0. ..1.).contains(&p)));
 }

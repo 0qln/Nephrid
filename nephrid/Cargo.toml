@@ -1,6 +1,6 @@
 [package]
 name = "nephrid"
-version = "26.3.24+863ee75"
+version = "26.3.27+070111b"
 edition = "2024"
 
 [features]
@@ -14,3 +14,8 @@ default = ["cpu", "mcts-sa"]
 
 [dependencies]
 engine = { version = "*", path = "../engine", default-features = false }
+regex = "1.12.3"
+
+[dev-dependencies]
+assert_cmd = "2.0"
+ntest = "0.9.5"

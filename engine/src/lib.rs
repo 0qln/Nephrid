@@ -23,6 +23,7 @@
 #![feature(control_flow_into_value)]
 // todo when feature (https://github.com/rust-lang/rust/issues/67792) is complete:
 // - remove the ConstFrom trait and use the core::From trait instead.
+#![feature(associated_type_defaults)]
 
 #[macro_use]
 extern crate impl_ops;

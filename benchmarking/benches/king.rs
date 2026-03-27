@@ -1,13 +1,17 @@
-use std::ops::ControlFlow;
+use std::{hint::black_box, ops::ControlFlow};
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use engine::core::coordinates::squares;
-use engine::core::r#move::Move;
-use engine::core::move_iter::king::{King, compute_attacks, lookup_attacks};
-use engine::core::move_iter::sliding_piece::magics;
-use engine::core::move_iter::{FoldMoves, NoCheck, SingleCheck, king};
-use engine::core::position::Position;
-use engine::core::zobrist;
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use engine::core::{
+    coordinates::squares,
+    r#move::Move,
+    move_iter::{
+        FoldMoves, NoCheck, SingleCheck, king,
+        king::{King, compute_attacks, lookup_attacks},
+        sliding_piece::magics,
+    },
+    position::Position,
+    zobrist,
+};
 
 pub fn king_attacks(c: &mut Criterion) {
     let king = squares::E4;

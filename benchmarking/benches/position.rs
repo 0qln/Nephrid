@@ -8,11 +8,10 @@ use engine::{
         coordinates::squares,
         move_iter::{fold_legal_moves, sliding_piece::magics},
         piece::{Piece, piece_type},
-        position::{FenImport, Position},
+        position::Position,
         zobrist,
     },
     misc::ConstFrom,
-    uci::tokens::Tokenizer,
 };
 use itertools::Itertools;
 

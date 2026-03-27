@@ -53,6 +53,7 @@
                 cutechess
                 bacon
                 perf
+                act
               ])
               ++ (with pkgs-cuda; [
                 # reference: https://discourse.nixos.org/t/cuda-12-8-support-in-nixpkgs/60645/39
@@ -110,8 +111,12 @@
               ''
                 # Dev Docs
                 echo "yo! o/"
-                echo "binary comilation example: "
+                echo ""
+                echo "howto compilation (example): "
                 echo '$ cargo run --bin nephrid --release --features "mcts-nn,gpu" --no-default-features'
+                echo ""
+                echo "to run all tests: "
+                echo '$ cargo test --workspace'
               ''
               +
               # bash
