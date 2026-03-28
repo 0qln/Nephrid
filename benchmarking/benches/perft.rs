@@ -29,7 +29,7 @@ fn bench_perft<const Q: bool>(mut pos: Position, depth: Depth) {
         |_, _, _, _| {},
         |pos| {
             let mut list = MoveList::default();
-            let n = fold_legals::<Q, _, _, _>(&pos, 0_u8, |curr, m| {
+            let n = fold_legals::<Q, _, _, _>(pos, 0_u8, |curr, m| {
                 list[curr] = m;
                 ControlFlow::Continue::<(), _>(curr + 1)
             })

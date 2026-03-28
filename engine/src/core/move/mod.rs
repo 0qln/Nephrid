@@ -22,7 +22,7 @@ use crate::{
         },
         piece::{Piece, PromoPieceTokenizationError, piece_type},
         position::{CheckState, Position},
-    }, impl_variants, impl_variants_with_assertion, misc::{ConstFrom, ValueOutOfRangeError}, uci::tokens::Tokenizer
+    }, impl_variants_with_assertion, misc::{ConstFrom, ValueOutOfRangeError}, uci::tokens::Tokenizer
 };
 
 use super::{castling::CastlingSide, piece::PromoPieceType};

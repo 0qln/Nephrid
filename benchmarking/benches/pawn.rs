@@ -38,7 +38,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
             &pos,
             |b, pos| {
                 b.iter(|| {
-                    <Pawn as FoldMoves<NoCheck>>::fold_moves(
+                    <Pawn as FoldMoves<NoCheck, true>>::fold_moves(
                         black_box(pos),
                         black_box(0),
                         black_box(|acc, m: Move| {

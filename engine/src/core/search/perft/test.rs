@@ -41,7 +41,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
         |_, _, _, _| {},
         move |pos| {
             let mut list_skipped = MoveList::default();
-            let n_skipped = fold_legals::<false, _, _, _>(&pos, 0_u8, |curr, m| {
+            let n_skipped = fold_legals::<false, _, _, _>(pos, 0_u8, |curr, m| {
                 list_skipped[curr] = m;
                 ControlFlow::Continue::<(), _>(curr + 1)
             })
@@ -49,7 +49,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
             .unwrap();
 
             let mut list_filtered = MoveList::default();
-            let n_filtered = fold_legals::<true, _, _, _>(&pos, 0_u8, |curr, m| {
+            let n_filtered = fold_legals::<true, _, _, _>(pos, 0_u8, |curr, m| {
                 if m.get_flag().is_capture() {
                     list_filtered[curr] = m;
                     ControlFlow::Continue::<(), _>(curr + 1)
@@ -73,7 +73,6 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
                     let result = list_skipped.iter().collect::<HashSet<_>>();
                     expected
                         .symmetric_difference(&result)
-                        .into_iter()
                         .cloned()
                         .collect_vec()
                 }

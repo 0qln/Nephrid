@@ -36,7 +36,7 @@ pub fn perft<const Q: bool>(
         },
         |pos| {
             let mut list = MoveList::default();
-            let n = fold_legals::<Q, _, _, _>(&pos, 0_u8, |curr, m| {
+            let n = fold_legals::<Q, _, _, _>(pos, 0_u8, |curr, m| {
                 list[curr] = m;
                 ControlFlow::Continue::<(), _>(curr + 1)
             })
@@ -109,7 +109,7 @@ pub fn perft_inner_collect(
         return 1;
     }
 
-    let (move_list, n_moves) = moves(&pos);
+    let (move_list, n_moves) = moves(pos);
 
     let mut acc = 0;
     for i in 0..n_moves {
