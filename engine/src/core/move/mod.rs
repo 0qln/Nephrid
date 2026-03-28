@@ -488,6 +488,19 @@ impl MoveList {
         // SAFETY: len is guaranteed to be <= 256 because it's a u8.
         unsafe { self.0.get_unchecked_mut(..len as usize) }
     }
+
+    /// Returns an iterator over the initialized moves up to the first null
+    /// move.
+    ///
+    /// NOTE: This could maybe be written more efficently. And also, just use
+    /// indexing instead maybe, since we can easily prove the bounds checks
+    /// in most cases.
+    pub fn iter(&self) -> impl Iterator<Item = Move> {
+        self.0
+            .iter()
+            .take_while(|&mov| *mov != Move::null())
+            .copied()
+    }
 }
 
 impl Default for MoveList {
@@ -507,5 +520,16 @@ impl Index<u8> for MoveList {
 impl IndexMut<u8> for MoveList {
     fn index_mut(&mut self, index: u8) -> &mut Self::Output {
         unsafe { self.0.get_unchecked_mut(index as usize) }
+    }
+}
+
+impl fmt::Display for MoveList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let moves = self
+            .0
+            .iter()
+            .take_while(|mov| mov.v != 0)
+            .map(|mov| mov.to_string());
+        write!(f, "[{}]", moves.collect::<Vec<_>>().join(", "))
     }
 }

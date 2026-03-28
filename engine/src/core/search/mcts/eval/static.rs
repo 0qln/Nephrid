@@ -1,6 +1,6 @@
 use std::{cmp::Reverse, marker::PhantomData, ops};
 
-use crate::core::{r#move::MoveList, move_iter::fold_legal_moves, turn::Turn};
+use crate::core::{r#move::MoveList, move_iter::fold_legal_captures, turn::Turn};
 
 use crate::{
     core::{
@@ -293,15 +293,9 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     }
 
     let mut move_list = MoveList::default();
-    // todo: just generate captures
-    let n_moves = fold_legal_moves::<_, _, _>(pos, 0_u8, |curr, m| {
-        if m.get_flag().is_capture() {
-            move_list[curr] = m;
-            ControlFlow::Continue::<(), _>(curr + 1)
-        }
-        else {
-            ControlFlow::Continue::<(), _>(curr)
-        }
+    let n_moves = fold_legal_captures::<_, _, _>(pos, 0_u8, |curr, m| {
+        move_list[curr] = m;
+        ControlFlow::Continue::<(), _>(curr + 1)
     })
     .continue_value()
     .unwrap();

@@ -3,22 +3,22 @@ use std::ops::Try;
 use crate::{
     core::{
         bitboard::Bitboard,
-        coordinates::{compass_rose, squares, CompassRose, Square, TCompassRose},
+        coordinates::{CompassRose, Square, TCompassRose, compass_rose, squares},
+        r#move::Move,
         move_iter::{map_captures, map_quiets},
         piece::piece_type,
         position::Position,
-        r#move::Move,
     },
     misc::ConstFrom,
 };
 
 use const_for::const_for;
 
-use super::{is_blocker, FoldMoves, NoDoubleCheck};
+use super::{FoldMoves, NoDoubleCheck, is_blocker};
 
 pub struct Knight;
 
-impl<C: NoDoubleCheck> FoldMoves<C> for Knight {
+impl<const Q: bool, C: NoDoubleCheck> FoldMoves<C, Q> for Knight {
     #[inline(always)]
     fn fold_moves<B, F, R>(pos: &Position, init: B, mut f: F) -> R
     where
@@ -31,7 +31,7 @@ impl<C: NoDoubleCheck> FoldMoves<C> for Knight {
             .filter(|&piece| !is_blocker(pos, piece))
             .map(|piece| {
                 let legal_attacks = lookup_attacks(piece);
-                let legal_quiets = legal_attacks & C::quiets_mask(pos, color);
+                let legal_quiets = legal_attacks & C::quiets_mask::<Q>(pos, color);
                 let legal_captures = legal_attacks & C::captures_mask(pos, color);
                 (legal_captures, legal_quiets, piece)
             })

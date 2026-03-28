@@ -42,13 +42,13 @@ impl<'a> PawnMoves<'a> {
     }
 
     #[inline(always)]
-    fn single_step<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
+    fn single_step<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let non_promo_pawns = pawns & !Bitboard::from_c(promo_rank(color));
         let pieces = pos.get_occupancy();
-        let tabu_squares = !T::quiets_mask(pos, color) | pieces;
+        let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
         let single_step_tabus = backward(tabu_squares, single_step(color));
         let from = non_promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
@@ -56,11 +56,11 @@ impl<'a> PawnMoves<'a> {
     }
 
     #[inline(always)]
-    fn double_step<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
+    fn double_step<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let pieces = pos.get_occupancy();
-        let tabu_squares = !T::quiets_mask(pos, color) | pieces;
+        let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
         let single_step_tabus = backward(pieces, single_step(color));
         let double_step_tabus = backward(tabu_squares, double_step(color)) | single_step_tabus;
         let pawns = pos.get_bitboard(piece_type::PAWN, color);
@@ -86,31 +86,34 @@ impl<'a> PawnMoves<'a> {
     }
 
     #[inline(always)]
-    fn promo_knight<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<C, T>(pos, move_flags::PROMOTION_KNIGHT)
+    fn promo_knight<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
+        Self::promo::<Q, C, T>(pos, move_flags::PROMOTION_KNIGHT)
     }
 
     #[inline(always)]
-    fn promo_bishop<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<C, T>(pos, move_flags::PROMOTION_BISHOP)
+    fn promo_bishop<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
+        Self::promo::<Q, C, T>(pos, move_flags::PROMOTION_BISHOP)
     }
 
     #[inline(always)]
-    fn promo_rook<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<C, T>(pos, move_flags::PROMOTION_ROOK)
+    fn promo_rook<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
+        Self::promo::<Q, C, T>(pos, move_flags::PROMOTION_ROOK)
     }
 
     #[inline(always)]
-    fn promo_queen<const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<C, T>(pos, move_flags::PROMOTION_QUEEN)
+    fn promo_queen<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
+        Self::promo::<Q, C, T>(pos, move_flags::PROMOTION_QUEEN)
     }
 
     #[inline(always)]
-    fn promo<const C: TColor, T: NoDoubleCheck>(pos: &'a Position, flag: MoveFlag) -> Self {
+    fn promo<const Q: bool, const C: TColor, T: NoDoubleCheck>(
+        pos: &'a Position,
+        flag: MoveFlag,
+    ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let pieces = pos.get_occupancy();
-        let tabu_squares = !T::quiets_mask(pos, color) | pieces;
+        let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
         let single_step_tabus = backward(tabu_squares, single_step(color));
         let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let promo_pawns = pawns & Bitboard::from_c(promo_rank(color));
@@ -172,7 +175,8 @@ impl<'a> PawnMoves<'a> {
         let mut to = Bitboard::from_c(target.v());
         let from = if to.is_empty() {
             Bitboard::empty()
-        } else {
+        }
+        else {
             let capture_dir = capture(color, CompassRose::new(DIR));
             let pawns = pos.get_bitboard(piece_type::PAWN, color);
             let capturing_pawns = pawns & !Bitboard::from_c(File::edge::<DIR>());
@@ -180,7 +184,8 @@ impl<'a> PawnMoves<'a> {
             if from.is_empty() {
                 to = Bitboard::empty();
                 Bitboard::empty()
-            } else {
+            }
+            else {
                 // Safety: king the board has no king, but gen_legal is used,
                 // the context is broken anyway.
                 let king_bb = pos.get_bitboard(King::ID, color);
@@ -200,7 +205,8 @@ impl<'a> PawnMoves<'a> {
                 if check {
                     to = Bitboard::empty();
                     Bitboard::empty()
-                } else {
+                }
+                else {
                     from
                 }
             }
@@ -237,7 +243,11 @@ impl Iterator for PawnMoves<'_> {
 }
 
 #[inline]
-fn fold_moves<const C: TColor, T: NoDoubleCheck, B, F, R>(pos: &'_ Position, init: B, mut f: F) -> R
+fn fold_moves<const Q: bool, const C: TColor, T: NoDoubleCheck, B, F, R>(
+    pos: &'_ Position,
+    init: B,
+    mut f: F,
+) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
@@ -259,12 +269,12 @@ where
     // todo: tune the ordering
     apply!(
         init,
-        P::single_step::<C, T>,
-        P::double_step::<C, T>,
-        P::promo_knight::<C, T>,
-        P::promo_bishop::<C, T>,
-        P::promo_rook::<C, T>,
-        P::promo_queen::<C, T>,
+        P::single_step::<Q, C, T>,
+        P::double_step::<Q, C, T>,
+        P::promo_knight::<Q, C, T>,
+        P::promo_bishop::<Q, C, T>,
+        P::promo_rook::<Q, C, T>,
+        P::promo_queen::<Q, C, T>,
         P::capture::<C, { compass_rose::WEST_C }, T>,
         P::capture::<C, { compass_rose::EAST_C }, T>,
         P::ep::<C, { compass_rose::WEST_C }, T>,
@@ -280,7 +290,7 @@ where
     )
 }
 
-impl<C: NoDoubleCheck> FoldMoves<C> for Pawn {
+impl<const Q: bool, C: NoDoubleCheck> FoldMoves<C, Q> for Pawn {
     #[inline(always)]
     fn fold_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
     where
@@ -288,8 +298,8 @@ impl<C: NoDoubleCheck> FoldMoves<C> for Pawn {
         R: Try<Output = B>,
     {
         match pos.get_turn() {
-            colors::WHITE => fold_moves::<{ colors::WHITE_C }, C, _, _, _>(pos, init, f),
-            colors::BLACK => fold_moves::<{ colors::BLACK_C }, C, _, _, _>(pos, init, f),
+            colors::WHITE => fold_moves::<Q, { colors::WHITE_C }, C, _, _, _>(pos, init, f),
+            colors::BLACK => fold_moves::<Q, { colors::BLACK_C }, C, _, _, _>(pos, init, f),
             _ => unreachable!(),
         }
     }

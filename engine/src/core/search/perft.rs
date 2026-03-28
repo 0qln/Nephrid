@@ -1,15 +1,28 @@
 use crate::{
-    core::{Depth, Limit, Move, r#move::MoveList, move_iter::fold_legal_moves, position::Position},
+    core::{
+        Depth, Limit, Move,
+        r#move::MoveList,
+        move_iter::{fold_legal_moves, fold_legals},
+        position::Position,
+    },
     misc::DebugMode,
     uci::sync::{self, CancellationToken},
 };
 use std::{cell::UnsafeCell, ops::ControlFlow};
 
-pub fn perft(mut pos: Position, limit: Limit, ct: CancellationToken, debug: DebugMode) -> u64 {
+#[cfg(test)]
+pub mod test;
+
+pub fn perft<const Q: bool>(
+    pos: &mut Position,
+    limit: &Limit,
+    ct: CancellationToken,
+    debug: DebugMode,
+) -> u64 {
     perft_inner_collect(
-        &mut pos,
+        pos,
         limit.depth,
-        &limit,
+        limit,
         &ct,
         &debug,
         |mov, count, depth: Depth, debug| {
@@ -20,6 +33,16 @@ pub fn perft(mut pos: Position, limit: Limit, ct: CancellationToken, debug: Debu
             else {
                 sync::out(&format!("{mov}: {count}"));
             }
+        },
+        |pos| {
+            let mut list = MoveList::default();
+            let n = fold_legals::<Q, _, _, _>(&pos, 0_u8, |curr, m| {
+                list[curr] = m;
+                ControlFlow::Continue::<(), _>(curr + 1)
+            })
+            .continue_value()
+            .unwrap();
+            (list, n)
         },
     )
 }
@@ -69,13 +92,14 @@ fn perft_inner_iter(
     }
 }
 
-fn perft_inner_collect(
+pub fn perft_inner_collect(
     pos: &mut Position,
     depth: Depth,
     limit: &Limit,
     cancellation_token: &CancellationToken,
     debug: &DebugMode,
     f: fn(Move, u64, Depth, bool) -> (),
+    moves: fn(&Position) -> (MoveList, u8),
 ) -> u64 {
     if cancellation_token.is_cancelled() {
         return 0;
@@ -85,13 +109,7 @@ fn perft_inner_collect(
         return 1;
     }
 
-    let mut move_list = MoveList::default();
-    let n_moves = fold_legal_moves::<_, _, _>(pos, 0_u8, |curr, m| {
-        move_list[curr] = m;
-        ControlFlow::Continue::<(), _>(curr + 1)
-    })
-    .continue_value()
-    .unwrap();
+    let (move_list, n_moves) = moves(&pos);
 
     let mut acc = 0;
     for i in 0..n_moves {
@@ -105,6 +123,7 @@ fn perft_inner_collect(
             cancellation_token,
             debug,
             if debug.get() { f } else { |_, _, _, _| {} },
+            moves,
         );
         f(m, c, limit.depth - depth, debug.get());
         pos.unmake_move(m);
