@@ -3,6 +3,7 @@ use std::{cmp::Reverse, marker::PhantomData, ops};
 use crate::core::{
     r#move::MoveList,
     move_iter::{fold_legal_captures, fold_legal_moves},
+    piece::PromoPieceType,
     position::CheckState,
     turn::Turn,
 };
@@ -187,7 +188,7 @@ const PIECE_PHASES: [PiecePhase; piece_type::N_VARIANTS] = {
 /// Where:
 ///  0 => early game
 /// 24 => late game
-#[derive(PartialEq, Debug, Default, Copy, Clone)]
+#[derive(PartialEq, Debug, Default, Copy, Clone, PartialOrd)]
 pub struct TaperValue(u32);
 
 impl TaperValue {
@@ -227,6 +228,13 @@ impl Perspective for BlackP {
 
 #[derive(Debug, Copy, Clone)]
 pub struct Score<P: Perspective>(pub i32, PhantomData<P>);
+
+impl<P: Perspective> ops::Add for Score<P> {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0, PhantomData)
+    }
+}
 
 impl<P: Perspective> Eq for Score<P> {}
 
@@ -289,10 +297,13 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
 
     let mut best_value = Score::NEG_INF;
 
+    let piece_info = pos.piece_info();
+    let phase = TaperValue::from_position(piece_info);
+
     // stand pad if not in check
     if !in_check {
         let color_multiplier = if P::IS_WHITE { 1 } else { -1 };
-        let static_eval = Score::<P>::new(static_eval(pos.piece_info()) * color_multiplier);
+        let static_eval = Score::<P>::new(static_eval(piece_info, phase) * color_multiplier);
 
         best_value = static_eval;
 
@@ -331,6 +342,29 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     // recurse
     for i in 0..n_moves {
         let m = move_list[i];
+
+        // delta pruning
+        if !in_check && phase >= TaperValue(16) {
+            let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {
+                piece_score(promo.into()) - piece_score(piece_type::PAWN)
+            }
+            else {
+                0
+            };
+
+            // SAFETY: we know this is a capture move.
+            let capture_square = unsafe { m.get_capture_sq().unwrap_unchecked() };
+            let captured_piece = pos.get_piece(capture_square);
+            let captured_value = piece_score(captured_piece.piece_type());
+
+            let futility_margin = 200;
+            let futility_score = captured_value + value_bonus + futility_margin;
+
+            if best_value + Score::new(futility_score) < alpha {
+                continue;
+            }
+        }
+
         pos.make_move(m);
 
         let score = !qsearch(pos, !beta, !alpha);
@@ -351,35 +385,30 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     best_value
 }
 
-#[derive(Debug, PartialEq, Default)]
-pub struct QualityInput {}
+fn material(pos: &PieceInfo, color: Color) -> i32 {
+    (piece_type::PAWN..piece_type::KING)
+        .map(|p| pos.get_bitboard(p, color).pop_cnt() as i32 * piece_score(p))
+        .sum()
+}
 
-impl QualityInput {
-    fn material(pos: &PieceInfo, color: Color) -> i32 {
-        (piece_type::PAWN..piece_type::KING)
-            .map(|p| pos.get_bitboard(p, color).pop_cnt() as i32 * piece_score(p))
+fn psqt(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
+    fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> i32 {
+        (piece_type::PAWN..=piece_type::KING)
+            .map(|piece| {
+                pos.get_bitboard(piece, color)
+                    .map(|sq| psqt_score(phase, piece, sq, color))
+                    .sum::<i32>()
+            })
             .sum()
     }
 
-    fn psqt(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
-        fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> i32 {
-            (piece_type::PAWN..=piece_type::KING)
-                .map(|piece| {
-                    pos.get_bitboard(piece, color)
-                        .map(|sq| psqt_score(phase, piece, sq, color))
-                        .sum::<i32>()
-                })
-                .sum()
-        }
+    let mg = score(pos, color, game_phases::MG);
+    let eg = score(pos, color, game_phases::EG);
+    phase.weighted_eval(mg, eg)
+}
 
-        let mg = score(pos, color, game_phases::MG);
-        let eg = score(pos, color, game_phases::EG);
-        phase.weighted_eval(mg, eg)
-    }
-
-    fn value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
-        Self::material(pos, color) + Self::psqt(pos, color, phase)
-    }
+fn static_value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
+    material(pos, color) + psqt(pos, color, phase)
 }
 
 #[derive(Debug, PartialEq, Default)]
@@ -424,10 +453,9 @@ impl PolicyInput {
     }
 }
 
-fn static_eval(pos: &PieceInfo) -> i32 {
-    let phase = TaperValue::from_position(pos);
-    let w_q = QualityInput::value(pos, colors::WHITE, phase);
-    let b_q = QualityInput::value(pos, colors::BLACK, phase);
+fn static_eval(pos: &PieceInfo, phase: TaperValue) -> i32 {
+    let w_q = static_value(pos, colors::WHITE, phase);
+    let b_q = static_value(pos, colors::BLACK, phase);
     w_q - b_q
 }
 
