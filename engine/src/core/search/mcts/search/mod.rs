@@ -511,7 +511,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         node: CtNodeRef<Branching>,
         depth: Depth,
     ) -> usize {
-        let pos = &self.position;
+        let pos = &mut self.position;
 
         let (used_budget, item) = if self.limiter.should_stop(limiter::Params { pos, depth }) {
             (1, PhaseItem::Unused)

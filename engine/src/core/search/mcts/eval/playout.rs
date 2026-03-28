@@ -71,7 +71,7 @@ impl Evaluator for PlayoutEvaluator {
     fn trace<S: const Valid + HasBranches>(
         &self,
         node: CtNodeRef<S>,
-        pos: &Position,
+        pos: &mut Position,
     ) -> Self::TraceData {
         node.try_into::<Branching>()
             .map(|_node| PlayoutTraceData { start_pos: pos.clone() })

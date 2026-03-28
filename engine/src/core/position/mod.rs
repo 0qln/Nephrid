@@ -933,7 +933,7 @@ impl<'a> fmt::Display for PiecePlacementInfo<'a> {
     }
 }
 
-pub struct FenExport<'a>(&'a Position);
+pub struct FenExport<'a>(pub &'a Position);
 
 impl<'a> fmt::Display for FenExport<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -4,10 +4,10 @@ use crate::{
     core::{
         bitboard::Bitboard,
         castling::castling_sides,
-        coordinates::{files, ranks, squares, File, Rank, Square},
-        piece::{piece_type, IPieceType, PieceType},
+        coordinates::{File, Rank, Square, files, ranks, squares},
+        r#move::{Move, move_flags},
+        piece::{IPieceType, PieceType, piece_type},
         position::Position,
-        r#move::{move_flags, Move},
     },
     misc::ConstFrom,
 };
@@ -15,8 +15,8 @@ use crate::{
 use const_for::const_for;
 
 use super::{
-    bishop::Bishop, map_captures, map_quiets, queen::Queen, rook::Rook,
-    sliding_piece::SlidingAttacks, FoldMoves, NoCheck, NoDoubleCheck, SomeCheck,
+    FoldMoves, NoCheck, NoDoubleCheck, SomeCheck, bishop::Bishop, map_captures, map_quiets,
+    queen::Queen, rook::Rook, sliding_piece::SlidingAttacks,
 };
 
 pub struct King;
@@ -25,7 +25,7 @@ impl IPieceType for King {
     const ID: PieceType = piece_type::KING;
 }
 
-impl FoldMoves<NoCheck> for King {
+impl<const Q: bool> FoldMoves<NoCheck, Q> for King {
     #[inline(always)]
     fn fold_moves<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
     where
@@ -44,14 +44,14 @@ impl FoldMoves<NoCheck> for King {
         let legal_attacks = attacks & !nstm_attacks;
 
         let legal_captures = legal_attacks & NoCheck::captures_mask(pos, color);
-        let legal_quiets = legal_attacks & NoCheck::quiets_mask(pos, color);
+        let legal_quiets = legal_attacks & NoCheck::quiets_mask::<Q>(pos, color);
 
         init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
         map_quiets(legal_quiets, king).try_fold(init, &mut f)
     }
 }
 
-impl<C: SomeCheck> FoldMoves<C> for King {
+impl<const Q: bool, C: SomeCheck> FoldMoves<C, Q> for King {
     #[inline(always)]
     fn fold_moves<B, F, R>(pos: &Position, init: B, mut f: F) -> R
     where
@@ -70,7 +70,7 @@ impl<C: SomeCheck> FoldMoves<C> for King {
         let king_bb = pos.get_bitboard(King::ID, color);
         let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
 
-        <Self as FoldMoves<NoCheck>>::fold_moves(pos, init, |acc, m| {
+        <Self as FoldMoves<NoCheck, Q>>::fold_moves(pos, init, |acc, m| {
             // Make sure that we move the king out of check
             let is_legal = {
                 let to_sq = m.get_to();
@@ -91,12 +91,7 @@ impl<C: SomeCheck> FoldMoves<C> for King {
                 !check_after_move
             };
 
-            if is_legal {
-                f(acc, m)
-            }
-            else {
-                try { acc }
-            }
+            if is_legal { f(acc, m) } else { try { acc } }
         })
     }
 }

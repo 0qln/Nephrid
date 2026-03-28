@@ -128,6 +128,12 @@ impl From<PieceType> for char {
     }
 }
 
+impl From<PromoPieceType> for PieceType {
+    fn from(value: PromoPieceType) -> Self {
+        value.v()
+    }
+}
+
 #[derive(Copy, Clone, Default, Debug, PartialEq)]
 pub struct PromoPieceType {
     v: PieceType,
@@ -193,7 +199,8 @@ impl TryFrom<MoveFlag> for PromoPieceType {
     fn try_from(flag: MoveFlag) -> Result<Self, Self::Error> {
         if !flag.is_promo() {
             Err(Self::Error::new(flag))
-        } else {
+        }
+        else {
             let v = (flag.v() - 2) % 4 + 2;
             let pt = PieceType { v };
             Ok(PromoPieceType { v: pt })

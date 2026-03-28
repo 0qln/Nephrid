@@ -124,7 +124,7 @@ impl<'a, 'b, B: Backend> NNEvaluator<'a, 'b, B> {
 impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
     type TraceData = TraceInfo;
 
-    fn trace<S: HasBranches>(&self, _node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
+    fn trace<S: HasBranches>(&self, _node: CtNodeRef<S>, pos: &mut Position) -> Self::TraceData {
         TraceInfo::new(pos)
     }
 

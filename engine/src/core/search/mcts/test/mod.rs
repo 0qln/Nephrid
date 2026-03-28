@@ -45,7 +45,7 @@ impl Default for DummyEvaluator {
 impl Evaluator for DummyEvaluator {
     type TraceData = DummyTraceData;
 
-    fn trace<S: HasBranches>(&self, _node: CtNodeRef<S>, pos: &Position) -> Self::TraceData {
+    fn trace<S: HasBranches>(&self, _node: CtNodeRef<S>, pos: &mut Position) -> Self::TraceData {
         DummyTraceData { turn: pos.get_turn() }
     }
 

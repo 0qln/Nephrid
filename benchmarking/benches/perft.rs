@@ -1,26 +1,43 @@
 use std::{
     fmt::{self, Display, Formatter},
+    ops::ControlFlow,
     time::Duration,
 };
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::{
     core::{
-        depth::Depth, move_iter::sliding_piece::magics, position::Position, search::limit::Limit,
+        depth::Depth,
+        r#move::MoveList,
+        move_iter::{fold_legals, sliding_piece::magics},
+        position::Position,
+        search::{limit::Limit, perft::perft_inner_collect},
         zobrist,
     },
     misc::DebugMode,
     uci::sync::CancellationToken,
 };
 
-fn bench_perft(pos: Position, depth: Depth) {
+fn bench_perft<const Q: bool>(mut pos: Position, depth: Depth) {
     let limit = Limit { depth, ..Default::default() };
-    _ = engine::core::search::perft::perft(
-        pos,
-        limit,
-        CancellationToken::new(),
-        DebugMode::default(),
-    );
+    _ = perft_inner_collect(
+        &mut pos,
+        limit.depth,
+        &limit,
+        &CancellationToken::default(),
+        &DebugMode::default(),
+        |_, _, _, _| {},
+        |pos| {
+            let mut list = MoveList::default();
+            let n = fold_legals::<Q, _, _, _>(pos, 0_u8, |curr, m| {
+                list[curr] = m;
+                ControlFlow::Continue::<(), _>(curr + 1)
+            })
+            .continue_value()
+            .unwrap();
+            (list, n)
+        },
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -32,16 +49,42 @@ impl<T1: Display, T2: Display> Display for Pair<T1, T2> {
     }
 }
 
-pub fn perft_benches(c: &mut Criterion) {
+fn perft(c: &mut Criterion) {
+    perft_benches::<true>(c, "perft", include_str!("../resources/positions.csv"))
+}
+
+fn perft_pawn(c: &mut Criterion) {
+    perft_benches::<true>(
+        c,
+        "perft_pawn",
+        include_str!("../resources/pawn_positions.csv"),
+    )
+}
+
+fn perft_rook(c: &mut Criterion) {
+    perft_benches::<true>(
+        c,
+        "perft_rook",
+        include_str!("../resources/rook_positions.csv"),
+    )
+}
+
+fn perft_captures(c: &mut Criterion) {
+    perft_benches::<false>(
+        c,
+        "perft_captures",
+        include_str!("../resources/capture_positions.csv"),
+    )
+}
+
+pub fn perft_benches<const Q: bool>(c: &mut Criterion, name: &str, csv_data: &str) {
     magics::init();
     zobrist::init();
 
-    let mut group = c.benchmark_group("perft");
+    let mut group = c.benchmark_group(name);
     group
         .measurement_time(Duration::from_secs(60))
         .sample_size(20);
-
-    let csv_data = include_str!("../resources/positions.csv");
 
     for (i, line) in csv_data.lines().skip(1).enumerate() {
         let line = line.trim();
@@ -61,12 +104,12 @@ pub fn perft_benches(c: &mut Criterion) {
         let depth = Depth::new(depth_val);
         let fen = fen_str.trim();
 
-        let name = format!("perft_{i}");
+        let name = format!("{name}_{i}");
 
         group.bench_with_input(BenchmarkId::new(name, Pair(fen, depth)), &fen, |b, fen| {
             b.iter_batched(
                 || Position::from_fen(fen).unwrap(),
-                |pos| bench_perft(pos, depth),
+                |pos| bench_perft::<Q>(pos, depth),
                 criterion::BatchSize::LargeInput,
             )
         });
@@ -75,5 +118,5 @@ pub fn perft_benches(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, perft_benches);
+criterion_group!(benches, perft, perft_captures, perft_pawn, perft_rook);
 criterion_main!(benches);

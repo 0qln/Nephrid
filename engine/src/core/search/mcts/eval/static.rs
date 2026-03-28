@@ -1,4 +1,12 @@
-use crate::core::turn::Turn;
+use std::{cmp::Reverse, marker::PhantomData, ops};
+
+use crate::core::{
+    r#move::MoveList,
+    move_iter::{fold_legal_captures, fold_legal_moves},
+    piece::PromoPieceType,
+    position::CheckState,
+    turn::Turn,
+};
 
 use crate::{
     core::{
@@ -34,9 +42,14 @@ pub fn piece_score(pt: PieceType) -> i32 {
 }
 
 const MG_PAWN_TABLE: Psqt = Psqt([
-    0, 0, 0, 0, 0, 0, 0, 0, 98, 134, 61, 95, 68, 126, 34, -11, -6, 7, 26, 31, 65, 56, 25, -20, -14,
-    13, 6, 21, 23, 12, 17, -23, -27, -2, -5, 12, 17, 6, 10, -25, -26, -4, -4, -10, 3, 3, 33, -12,
-    -35, -1, -20, -23, -15, 24, 38, -22, 0, 0, 0, 0, 0, 0, 0, 0,
+    0, 0, 0, 0, 0, 0, 0, 0, //
+    98, 134, 61, 95, 68, 126, 34, -11, //
+    -6, 7, 26, 31, 65, 56, 25, -20, //
+    -14, 13, 6, 21, 23, 12, 17, -23, //
+    -27, -2, -5, 12, 17, 6, 10, -25, //
+    -26, -4, -4, -10, 3, 3, 33, -12, //
+    -35, -1, -20, -23, -15, 24, 38, -22, //
+    0, 0, 0, 0, 0, 0, 0, 0, //
 ]);
 
 const MG_KNIGHT_TABLE: Psqt = Psqt([
@@ -64,10 +77,14 @@ const MG_QUEEN_TABLE: Psqt = Psqt([
 ]);
 
 const MG_KING_TABLE: Psqt = Psqt([
-    -65, 23, 16, -15, -56, -34, 2, 13, 29, -1, -20, -7, -8, -4, -38, -29, -9, 24, 2, -16, -20, 6,
-    22, -22, -17, -20, -12, -27, -30, -25, -14, -36, -49, -1, -27, -39, -46, -44, -33, -51, -14,
-    -14, -22, -46, -44, -30, -15, -27, 1, 7, -8, -64, -43, -16, 9, 8, -15, 36, 12, -54, 8, -28, 24,
-    14,
+    -65, 23, 16, -15, -56, -34, 2, 13, //
+    29, -1, -20, -7, -8, -4, -38, -29, //
+    -9, 24, 2, -16, -20, 6, 22, -22, //
+    -17, -20, -12, -27, -30, -25, -14, -36, //
+    -49, -1, -27, -39, -46, -44, -33, -51, //
+    -14, -14, -22, -46, -44, -30, -15, -27, //
+    1, 7, -8, -64, -43, -16, 9, 8, //
+    -15, 36, 12, -54, 8, -28, 24, 14, //
 ]);
 
 const EG_PAWN_TABLE: Psqt = Psqt([
@@ -102,9 +119,14 @@ const EG_QUEEN_TABLE: Psqt = Psqt([
 ]);
 
 const EG_KING_TABLE: Psqt = Psqt([
-    -74, -35, -18, -18, -11, 15, 4, -17, -12, 17, 14, 17, 17, 38, 23, 11, 10, 17, 23, 15, 20, 45,
-    44, 13, -8, 22, 24, 27, 26, 33, 26, 3, -18, -4, 21, 24, 27, 23, 9, -11, -19, -3, 11, 21, 23,
-    16, 7, -9, -27, -11, 4, 13, 14, 4, -5, -17, -53, -34, -21, -11, -28, -14, -24, -43,
+    -74, -35, -18, -18, -11, 15, 4, -17, //
+    -12, 17, 14, 17, 17, 38, 23, 11, //
+    10, 17, 23, 15, 20, 45, 44, 13, //
+    -8, 22, 24, 27, 26, 33, 26, 3, //
+    -18, -4, 21, 24, 27, 23, 9, -11, //
+    -19, -3, 11, 21, 23, 16, 7, -9, //
+    -27, -11, 4, 13, 14, 4, -5, -17, //
+    -53, -34, -21, -11, -28, -14, -24, -43, //
 ]);
 
 const PSQT_MG: [Psqt; piece_type::N_VARIANTS] = [
@@ -130,7 +152,7 @@ const PSQT_EG: [Psqt; piece_type::N_VARIANTS] = [
 const PSQT: [[Psqt; piece_type::N_VARIANTS]; game_phases::N_VARIANTS] = [PSQT_MG, PSQT_EG];
 
 fn psqt_score(phase: GamePhase, piece: PieceType, sq: Square, color: Color) -> i32 {
-    let sq = if color == colors::WHITE { sq } else { sq.flip_v() };
+    let sq = if color == colors::WHITE { sq.flip_v() } else { sq };
     PSQT[phase.v() as usize][piece.v() as usize].get(sq)
 }
 
@@ -180,11 +202,11 @@ const PIECE_PHASES: [PiecePhase; piece_type::N_VARIANTS] = {
 /// Where:
 ///  0 => early game
 /// 24 => late game
-#[derive(PartialEq, Debug, Default, Copy, Clone)]
+#[derive(PartialEq, Debug, Default, Copy, Clone, PartialOrd)]
 pub struct TaperValue(u32);
 
 impl TaperValue {
-    pub fn from_position(pos: &Position) -> Self {
+    pub fn from_position(pos: &PieceInfo) -> Self {
         let inv_phase = (piece_type::PAWN..piece_type::KING)
             .map(|p| pos.get_piece_bb(p).pop_cnt() * PIECE_PHASES[p.v() as usize].v())
             .sum::<u32>();
@@ -199,35 +221,208 @@ impl TaperValue {
     }
 }
 
-#[derive(Debug, PartialEq, Default)]
-pub struct QualityInput {}
+pub trait Perspective: Clone + Copy {
+    const IS_WHITE: bool;
+    type Opponent: Perspective<Opponent = Self>;
+}
 
-impl QualityInput {
-    fn material(pos: &PieceInfo, color: Color) -> i32 {
-        (piece_type::PAWN..piece_type::KING)
-            .map(|p| pos.get_bitboard(p, color).pop_cnt() as i32 * piece_score(p))
+#[derive(Debug, Copy, Clone)]
+pub struct WhiteP;
+impl Perspective for WhiteP {
+    const IS_WHITE: bool = true;
+    type Opponent = BlackP;
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct BlackP;
+impl Perspective for BlackP {
+    const IS_WHITE: bool = false;
+    type Opponent = WhiteP;
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Score<P: Perspective>(pub i32, PhantomData<P>);
+
+impl<P: Perspective> ops::Add for Score<P> {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self(self.0 + rhs.0, PhantomData)
+    }
+}
+
+impl<P: Perspective> Eq for Score<P> {}
+
+impl<P: Perspective> Ord for Score<P> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0).then_with(|| self.1.cmp(&other.1))
+    }
+}
+
+impl<P: Perspective> PartialOrd for Score<P> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl<P: Perspective> PartialEq for Score<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<P: Perspective> Score<P> {
+    pub const POS_INF: Self = Self::new(30_000);
+    pub const NEG_INF: Self = Self::new(-30_000);
+
+    pub const fn new(val: i32) -> Self {
+        Self(val, PhantomData)
+    }
+}
+
+// not using the `-` operator because this is not really just arithmetic
+// negation, but also a perspective flip.
+impl<P: Perspective> ops::Not for Score<P> {
+    type Output = Score<P::Opponent>;
+
+    /// Negate the score and flip the perspective to the opponent.
+    fn not(self) -> Self::Output {
+        Score::new(-self.0)
+    }
+}
+
+impl<P: Perspective> From<Score<P>> for Cp {
+    fn from(value: Score<P>) -> Self {
+        if P::IS_WHITE {
+            Cp { v: value.0 as i16 }
+        }
+        else {
+            Cp { v: (-value.0) as i16 }
+        }
+    }
+}
+
+/// # Q-Search
+///
+/// Make the position quiet.
+///
+/// [q-search](https://www.chessprogramming.org/Quiescence_Search)
+fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<P>) -> Score<P> {
+    let in_check = pos.get_check_state() != CheckState::None;
+
+    let mut best_value = Score::NEG_INF;
+
+    let piece_info = pos.piece_info();
+    let phase = TaperValue::from_position(piece_info);
+
+    // stand pad if not in check
+    if !in_check {
+        let color_multiplier = if P::IS_WHITE { 1 } else { -1 };
+        let static_eval = Score::<P>::new(static_eval(piece_info, phase) * color_multiplier);
+
+        best_value = static_eval;
+
+        if best_value >= beta {
+            return best_value;
+        }
+        if best_value > alpha {
+            alpha = best_value;
+        }
+    }
+
+    // consider captures (and quiets if in check)
+    let mut move_list = MoveList::default();
+    let n_moves = if in_check {
+        fold_legal_moves::<_, _, _>(pos, 0_u8, |curr, m| {
+            move_list[curr] = m;
+            ControlFlow::Continue::<(), _>(curr + 1)
+        })
+        .continue_value()
+        .unwrap()
+    }
+    else {
+        fold_legal_captures::<_, _, _>(pos, 0_u8, |curr, m| {
+            move_list[curr] = m;
+            ControlFlow::Continue::<(), _>(curr + 1)
+        })
+        .continue_value()
+        .unwrap()
+    };
+
+    // move ordering
+    move_list
+        .as_mut_slice(n_moves)
+        .sort_unstable_by_key(|&m| Reverse(PolicyInput::mvv_lva(pos.piece_info(), m)));
+
+    // recurse
+    for i in 0..n_moves {
+        let m = move_list[i];
+
+        // delta pruning
+        if !in_check && phase < TaperValue(16) {
+            let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {
+                piece_score(promo.into()) - piece_score(piece_type::PAWN)
+            }
+            else {
+                0
+            };
+
+            // SAFETY: we know this is a capture move.
+            let capture_square = unsafe { m.get_capture_sq().unwrap_unchecked() };
+            let captured_piece = pos.get_piece(capture_square);
+            let captured_value = piece_score(captured_piece.piece_type());
+
+            let futility_margin = 200;
+            let futility_score = captured_value + value_bonus + futility_margin;
+
+            if best_value + Score::new(futility_score) < alpha {
+                continue;
+            }
+        }
+
+        pos.make_move(m);
+
+        let score = !qsearch(pos, !beta, !alpha);
+
+        pos.unmake_move(m);
+
+        if score >= beta {
+            return score;
+        }
+        if score > best_value {
+            best_value = score;
+        }
+        if score > alpha {
+            alpha = score;
+        }
+    }
+
+    best_value
+}
+
+fn material(pos: &PieceInfo, color: Color) -> i32 {
+    (piece_type::PAWN..piece_type::KING)
+        .map(|p| pos.get_bitboard(p, color).pop_cnt() as i32 * piece_score(p))
+        .sum()
+}
+
+fn psqt(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
+    fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> i32 {
+        (piece_type::PAWN..=piece_type::KING)
+            .map(|piece| {
+                pos.get_bitboard(piece, color)
+                    .map(|sq| psqt_score(phase, piece, sq, color))
+                    .sum::<i32>()
+            })
             .sum()
     }
 
-    fn psqt(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
-        fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> i32 {
-            (piece_type::PAWN..=piece_type::KING)
-                .map(|piece| {
-                    pos.get_bitboard(piece, color)
-                        .map(|sq| psqt_score(phase, piece, sq, color))
-                        .sum::<i32>()
-                })
-                .sum()
-        }
+    let mg = score(pos, color, game_phases::MG);
+    let eg = score(pos, color, game_phases::EG);
+    phase.weighted_eval(mg, eg)
+}
 
-        let mg = score(pos, color, game_phases::MG);
-        let eg = score(pos, color, game_phases::EG);
-        phase.weighted_eval(mg, eg)
-    }
-
-    fn value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
-        Self::material(pos, color) + Self::psqt(pos, color, phase)
-    }
+fn static_value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
+    material(pos, color) + psqt(pos, color, phase)
 }
 
 #[derive(Debug, PartialEq, Default)]
@@ -272,6 +467,12 @@ impl PolicyInput {
     }
 }
 
+fn static_eval(pos: &PieceInfo, phase: TaperValue) -> i32 {
+    let w_q = static_value(pos, colors::WHITE, phase);
+    let b_q = static_value(pos, colors::BLACK, phase);
+    w_q - b_q
+}
+
 #[derive(Debug)]
 pub struct EvalInfo {
     /// The to-be-evaluated that this eval info is for.
@@ -288,14 +489,23 @@ pub struct EvalInfo {
 
     /// Current position state info.
     state: StateInfo,
+
+    /// State info of the position after quieting it.
+    quality: Cp,
 }
 
 impl EvalInfo {
-    pub fn new(node: CtNodeRef<Branching>, pos: &Position) -> Self {
+    pub fn new(node: CtNodeRef<Branching>, pos: &mut Position) -> Self {
+        let quality: Cp = match pos.get_turn().v() {
+            colors::WHITE_C => qsearch::<WhiteP>(pos, Score::NEG_INF, Score::POS_INF).into(),
+            colors::BLACK_C => qsearch::<BlackP>(pos, Score::NEG_INF, Score::POS_INF).into(),
+            _ => unreachable!(),
+        };
         Self {
+            quality,
             pos: pos.piece_info().clone(),
             state: pos.state_info().clone(),
-            phase: TaperValue::from_position(pos),
+            phase: TaperValue::from_position(pos.piece_info()),
             node,
             turn: pos.get_turn(),
         }
@@ -304,12 +514,7 @@ impl EvalInfo {
     /// Convert QualityInput into Quality, where the Quality is relative to
     /// white.
     fn quality(&self) -> Quality {
-        // get delta
-        let w_q = QualityInput::value(&self.pos, colors::WHITE, self.phase);
-        let b_q = QualityInput::value(&self.pos, colors::BLACK, self.phase);
-        let d = (w_q - b_q) as f32;
-        let cp = Cp(d as i16);
-        Quality::from(cp)
+        Quality::from(self.quality)
     }
 
     fn policy(&self) -> Policy {
@@ -353,7 +558,7 @@ impl Evaluator for StaticEvaluator {
     fn trace<S: const Valid + HasBranches>(
         &self,
         node: CtNodeRef<S>,
-        pos: &Position,
+        pos: &mut Position,
     ) -> Self::TraceData {
         node.try_into::<Branching>()
             .map(|node| EvalInfo::new(node, pos))

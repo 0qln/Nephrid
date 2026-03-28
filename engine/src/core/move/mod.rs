@@ -11,7 +11,9 @@ use crate::{
         bitboard::Bitboard,
         castling::{CastlingSideParseError, castling_sides},
         color::colors,
-        coordinates::{EpCaptureSquare, File, Rank, Square, SquareTokenizationError},
+        coordinates::{
+            EpCaptureSquare, EpTargetSquare, File, Rank, Square, SquareTokenizationError,
+        },
         move_iter::{
             bishop::Bishop,
             fold_legal_moves,
@@ -23,7 +25,7 @@ use crate::{
         piece::{Piece, PromoPieceTokenizationError, piece_type},
         position::{CheckState, Position},
     },
-    impl_variants,
+    impl_variants_with_assertion,
     misc::{ConstFrom, ValueOutOfRangeError},
     uci::tokens::Tokenizer,
 };
@@ -58,7 +60,7 @@ pub struct MoveFlag {
 
 pub type TMoveFlag = u8;
 
-impl_variants! {
+impl_variants_with_assertion! {
     TMoveFlag as MoveFlag in move_flags {
         QUIET,
         DOUBLE_PAWN_PUSH,
@@ -199,7 +201,11 @@ impl Move {
         let flag = self.get_flag();
         let to = self.get_to();
         match flag {
-            f::EN_PASSANT => EpCaptureSquare::try_from(to).ok()?.v(),
+            f::EN_PASSANT => {
+                let target_sq = EpTargetSquare::try_from(to).ok()?;
+                let capture_sq = EpCaptureSquare::from(target_sq);
+                capture_sq.v()
+            }
             f if f.is_capture() => Some(to),
             _ => None,
         }
@@ -482,6 +488,27 @@ impl From<Move> for usize {
 #[derive(Debug, Clone)]
 pub struct MoveList([Move; 256]);
 
+impl MoveList {
+    /// Returns a mutable slice of the initialized moves up to `len`.
+    pub fn as_mut_slice(&mut self, len: u8) -> &mut [Move] {
+        // SAFETY: len is guaranteed to be <= 256 because it's a u8.
+        unsafe { self.0.get_unchecked_mut(..len as usize) }
+    }
+
+    /// Returns an iterator over the initialized moves up to the first null
+    /// move.
+    ///
+    /// NOTE: This could maybe be written more efficently. And also, just use
+    /// indexing instead maybe, since we can easily prove the bounds checks
+    /// in most cases.
+    pub fn iter(&self) -> impl Iterator<Item = Move> {
+        self.0
+            .iter()
+            .take_while(|&mov| *mov != Move::null())
+            .copied()
+    }
+}
+
 impl Default for MoveList {
     fn default() -> Self {
         Self([Move::default(); 256])
@@ -499,5 +526,16 @@ impl Index<u8> for MoveList {
 impl IndexMut<u8> for MoveList {
     fn index_mut(&mut self, index: u8) -> &mut Self::Output {
         unsafe { self.0.get_unchecked_mut(index as usize) }
+    }
+}
+
+impl fmt::Display for MoveList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let moves = self
+            .0
+            .iter()
+            .take_while(|mov| mov.v != 0)
+            .map(|mov| mov.to_string());
+        write!(f, "[{}]", moves.collect::<Vec<_>>().join(", "))
     }
 }

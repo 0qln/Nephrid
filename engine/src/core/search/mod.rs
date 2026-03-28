@@ -84,8 +84,8 @@ impl Worker {
 
     pub fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
         match cmd {
-            Command::Perft(pos, limit, ct, debug) => {
-                perft(pos, limit, ct, debug);
+            Command::Perft(mut pos, limit, ct, debug) => {
+                perft::<true>(&mut pos, &limit, ct, debug);
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
@@ -261,4 +261,3 @@ impl PonderToken {
         self.0.store(false, Ordering::Relaxed)
     }
 }
-
