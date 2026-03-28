@@ -353,10 +353,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
             };
 
             // SAFETY: we know this is a capture move.
-            let capture_square = unsafe {
-                m.get_capture_sq()
-                    .unwrap_or_else(|| panic!("got {m:?} during qsearch, which si not a capture!"))
-            };
+            let capture_square = unsafe { m.get_capture_sq().unwrap_unchecked() };
             let captured_piece = pos.get_piece(capture_square);
             let captured_value = piece_score(captured_piece.piece_type());
 
