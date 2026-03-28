@@ -190,13 +190,13 @@ pub fn is_blocker(pos: &Position, piece: Square) -> bool {
 #[inline]
 pub fn pin_mask(pos: &Position, piece: Square) -> Bitboard {
     if is_blocker(pos, piece) {
-        // Safety: We check if the bb is empty of not.
-        let king = unsafe {
-            let color = pos.get_turn();
-            // todo: safely remove branching
-            let bb = pos.get_bitboard(King::ID, color)?;
-            bb.lsb().unwrap_unchecked()
-        };
+        let color = pos.get_turn();
+
+        // todo: safely remove branching
+        let bb = pos.get_bitboard(King::ID, color)?;
+
+        // Safety: We check whether the bb is empty.
+        let king = unsafe { bb.lsb().unwrap_unchecked() };
         Bitboard::ray(piece, king)
     }
     else {

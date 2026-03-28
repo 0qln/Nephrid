@@ -9,7 +9,7 @@ use crate::{
         coordinates::{
             CompassRose, EpTargetSquare, File, Square, TCompassRose, compass_rose, files, squares,
         },
-        r#move::{Move, MoveFlag, move_flags},
+        r#move::{Move, MoveFlag, TMoveFlag, move_flags},
         piece::{IPieceType, piece_type},
         position::Position,
     },
@@ -24,150 +24,136 @@ mod helpers;
 
 pub struct Pawn;
 
-pub struct PawnMoves<'a> {
+trait Variant {}
+
+mod variants {
+    use super::*;
+
+    pub struct Pinned<'a> {
+        pub pos: &'a Position,
+    }
+    impl Variant for Pinned<'_> {}
+
+    pub struct Unpinned;
+    impl Variant for Unpinned {}
+}
+
+struct PawnMoves<V: Variant> {
     from: Bitboard,
     to: Bitboard,
     flag: MoveFlag,
-    pos: &'a Position,
+    v_data: V,
 }
 
-impl<'a> PawnMoves<'a> {
+impl<V: Variant> PawnMoves<V> {
     #[inline(always)]
-    fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, pos: &'a Position) -> Self {
+    fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, v_data: V) -> Self {
         debug_assert!(
             from.pop_cnt() >= to.pop_cnt(),
             "From needs to have atleast as many squares as to."
         );
-        Self { from, to, flag, pos }
+        Self { from, to, flag, v_data }
     }
 
     #[inline(always)]
-    fn single_step<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
+    fn single_step<const Q: bool, const C: TColor, T: NoDoubleCheck>(
+        pos: &Position,
+        pawns: Bitboard,
+        v_data: V,
+    ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
-        let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let non_promo_pawns = pawns & !Bitboard::from_c(promo_rank(color));
         let pieces = pos.get_occupancy();
         let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
         let single_step_tabus = backward(tabu_squares, single_step(color));
         let from = non_promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
-        Self::new(from, to, move_flags::QUIET, pos)
+        Self::new(from, to, move_flags::QUIET, v_data)
     }
 
     #[inline(always)]
-    fn double_step<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
+    fn double_step<const Q: bool, const C: TColor, T: NoDoubleCheck>(
+        pos: &Position,
+        pawns: Bitboard,
+        v_data: V,
+    ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let pieces = pos.get_occupancy();
         let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
         let single_step_tabus = backward(pieces, single_step(color));
         let double_step_tabus = backward(tabu_squares, double_step(color)) | single_step_tabus;
-        let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let double_step_pawns = pawns & Bitboard::from_c(start_rank(color));
         let from = double_step_pawns & !double_step_tabus;
         let to = forward(from, double_step(color));
-        Self::new(from, to, move_flags::DOUBLE_PAWN_PUSH, pos)
+        Self::new(from, to, move_flags::DOUBLE_PAWN_PUSH, v_data)
     }
 
     #[inline(always)]
     fn capture<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
-        pos: &'a Position,
+        pos: &Position,
+        pawns: Bitboard,
+        v_data: V,
     ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let capture_dir = capture(color, CompassRose::new(DIR));
-        let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let non_promo_pawns = pawns & !Bitboard::from_c(promo_rank(color));
         let capturing_pawns = non_promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
         let to = forward(capturing_pawns, capture_dir) & T::captures_mask(pos, color);
         let from = backward(to, capture_dir);
-        Self::new(from, to, move_flags::CAPTURE, pos)
+        Self::new(from, to, move_flags::CAPTURE, v_data)
     }
 
     #[inline(always)]
-    fn promo_knight<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<Q, C, T>(pos, move_flags::PROMOTION_KNIGHT)
-    }
-
-    #[inline(always)]
-    fn promo_bishop<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<Q, C, T>(pos, move_flags::PROMOTION_BISHOP)
-    }
-
-    #[inline(always)]
-    fn promo_rook<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<Q, C, T>(pos, move_flags::PROMOTION_ROOK)
-    }
-
-    #[inline(always)]
-    fn promo_queen<const Q: bool, const C: TColor, T: NoDoubleCheck>(pos: &'a Position) -> Self {
-        Self::promo::<Q, C, T>(pos, move_flags::PROMOTION_QUEEN)
-    }
-
-    #[inline(always)]
-    fn promo<const Q: bool, const C: TColor, T: NoDoubleCheck>(
-        pos: &'a Position,
-        flag: MoveFlag,
+    fn promo<const Q: bool, const C: TColor, T: NoDoubleCheck, const F: TMoveFlag>(
+        pos: &Position,
+        pawns: Bitboard,
+        v_data: V,
     ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
+        MoveFlag::assert_variant(F); // Safety
+        let flag = unsafe { MoveFlag::from_v(F) };
         let pieces = pos.get_occupancy();
         let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
         let single_step_tabus = backward(tabu_squares, single_step(color));
-        let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let promo_pawns = pawns & Bitboard::from_c(promo_rank(color));
         let from = promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
-        Self::new(from, to, flag, pos)
+        Self::new(from, to, flag, v_data)
     }
 
     #[inline(always)]
-    fn promo_capture_knight<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
-        pos: &'a Position,
-    ) -> Self {
-        Self::pl_promo_capture::<C, DIR, T>(pos, move_flags::CAPTURE_PROMOTION_KNIGHT)
-    }
-
-    #[inline(always)]
-    fn promo_capture_bishop<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
-        pos: &'a Position,
-    ) -> Self {
-        Self::pl_promo_capture::<C, DIR, T>(pos, move_flags::CAPTURE_PROMOTION_BISHOP)
-    }
-
-    #[inline(always)]
-    fn promo_capture_rook<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
-        pos: &'a Position,
-    ) -> Self {
-        Self::pl_promo_capture::<C, DIR, T>(pos, move_flags::CAPTURE_PROMOTION_ROOK)
-    }
-
-    #[inline(always)]
-    fn promo_capture_queen<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
-        pos: &'a Position,
-    ) -> Self {
-        Self::pl_promo_capture::<C, DIR, T>(pos, move_flags::CAPTURE_PROMOTION_QUEEN)
-    }
-
-    #[inline(always)]
-    fn pl_promo_capture<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
-        pos: &'a Position,
-        flag: MoveFlag,
+    fn promo_capture<
+        const C: TColor,
+        const DIR: TCompassRose,
+        T: NoDoubleCheck,
+        const F: TMoveFlag,
+    >(
+        pos: &Position,
+        pawns: Bitboard,
+        v_data: V,
     ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
+        MoveFlag::assert_variant(F); // Safety
+        let flag = unsafe { MoveFlag::from_v(F) };
         let capture_dir = capture(color, CompassRose::new(DIR));
-        let pawns = pos.get_bitboard(piece_type::PAWN, color);
         let promo_pawns = pawns & Bitboard::from_c(promo_rank(color));
         let capture_west_pawns = promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
         let to = forward(capture_west_pawns, capture_dir) & T::captures_mask(pos, color);
         let from = backward(to, capture_dir);
-        Self::new(from, to, flag, pos)
+        Self::new(from, to, flag, v_data)
     }
 
     #[inline(always)]
-    fn ep<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(pos: &'a Position) -> Self {
+    fn ep<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
+        pos: &Position,
+        pawns: Bitboard,
+        v_data: V,
+    ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let capture_sq = pos.get_ep_capture_square();
@@ -178,7 +164,6 @@ impl<'a> PawnMoves<'a> {
         }
         else {
             let capture_dir = capture(color, CompassRose::new(DIR));
-            let pawns = pos.get_bitboard(piece_type::PAWN, color);
             let capturing_pawns = pawns & !Bitboard::from_c(File::edge::<DIR>());
             let from = backward(forward(capturing_pawns, capture_dir) & to, capture_dir);
             if from.is_empty() {
@@ -211,11 +196,11 @@ impl<'a> PawnMoves<'a> {
                 }
             }
         };
-        Self::new(from, to, move_flags::EN_PASSANT, pos)
+        Self::new(from, to, move_flags::EN_PASSANT, v_data)
     }
 }
 
-impl Iterator for PawnMoves<'_> {
+impl Iterator for PawnMoves<variants::Pinned<'_>> {
     type Item = Move;
 
     #[inline(always)]
@@ -230,7 +215,7 @@ impl Iterator for PawnMoves<'_> {
             // maybe we can remove this inner loop aswell.
 
             // Check if the pawn is pinned and the move is valid.
-            let pin_mask = pin_mask(self.pos, from);
+            let pin_mask = pin_mask(self.v_data.pos, from);
             if (pin_mask & Bitboard::from_c(to)).is_empty() {
                 continue;
             }
@@ -239,6 +224,17 @@ impl Iterator for PawnMoves<'_> {
         }
 
         None
+    }
+}
+
+impl Iterator for PawnMoves<variants::Unpinned> {
+    type Item = Move;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let to = self.to.pop_lsb()?;
+        let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
+        Some(Move::new(from, to, self.flag))
     }
 }
 
@@ -253,41 +249,87 @@ where
     R: Try<Output = B>,
 {
     macro_rules! apply {
-        ($init:expr, $($constructor:expr),+) => {
+        ($init:expr, $pawns:expr, $v_data:expr, $($constructor:expr),+) => {
             {
-                let mut acc = $init;
+                let mut __acc = $init;
                 $(
-                    acc = $constructor(pos).try_fold(acc, &mut f)?;
+                    __acc = $constructor(pos, $pawns, $v_data).try_fold(__acc, &mut f)?;
                 )+
-                try { acc }
+                __acc
             }
         };
     }
 
-    type P<'a> = PawnMoves<'a>;
-
     // todo: tune the ordering
-    apply!(
-        init,
-        P::single_step::<Q, C, T>,
-        P::double_step::<Q, C, T>,
-        P::promo_knight::<Q, C, T>,
-        P::promo_bishop::<Q, C, T>,
-        P::promo_rook::<Q, C, T>,
-        P::promo_queen::<Q, C, T>,
-        P::capture::<C, { compass_rose::WEST_C }, T>,
-        P::capture::<C, { compass_rose::EAST_C }, T>,
-        P::ep::<C, { compass_rose::WEST_C }, T>,
-        P::ep::<C, { compass_rose::EAST_C }, T>,
-        P::promo_capture_knight::<C, { compass_rose::WEST_C }, T>,
-        P::promo_capture_knight::<C, { compass_rose::EAST_C }, T>,
-        P::promo_capture_bishop::<C, { compass_rose::WEST_C }, T>,
-        P::promo_capture_bishop::<C, { compass_rose::EAST_C }, T>,
-        P::promo_capture_rook::<C, { compass_rose::WEST_C }, T>,
-        P::promo_capture_rook::<C, { compass_rose::EAST_C }, T>,
-        P::promo_capture_queen::<C, { compass_rose::WEST_C }, T>,
-        P::promo_capture_queen::<C, { compass_rose::EAST_C }, T>
-    )
+
+    let color = unsafe { Color::from_v(C) };
+    let all_pawns = pos.get_bitboard(piece_type::PAWN, color);
+    let pinned_bb = pos.get_blockers();
+    let safe_pawns = Bitboard { v: all_pawns.v & !pinned_bb.v };
+    let pinned_pawns = Bitboard { v: all_pawns.v & pinned_bb.v };
+
+    let mut acc = init;
+
+    // 3. THE FAST PATH (Branchless, executes 99% of the time)
+    if !safe_pawns.is_empty() {
+        type P = PawnMoves<variants::Unpinned>;
+        use move_flags as flags;
+
+        acc = apply!(
+            acc,
+            safe_pawns,
+            variants::Unpinned,
+            P::single_step::<Q, C, T>,
+            P::double_step::<Q, C, T>,
+            P::promo::<Q, C, T, { flags::PROMOTION_KNIGHT_C }>,
+            P::promo::<Q, C, T, { flags::PROMOTION_BISHOP_C }>,
+            P::promo::<Q, C, T, { flags::PROMOTION_ROOK_C }>,
+            P::promo::<Q, C, T, { flags::PROMOTION_QUEEN_C }>,
+            P::capture::<C, { compass_rose::WEST_C }, T>,
+            P::capture::<C, { compass_rose::EAST_C }, T>,
+            P::ep::<C, { compass_rose::WEST_C }, T>,
+            P::ep::<C, { compass_rose::EAST_C }, T>,
+            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_KNIGHT_C }>,
+            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_KNIGHT_C }>,
+            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_BISHOP_C }>,
+            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_BISHOP_C }>,
+            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_ROOK_C }>,
+            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_ROOK_C }>,
+            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_QUEEN_C }>,
+            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_QUEEN_C }>
+        );
+    }
+
+    if !pinned_pawns.is_empty() {
+        type P<'a> = PawnMoves<variants::Pinned<'a>>;
+        use move_flags as flags;
+
+        acc = apply!(
+            acc,
+            pinned_pawns,
+            variants::Pinned { pos },
+            P::single_step::<Q, C, T>,
+            P::double_step::<Q, C, T>,
+            P::promo::<Q, C, T, { move_flags::PROMOTION_KNIGHT_C }>,
+            P::promo::<Q, C, T, { move_flags::PROMOTION_BISHOP_C }>,
+            P::promo::<Q, C, T, { move_flags::PROMOTION_ROOK_C }>,
+            P::promo::<Q, C, T, { move_flags::PROMOTION_QUEEN_C }>,
+            P::capture::<C, { compass_rose::WEST_C }, T>,
+            P::capture::<C, { compass_rose::EAST_C }, T>,
+            P::ep::<C, { compass_rose::WEST_C }, T>,
+            P::ep::<C, { compass_rose::EAST_C }, T>,
+            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_KNIGHT_C }>,
+            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_KNIGHT_C }>,
+            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_BISHOP_C }>,
+            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_BISHOP_C }>,
+            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_ROOK_C }>,
+            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_ROOK_C }>,
+            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_QUEEN_C }>,
+            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_QUEEN_C }>
+        );
+    }
+
+    try { acc }
 }
 
 impl<const Q: bool, C: NoDoubleCheck> FoldMoves<C, Q> for Pawn {

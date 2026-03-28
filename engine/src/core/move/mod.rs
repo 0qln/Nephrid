@@ -22,10 +22,7 @@ use crate::{
         },
         piece::{Piece, PromoPieceTokenizationError, piece_type},
         position::{CheckState, Position},
-    },
-    impl_variants,
-    misc::{ConstFrom, ValueOutOfRangeError},
-    uci::tokens::Tokenizer,
+    }, impl_variants, impl_variants_with_assertion, misc::{ConstFrom, ValueOutOfRangeError}, uci::tokens::Tokenizer
 };
 
 use super::{castling::CastlingSide, piece::PromoPieceType};
@@ -58,7 +55,7 @@ pub struct MoveFlag {
 
 pub type TMoveFlag = u8;
 
-impl_variants! {
+impl_variants_with_assertion! {
     TMoveFlag as MoveFlag in move_flags {
         QUIET,
         DOUBLE_PAWN_PUSH,
