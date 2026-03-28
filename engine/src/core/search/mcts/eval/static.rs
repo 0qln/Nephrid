@@ -344,7 +344,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
         let m = move_list[i];
 
         // delta pruning
-        if !in_check && phase >= TaperValue(16) {
+        if !in_check && phase < TaperValue(16) {
             let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {
                 piece_score(promo.into()) - piece_score(piece_type::PAWN)
             }
