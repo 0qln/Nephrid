@@ -220,22 +220,26 @@ impl Perspective for BlackP {
     type Opponent = WhiteP;
 }
 
-#[derive(Debug, Copy, Clone, Eq, Ord)]
+#[derive(Debug, Copy, Clone)]
 pub struct Score<P: Perspective>(pub i32, PhantomData<P>);
+
+impl<P: Perspective> Eq for Score<P> {}
+
+impl<P: Perspective> Ord for Score<P> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0).then_with(|| self.1.cmp(&other.1))
+    }
+}
 
 impl<P: Perspective> PartialOrd for Score<P> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.0.partial_cmp(&other.0) {
-            Some(core::cmp::Ordering::Equal) => {}
-            ord => return ord,
-        }
-        self.1.partial_cmp(&other.1)
+        Some(self.cmp(other))
     }
 }
 
 impl<P: Perspective> PartialEq for Score<P> {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0 && self.1 == other.1
+        self.0 == other.0
     }
 }
 
