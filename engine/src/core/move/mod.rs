@@ -11,7 +11,9 @@ use crate::{
         bitboard::Bitboard,
         castling::{CastlingSideParseError, castling_sides},
         color::colors,
-        coordinates::{EpCaptureSquare, File, Rank, Square, SquareTokenizationError},
+        coordinates::{
+            EpCaptureSquare, EpTargetSquare, File, Rank, Square, SquareTokenizationError,
+        },
         move_iter::{
             bishop::Bishop,
             fold_legal_moves,
@@ -22,7 +24,10 @@ use crate::{
         },
         piece::{Piece, PromoPieceTokenizationError, piece_type},
         position::{CheckState, Position},
-    }, impl_variants_with_assertion, misc::{ConstFrom, ValueOutOfRangeError}, uci::tokens::Tokenizer
+    },
+    impl_variants_with_assertion,
+    misc::{ConstFrom, ValueOutOfRangeError},
+    uci::tokens::Tokenizer,
 };
 
 use super::{castling::CastlingSide, piece::PromoPieceType};
@@ -196,7 +201,11 @@ impl Move {
         let flag = self.get_flag();
         let to = self.get_to();
         match flag {
-            f::EN_PASSANT => EpCaptureSquare::try_from(to).ok()?.v(),
+            f::EN_PASSANT => {
+                let target_sq = EpTargetSquare::try_from(to).ok()?;
+                let capture_sq = EpCaptureSquare::from(target_sq);
+                capture_sq.v()
+            }
             f if f.is_capture() => Some(to),
             _ => None,
         }
