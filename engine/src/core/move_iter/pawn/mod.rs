@@ -9,7 +9,7 @@ use crate::{
         coordinates::{
             CompassRose, EpTargetSquare, File, Square, TCompassRose, compass_rose, files, squares,
         },
-        r#move::{Move, MoveFlag, TMoveFlag, move_flags},
+        r#move::{Move, MoveFlag, move_flags},
         piece::{IPieceType, piece_type},
         position::Position,
     },
@@ -20,34 +20,64 @@ use std::ops::Try;
 
 use helpers::*;
 
+use variants::Variant;
+
 mod helpers;
 
 pub struct Pawn;
 
-trait Variant {}
-
 mod variants {
+    use std::marker::PhantomData;
+
     use super::*;
 
-    pub struct Pinned<'a> {
-        pub pos: &'a Position,
+    pub trait Variant {
+        type Promo: Promo;
+        type Data;
     }
-    impl Variant for Pinned<'_> {}
+    pub trait Promo: Variant {}
+
+    pub struct Pinned<'a> {
+        pub _pos: PhantomData<&'a ()>,
+    }
+    impl<'a> Variant for Pinned<'a> {
+        type Promo = PromoPinned<'a>;
+        type Data = &'a Position;
+    }
+
+    pub struct PromoPinned<'a> {
+        pub _pos: PhantomData<&'a ()>,
+    }
+    impl Promo for PromoPinned<'_> {}
+    impl<'a> Variant for PromoPinned<'a> {
+        type Promo = Self;
+        type Data = &'a Position;
+    }
 
     pub struct Unpinned;
-    impl Variant for Unpinned {}
+    impl Variant for Unpinned {
+        type Promo = PromoUnpinned;
+        type Data = ();
+    }
+
+    pub struct PromoUnpinned;
+    impl Promo for PromoUnpinned {}
+    impl Variant for PromoUnpinned {
+        type Promo = Self;
+        type Data = ();
+    }
 }
 
 struct PawnMoves<V: Variant> {
     from: Bitboard,
     to: Bitboard,
     flag: MoveFlag,
-    v_data: V,
+    v_data: V::Data,
 }
 
 impl<V: Variant> PawnMoves<V> {
     #[inline(always)]
-    fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, v_data: V) -> Self {
+    fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, v_data: V::Data) -> Self {
         debug_assert!(
             from.pop_cnt() >= to.pop_cnt(),
             "From needs to have atleast as many squares as to."
@@ -59,7 +89,7 @@ impl<V: Variant> PawnMoves<V> {
     fn single_step<const Q: bool, const C: TColor, T: NoDoubleCheck>(
         pos: &Position,
         pawns: Bitboard,
-        v_data: V,
+        v_data: V::Data,
     ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
@@ -76,7 +106,7 @@ impl<V: Variant> PawnMoves<V> {
     fn double_step<const Q: bool, const C: TColor, T: NoDoubleCheck>(
         pos: &Position,
         pawns: Bitboard,
-        v_data: V,
+        v_data: V::Data,
     ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
@@ -94,7 +124,7 @@ impl<V: Variant> PawnMoves<V> {
     fn capture<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
         pos: &Position,
         pawns: Bitboard,
-        v_data: V,
+        v_data: V::Data,
     ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
@@ -107,52 +137,10 @@ impl<V: Variant> PawnMoves<V> {
     }
 
     #[inline(always)]
-    fn promo<const Q: bool, const C: TColor, T: NoDoubleCheck, const F: TMoveFlag>(
-        pos: &Position,
-        pawns: Bitboard,
-        v_data: V,
-    ) -> Self {
-        Color::assert_variant(C); // Safety
-        let color = unsafe { Color::from_v(C) };
-        MoveFlag::assert_variant(F); // Safety
-        let flag = unsafe { MoveFlag::from_v(F) };
-        let pieces = pos.get_occupancy();
-        let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
-        let single_step_tabus = backward(tabu_squares, single_step(color));
-        let promo_pawns = pawns & Bitboard::from_c(promo_rank(color));
-        let from = promo_pawns & !single_step_tabus;
-        let to = forward(from, single_step(color));
-        Self::new(from, to, flag, v_data)
-    }
-
-    #[inline(always)]
-    fn promo_capture<
-        const C: TColor,
-        const DIR: TCompassRose,
-        T: NoDoubleCheck,
-        const F: TMoveFlag,
-    >(
-        pos: &Position,
-        pawns: Bitboard,
-        v_data: V,
-    ) -> Self {
-        Color::assert_variant(C); // Safety
-        let color = unsafe { Color::from_v(C) };
-        MoveFlag::assert_variant(F); // Safety
-        let flag = unsafe { MoveFlag::from_v(F) };
-        let capture_dir = capture(color, CompassRose::new(DIR));
-        let promo_pawns = pawns & Bitboard::from_c(promo_rank(color));
-        let capture_west_pawns = promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
-        let to = forward(capture_west_pawns, capture_dir) & T::captures_mask(pos, color);
-        let from = backward(to, capture_dir);
-        Self::new(from, to, flag, v_data)
-    }
-
-    #[inline(always)]
     fn ep<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
         pos: &Position,
         pawns: Bitboard,
-        v_data: V,
+        v_data: V::Data,
     ) -> Self {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
@@ -198,7 +186,44 @@ impl<V: Variant> PawnMoves<V> {
         };
         Self::new(from, to, move_flags::EN_PASSANT, v_data)
     }
+
+    #[inline(always)]
+    fn promo<const Q: bool, const C: TColor, T: NoDoubleCheck>(
+        pos: &Position,
+        pawns: Bitboard,
+        v_data: <<V as Variant>::Promo as Variant>::Data,
+    ) -> PawnMoves<V::Promo> {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let pieces = pos.get_occupancy();
+        let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
+        let single_step_tabus = backward(tabu_squares, single_step(color));
+        let promo_pawns = pawns & Bitboard::from_c(promo_rank(color));
+        let from = promo_pawns & !single_step_tabus;
+        let to = forward(from, single_step(color));
+        let flag_base = move_flags::PROMOTION_KNIGHT;
+        PawnMoves::<V::Promo>::new(from, to, flag_base, v_data)
+    }
+
+    #[inline(always)]
+    fn promo_capture<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
+        pos: &Position,
+        pawns: Bitboard,
+        v_data: <<V as Variant>::Promo as Variant>::Data,
+    ) -> PawnMoves<V::Promo> {
+        Color::assert_variant(C); // Safety
+        let color = unsafe { Color::from_v(C) };
+        let capture_dir = capture(color, CompassRose::new(DIR));
+        let promo_pawns = pawns & Bitboard::from_c(promo_rank(color));
+        let capture_west_pawns = promo_pawns & !Bitboard::from_c(File::edge::<DIR>());
+        let to = forward(capture_west_pawns, capture_dir) & T::captures_mask(pos, color);
+        let from = backward(to, capture_dir);
+        let flag_base = move_flags::CAPTURE_PROMOTION_KNIGHT;
+        PawnMoves::<V::Promo>::new(from, to, flag_base, v_data)
+    }
 }
+
+impl<V: Variant> PawnMoves<V> {}
 
 impl Iterator for PawnMoves<variants::Pinned<'_>> {
     type Item = Move;
@@ -211,7 +236,7 @@ impl Iterator for PawnMoves<variants::Pinned<'_>> {
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
 
             // Check if the pawn is pinned and the move is valid.
-            let pin_mask = pin_mask(self.v_data.pos, from);
+            let pin_mask = pin_mask(self.v_data, from);
             if (pin_mask & Bitboard::from_c(to)).is_empty() {
                 continue;
             }
@@ -231,6 +256,55 @@ impl Iterator for PawnMoves<variants::Unpinned> {
         let to = self.to.pop_lsb()?;
         let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
         Some(Move::new(from, to, self.flag))
+    }
+}
+
+impl PawnMoves<variants::PromoUnpinned> {
+    #[inline(always)]
+    fn try_fold<B, F, R>(&mut self, init: B, mut f: F) -> R
+    where
+        F: FnMut(B, Move) -> R,
+        R: Try<Output = B>,
+    {
+        let mut acc = init;
+        while let Some(to) = self.to.pop_lsb() {
+            let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
+            let flag_base = self.flag;
+            for flag_offset in 0..4 {
+                let flag = flag_base.v() + flag_offset;
+                let flag = unsafe { MoveFlag::try_from(flag).unwrap_unchecked() };
+                acc = f(acc, Move::new(from, to, flag))?;
+            }
+        }
+        try { acc }
+    }
+}
+
+impl PawnMoves<variants::PromoPinned<'_>> {
+    #[inline(always)]
+    fn try_fold<B, F, R>(&mut self, init: B, mut f: F) -> R
+    where
+        F: FnMut(B, Move) -> R,
+        R: Try<Output = B>,
+    {
+        let mut acc = init;
+        while let Some(to) = self.to.pop_lsb() {
+            let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
+
+            // verify the pin mask for pinned promotions
+            let pin_mask = pin_mask(self.v_data, from);
+            if (pin_mask & Bitboard::from_c(to)).is_empty() {
+                continue;
+            }
+
+            let flag_base = self.flag;
+            for flag_offset in 0..4 {
+                let flag = flag_base.v() + flag_offset;
+                let flag = unsafe { MoveFlag::try_from(flag).unwrap_unchecked() };
+                acc = f(acc, Move::new(from, to, flag))?;
+            }
+        }
+        try { acc }
     }
 }
 
@@ -269,59 +343,39 @@ where
     // 3. THE FAST PATH (Branchless, executes 99% of the time)
     if !safe_pawns.is_empty() {
         type P = PawnMoves<variants::Unpinned>;
-        use move_flags as flags;
 
         acc = apply!(
             acc,
             safe_pawns,
-            variants::Unpinned,
+            (),
             P::single_step::<Q, C, T>,
             P::double_step::<Q, C, T>,
-            P::promo::<Q, C, T, { flags::PROMOTION_KNIGHT_C }>,
-            P::promo::<Q, C, T, { flags::PROMOTION_BISHOP_C }>,
-            P::promo::<Q, C, T, { flags::PROMOTION_ROOK_C }>,
-            P::promo::<Q, C, T, { flags::PROMOTION_QUEEN_C }>,
             P::capture::<C, { compass_rose::WEST_C }, T>,
             P::capture::<C, { compass_rose::EAST_C }, T>,
             P::ep::<C, { compass_rose::WEST_C }, T>,
             P::ep::<C, { compass_rose::EAST_C }, T>,
-            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_KNIGHT_C }>,
-            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_KNIGHT_C }>,
-            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_BISHOP_C }>,
-            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_BISHOP_C }>,
-            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_ROOK_C }>,
-            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_ROOK_C }>,
-            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_QUEEN_C }>,
-            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_QUEEN_C }>
+            P::promo::<Q, C, T>,
+            P::promo_capture::<C, { compass_rose::WEST_C }, T>,
+            P::promo_capture::<C, { compass_rose::EAST_C }, T>
         );
     }
 
     if !pinned_pawns.is_empty() {
         type P<'a> = PawnMoves<variants::Pinned<'a>>;
-        use move_flags as flags;
 
         acc = apply!(
             acc,
             pinned_pawns,
-            variants::Pinned { pos },
+            pos,
             P::single_step::<Q, C, T>,
             P::double_step::<Q, C, T>,
-            P::promo::<Q, C, T, { move_flags::PROMOTION_KNIGHT_C }>,
-            P::promo::<Q, C, T, { move_flags::PROMOTION_BISHOP_C }>,
-            P::promo::<Q, C, T, { move_flags::PROMOTION_ROOK_C }>,
-            P::promo::<Q, C, T, { move_flags::PROMOTION_QUEEN_C }>,
             P::capture::<C, { compass_rose::WEST_C }, T>,
             P::capture::<C, { compass_rose::EAST_C }, T>,
             P::ep::<C, { compass_rose::WEST_C }, T>,
             P::ep::<C, { compass_rose::EAST_C }, T>,
-            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_KNIGHT_C }>,
-            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_KNIGHT_C }>,
-            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_BISHOP_C }>,
-            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_BISHOP_C }>,
-            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_ROOK_C }>,
-            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_ROOK_C }>,
-            P::promo_capture::<C, { compass_rose::WEST_C }, T, { flags::CAPTURE_PROMOTION_QUEEN_C }>,
-            P::promo_capture::<C, { compass_rose::EAST_C }, T, { flags::CAPTURE_PROMOTION_QUEEN_C }>
+            P::promo::<Q, C, T>,
+            P::promo_capture::<C, { compass_rose::WEST_C }, T>,
+            P::promo_capture::<C, { compass_rose::EAST_C }, T>
         );
     }
 
