@@ -1,6 +1,11 @@
 use std::{cmp::Reverse, marker::PhantomData, ops};
 
-use crate::core::{r#move::MoveList, move_iter::fold_legal_captures, turn::Turn};
+use crate::core::{
+    r#move::MoveList,
+    move_iter::{fold_legal_captures, fold_legal_moves},
+    position::CheckState,
+    turn::Turn,
+};
 
 use crate::{
     core::{
@@ -280,32 +285,50 @@ impl<P: Perspective> From<Score<P>> for Cp {
 ///
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
 fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<P>) -> Score<P> {
-    // Evaluated at compile time!
-    let color_multiplier = if P::IS_WHITE { 1 } else { -1 };
-    let static_eval = Score::<P>::new(static_eval(pos.piece_info()) * color_multiplier);
+    let in_check = pos.get_check_state() != CheckState::None;
 
-    let mut best_value = static_eval;
-    if best_value >= beta {
-        return best_value;
-    }
-    if best_value > alpha {
-        alpha = best_value;
+    let mut best_value = Score::NEG_INF;
+
+    // stand pad if not in check
+    if !in_check {
+        let color_multiplier = if P::IS_WHITE { 1 } else { -1 };
+        let static_eval = Score::<P>::new(static_eval(pos.piece_info()) * color_multiplier);
+
+        best_value = static_eval;
+
+        if best_value >= beta {
+            return best_value;
+        }
+        if best_value > alpha {
+            alpha = best_value;
+        }
     }
 
+    // consider captures (and quiets if in check)
     let mut move_list = MoveList::default();
-    let n_moves = fold_legal_captures::<_, _, _>(pos, 0_u8, |curr, m| {
-        move_list[curr] = m;
-        ControlFlow::Continue::<(), _>(curr + 1)
-    })
-    .continue_value()
-    .unwrap();
+    let n_moves = if in_check {
+        fold_legal_moves::<_, _, _>(pos, 0_u8, |curr, m| {
+            move_list[curr] = m;
+            ControlFlow::Continue::<(), _>(curr + 1)
+        })
+        .continue_value()
+        .unwrap()
+    }
+    else {
+        fold_legal_captures::<_, _, _>(pos, 0_u8, |curr, m| {
+            move_list[curr] = m;
+            ControlFlow::Continue::<(), _>(curr + 1)
+        })
+        .continue_value()
+        .unwrap()
+    };
 
-    let moves = &mut move_list.as_mut_slice(n_moves);
-    moves.sort_unstable_by_key(|&m| {
-        // Reverse sorts it in descending order (highest MVV-LVA score first)
-        Reverse(PolicyInput::mvv_lva(pos.piece_info(), m))
-    });
+    // move ordering
+    move_list
+        .as_mut_slice(n_moves)
+        .sort_unstable_by_key(|&m| Reverse(PolicyInput::mvv_lva(pos.piece_info(), m)));
 
+    // recurse
     for i in 0..n_moves {
         let m = move_list[i];
         pos.make_move(m);
@@ -428,8 +451,6 @@ pub struct EvalInfo {
     /// State info of the position after quieting it.
     quality: Cp,
 }
-
-mod values {}
 
 impl EvalInfo {
     pub fn new(node: CtNodeRef<Branching>, pos: &mut Position) -> Self {
