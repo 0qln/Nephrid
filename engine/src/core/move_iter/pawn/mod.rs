@@ -210,10 +210,6 @@ impl Iterator for PawnMoves<variants::Pinned<'_>> {
             // per 'to' square, so unwrap_unchecked is safe.
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
 
-            // todo: the result of this branch is the same for some of the moves,
-            // e.g: single and double step, so it can be cached.
-            // maybe we can remove this inner loop aswell.
-
             // Check if the pawn is pinned and the move is valid.
             let pin_mask = pin_mask(self.v_data.pos, from);
             if (pin_mask & Bitboard::from_c(to)).is_empty() {
