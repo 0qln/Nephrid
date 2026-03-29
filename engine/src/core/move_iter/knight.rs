@@ -13,6 +13,7 @@ use crate::{
 };
 
 use const_for::const_for;
+use ghost_cell::{GhostCell, GhostToken};
 
 use super::{FoldMoves, NoDoubleCheck, is_blocker};
 
@@ -38,6 +39,36 @@ impl<const Q: bool, C: NoDoubleCheck> FoldMoves<C, Q> for Knight {
             .try_fold(init, |mut acc, (captures, quiets, from)| {
                 acc = map_captures(captures, from).try_fold(acc, &mut f)?;
                 map_quiets(quiets, from).try_fold(acc, &mut f)
+            })
+    }
+
+    #[inline(always)]
+    fn fold_moves_g<'brand, B, F, R>(
+        pos: &GhostCell<'brand, Position>,
+        pos_tok: &mut GhostToken<'brand>,
+        init: B,
+        mut f: F,
+    ) -> R
+    where
+        F: FnMut(B, Move, &mut GhostToken<'brand>) -> R,
+        R: Try<Output = B>,
+    {
+        let color = pos.borrow(pos_tok).get_turn();
+        let knights = pos.borrow(pos_tok).get_bitboard(piece_type::KNIGHT, color);
+        let blockers = pos.borrow(pos_tok).get_blockers();
+
+        knights
+            .filter(|&piece| !is_blocker(blockers, piece))
+            .map(|piece| {
+                let legal_attacks = lookup_attacks(piece);
+                let legal_quiets = legal_attacks & C::quiets_mask::<Q>(pos, color);
+                let legal_captures = legal_attacks & C::captures_mask(pos, color);
+                (legal_captures, legal_quiets, piece)
+            })
+            .try_fold(init, |mut acc, (captures, quiets, from)| {
+                acc =
+                    map_captures(captures, from).try_fold(acc, |acc, mov| f(acc, mov, pos_tok))?;
+                map_quiets(quiets, from).try_fold(acc, |acc, mov| f(acc, mov, pos_tok))
             })
     }
 }

@@ -1,14 +1,16 @@
+use ghost_cell::{GhostCell, GhostToken};
+
 use crate::{
     core::{
         Depth, Limit, Move,
         r#move::MoveList,
-        move_iter::{fold_legal_moves, fold_legals},
+        move_iter::{fold_legal_moves, fold_legal_moves_g, fold_legals},
         position::Position,
     },
     misc::DebugMode,
     uci::sync::{self, CancellationToken},
 };
-use std::{cell::UnsafeCell, ops::ControlFlow};
+use std::ops::ControlFlow;
 
 #[cfg(test)]
 pub mod test;
@@ -47,9 +49,38 @@ pub fn perft<const Q: bool>(
     )
 }
 
+pub fn perft_iter<const Q: bool>(
+    pos: Position,
+    limit: &Limit,
+    ct: CancellationToken,
+    debug: DebugMode,
+) -> u64 {
+    GhostToken::new(move |mut tok| {
+        let pos = GhostCell::new(pos);
+        perft_inner_iter(
+            &pos,
+            &mut tok,
+            limit.depth,
+            limit,
+            &ct,
+            &debug,
+            |mov, count, depth: Depth, debug| {
+                if debug {
+                    let indent = itertools::repeat_n(' ', depth.v().into()).collect::<String>();
+                    sync::out(&format!("{}{mov:?}: {count}", indent));
+                }
+                else {
+                    sync::out(&format!("{mov}: {count}"));
+                }
+            },
+        )
+    })
+}
+
 #[allow(unused)]
-fn perft_inner_iter(
-    pos: &mut UnsafeCell<Position>,
+fn perft_inner_iter<'brand>(
+    pos: &GhostCell<'brand, Position>,
+    pos_tok: &mut GhostToken<'brand>,
     depth: Depth,
     limit: &Limit,
     cancellation_token: &CancellationToken,
@@ -64,32 +95,31 @@ fn perft_inner_iter(
         return 1;
     }
 
-    // this is actually not sound :-)
-    // you'd have to create and destroy the &*pos.get() pointer each time when you
-    // want to read inside fold_legal_moves instead of holding it across the
-    // pos.get_mut() pointer aliases.
-    // see: https://doc.rust-lang.org/nightly/core/cell/struct.UnsafeCell.html#aliasing-rules
-    //
-    // considering the fact that this is barely any faster than just generating the
-    // moves up front and the iterating over them, this should not be used.
-    unsafe {
-        fold_legal_moves::<_, _, _>(&*pos.get(), 0, |acc, m| {
-            pos.get_mut().make_move(m);
-            let c = perft_inner_iter(
-                pos,
-                depth - 1,
-                limit,
-                cancellation_token,
-                debug,
-                if debug.get() { f } else { |_, _, _, _| {} },
-            );
-            f(m, c, limit.depth - depth, debug.get());
-            pos.get_mut().unmake_move(m);
-            ControlFlow::Continue::<(), _>(acc + c)
-        })
-        .continue_value()
-        .unwrap()
-    }
+    fold_legal_moves_g::<_, _, _>(pos, pos_tok, 0, |acc, m, pos_tok| {
+        {
+            let pos_mut = pos.borrow_mut(pos_tok);
+            pos_mut.make_move(m);
+        }
+        let c = perft_inner_iter(
+            pos,
+            pos_tok,
+            depth - 1,
+            limit,
+            cancellation_token,
+            debug,
+            if debug.get() { f } else { |_, _, _, _| {} },
+        );
+        f(m, c, limit.depth - depth, debug.get());
+
+        {
+            let pos_mut = pos.borrow_mut(pos_tok);
+            pos_mut.unmake_move(m);
+        }
+
+        ControlFlow::Continue::<(), _>(acc + c)
+    })
+    .continue_value()
+    .unwrap()
 }
 
 pub fn perft_inner_collect(

@@ -1,6 +1,7 @@
 use std::ops::Try;
 
 use bishop::Bishop;
+use ghost_cell::{GhostCell, GhostToken};
 use king::King;
 use knight::Knight;
 use pawn::Pawn;
@@ -172,6 +173,15 @@ where
 }
 
 #[inline]
+pub fn fold_legal_moves_g<'brand, B, F, R>(pos: &GhostCell<'brand, Position>, pos_tok: &mut GhostToken<'brand>, init: B, f: F) -> R
+where
+    F: FnMut(B, Move, &mut GhostToken<'brand>) -> R,
+    R: Try<Output = B>,
+{
+    fold_legals_g::<'brand, true, B, F, R>(pos, pos_tok, init, f)
+}
+
+#[inline]
 pub fn fold_legal_captures<B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
@@ -181,9 +191,8 @@ where
 }
 
 #[inline]
-pub fn is_blocker(pos: &Position, piece: Square) -> bool {
+pub fn is_blocker(blockers: Bitboard, piece: Square) -> bool {
     let piece_bb = Bitboard::from_c(piece);
-    let blockers = pos.get_blockers();
     !(blockers & piece_bb).is_empty()
 }
 
