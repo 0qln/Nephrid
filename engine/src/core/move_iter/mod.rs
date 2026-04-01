@@ -31,6 +31,11 @@ pub mod sliding_piece;
 mod test;
 
 pub trait FoldMoves<Check, const GEN_QUIETS: bool> {
+    fn fold_moves_g<'brand, B, F, R>(pos: &Position, pos_tok: &mut GhostToken<'brand>, init: B, f: F) -> R
+    where
+        F: FnMut(B, Move, &mut GhostToken<'brand>) -> R,
+        R: Try<Output = B>;
+
     fn fold_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
     where
         F: FnMut(B, Move) -> R,

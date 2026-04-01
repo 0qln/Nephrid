@@ -4,7 +4,7 @@ use crate::{
     core::{
         Depth, Limit, Move,
         r#move::MoveList,
-        move_iter::{fold_legal_moves, fold_legal_moves_g, fold_legals},
+        move_iter::{fold_legal_moves_g, fold_legals},
         position::Position,
     },
     misc::DebugMode,
