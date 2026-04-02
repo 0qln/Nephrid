@@ -5,7 +5,7 @@ use crate::core::{
     search::mcts::{
         nn::POLICY_OUTPUTS,
         node::{
-            CtNodeRef,
+            CtNodeRef, WinRate,
             node_state::{HasBranches, Terminal, Valid},
         },
         search::{BatchItem, Selection},
@@ -30,7 +30,7 @@ pub trait Evaluator {
     fn trace<S: const Valid + HasBranches>(
         &self,
         node: CtNodeRef<S>,
-        pos: &Position,
+        pos: &mut Position,
     ) -> Self::TraceData;
 
     /// Evaluate a node's terminal state. If the node is terminal, return the
@@ -110,7 +110,7 @@ impl fmt::Display for Evaluation {
 
 impl GameResult {
     /// Returns the value of the game result relative to `turn`.
-    fn to_value(self, color: Color) -> Value {
+    pub fn to_value(self, color: Color) -> Value {
         match self {
             Self::Win { relative_to } if relative_to == color => Value::win(),
             Self::Win { .. } => Value::loss(),
@@ -326,11 +326,6 @@ impl Quality {
         Self(v)
     }
 
-    /// Squishes v in range [-1; 1], whatever it's value is.
-    fn squish(v: f32) -> Self {
-        Self::new(v.tanh())
-    }
-
     /// Inverses the value in it's range
     pub fn inverse(&self) -> Self {
         Self(-self.0)
@@ -416,5 +411,38 @@ impl Value {
 impl From<Quality> for Value {
     fn from(q: Quality) -> Self {
         Self::new((q.0 + 1.) / 2.)
+    }
+}
+
+/// Centi pawns
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Cp {
+    v: TCp,
+}
+
+pub type TCp = i16;
+
+impl Cp {
+    const SCALE: f32 = 350.;
+}
+
+impl fmt::Display for Cp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.v)
+    }
+}
+
+impl From<WinRate> for Cp {
+    fn from(win_rate: WinRate) -> Self {
+        let w = win_rate.0.clamp(0.001, 0.999);
+        let cp = Cp::SCALE * (w / (1.0 - w)).ln();
+        Self { v: cp as TCp }
+    }
+}
+
+impl From<Cp> for Quality {
+    fn from(cp: Cp) -> Self {
+        let q = (cp.v as f32 / (Cp::SCALE * 2.)).tanh();
+        Self::new(q)
     }
 }

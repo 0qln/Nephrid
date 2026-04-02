@@ -9,23 +9,19 @@ use burn::{
     record::{CompactRecorder, Recorder},
 };
 use burn_cuda::{Cuda, CudaDevice};
-use engine::{
-    core::{
-        coordinates::squares,
-        r#move::{Move, move_flags},
-        move_iter::sliding_piece::magics,
-        position::Position,
-        search::{
-            limit::Limit,
-            mcts::{NNParts, SearchState, mcts, nn::ModelConfig},
-        },
-        zobrist,
+use engine::core::{
+    coordinates::squares,
+    r#move::{Move, move_flags},
+    move_iter::sliding_piece::magics,
+    position::Position,
+    search::{
+        limit::Limit,
+        mcts::{NNParts, SearchState, mcts, nn::ModelConfig},
     },
-    misc::DebugMode,
-    uci::sync::CancellationToken,
+    zobrist,
 };
 
-const OUT_DIR: &'static str = "tuning/out/eval_model/test";
+const OUT_DIR: &str = "tuning/out/eval_model/test";
 const DIRICHLET_ALPHA: f32 = 0.3;
 const DIRICHLET_EPS: f32 = 0.25;
 
@@ -106,13 +102,11 @@ pub fn learn_mate_in_1() {
         config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
         config_path.push("tuning/src/eval_model/test/config.json");
 
-        let config = TrainingConfig::load(&config_path).expect(&format!(
-            "Couldn't load config.json at {:?}",
-            config_path.to_str()
-        ));
+        let config = TrainingConfig::load(&config_path).unwrap_or_else(|_| panic!("Couldn't load config.json at {:?}",
+            config_path.to_str()));
 
         config
-            .save(&format!("{OUT_DIR}/config.json"))
+            .save(format!("{OUT_DIR}/config.json"))
             .expect("Failed to save config.");
 
         train::<AutodiffBackend>(
@@ -147,16 +141,12 @@ pub fn learn_mate_in_1() {
             btime: 0,
             ..Default::default()
         };
-        let debug = DebugMode::default();
-        let ct = CancellationToken::new();
 
         mcts(
             &mut pos,
             &nn_state,
             &mut mcts_state,
-            limit.clone(),
-            debug.clone(),
-            ct.clone(),
+            &limit,
             MctsTrain::default(),
         )
     };
@@ -185,13 +175,11 @@ pub fn learn_mate_in_2() {
         config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
         config_path.push("tuning/src/eval_model/test/config.json");
 
-        let config = TrainingConfig::load(&config_path).expect(&format!(
-            "Couldn't load config.json at {:?}",
-            config_path.to_str()
-        ));
+        let config = TrainingConfig::load(&config_path).unwrap_or_else(|_| panic!("Couldn't load config.json at {:?}",
+            config_path.to_str()));
 
         config
-            .save(&format!("{OUT_DIR}/config.json"))
+            .save(format!("{OUT_DIR}/config.json"))
             .expect("Failed to save config.");
 
         train::<AutodiffBackend>(
@@ -223,8 +211,6 @@ pub fn learn_mate_in_2() {
             btime: 0,
             ..Default::default()
         };
-        let debug = DebugMode::default();
-        let ct = CancellationToken::new();
 
         let mut mcts_state = SearchState::default();
         let nn_state = NNParts::new(model, device, DIRICHLET_ALPHA, DIRICHLET_EPS);
@@ -234,9 +220,7 @@ pub fn learn_mate_in_2() {
             &mut pos,
             &nn_state,
             &mut mcts_state,
-            limit.clone(),
-            debug.clone(),
-            ct.clone(),
+            &limit,
             MctsTrain::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
@@ -248,9 +232,7 @@ pub fn learn_mate_in_2() {
             &mut pos,
             &nn_state,
             &mut mcts_state,
-            limit.clone(),
-            debug.clone(),
-            ct.clone(),
+            &limit,
             MctsTrain::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
@@ -262,9 +244,7 @@ pub fn learn_mate_in_2() {
             &mut pos,
             &nn_state,
             &mut mcts_state,
-            limit.clone(),
-            debug.clone(),
-            ct.clone(),
+            &limit,
             MctsTrain::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
@@ -277,7 +257,7 @@ pub fn learn_mate_in_2() {
         let root = root.borrow();
 
         let branches = root.branches();
-        branches.iter().count()
+        branches.len()
     };
 
     // result should be a mating position

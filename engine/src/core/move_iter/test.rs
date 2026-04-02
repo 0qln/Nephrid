@@ -7,18 +7,18 @@ use crate::{
         zobrist,
     },
     misc::DebugMode,
-    uci::{sync::CancellationToken},
+    uci::sync::CancellationToken,
 };
 
 fn test_pos(fen: &str, depth: Depth, expected: u64) {
     magics::init();
     zobrist::init();
 
-    let pos = Position::from_fen(fen).unwrap();
+    let mut pos = Position::from_fen(fen).unwrap();
     let limit = Limit { depth, ..Default::default() };
     let debug = DebugMode::default();
     let ct = CancellationToken::new();
-    let result = search::perft::perft(pos, limit, ct, debug);
+    let result = search::perft::perft::<true>(&mut pos, &limit, ct, debug);
     assert_eq!(expected, result);
 }
 

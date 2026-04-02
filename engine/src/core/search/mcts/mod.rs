@@ -2,30 +2,24 @@ use burn::prelude::Backend;
 use rand::{SeedableRng, rngs::SmallRng};
 use thiserror::Error;
 
-use crate::{
-    core::{
-        Limit,
-        config::Configuration,
-        position::Position,
-        search::mcts::{
-            back::{Backpropagater, DefaultBackuper},
-            eval::{
-                Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator, r#static::StaticEvaluator,
-            },
-            limiter::DefaultLimiter,
-            nn::{LoadNNError, Model},
-            node::Tree,
-            noise::{DirichletNoiser, Noiser, NullNoiser},
-            search::TreeSearcher,
-            select::{Selector, puct::PuctSelector, ucb::UcbSelector},
-            strategy::MctsStrategy,
-        },
+use crate::core::{
+    Limit,
+    config::Configuration,
+    position::Position,
+    search::mcts::{
+        back::{Backpropagater, MctsSolver},
+        eval::{Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator, r#static::StaticEvaluator},
+        limiter::{DefaultLimiter, Limiter},
+        nn::{LoadNNError, Model},
+        node::Tree,
+        noise::{DirichletNoiser, Noiser, NullNoiser},
+        search::TreeSearcher,
+        select::{Selector, puct::PuctSelector, ucb::UcbSelector},
+        strategy::MctsStrategy,
     },
-    misc::DebugMode,
-    uci::sync::CancellationToken,
 };
 
-use std::{path::PathBuf, time::Instant};
+use std::path::PathBuf;
 
 pub mod back;
 pub mod eval;
@@ -43,26 +37,17 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     pos: &mut Position,
     parts: P,
     state: &mut M,
-    limit: Limit,
-    _debug: DebugMode,
-    ct: CancellationToken,
+    limit: &Limit,
     mut strategy: S,
 ) -> S::Result {
-    let limiter = DefaultLimiter::new(limit.clone());
-
-    let time_per_move = limit.time_per_move(pos);
-    let time_limit = Instant::now() + time_per_move;
     let tree = state.tree();
-    let mut iterations = 0;
 
-    strategy.start(tree);
-
-    let nodes_begin = tree.size() as u64;
+    strategy.start(tree, pos, limit);
 
     let mut searcher = TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new(
         pos,
         parts.selector(),
-        limiter.clone(),
+        parts.limiter(limit),
         parts.evaluator(),
         parts.backprop(),
         parts.noiser(),
@@ -70,18 +55,9 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
 
     searcher.init_root(tree);
 
-    while !(ct.is_cancelled()
-        || limit.is_active()
-            && limit.is_reached(
-                tree.size() as u64 - nodes_begin,
-                Instant::now(),
-                time_limit,
-                iterations,
-            ))
-    {
+    while !strategy.should_stop(tree, limit) {
         searcher.grow(tree);
         strategy.step(tree);
-        iterations += 1;
     }
 
     strategy.result(state.tree())
@@ -93,11 +69,15 @@ pub trait MctsParts<const X: usize = { config::MPV }> {
     type Backprop: Backpropagater;
     type Noiser: Noiser;
     type Instance: for<'a> TryFrom<&'a Configuration>;
+    type Limiter: Limiter = DefaultLimiter;
 
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
     fn backprop(&self) -> Self::Backprop;
     fn noiser(&self) -> Self::Noiser;
+    fn limiter(&self, limit: &Limit) -> Self::Limiter {
+        Self::Limiter::new(limit)
+    }
 }
 
 pub trait MctsState {
@@ -151,7 +131,7 @@ pub struct NNParts<B: Backend> {
 impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
     type Selector = PuctSelector;
     type Evaluator = NNEvaluator<'a, 'a, B>;
-    type Backprop = DefaultBackuper;
+    type Backprop = MctsSolver;
     type Noiser = DirichletNoiser;
     type Instance = NNParts<B>;
 
@@ -213,7 +193,7 @@ pub struct StaticParts {
 impl<const X: usize> MctsParts<X> for &StaticParts {
     type Selector = PuctSelector;
     type Evaluator = StaticEvaluator;
-    type Backprop = DefaultBackuper;
+    type Backprop = MctsSolver;
     type Noiser = DirichletNoiser;
     type Instance = StaticParts;
 
@@ -262,7 +242,7 @@ pub struct PureParts;
 impl<const X: usize> MctsParts<X> for &PureParts {
     type Selector = UcbSelector;
     type Evaluator = PlayoutEvaluator;
-    type Backprop = DefaultBackuper;
+    type Backprop = MctsSolver;
     type Noiser = NullNoiser;
     type Instance = PureParts;
 

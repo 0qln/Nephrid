@@ -1,4 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion};
 use engine::core::bitboard::Bitboard;
 use engine::core::coordinates::squares;
 use engine::core::move_iter::queen::Queen;

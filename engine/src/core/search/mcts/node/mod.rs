@@ -1,9 +1,15 @@
-use crate::core::{
-    depth::Depth,
-    search::mcts::node::node_state::{ExpandedRefSwitch, HasValue, NodeState, NodeSwitch},
+use crate::{
+    core::{
+        depth::Depth,
+        search::mcts::node::node_state::{
+            ExpandedRefSwitch, ExpandedSwitch, HasBranches, HasValue, NodeState, NodeSwitch,
+            Unknown,
+        },
+    },
+    impl_variants,
 };
 use itertools::Itertools;
-use std::mem::transmute;
+use std::{cell::Cell, mem::transmute, ops::Deref};
 
 use crate::core::{
     Move, Position,
@@ -11,12 +17,12 @@ use crate::core::{
     search::mcts::{
         eval::{self, Policy},
         node::{
-            node_state::{Branching, Evaluated, Leaf},
+            node_state::{Branching, Evaluated, Leaf, Terminal},
             ops::ControlFlow,
         },
     },
 };
-use std::{cmp::Ordering, fmt, marker::PhantomData, ops};
+use std::{cell::RefCell, cmp::Ordering, fmt, marker::PhantomData, ops, rc::Rc};
 
 #[cfg(test)]
 pub mod test;
@@ -179,8 +185,12 @@ impl Tree {
         self.node_mut(node).apply_policy_noise(noise, eps);
     }
 
-    pub fn update_node<S: HasValue>(&mut self, node: CtNodeId<S>, value: eval::Value) {
-        self.node_mut(node).update(value);
+    pub fn update_node<S: HasValue>(&mut self, node: CtNodeRef<S>, value: eval::Value) {
+        node.borrow_mut().update(value);
+    }
+
+    pub fn set_proven<S: HasValue>(&mut self, node: CtNodeRef<S>, state: Proven) {
+        node.borrow_mut().set_proven(state);
     }
 }
 
@@ -392,7 +402,7 @@ impl fmt::Display for Path {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug, PartialEq)]
 pub struct Branch {
     /// The node that this branch leads to.
     node: RtNodeId,
@@ -425,8 +435,28 @@ impl Branch {
 /// The value of a node.
 /// - high ~> Winning for the parent node.
 /// - low ~> Losing for the parent node.
+/// - +inf ~> Proven win for the parent node.
+/// - -inf ~> Proven loss for the parent node.
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub struct Value(pub f32);
+
+impl Value {
+    pub const fn proven_win() -> Self {
+        Self(f32::INFINITY)
+    }
+
+    pub const fn proven_loss() -> Self {
+        Self(f32::NEG_INFINITY)
+    }
+
+    pub fn is_proven_win(&self) -> bool {
+        *self == Self::proven_win()
+    }
+
+    pub fn is_proven_loss(&self) -> bool {
+        *self == Self::proven_loss()
+    }
+}
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -450,6 +480,84 @@ impl Ord for Value {
         f32::partial_cmp(&self.0, &other.0).unwrap_or(Ordering::Equal)
     }
 }
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub struct Proven {
+    v: i32,
+}
+
+impl_variants! {
+    i32 as Proven in proven {
+        LOSS = -1,
+        DRAW = 0,
+        WIN = 1,
+    }
+}
+
+impl From<Proven> for Value {
+    fn from(x: Proven) -> Self {
+        match x.v() {
+            proven::WIN_C => Value::proven_win(),
+            proven::LOSS_C => Value::proven_loss(),
+            _ => Value(0.),
+        }
+    }
+}
+
+impl TryFrom<Value> for Proven {
+    type Error = ();
+
+    fn try_from(val: Value) -> Result<Self, Self::Error> {
+        if val.is_proven_win() {
+            Ok(proven::WIN)
+        }
+        else if val.is_proven_loss() {
+            Ok(proven::LOSS)
+        }
+        else {
+            Err(())
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct NodeInner<S: node_state::Any> {
+    state: Cell<NodeState>,
+    data: RefCell<Node<S>>,
+}
+
+/// A node reference with compile time information about the state.
+#[repr(transparent)]
+#[derive(Debug, PartialEq)]
+pub struct CtNodeRef<S: node_state::Any> {
+    inner: Rc<NodeInner<S>>,
+}
+
+impl<S: node_state::Any> Clone for CtNodeRef<S> {
+    fn clone(&self) -> Self {
+        Self { inner: self.inner.clone() }
+    }
+}
+
+impl<S: node_state::Any> Deref for CtNodeRef<S> {
+    type Target = RefCell<Node<S>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner.data
+    }
+}
+
+impl<S: node_state::Valid> CtNodeRef<S> {
+    pub fn new(node: Node<S>) -> Self {
+        Self {
+            inner: Rc::new(NodeInner {
+                state: Cell::new(S::state()),
+                data: RefCell::new(node),
+            }),
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, Copy)]
 pub struct RtNodeId {
@@ -506,6 +614,25 @@ impl<S: const node_state::Valid> CtNodeId<S> {
         }
         else {
             None
+        }
+    }
+
+    /// Useful for when you have a CtNodeRef<of some Trait impl (e.g. HasValue)>
+    pub fn into_ct(self) -> NodeSwitch {
+        type Switch = NodeSwitch;
+        type State = NodeState;
+        type Ref<S> = CtNodeRef<S>;
+
+        // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
+        // another state.
+        unsafe {
+            let node = self;
+            match Self::STATE {
+                State::Leaf => Switch::Leaf(transmute::<Self, Ref<Leaf>>(node)),
+                State::Branching => Switch::Branching(transmute::<Self, Ref<Branching>>(node)),
+                State::Terminal => Switch::Terminal(transmute::<Self, Ref<Terminal>>(node)),
+                State::Evaluated => Switch::Evaluated(transmute::<Self, Ref<Evaluated>>(node)),
+            }
         }
     }
 }
@@ -772,6 +899,18 @@ impl<S: node_state::HasBranches> Node<'_, S> {
         self.data.branches.get(index)
     }
 
+    fn select_best(&self) -> &Branch {
+        self.data
+            .branches
+            .iter()
+            .max_by(|&a, &b| {
+                a.node()
+                    .partial_cmp(&b.node())
+                    .expect("Node comparison failed!")
+            })
+            .expect("An expanded node has to have at least one branch.")
+    }
+
     fn find_branch(&self, mut pred: impl FnMut(&Branch) -> bool) -> Option<&Branch> {
         self.data.branches.iter().find(|&b| pred(b))
     }
@@ -858,5 +997,41 @@ impl<'a, S: node_state::Any> Node<'a, S> {
 impl<S: HasValue> Node<'_, S> {
     pub(self) fn update(&mut self, value: eval::Value) {
         self.data.update(value)
+    }
+
+    pub(self) fn set_proven(&mut self, state: Proven) {
+        self.data.set_proven(state)
+    }
+}
+
+/// The winrate of a node in range [0; 1];
+#[derive(Debug, Clone, Copy)]
+pub struct WinRate(pub f32);
+
+impl_op!(-|x: WinRate| -> WinRate { WinRate(1. - x.0) });
+
+impl Default for WinRate {
+    fn default() -> Self {
+        Self(0.5)
+    }
+}
+
+impl From<CtNodeRef<Evaluated>> for WinRate {
+    fn from(node: CtNodeRef<Evaluated>) -> Self {
+        let node = node.borrow();
+        let visits = node.visits();
+        let value = node.value();
+        if visits == 0 {
+            Self::default()
+        }
+        else {
+            Self(value / visits as f32)
+        }
+    }
+}
+
+impl fmt::Display for WinRate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:.2}%", self.0 * 100.)
     }
 }

@@ -47,29 +47,25 @@ use burn::{
     },
 };
 use burn_cuda::{Cuda, CudaDevice};
-use engine::{
-    core::{
-        color::Color,
-        r#move::Move,
-        move_iter::sliding_piece::magics,
-        position::Position,
-        search::{
-            limit::Limit,
-            mcts::{
-                nn::{
-                    BOARD_INPUT_TENSOR_DIM, BoardInputFloats, Model, ModelConfig,
-                    STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW, VALUE_LOSE,
-                    VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
-                },
-                node::Tree,
-                noise::DirichletNoiser,
-                select::Selector,
+use engine::core::{
+    color::Color,
+    r#move::Move,
+    move_iter::sliding_piece::magics,
+    position::Position,
+    search::{
+        limit::Limit,
+        mcts::{
+            nn::{
+                BOARD_INPUT_TENSOR_DIM, BoardInputFloats, Model, ModelConfig,
+                STATE_INPUT_TENSOR_DIM, StateInputFloats, VALUE_DRAW, VALUE_LOSE,
+                VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN, board_input, state_input,
             },
+            node::Tree,
+            noise::DirichletNoiser,
+            select::Selector,
         },
-        zobrist,
     },
-    misc::DebugMode,
-    uci::sync::CancellationToken,
+    zobrist,
 };
 use itertools::Itertools;
 use rand::rngs::SmallRng;
@@ -821,11 +817,18 @@ pub struct MctsTrain {
     steps: usize,
 }
 
+impl MctsTrain {
+    pub fn new() -> Self {
+        Self {
+            infer: MctsFindBest::default(),
+            steps: 0,
+        }
+    }
+}
+
 impl MctsStrategy for MctsTrain {
     type Result = (<MctsFindBest as MctsStrategy>::Result, Tree);
     type Step = (<MctsFindBest as MctsStrategy>::Step,);
-
-    fn start(&mut self, _: &mut Tree) {}
 
     fn result(&mut self, tree: &mut Tree) -> Self::Result {
         let inference_result = self.infer.result(tree);
@@ -988,9 +991,6 @@ where
         btime: 0,
         ..Default::default()
     };
-    let debug = DebugMode::default();
-    let ct = CancellationToken::new();
-
     let mut pos = Position::from_fen(pos)?;
 
     let mut decisions = Vec::<Decision<P::Target>>::new();
@@ -1009,15 +1009,8 @@ where
                 break;
             }
             let turn = pos.get_turn();
-            let result = mcts(
-                &mut pos,
-                &nn_state,
-                &mut mcts_state,
-                limit.clone(),
-                debug.clone(),
-                ct.clone(),
-                MctsTrain::default(),
-            );
+            let strat = MctsTrain::new();
+            let result = mcts(&mut pos, &nn_state, &mut mcts_state, &limit, strat);
 
             let mov = result.0;
             let tree = result.1;
@@ -1174,6 +1167,10 @@ impl Selector for TrainSelector {
         let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
         let exploration = self.c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);
         puct::Score(exploitation + exploration)
+    }
+
+    fn min_score(&self) -> Self::Score {
+        puct::Score(f32::NEG_INFINITY)
     }
 }
 

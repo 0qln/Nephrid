@@ -27,4 +27,6 @@ pub trait Selector {
         // todo: maybe make this relative to the branch's puct score.
         max(1, (remaining_budget as f32 * 0.3) as usize)
     }
+
+    fn min_score(&self) -> Self::Score;
 }

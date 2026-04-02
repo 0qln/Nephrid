@@ -1,13 +1,17 @@
-use std::ops::ControlFlow;
+use std::{hint::black_box, ops::ControlFlow};
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use engine::core::coordinates::squares;
-use engine::core::r#move::Move;
-use engine::core::move_iter::king::{King, compute_attacks, lookup_attacks};
-use engine::core::move_iter::sliding_piece::magics;
-use engine::core::move_iter::{FoldMoves, NoCheck, SingleCheck, king};
-use engine::core::position::Position;
-use engine::core::zobrist;
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use engine::core::{
+    coordinates::squares,
+    r#move::Move,
+    move_iter::{
+        FoldMoves, NoCheck, SingleCheck, king,
+        king::{King, compute_attacks, lookup_attacks},
+        sliding_piece::magics,
+    },
+    position::Position,
+    zobrist,
+};
 
 pub fn king_attacks(c: &mut Criterion) {
     let king = squares::E4;
@@ -32,7 +36,7 @@ pub fn king_move_iter_check_none(c: &mut Criterion) {
 
     c.bench_function("king::move_iter::check_none", |b| {
         b.iter(|| {
-            <King as FoldMoves<NoCheck>>::fold_moves(
+            <King as FoldMoves<NoCheck, true>>::fold_moves(
                 black_box(&pos),
                 black_box(0),
                 black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
@@ -50,7 +54,7 @@ pub fn king_move_iter_check_some(c: &mut Criterion) {
 
     c.bench_function("king::move_iter::check_some", |b| {
         b.iter(|| {
-            <King as FoldMoves<SingleCheck>>::fold_moves(
+            <King as FoldMoves<SingleCheck, true>>::fold_moves(
                 black_box(&pos),
                 black_box(0),
                 black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),

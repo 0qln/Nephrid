@@ -331,6 +331,23 @@ impl TryFrom<Square> for EpCaptureSquare {
     }
 }
 
+impl From<EpTargetSquare> for EpCaptureSquare {
+    #[inline]
+    fn from(sq: EpTargetSquare) -> Self {
+        Self {
+            v: sq.v.map(|sq| {
+                let rank = match Rank::from_c(sq) {
+                    ranks::_3 => ranks::_4,
+                    ranks::_6 => ranks::_5,
+                    _ => unreachable!("Input was an invalid EpTargetSquare."),
+                };
+                let file = File::from_c(sq);
+                Square::from_c((file, rank))
+            }),
+        }
+    }
+}
+
 // the color is the color of the pawn being captured
 impl From<(EpTargetSquare, Color)> for EpCaptureSquare {
     #[inline]

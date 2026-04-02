@@ -121,7 +121,7 @@ impl From<&Configuration> for NoAnalysisParts {
 pub fn na_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
     fuzz::<1, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        NoAnalysisParts::default(),
+        NoAnalysisParts,
         500_000,
     );
     Ok(())

@@ -50,6 +50,8 @@ pub type TerminalItem = SelNode<Evaluation, Terminal>;
 
 pub type ShortcutItem = SelNode<Evaluation, Leaf>;
 
+pub type SkipItem = SelNode<Evaluation, Evaluated>;
+
 #[derive(Debug)]
 pub enum PhaseItem<T> {
     Unused,
@@ -57,6 +59,7 @@ pub enum PhaseItem<T> {
     Evaluated(EvalItem),
     Terminal(TerminalItem),
     Shortcut(ShortcutItem),
+    Skip(SkipItem),
 }
 
 impl<T> PhaseItem<T> {
@@ -313,9 +316,27 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         sel_node_id: NodeId,
     ) -> usize {
         let root_visits = parent_node.borrow().visits();
-        parent_node
-            .borrow_mut()
-            .sort_by(|b| -self.selector.score(b, root_visits));
+        parent_node.borrow_mut().sort_by(|b| {
+            let score = {
+                let visit_threshold = 4; // todo: fine-tune this
+                let is_proven_loss = b.node().borrow().value().is_proven_loss();
+                let visits = b.node().borrow().visits();
+
+                // make sure that we don't prune this node before it has been visited some
+                // times, to allow the parent node to pick up on some of the value
+                // of this node. otherwise this node's (bad) score wouldn't be propagated up the
+                // tree and the parent node would have an overestimated value.
+                if is_proven_loss && visits >= visit_threshold {
+                    self.selector.min_score()
+                }
+                else {
+                    self.selector.score(b, root_visits)
+                }
+            };
+
+            // negative so we sort descending
+            -score
+        });
 
         let mut budget = budget;
         let mut used_budget = 0;
@@ -363,17 +384,32 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 self.select_branching(line_index, parent_sel_id, node, depth)
             }
             NodeSwitch::Evaluated(node) => {
-                let trace_data = self.evaluator.trace(node.clone(), self.position);
-                let child_id =
-                    self.selection
-                        .append_parent(parent_sel_id, node.clone(), turn, trace_data);
-                self.pick_branches(budget, line_index, depth, node, tree, child_id)
+                let val = node.borrow().value();
+                // skip further selection of proven_win/loss nodes.
+                if val.is_proven_win() {
+                    let eval = Evaluation::Terminal(GameResult::Win { relative_to: !turn });
+                    self.select_skip(line_index, parent_sel_id, node.clone(), eval, depth)
+                }
+                else if val.is_proven_loss() {
+                    let eval = Evaluation::Terminal(GameResult::Win { relative_to: turn });
+                    self.select_skip(line_index, parent_sel_id, node.clone(), eval, depth)
+                }
+                // otherwise continue down the tree
+                else {
+                    let trace_data = self.evaluator.trace(node.clone(), self.position);
+                    let child_id =
+                        self.selection
+                            .append_parent(parent_sel_id, node.clone(), turn, trace_data);
+                    self.pick_branches(budget, line_index, depth, node, tree, child_id)
+                }
             }
             NodeSwitch::Leaf(node) => {
+                // shortcut leaf selection using twofold repetition
                 if depth > Depth::ROOT && self.position.has_twofold_repetition() {
                     let eval = Evaluation::Terminal(GameResult::Draw);
                     self.select_shortcut(line_index, parent_sel_id, node, eval, depth)
                 }
+                // otherwise select this leaf for evaluation in the next phase
                 else {
                     self.select_leaf(line_index, parent_sel_id, node, tree, depth)
                 }
@@ -385,6 +421,26 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         self.position.unmake_move(branch.mov());
         used
+    }
+
+    fn select_skip(
+        &mut self,
+        line_index: usize,
+        parent_id: NodeId,
+        node: CtNodeRef<Evaluated>,
+        eval: Evaluation,
+        _depth: Depth,
+    ) -> usize {
+        self.selection.set(
+            line_index,
+            PhaseItem::Skip(SelNode {
+                node,
+                turn: self.position.get_turn(),
+                parent: Some(parent_id),
+                data: eval,
+            }),
+        );
+        1
     }
 
     fn select_leaf(
@@ -455,7 +511,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         node: CtNodeRef<Branching>,
         depth: Depth,
     ) -> usize {
-        let pos = &self.position;
+        let pos = &mut self.position;
 
         let (used_budget, item) = if self.limiter.should_stop(limiter::Params { pos, depth }) {
             (1, PhaseItem::Unused)
@@ -527,6 +583,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 PhaseItem::Evaluated(x) => self.backprop.backpropagate(tree, &self.selection, x),
                 PhaseItem::Terminal(x) => self.backprop.backpropagate(tree, &self.selection, x),
                 PhaseItem::Shortcut(x) => self.backprop.backpropagate(tree, &self.selection, x),
+                PhaseItem::Skip(x) => self.backprop.backpropagate(tree, &self.selection, x),
             }
         }
     }

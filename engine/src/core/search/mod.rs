@@ -6,7 +6,11 @@ use crate::{
         config::Configuration,
         search::mcts::{
             MctsParts,
-            node::{Tree, node_state::NodeSwitch},
+            eval::Cp,
+            node::{
+                Tree, WinRate,
+                node_state::{Evaluated, NodeSwitch},
+            },
             select::Selector,
         },
     },
@@ -16,6 +20,7 @@ use std::{
     error::Error,
     sync::{
         Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
         mpsc::{Sender, channel},
     },
     thread,
@@ -46,6 +51,7 @@ pub struct Thread {
 pub struct Worker {
     mcts_parts: Option<mcts::config::mcts::Parts>,
     mcts_state: mcts::SearchState,
+    backup_tree: Option<Tree>,
 }
 
 #[derive(Error, Debug)]
@@ -68,20 +74,26 @@ impl Worker {
     pub fn new() -> Self {
         let mcts_state = mcts::SearchState::default();
         let mcts_parts = None;
-        Self { mcts_parts, mcts_state }
+        let backup_tree = None;
+        Self {
+            mcts_parts,
+            mcts_state,
+            backup_tree,
+        }
     }
 
     pub fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
         match cmd {
-            Command::Perft(pos, limit, ct, debug) => {
-                perft(pos, limit, ct, debug);
+            Command::Perft(mut pos, limit, ct, debug) => {
+                perft::<true>(&mut pos, &limit, ct, debug);
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
+                let strat = MctsUci::new(debug, ct, None);
 
-                let result = mcts(&mut pos, parts, state, limit, debug, ct, MctsUci::default());
+                let result = mcts(&mut pos, parts, state, &limit, strat);
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -89,8 +101,18 @@ impl Worker {
 
                 Ok(())
             }
-            Command::Ponder => {
-                unimplemented!("todo");
+            Command::Ponder(mut pos, limit, ct, debug, ponder) => {
+                let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
+                let state = &mut self.mcts_state;
+                let strat = MctsUci::new(debug, ct, Some(ponder));
+
+                let result = mcts(&mut pos, parts, state, &limit, strat);
+
+                if result.is_none() {
+                    todo!("Log error or something: got no result from mcts search.")
+                };
+
+                Ok(())
             }
             Command::Configure(config) => {
                 let config_lock = config.lock();
@@ -107,7 +129,18 @@ impl Worker {
                 Ok(())
             }
             Command::AdvanceState(mov) => {
+                self.backup_tree = Some(self.mcts_state.tree.clone());
                 self.mcts_state.tree.advance_to(|b| b.mov() == mov);
+                Ok(())
+            }
+            Command::RollbackAndAdvance(mov) => {
+                if let Some(backup) = self.backup_tree.take() {
+                    self.mcts_state.tree = backup;
+                    self.mcts_state.tree.advance_to(|b| b.mov() == mov);
+                }
+                else {
+                    self.mcts_state.tree = Tree::default();
+                }
                 Ok(())
             }
             Command::ResetState => {
@@ -117,7 +150,20 @@ impl Worker {
             Command::MctsDebugTree => {
                 let tree = &self.mcts_state.tree;
                 let root = tree.get_root();
-                println!("({})", root.state());
+                println!(
+                    "({}) ----  v {: >8.2}/{: <8} w {} cp {}",
+                    root.state(),
+                    root.clone().borrow().value(),
+                    root.clone().borrow().visits(),
+                    root.clone()
+                        .try_into::<Evaluated>()
+                        .map(|x| (-WinRate::from(x)).to_string())
+                        .unwrap_or("/".to_string()),
+                    root.clone()
+                        .try_into::<Evaluated>()
+                        .map(|x| Cp::from(-WinRate::from(x)).to_string())
+                        .unwrap_or("/".to_string())
+                );
                 match root.into_ct() {
                     NodeSwitch::Leaf(_node) => {}
                     NodeSwitch::Branching(node) => {
@@ -151,7 +197,7 @@ impl Worker {
                         }
                     }
                 }
-
+                println!("---");
                 Ok(())
             }
         }
@@ -185,9 +231,33 @@ pub fn init() -> Thread {
 pub enum Command {
     Perft(Position, Limit, CancellationToken, DebugMode),
     Normal(Position, Limit, CancellationToken, DebugMode),
+    Ponder(Position, Limit, CancellationToken, DebugMode, PonderToken),
     AdvanceState(Move),
+    RollbackAndAdvance(Move),
     Configure(Arc<Mutex<Configuration>>),
-    Ponder,
     ResetState,
     MctsDebugTree,
+}
+
+#[derive(Debug, Clone)]
+pub struct PonderToken(Arc<AtomicBool>);
+
+impl Default for PonderToken {
+    fn default() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+}
+
+impl PonderToken {
+    pub fn should_ponder(&self) -> bool {
+        !self.0.load(Ordering::Relaxed)
+    }
+
+    pub fn stop_ponder(&self) {
+        self.0.store(true, Ordering::Relaxed)
+    }
+
+    pub fn start_ponder(&self) {
+        self.0.store(false, Ordering::Relaxed)
+    }
 }
