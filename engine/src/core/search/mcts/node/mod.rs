@@ -1,15 +1,15 @@
 use crate::{
     core::{
         depth::Depth,
+        r#move::MoveIndex,
         search::mcts::node::node_state::{
-            ExpandedRefSwitch, ExpandedSwitch, HasBranches, HasValue, NodeState, NodeSwitch,
-            Unknown,
+            ExpandedSwitch, HasBranches, HasValue, NodeState, Switch, Unknown,
         },
     },
     impl_variants,
 };
 use itertools::Itertools;
-use std::{cell::Cell, mem::transmute, ops::Deref};
+use std::{cmp::Ordering, fmt, marker::PhantomData, ops};
 
 use crate::core::{
     Move, Position,
@@ -17,19 +17,18 @@ use crate::core::{
     search::mcts::{
         eval::{self, Policy},
         node::{
-            node_state::{Branching, Evaluated, Leaf, Terminal},
+            node_state::{Branching, Evaluated, Leaf},
             ops::ControlFlow,
         },
     },
 };
-use std::{cell::RefCell, cmp::Ordering, fmt, marker::PhantomData, ops, rc::Rc};
 
 #[cfg(test)]
 pub mod test;
 
 /// The height of the tree. The root is at height 1, and the height of an empty
 /// tree is 0.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Height(pub u16);
 
 impl Height {
@@ -54,383 +53,6 @@ impl fmt::Display for Height {
 
 impl_op!(+|a: Height, b: Height| -> Height { Height(a.0 + b.0) });
 impl_op!(+|a: Height, b: u16| -> Height { Height(a.0 + b) });
-
-// todo: figure out a way to track the minheight stat, such that we don't have
-// to recompute it each time we expand a node. maybe we can track the minheight
-// of each subtree in the node data, and update it when we expand a node?
-// (That'd would be specially expensive tho)
-#[derive(Debug, Clone)]
-pub struct Tree {
-    // nodes arena
-    nodes: Vec<NodeData>,
-
-    /// The size of the tree (total number of nodes).
-    size: usize,
-
-    /// The maximum height of the tree.
-    maxheight: Height,
-}
-
-impl Default for Tree {
-    fn default() -> Self {
-        Self {
-            size: 1,
-            nodes: vec![NodeData::new_leaf()],
-            maxheight: Height::ROOT,
-        }
-    }
-}
-
-impl Tree {
-    /// Root of the tree, always at index 0.
-    const ROOT: RtNodeId = RtNodeId::new(0);
-
-    pub fn new(root: NodeData) -> Self {
-        let mut ret = Self {
-            nodes: vec![root],
-            ..Default::default()
-        };
-        ret.compute_stats();
-        ret
-    }
-}
-
-// Node mutable operations delegeated through the tree, such that the statistics
-// are always up to date.
-impl Tree {
-    /// Expands a leaf node, creating branches and updating tree statistics.
-    pub fn expand_node(
-        &mut self,
-        node_id: CtNodeId<Leaf>,
-        pos: &Position,
-        search_depth: Depth,
-    ) -> ExpandedRefSwitch {
-        // todo: save the game_result in the node data, such that it doesn't have to be
-        // evaluated each time we encounter the terminal node in the search.
-        //
-        // note: do not switch this for search_result. The tree has to remain an
-        // accurate representation of the game rules.
-        // e.g. if we mark this as Terminal after 2 repetitions and the opponent
-        // actually plays this later on down the line, the tree root will be
-        // Terminal, even though it should be Branching.
-        if pos.game_result().is_some() {
-            // SAFETY: If there's a gameresult, we can be sure that this is a terminal node.
-            unsafe {
-                return ExpandedRefSwitch::Terminal(node_id.cast());
-            }
-        }
-
-        // todo: could replace this allocation with a static mut buffer or something...
-        let mut moves = Vec::with_capacity(35);
-        _ = fold_legal_moves(pos, &mut moves, |acc, m| {
-            acc.push(m);
-            ControlFlow::Continue::<(), _>(acc)
-        });
-
-        let branches_count = moves.len();
-
-        if branches_count == 0 {
-            unreachable!(
-                "If there are no branches for this node, it has to be terminal, in which case the \
-                 first guard clause should've triggered!"
-            )
-        }
-
-        let mut branches = Vec::with_capacity(branches_count);
-        for m in moves {
-            let child_id = self.new_leaf();
-            // Assuming your down_cast / Option logic here
-            branches.push(Branch::new(m, 0.0, child_id.down_cast()));
-        }
-        let node = self.node_mut(node_id);
-        node.data.branches = branches;
-
-        // update stats
-        let height: Height = search_depth.into();
-        self.size += branches_count;
-        self.maxheight = self.maxheight.max(height + 1);
-
-        // SAFETY: We just checked that this is a branching node.
-        unsafe { ExpandedRefSwitch::Branching(node_id.cast()) }
-    }
-
-    fn new_leaf(&mut self) -> CtNodeId<Leaf> {
-        let id = self.nodes.len() as u32;
-        self.nodes.push(NodeData::new_leaf());
-        // SAFETY: We just pushed a leaf node into the arena, so this is a valid leaf
-        // node id.
-        unsafe { CtNodeId::new(id) }
-    }
-
-    pub fn skip_policy(
-        &mut self,
-        node: CtNodeId<Branching>,
-    ) -> CtNodeId<Evaluated> {
-        self.node_mut(node).skip_policy();
-        // SAFETY: we just set the policy for each branch. It has to be valid.
-        unsafe { node.cast() }
-    }
-
-    pub fn set_policy(
-        &mut self,
-        node: CtNodeId<Branching>,
-        policy: &Policy,
-    ) -> CtNodeId<Evaluated> {
-        self.node_mut(node).set_policy(policy);
-        // SAFETY: we just set the policy for each branch. It has to be valid.
-        unsafe { node.cast() }
-    }
-
-    pub fn apply_policy_noise(&mut self, node: CtNodeId<Evaluated>, noise: &[f32], eps: f32) {
-        self.node_mut(node).apply_policy_noise(noise, eps);
-    }
-
-    pub fn update_node<S: HasValue>(&mut self, node: CtNodeRef<S>, value: eval::Value) {
-        node.borrow_mut().update(value);
-    }
-
-    pub fn set_proven<S: HasValue>(&mut self, node: CtNodeRef<S>, state: Proven) {
-        node.borrow_mut().set_proven(state);
-    }
-}
-
-// Tree mutating operations, which will require recompute of all stats.
-impl Tree {
-    /// Advnace to the best branch.
-    /// Will cause a costly recompute of the stats.
-    pub fn advance_best(&mut self) {
-        fn map(node: CtNodeId<impl HasBranches>) -> RtNodeId {
-            node.borrow().select_best().node()
-        }
-
-        let node = {
-            match self.root().clone().into_ct() {
-                NodeSwitch::Branching(node) => Some(map(node)),
-                NodeSwitch::Evaluated(node) => Some(map(node)),
-                _ => None,
-            }
-        };
-
-        if let Some(node) = node {
-            self.root = node;
-            self.compute_stats();
-        }
-    }
-
-    // /// Advnace to the first branch that matches `pred`.
-    // /// Will cause a costly recompute of the stats.
-    // pub fn advance_to<F: Fn(&Branch) -> bool>(&mut self, pred: F) {
-    //     fn map(
-    //         node: CtNodeId<impl HasBranches>,
-    //         pred: impl Fn(&Branch) -> bool,
-    //     ) -> Option<RtNodeId> {
-    //         node.borrow().find_branch(|x| pred(x)).map(|b| b.node())
-    //     }
-
-    //     let node = {
-    //         match self.root.clone().into_ct() {
-    //             NodeSwitch::Branching(node) => Some(map(node, pred)),
-    //             NodeSwitch::Evaluated(node) => Some(map(node, pred)),
-    //             _ => None,
-    //         }
-    //     };
-
-    //     if let Some(node) = node.flatten() {
-    //         self.root = node;
-    //         self.compute_stats();
-    //     }
-    // }
-}
-
-impl Tree {
-    pub fn best_branch<'a, S: node_state::HasBranches + 'a>(
-        &'a self,
-        node_id: CtNodeId<S>,
-    ) -> &'a Branch {
-        self.node(node_id).select(|b| {
-            let branch_node = self.node_data(b.node());
-            branch_node.visits()
-        })
-    }
-
-    pub fn best_move<S: node_state::HasBranches>(&self, node_id: CtNodeId<S>) -> Move {
-        self.best_branch(node_id).mov()
-    }
-
-    // pub fn best_moves<S: node_state::HasBranches>(&self, node_id: CtNodeId<S>,
-    // threshold: Value) -> Vec<Move> {     fn map(node: CtNodeId<impl
-    // HasBranches>, threshold: Value) -> Vec<Move> {         node.borrow()
-    //             .branches()
-    //             .iter()
-    //             .filter(|b| b.value() > threshold)
-    //             .map(|b| b.mov())
-    //             .collect_vec()
-    //     }
-    // }
-
-    // pub fn map_root_if_has_branches<T>(&self, transform: FnMut(CtNodeId<impl
-    // HasBranches>) -> T) {     match self.root().clone().into_ct() {
-    //         NodeSwitch::Branching(node) => map(node, threshold),
-    //         NodeSwitch::Evaluated(node) => map(node, threshold),
-    //         _ => vec![],
-    //     }
-    // }
-
-    /// Returns the current principal variation. The branches are clones, but
-    /// contain valid references to their nodes.
-    pub fn principal_variation(&self) -> Path {
-        // let mut buf = Vec::with_capacity(self.mindepth().v().into());
-        let mut buf = Vec::new();
-        let mut current = Self::ROOT;
-
-        loop {
-            let branch = match self.node_switch(current) {
-                NodeSwitch::Branching(node) => Some(self.best_branch(node)),
-                NodeSwitch::Evaluated(node) => Some(self.best_branch(node)),
-                _ => None,
-            };
-
-            match branch {
-                Some(branch) => {
-                    let node = branch.node();
-                    buf.push(branch.clone());
-                    current = node;
-                }
-                None => break,
-            }
-        }
-        Path(buf)
-    }
-
-    /// Computes the number of nodes in this tree
-    pub fn compute_size(&self) -> usize {
-        self.root().data.compute_subtree_size(self)
-    }
-
-    /// Computes the max height of the tree.
-    pub fn compute_maxheight(&self) -> Height {
-        self.root().data.compute_subtree_maxheight(self)
-    }
-
-    /// Computes the min height of the tree.
-    pub fn compute_minheight(&self) -> Height {
-        self.node_data(Self::ROOT).compute_subtree_minheight(self)
-    }
-
-    /// Recompute all stats.
-    fn compute_stats(&mut self) {
-        self.size = self.compute_size();
-        self.maxheight = self.compute_maxheight();
-        // self.mindepth = self.compute_mindepth();
-    }
-
-    // private accessors, which will be used by the node operations to access the
-    // nodes in the arena.
-
-    fn node<S: node_state::Any>(&self, node: CtNodeId<S>) -> &Node<S> {
-        // SAFETY: Node<> is #[repr(transparent)]
-        unsafe { transmute::<&NodeData, &Node<S>>(&self.nodes[node.index as usize]) }
-    }
-
-    fn node_data(&self, node: RtNodeId) -> &NodeData {
-        &self.nodes[node.index as usize]
-    }
-
-    pub fn node_mut<'a, S: node_state::Any>(&'a mut self, node: CtNodeId<S>) -> Node<'a, S> {
-        Node {
-            data: &mut self.nodes[node.index as usize],
-            _state: PhantomData,
-        }
-    }
-
-    pub fn node_switch(&self, node_id: RtNodeId) -> NodeSwitch {
-        type Switch = NodeSwitch;
-        type State = NodeState;
-
-        // SAFETY: We check here the state.
-        unsafe {
-            match self.node_data(node_id).state() {
-                State::Leaf => Switch::Leaf(node_id.up_cast()),
-                State::Branching => Switch::Branching(node_id.up_cast()),
-                State::Terminal => Switch::Terminal(node_id.up_cast()),
-                State::Evaluated => Switch::Evaluated(node_id.up_cast()),
-            }
-        }
-    }
-
-    fn root(&self) -> &Node<node_state::Unknown> {
-        // SAFETY: Node<> is #[repr(transparent)]
-        unsafe {
-            transmute::<&NodeData, &Node<node_state::Unknown>>(
-                &self.nodes[Self::ROOT.index as usize],
-            )
-        }
-    }
-
-    /// Returns the number of nodes in this tree
-    pub fn size(&self) -> usize {
-        self.size
-    }
-
-    // /// Returns the min depth of the tree.
-    // pub fn mindepth(&self) -> Depth {
-    //     self.mindepth
-    // }
-
-    /// Returns the max height of the tree.
-    pub fn maxheight(&self) -> Height {
-        self.maxheight
-    }
-}
-
-pub struct Path(pub Vec<Branch>);
-
-impl Path {
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl fmt::Display for Path {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut moves = self.0.iter().map(|x| x.mov().to_string());
-        f.write_str(&moves.join(" "))
-    }
-}
-
-#[derive(Clone, Default, Debug, PartialEq)]
-pub struct Branch {
-    /// The node that this branch leads to.
-    node: RtNodeId,
-
-    /// The policy of picking this branch.
-    policy: f32,
-
-    /// The move that lead to this node.
-    mov: Move,
-}
-
-impl Branch {
-    pub fn new(mov: Move, policy: f32, node: RtNodeId) -> Self {
-        Self { node, policy, mov }
-    }
-
-    pub fn mov(&self) -> Move {
-        self.mov
-    }
-
-    pub fn policy(&self) -> f32 {
-        self.policy
-    }
-
-    pub fn node(&self) -> RtNodeId {
-        self.node.clone()
-    }
-}
 
 /// The value of a node.
 /// - high ~> Winning for the parent node.
@@ -520,232 +142,10 @@ impl TryFrom<Value> for Proven {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct NodeInner<S: node_state::Any> {
-    state: Cell<NodeState>,
-    data: RefCell<Node<S>>,
-}
-
-/// A node reference with compile time information about the state.
-#[repr(transparent)]
-#[derive(Debug, PartialEq)]
-pub struct CtNodeRef<S: node_state::Any> {
-    inner: Rc<NodeInner<S>>,
-}
-
-impl<S: node_state::Any> Clone for CtNodeRef<S> {
-    fn clone(&self) -> Self {
-        Self { inner: self.inner.clone() }
-    }
-}
-
-impl<S: node_state::Any> Deref for CtNodeRef<S> {
-    type Target = RefCell<Node<S>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner.data
-    }
-}
-
-impl<S: node_state::Valid> CtNodeRef<S> {
-    pub fn new(node: Node<S>) -> Self {
-        Self {
-            inner: Rc::new(NodeInner {
-                state: Cell::new(S::state()),
-                data: RefCell::new(node),
-            }),
-        }
-    }
-}
-
-
-#[derive(Debug, Clone, Copy)]
-pub struct RtNodeId {
-    index: u32,
-}
-
-impl RtNodeId {
-    const fn new(index: u32) -> Self {
-        Self { index }
-    }
-
-    /// SAFETY: The caller has to make sure that the node at `index` is in state
-    /// `S`.
-    pub unsafe fn up_cast<S: node_state::Valid>(&self) -> CtNodeId<S> {
-        unsafe { CtNodeId::new(self.index) }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct CtNodeId<S: node_state::Any> {
-    index: u32,
-    _state: PhantomData<S>,
-}
-
-impl<S: node_state::Any> CtNodeId<S> {
-    /// SAFETY: The caller has to make sure that the node at `index` is in state
-    /// `S`.
-    unsafe fn new(index: u32) -> Self {
-        Self { index, _state: PhantomData }
-    }
-
-    /// SAFETY: The caller has to make sure that the node at `index` is in state
-    /// `S2`.
-    unsafe fn cast<S2: node_state::Any>(self) -> CtNodeId<S2> {
-        CtNodeId::<S2> {
-            index: self.index,
-            _state: PhantomData,
-        }
-    }
-
-    pub fn down_cast(&self) -> RtNodeId {
-        RtNodeId { index: self.index }
-    }
-}
-
-impl<S: const node_state::Valid> CtNodeId<S> {
-    const STATE: NodeState = S::state();
-
-    pub fn try_into<Target: node_state::Valid>(self) -> Option<CtNodeId<Target>> {
-        // idk i hope the compiler is smart enough to see that this is resolvable at
-        // comp time x3
-        if Self::STATE == Target::state() {
-            Some(unsafe { CtNodeId::new(self.index) })
-        }
-        else {
-            None
-        }
-    }
-
-    /// Useful for when you have a CtNodeRef<of some Trait impl (e.g. HasValue)>
-    pub fn into_ct(self) -> NodeSwitch {
-        type Switch = NodeSwitch;
-        type State = NodeState;
-        type Ref<S> = CtNodeRef<S>;
-
-        // SAFETY: `Node<>` is #[repr(transparent)], so we can just transmute it into
-        // another state.
-        unsafe {
-            let node = self;
-            match Self::STATE {
-                State::Leaf => Switch::Leaf(transmute::<Self, Ref<Leaf>>(node)),
-                State::Branching => Switch::Branching(transmute::<Self, Ref<Branching>>(node)),
-                State::Terminal => Switch::Terminal(transmute::<Self, Ref<Terminal>>(node)),
-                State::Evaluated => Switch::Evaluated(transmute::<Self, Ref<Evaluated>>(node)),
-            }
-        }
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct NodeData {
-    // todo: use a boxed slice instead. the branches will not change once set.
-    /// All the branches from this node.
-    branches: Vec<Branch>,
-
-    /// The number of times this node was visited.
-    visits: u32,
-
-    /// The value of this node. (~sums all the values of it's children)
-    value: Value,
-
-    /// The state of the node (explicitly encoded such that we can figure it out
-    /// at runtime).
-    ///
-    /// todo:
-    /// can this be removed?
-    /// can this be a descriminated enum that then also contains like either the
-    /// branches or the value, such that we don't have to do unsafe transmutes?
-    state: NodeState,
-}
-
-impl fmt::Debug for NodeData {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Node")
-            .field("value", &self.value())
-            .field("visits", &self.visits())
-            .field("branches", &self.branches)
-            .finish()
-    }
-}
-
-impl fmt::Display for NodeData {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Node")
-            .field("value", &self.value())
-            .field("visits", &self.visits())
-            .field(
-                "branches",
-                &self
-                    .branches
-                    .iter()
-                    .map(|b| format!("{}", b.mov()))
-                    .collect_vec(),
-            )
-            .finish()
-    }
-}
-
-impl NodeData {
-    pub fn state(&self) -> NodeState {
-        self.state
-    }
-
-    pub fn visits(&self) -> u32 {
-        self.visits
-    }
-
-    pub fn value(&self) -> Value {
-        self.value
-    }
-
-    pub fn branches(&self) -> &[Branch] {
-        &self.branches
-    }
-
-    pub(self) fn update(&mut self, value: eval::Value) {
-        self.visits += 1;
-        self.value += value;
-    }
-
-    pub fn compute_subtree_size(&self, tree: &Tree) -> usize {
-        1 + self
-            .branches()
-            .iter()
-            .map(|b| tree.node_data(b.node()).compute_subtree_size(tree))
-            .sum::<usize>()
-    }
-
-    pub fn compute_subtree_maxheight(&self, tree: &Tree) -> Height {
-        Height::ROOT
-            + self
-                .branches()
-                .iter()
-                .map(|b| tree.node_data(b.node()).compute_subtree_maxheight(tree))
-                .max()
-                .unwrap_or(Height::EMPTY)
-    }
-
-    pub fn compute_subtree_minheight(&self, tree: &Tree) -> Height {
-        // we ourselves are 1-nodes deep.
-        Height::ROOT
-            + self
-                .branches()
-                .iter()
-                .map(|b| tree.node_data(b.node()).compute_subtree_minheight(tree))
-                .min()
-                .unwrap_or(Height::EMPTY)
-    }
-
-    fn new_leaf() -> NodeData {
-        Self::default()
-    }
-}
-
 pub mod node_state {
     use std::fmt;
 
-    use crate::core::search::mcts::node::CtNodeId;
+    use crate::core::search::mcts::node::NodeId;
 
     #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
     pub enum NodeState {
@@ -767,39 +167,56 @@ pub mod node_state {
         }
     }
 
-    #[derive(Debug, Clone, Copy)]
-    pub enum NodeSwitch {
-        Leaf(CtNodeId<Leaf>),
-        Branching(CtNodeId<Branching>),
-        Terminal(CtNodeId<Terminal>),
-        Evaluated(CtNodeId<Evaluated>),
+    impl NodeState {
+        pub const fn has_branches(&self) -> bool {
+            matches!(self, NodeState::Branching | NodeState::Evaluated)
+        }
     }
-    impl NodeSwitch {
-        pub fn evaluated(&self) -> Option<&CtNodeId<Evaluated>> {
+
+    #[derive(Debug, Clone, Copy)]
+    pub enum Switch {
+        Leaf(NodeId<Leaf>),
+        Branching(NodeId<Branching>),
+        Terminal(NodeId<Terminal>),
+        Evaluated(NodeId<Evaluated>),
+    }
+
+    impl Switch {
+        pub fn new(node_id: super::RtNodeId, state: NodeState) -> Self {
+            use Switch as S;
+            match state {
+                NodeState::Leaf => S::Leaf(unsafe { node_id.up_cast() }),
+                NodeState::Branching => S::Branching(unsafe { node_id.up_cast() }),
+                NodeState::Terminal => S::Terminal(unsafe { node_id.up_cast() }),
+                NodeState::Evaluated => S::Evaluated(unsafe { node_id.up_cast() }),
+            }
+        }
+
+        pub fn get<T: Valid>(&self) -> Option<NodeId<T>> {
+            use Switch as S;
             match self {
-                NodeSwitch::Evaluated(x) => Some(x),
+                S::Leaf(x) if T::state() == Leaf::state() => Some(unsafe { x.cast() }),
+                S::Branching(x) if T::state() == Branching::state() => Some(unsafe { x.cast() }),
+                S::Terminal(x) if T::state() == Terminal::state() => Some(unsafe { x.cast() }),
+                S::Evaluated(x) if T::state() == Evaluated::state() => Some(unsafe { x.cast() }),
                 _ => None,
             }
         }
     }
 
     #[derive(Debug)]
-    pub enum ExpandedRefSwitch {
-        Terminal(CtNodeId<Terminal>),
-        Branching(CtNodeId<Branching>),
+    pub enum ExpandedSwitch {
+        Terminal(NodeId<Terminal>),
+        Branching(NodeId<Branching>),
     }
-    impl ExpandedRefSwitch {
-        pub fn branching(&self) -> Option<&CtNodeId<Branching>> {
-            match self {
-                ExpandedRefSwitch::Terminal(_) => None,
-                ExpandedRefSwitch::Branching(x) => Some(x),
-            }
-        }
 
-        pub fn terminal(&self) -> Option<&CtNodeId<Terminal>> {
+    impl ExpandedSwitch {
+        pub fn get<T: Expanded>(&self) -> Option<NodeId<T>> {
+            use ExpandedSwitch as S;
             match self {
-                ExpandedRefSwitch::Terminal(x) => Some(x),
-                ExpandedRefSwitch::Branching(_) => None,
+                S::Branching(x) if T::state() == Branching::state() => Some(unsafe { x.cast() }),
+                S::Terminal(x) if T::state() == Terminal::state() => Some(unsafe { x.cast() }),
+                _ => None,
             }
         }
     }
@@ -810,9 +227,11 @@ pub mod node_state {
         fn state() -> NodeState;
     }
 
-    pub const trait HasBranches: Any + Valid {}
+    pub const trait HasBranches: Any {}
 
     pub const trait HasValue: Any + Valid {}
+
+    pub const trait Expanded: Any + Valid {}
 
     #[derive(Clone, Copy, Default, Debug, PartialEq)]
     pub struct Leaf;
@@ -822,6 +241,7 @@ pub mod node_state {
             NodeState::Leaf
         }
     }
+    impl const HasValue for Leaf {}
 
     #[derive(Clone, Copy, Default, Debug, PartialEq)]
     pub struct Terminal;
@@ -831,7 +251,8 @@ pub mod node_state {
             NodeState::Terminal
         }
     }
-    impl HasValue for Terminal {}
+    impl const HasValue for Terminal {}
+    impl const Expanded for Terminal {}
 
     #[derive(Clone, Copy, Default, Debug, PartialEq)]
     pub struct Branching;
@@ -842,6 +263,7 @@ pub mod node_state {
         }
     }
     impl const HasBranches for Branching {}
+    impl const Expanded for Branching {}
 
     #[derive(Clone, Copy, Default, Debug, PartialEq)]
     pub struct Evaluated;
@@ -859,148 +281,647 @@ pub mod node_state {
     impl Any for Unknown {}
 }
 
-#[derive(Debug)]
-pub struct Node<'a, S: node_state::Any> {
-    pub(crate) data: &'a mut NodeData,
-    _state: PhantomData<S>,
+pub struct Path(pub Vec<Branch>);
+
+impl Path {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
-impl<S: node_state::HasBranches> fmt::Display for Node<'_, S> {
+impl fmt::Display for Path {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Node")
-            .field("value", &self.value())
-            .field("visits", &self.visits())
-            .field(
-                "branches",
-                &self
-                    .branches()
-                    .iter()
-                    .map(|b| format!("{}", b.mov()))
-                    .collect_vec(),
-            )
-            .finish()
+        let mut moves = self.0.iter().map(|x| x.mov().to_string());
+        f.write_str(&moves.join(" "))
     }
 }
 
-impl<S: node_state::HasBranches> Node<'_, S> {
-    pub fn branches(&self) -> &[Branch] {
-        &self.data.branches
+// -----------------------------------------------------------------------------
+// Architecture: Double-Buffered Flat Arena MCTS Tree
+// -----------------------------------------------------------------------------
+
+/// The fundamental unit of storage, containing perfectly packed contiguous
+/// arrays. Entirely private to encapsulate the DOD architecture.
+#[derive(Clone, Default)]
+struct ArenaBuffer {
+    nodes: Vec<NodeData>,
+    branches: Vec<Branch>,
+}
+
+impl ArenaBuffer {
+    fn new(node_cap: usize, branch_cap: usize) -> Self {
+        Self {
+            nodes: Vec::with_capacity(node_cap),
+            branches: Vec::with_capacity(branch_cap),
+        }
     }
 
-    pub fn move_indices(&self) -> impl Iterator<Item = usize> {
-        self.branches().iter().map(|b| usize::from(b.mov()))
+    fn clear(&mut self) {
+        self.nodes.clear();
+        self.branches.clear();
+    }
+}
+
+/// Completely flattened, index-based node representation.
+#[derive(Clone, Default, Debug)]
+pub struct NodeData {
+    branch_start: u32,
+    branch_count: MoveIndex,
+
+    visits: u32,
+    value: Value,
+    state: NodeState,
+}
+
+impl NodeData {
+    fn new_leaf() -> Self {
+        Self {
+            state: NodeState::Leaf,
+            ..Default::default()
+        }
     }
 
-    pub fn sort_by<T: Ord>(&mut self, f: impl Fn(&Branch) -> T) {
-        self.data.branches.sort_by_key(f);
+    pub fn value(&self) -> Value {
+        self.value
     }
 
-    pub fn get_branch(&self, index: usize) -> Option<&Branch> {
-        self.data.branches.get(index)
+    pub fn visits(&self) -> u32 {
+        self.visits
+    }
+}
+
+/// A relational representation connecting a parent node to a child node via
+/// indices.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Branch {
+    node: RtNodeId,
+    policy: f32,
+    mov: Move,
+}
+
+impl Branch {
+    #[inline]
+    pub fn mov(&self) -> Move {
+        self.mov
     }
 
-    fn select_best(&self) -> &Branch {
-        self.data
-            .branches
+    #[inline]
+    pub fn policy(&self) -> f32 {
+        self.policy
+    }
+
+    #[inline]
+    pub fn node(&self) -> RtNodeId {
+        self.node
+    }
+}
+
+/// The unified container encapsulating the active arena and tracking global
+/// stats.
+#[derive(Clone)]
+pub struct Tree {
+    arena: ArenaBuffer,
+    size: usize,
+    maxheight: Height,
+}
+
+impl Default for Tree {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Tree {
+    const ROOT_IDX: RtNodeId = RtNodeId::new(0);
+
+    pub fn new() -> Self {
+        let mut arena = ArenaBuffer::new(10000, 30000); // Sensible pre-alloc defaults
+        arena.nodes.push(NodeData::new_leaf());
+        Self {
+            arena,
+            size: 1,
+            maxheight: Height::ROOT,
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn compute_subtree_size(&self, node_id: RtNodeId) -> usize {
+        1 + self
+            .branches(node_id)
             .iter()
-            .max_by(|&a, &b| {
-                a.node()
-                    .partial_cmp(&b.node())
-                    .expect("Node comparison failed!")
-            })
-            .expect("An expanded node has to have at least one branch.")
+            .map(|b| self.compute_subtree_size(b.node))
+            .sum::<usize>()
     }
 
-    fn find_branch(&self, mut pred: impl FnMut(&Branch) -> bool) -> Option<&Branch> {
-        self.data.branches.iter().find(|&b| pred(b))
+    pub fn maxheight(&self) -> Height {
+        self.maxheight
     }
 
-    fn select<F, T>(&self, transform: F) -> &Branch
+    pub fn compute_subtree_maxheight(&self, node: RtNodeId) -> Height {
+        Height::ROOT
+            + self
+                .branches(node)
+                .iter()
+                .map(|b| self.compute_subtree_maxheight(b.node))
+                .max()
+                .unwrap_or(Height::EMPTY)
+    }
+
+    pub fn compute_subtree_minheight(&self, node: RtNodeId) -> Height {
+        Height::ROOT
+            + self
+                .branches(node)
+                .iter()
+                .map(|b| self.compute_subtree_minheight(b.node))
+                .min()
+                .unwrap_or(Height::EMPTY)
+    }
+
+    pub fn root(&self) -> RtNodeId {
+        Self::ROOT_IDX
+    }
+
+    /// Safely provides read access to a node's branches, enforced by typestate.
+    #[inline]
+    pub fn branches<S: node_state::Any>(&self, node_id: NodeId<S>) -> &[Branch] {
+        let data = &self.arena.nodes[node_id.index as usize];
+        let start = data.branch_start as usize;
+        let end = start + data.branch_count.v as usize;
+        &self.arena.branches[start..end]
+    }
+
+    /// Safely provides mutable access to a node's branches, enforced by
+    /// typestate. This allows external sorting without leaking the inner
+    /// ArenaBuffer arrays.
+    #[inline]
+    pub fn branches_mut<S: node_state::HasBranches>(
+        &mut self,
+        node_id: NodeId<S>,
+    ) -> &mut [Branch] {
+        let data = &self.arena.nodes[node_id.index as usize];
+        let start = data.branch_start as usize;
+        let end = start + data.branch_count.v as usize;
+        &mut self.arena.branches[start..end]
+    }
+
+    /// Sorts the branches of a given node in-place without allocating.
+    /// Safely splits the borrow of the arena so we can mutate branches while
+    /// reading nodes.
+    pub fn sort_branches_by<F>(&mut self, parent_id: NodeId<Evaluated>, mut compare: F)
     where
-        F: Fn(&Branch) -> T,
-        T: PartialOrd,
+        // The closure takes: (child_a_data, branch_a, child_b_data, branch_b)
+        F: FnMut(&NodeData, &Branch, &NodeData, &Branch) -> Ordering,
     {
-        self.data
-            .branches
-            .iter()
-            .max_by(|a, b| {
-                let a = transform(a);
-                let b = transform(b);
-                a.partial_cmp(&b).expect("Node comparison failed!")
-            })
-            .expect("An expanded node has to have atleast one branch.")
-    }
-}
+        // 1. Get the slice bounds
+        let parent_data = &self.arena.nodes[parent_id.index as usize];
+        let b_start = parent_data.branch_start as usize;
+        let b_end = b_start + parent_data.branch_count.v as usize;
 
-impl<'a> Node<'a, Branching> {
-    pub(self) fn set_policy<'b>(self, policy: &'b Policy) -> Node<'a, Evaluated> {
+        // 2. Split the borrow!
+        // `nodes` is borrowed immutably, `branches` is borrowed mutably.
+        let nodes = &self.arena.nodes;
+        let branches_slice = &mut self.arena.branches[b_start..b_end];
+
+        // 3. Sort in-place using the disjoint slices
+        branches_slice.sort_unstable_by(|branch_a, branch_b| {
+            // Read the child data directly from the immutable `nodes` slice
+            let child_a_data = &nodes[branch_a.node.index()];
+            let child_b_data = &nodes[branch_b.node.index()];
+
+            compare(child_a_data, branch_a, child_b_data, branch_b)
+        });
+    }
+
+    pub fn move_indices<S: HasBranches>(&self, node: NodeId<S>) -> impl Iterator<Item = usize> {
+        self.branches(node).iter().map(|b| usize::from(b.mov()))
+    }
+
+    /// Backpropagation exclusively mutates the tree sequentially using a
+    /// recorded path slice.
+    pub fn backpropagate(&mut self, path: &[u32], final_value: eval::Value) {
+        for &idx in path {
+            let node = &mut self.arena.nodes[idx as usize];
+            node.visits += 1;
+            node.value += final_value;
+        }
+    }
+
+    /// Expands a leaf node, creating branches and updating tree statistics
+    /// immutably.
+    pub fn expand_node(
+        &mut self,
+        node_id: NodeId<Leaf>,
+        pos: &Position,
+        search_depth: Depth,
+    ) -> ExpandedSwitch {
+        if pos.game_result().is_some() {
+            self.arena.nodes[node_id.index as usize].state = NodeState::Terminal;
+            unsafe {
+                return ExpandedSwitch::Terminal(node_id.cast());
+            }
+        }
+
+        let mut moves = Vec::with_capacity(35);
+        _ = fold_legal_moves(pos, &mut moves, |acc, m| {
+            acc.push(m);
+            ControlFlow::Continue::<(), _>(acc)
+        });
+        println!("{:?}", moves);
+
+        let branches_count = MoveIndex::try_from(moves.len())
+            .expect("fold_legal_moves will return all moves in a legal position and no more.");
+        if branches_count == MoveIndex::from(0) {
+            unreachable!("If there are no branches for this node, it has to be terminal.");
+        }
+
+        let branch_start = self.arena.branches.len() as u32;
+        let branch_count = branches_count;
+
+        for m in moves {
+            let child = RtNodeId::from(self.arena.nodes.len());
+            self.arena.nodes.push(NodeData::new_leaf());
+
+            self.arena
+                .branches
+                .push(Branch { node: child, policy: 0.0, mov: m });
+        }
+
+        // Link parent to branches
+        let parent = &mut self.arena.nodes[node_id.index as usize];
+        parent.branch_start = branch_start;
+        parent.branch_count = branch_count;
+        parent.state = NodeState::Branching;
+
+        let height: Height = search_depth.into();
+        self.size += branches_count.v as usize;
+        self.maxheight = self.maxheight.max(height + 1);
+
+        unsafe { ExpandedSwitch::Branching(node_id.cast()) }
+    }
+
+    pub fn skip_policy(&mut self, node: NodeId<Branching>) -> NodeId<Evaluated> {
+        let data = &self.arena.nodes[node.index as usize];
+        let start = data.branch_start as usize;
+        let count = data.branch_count.v as usize;
+
+        let even_prob = 1.0 / count as f32;
+        for branch in &mut self.arena.branches[start..start + count] {
+            branch.policy = even_prob;
+        }
+
+        self.arena.nodes[node.index as usize].state = NodeState::Evaluated;
+        unsafe { node.cast() }
+    }
+
+    pub fn set_policy(&mut self, node: NodeId<Branching>, policy: &Policy) -> NodeId<Evaluated> {
+        let data = &self.arena.nodes[node.index as usize];
+        let start = data.branch_start as usize;
+        let count = data.branch_count.v as usize;
+
         assert_eq!(
-            self.branches().len(),
+            count,
             policy.len(),
             "There has to be exactly one policy for each branch."
         );
 
-        for (i, branch) in self.data.branches.iter_mut().enumerate() {
+        for (i, branch) in self.arena.branches[start..start + count]
+            .iter_mut()
+            .enumerate()
+        {
             let p = policy.get(i).expect("Policy should contain this move.");
-            branch.set_policy(p);
+            branch.policy = p;
         }
 
-        // SAFETY: we just set the policy for each branch. It has to be valid.
-        unsafe { Node::<'a, Evaluated>::new(self.data) }
+        self.arena.nodes[node.index as usize].state = NodeState::Evaluated;
+        unsafe { node.cast() }
     }
 
-    /// Sets the policy to an even probability for all branches.
-    pub(self) fn skip_policy(self) -> Node<Evaluated> {
-        let policy = Policy::new_even(self.data.branches.len());
-        self.set_policy(&policy)
-    }
-}
+    pub fn apply_policy_noise(&mut self, node: NodeId<Evaluated>, noise: &[f32], eps: f32) {
+        let data = &self.arena.nodes[node.index as usize];
+        let start = data.branch_start as usize;
+        let count = data.branch_count.v as usize;
 
-impl Node<'_, Evaluated> {
-    pub(self) fn apply_policy_noise(&mut self, noise: &[f32], eps: f32) {
         let total = noise.iter().sum::<f32>();
-        for (branch, noise) in self.data.branches.iter_mut().zip(noise) {
-            let norm_noise = noise / total;
-            let policy = branch.policy();
-            let new_policy = policy * (1. - eps) + eps * norm_noise;
-            branch.policy = new_policy;
+        for (branch, &noise_val) in self.arena.branches[start..start + count]
+            .iter_mut()
+            .zip(noise)
+        {
+            let norm_noise = noise_val / total;
+            let current_policy = branch.policy;
+            branch.policy = current_policy * (1. - eps) + eps * norm_noise;
+        }
+    }
+
+    pub fn update_node<S: HasValue>(&mut self, node: NodeId<S>, value: eval::Value) {
+        self.arena.nodes[node.index as usize].visits += 1;
+        self.arena.nodes[node.index as usize].value += value;
+    }
+
+    pub fn set_proven<S: HasValue>(&mut self, node: NodeId<S>, state: Proven) {
+        self.arena.nodes[node.index as usize].value = Value::from(state);
+    }
+
+    /// Double-buffering Garbage Collection implementation.
+    /// Discards dead branches and retains only the subtree of the committed
+    /// move.
+    pub fn advance_to(&mut self, back_buffer: &mut Tree, new_root_index: RtNodeId) {
+        back_buffer.arena.clear();
+        let (_, new_size, new_height) =
+            self.copy_subtree(new_root_index, &mut back_buffer.arena, 1);
+
+        std::mem::swap(&mut self.arena, &mut back_buffer.arena);
+
+        self.size = new_size;
+        self.maxheight = new_height;
+    }
+
+    fn copy_subtree(
+        &self,
+        old_idx: RtNodeId,
+        back_buffer: &mut ArenaBuffer,
+        current_height: u16,
+    ) -> (u32, usize, Height) {
+        let old_node = &self.arena.nodes[old_idx.index as usize];
+        let new_idx = back_buffer.nodes.len() as u32;
+
+        back_buffer.nodes.push(old_node.clone());
+
+        let mut total_size = 1;
+        let mut max_h = current_height;
+
+        if old_node.branch_count > MoveIndex::from(0) {
+            let branch_start = old_node.branch_start as usize;
+            let branch_end = branch_start + old_node.branch_count.v as usize;
+            let new_branch_start = back_buffer.branches.len() as u32;
+
+            for branch_idx in branch_start..branch_end {
+                let mut b = self.arena.branches[branch_idx].clone();
+                b.node.index = 0;
+                back_buffer.branches.push(b);
+            }
+
+            back_buffer.nodes[new_idx as usize].branch_start = new_branch_start;
+
+            for (i, branch_idx) in (branch_start..branch_end).enumerate() {
+                let old_branch = &self.arena.branches[branch_idx];
+                let (child_new_idx, sub_size, sub_height) =
+                    self.copy_subtree(old_branch.node, back_buffer, current_height + 1);
+                total_size += sub_size;
+                max_h = max_h.max(sub_height.0);
+
+                back_buffer.branches[(new_branch_start as usize) + i]
+                    .node
+                    .index = child_new_idx;
+            }
+        }
+
+        (new_idx, total_size, Height(max_h))
+    }
+
+    pub fn best_branch<'a, S: node_state::HasBranches + 'a>(
+        &'a self,
+        node_id: NodeId<S>,
+    ) -> &'a Branch {
+        self.branches(node_id)
+            .iter()
+            .max_by_key(|b| self.arena.nodes[b.node.index as usize].visits)
+            .expect("Branching node should have branches")
+    }
+
+    pub fn best_move<S: node_state::HasBranches>(&self, node_id: NodeId<S>) -> Move {
+        self.best_branch(node_id).mov()
+    }
+
+    pub fn maybe_best_move(&self, node_id: RtNodeId) -> Option<Move> {
+        let node = &self.arena.nodes[node_id.index as usize];
+        if node.state.has_branches() {
+            Some(unsafe { self.best_move(node_id.up_cast::<node_state::Branching>()) })
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn best_moves<S: HasBranches>(
+        &self,
+        node_id: NodeId<S>,
+        threshold: Value,
+    ) -> impl Iterator<Item = Move> {
+        self.branches(node_id)
+            .iter()
+            .filter(move |b| self.node(b.node()).value() > threshold)
+            .map(|b| b.mov())
+    }
+
+    pub fn line(&self, mut cmp: impl FnMut(&Branch, &Branch) -> Ordering) -> Path {
+        let mut buf = Vec::new();
+        let mut current = Self::ROOT_IDX;
+
+        loop {
+            let node = self.node(current);
+            if !node.state().has_branches() {
+                break;
+            }
+
+            let best_branch_opt = self.branches(current).iter().max_by(|a, b| cmp(a, b));
+
+            if let Some(branch) = best_branch_opt {
+                buf.push(branch.clone());
+                current = branch.node;
+            }
+            else {
+                break;
+            }
+        }
+
+        Path(buf)
+    }
+
+    pub fn principal_line(&self) -> Path {
+        self.line(|a, b| {
+            let a = self.node(a.node());
+            let b = self.node(b.node());
+            // 1. Most visits
+            a.visits()
+                .cmp(&b.visits())
+                // 2. Highest value
+                .then_with(|| a.value().partial_cmp(&b.value()).unwrap_or(Ordering::Equal))
+        })
+    }
+
+    pub fn node_switch(&self, node_id: RtNodeId) -> Switch {
+        let rt_state = self.arena.nodes[node_id.index as usize].state;
+        Switch::new(node_id, rt_state)
+    }
+
+    pub fn try_node<S: node_state::Valid>(&'_ self, node_id: RtNodeId) -> Option<NodeView<'_, S>> {
+        self.node_switch(node_id).get::<S>().map(|x| self.node(x))
+    }
+
+    pub fn node_rt(&'_ self, node_id: RtNodeId) -> NodeView<'_, Unknown> {
+        NodeView::new(self, node_id.down_cast())
+    }
+
+    pub fn node<S: node_state::Any>(&'_ self, node_id: NodeId<S>) -> NodeView<'_, S> {
+        NodeView::new(self, node_id)
+    }
+
+    pub fn branch<S: node_state::HasBranches>(
+        &self,
+        node_id: NodeId<S>,
+        branch_index: MoveIndex,
+    ) -> Option<&Branch> {
+        let node = self.node(node_id);
+        node.branches().get(branch_index.v as usize)
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Typestates & Zero-Cost Views
+// -----------------------------------------------------------------------------
+
+pub type RtNodeId = NodeId<node_state::Unknown>;
+
+impl RtNodeId {
+    pub unsafe fn up_cast<S: node_state::Valid>(&self) -> NodeId<S> {
+        NodeId::new(self.index)
+    }
+}
+
+/// The Typestate ID is just a zero-cost wrapper around a `u32` index.
+#[derive(PartialEq, Eq)]
+pub struct NodeId<S: node_state::Any> {
+    pub index: u32,
+    _marker: PhantomData<S>,
+}
+
+impl From<usize> for NodeId<node_state::Unknown> {
+    fn from(value: usize) -> Self {
+        NodeId::new(value as u32)
+    }
+}
+
+impl<S: node_state::Any> NodeId<S> {
+    pub const fn new(index: u32) -> Self {
+        Self { index, _marker: PhantomData }
+    }
+
+    pub unsafe fn cast<T: node_state::Any>(self) -> NodeId<T> {
+        NodeId::new(self.index)
+    }
+
+    pub fn down_cast(self) -> RtNodeId {
+        RtNodeId::new(self.index)
+    }
+
+    pub fn index(&self) -> usize {
+        self.index as usize
+    }
+}
+
+impl<S: const node_state::Valid> NodeId<S> {
+    const STATE: NodeState = S::state();
+
+    pub fn try_into<Target: node_state::Valid>(self) -> Option<NodeId<Target>> {
+        if Self::STATE == Target::state() {
+            Some(NodeId::new(self.index))
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn into_ct(self) -> Switch {
+        unsafe {
+            match Self::STATE {
+                NodeState::Leaf => Switch::Leaf(self.cast()),
+                NodeState::Branching => Switch::Branching(self.cast()),
+                NodeState::Terminal => Switch::Terminal(self.cast()),
+                NodeState::Evaluated => Switch::Evaluated(self.cast()),
+            }
         }
     }
 }
 
-impl<S: node_state::Valid> Node<'_, S> {
-    pub fn state() -> NodeState {
+impl<S: node_state::Any> Clone for NodeId<S> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<S: node_state::Any> Copy for NodeId<S> {}
+
+impl<S: node_state::Any> fmt::Debug for NodeId<S> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CtNodeId({})", self.index)
+    }
+}
+
+/// A transient "View" binding a typestate integer to a specific Tree instance.
+pub struct NodeView<'a, S: node_state::Any> {
+    pub tree: &'a Tree,
+    pub id: NodeId<S>,
+}
+
+impl<'a, S: node_state::Any> Clone for NodeView<'a, S> {
+    fn clone(&self) -> Self {
+        Self { tree: self.tree, id: self.id }
+    }
+}
+
+impl<'a, S: node_state::Any> Copy for NodeView<'a, S> {}
+
+impl<'a, S: node_state::Any> NodeView<'a, S> {
+    pub fn new(tree: &'a Tree, id: NodeId<S>) -> Self {
+        Self { tree, id }
+    }
+
+    #[inline]
+    pub fn data(&self) -> &NodeData {
+        &self.tree.arena.nodes[self.id.index as usize]
+    }
+
+    #[inline]
+    pub fn visits(&self) -> u32 {
+        self.data().visits
+    }
+
+    #[inline]
+    pub fn value(&self) -> Value {
+        self.data().value
+    }
+
+    #[inline]
+    pub fn state(&self) -> NodeState {
+        self.data().state
+    }
+
+    #[inline]
+    pub fn proven(&self) -> Option<Proven> {
+        self.data().value.try_into().ok()
+    }
+}
+
+impl<'a, S: node_state::Valid> NodeView<'a, S> {
+    pub fn expected_state() -> NodeState {
         S::state()
     }
 }
 
-impl<'a, S: node_state::Any> Node<'a, S> {
-    /// Construct a new node.
-    ///
-    /// # Safety
-    ///
-    /// The caller has to make sure that `data` contains valid data to be in
-    /// state `S`.
-    unsafe fn new(data: &'a mut NodeData) -> Self {
-        Self { data, _state: PhantomData }
+impl<'a, S: node_state::HasBranches> NodeView<'a, S> {
+    #[inline]
+    pub fn branches(&self) -> &'a [Branch] {
+        self.tree.branches(self.id)
     }
 
-    pub fn visits(&self) -> u32 {
-        self.data.visits()
-    }
-
-    pub fn value(&self) -> Value {
-        self.data.value()
-    }
-}
-
-impl<S: HasValue> Node<'_, S> {
-    pub(self) fn update(&mut self, value: eval::Value) {
-        self.data.update(value)
-    }
-
-    pub(self) fn set_proven(&mut self, state: Proven) {
-        self.data.set_proven(state)
+    pub fn branch_count(&self) -> MoveIndex {
+        self.data().branch_count
     }
 }
 
@@ -1016,16 +937,15 @@ impl Default for WinRate {
     }
 }
 
-impl From<CtNodeRef<Evaluated>> for WinRate {
-    fn from(node: CtNodeRef<Evaluated>) -> Self {
-        let node = node.borrow();
+impl<'a> From<NodeView<'a, Evaluated>> for WinRate {
+    fn from(node: NodeView<'a, Evaluated>) -> Self {
         let visits = node.visits();
         let value = node.value();
         if visits == 0 {
             Self::default()
         }
         else {
-            Self(value / visits as f32)
+            Self(value.0 / visits as f32)
         }
     }
 }

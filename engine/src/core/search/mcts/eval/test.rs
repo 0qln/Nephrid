@@ -6,29 +6,37 @@ use crate::core::{
     position::Position,
     search::mcts::{
         eval::{Evaluation, Evaluator, GameResult},
-        node::{CtNodeRef, Node, RtNodeRef, Tree},
+        node::{
+            Tree,
+            node_state::{Leaf, Terminal},
+        },
         test::DummyEvaluator,
     },
     zobrist,
 };
 
 fn test(pos: Position, expected_result: Option<GameResult>) {
-    let node = CtNodeRef::new(Node::new_leaf());
-    let mut tree = Tree::new(RtNodeRef::from_ct(node.clone()));
-    let node = tree.expand_node(node.clone(), &pos, pos.ply().into());
+    let mut tree = Tree::new();
+
+    let node = tree.expand_node(
+        tree.node_switch(tree.root()).get::<Leaf>().unwrap(),
+        &pos,
+        pos.ply().into(),
+    );
 
     assert_eq!(
-        node.terminal().is_some(),
+        tree.node_switch(tree.root()).get::<Terminal>().is_some(),
         expected_result.is_some(),
         "if we expect a game result \n\n{expected_result:?}\n\n in position \n\n{pos:?}\n\n, the \
          state transition should be Terminal \n\n{node:?}\n\n, and visa versa"
     );
 
     if let Some(expected_result) = expected_result {
-        let node = node
-            .terminal()
+        let node = tree
+            .node_switch(tree.root())
+            .get::<Terminal>()
             .expect("if we have a result, the node should be terminal");
-        let result = DummyEvaluator::eval_terminal(node.clone(), pos.ply().into(), &pos);
+        let result = DummyEvaluator::eval_terminal(node, &tree, pos.ply().into(), &pos);
         assert_eq!(result, Evaluation::Terminal(expected_result));
     }
 }

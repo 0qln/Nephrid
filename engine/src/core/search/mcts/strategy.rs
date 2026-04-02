@@ -43,11 +43,12 @@ impl MctsStrategy for MctsFindBest {
     type Step = Option<Move>;
 
     fn result(&mut self, tree: &mut Tree) -> Self::Result {
-        self.last_best_move.or_else(|| tree.best_move())
+        self.last_best_move
+            .or_else(|| tree.maybe_best_move(tree.root()))
     }
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
-        let curr_best_move = tree.best_move();
+        let curr_best_move = tree.maybe_best_move(tree.root());
         if self.last_best_move != curr_best_move
             && let Some(mov) = curr_best_move
         {
@@ -217,8 +218,8 @@ impl MctsUci {
     }
 
     fn determine_score(&self, tree: &Tree, pv_len: usize) -> Option<UciScore> {
-        let root = tree.get_root();
-        let root_value = root.borrow().value();
+        let root = tree.node(tree.root());
+        let root_value = root.value();
 
         let mate_in_plies = Ply { v: pv_len as u16 };
 
@@ -232,7 +233,7 @@ impl MctsUci {
             // => set sign negative.
             Some(UciScore::Mate(-mate_in_plies.to_mate_score()))
         }
-        else if let Some(evaluated) = root.clone().try_into::<Evaluated>() {
+        else if let Some(evaluated) = tree.try_node::<Evaluated>(tree.root()) {
             // (invert bc it's relative to parent node)
             let win_rate = -WinRate::from(evaluated);
             let cp = UciCp(Cp::from(win_rate));
@@ -248,7 +249,7 @@ impl MctsUci {
     /// Send the [UCI info command](https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L248).
     fn uci_info(&self, tree: &Tree, mov: Move) {
         let tree_size = tree.size();
-        let pv = tree.principal_variation();
+        let pv = tree.principal_line();
 
         let currmove = UciArg::Some(UciCurrmove(mov));
         let score = UciArg::from(self.determine_score(tree, pv.len()));
@@ -269,7 +270,7 @@ impl MctsUci {
     ///
     /// Send the [UCI bestmove command](https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L207).
     fn uci_bestmove(&self, tree: &Tree, mov: Move) {
-        let pv = tree.principal_variation();
+        let pv = tree.principal_line();
         let best_move = UciArg::Some(mov);
         let ponder_move = UciArg::from(pv.0.get(1).map(|b| UciPondermove(b.mov())));
 
@@ -340,8 +341,8 @@ impl MctsStrategy for MctsUci {
         // --- Everything below this line ONLY applies during a normal search ---
 
         // 4. Proven win/loss at root
-        let root = tree.get_root();
-        let root_value = root.borrow().value();
+        let root = tree.node(tree.root());
+        let root_value = root.value();
         if root_value.is_proven_win() || root_value.is_proven_loss() {
             return true;
         }

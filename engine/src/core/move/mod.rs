@@ -1,5 +1,6 @@
 use core::fmt;
 use move_flags as f;
+use std::ops;
 use std::{
     fmt::Write,
     ops::{ControlFlow, Index, IndexMut},
@@ -515,17 +516,17 @@ impl Default for MoveList {
     }
 }
 
-impl Index<u8> for MoveList {
+impl Index<MoveIndex> for MoveList {
     type Output = Move;
 
-    fn index(&self, index: u8) -> &Self::Output {
-        unsafe { self.0.get_unchecked(index as usize) }
+    fn index(&self, index: MoveIndex) -> &Self::Output {
+        unsafe { self.0.get_unchecked(index.v as usize) }
     }
 }
 
-impl IndexMut<u8> for MoveList {
-    fn index_mut(&mut self, index: u8) -> &mut Self::Output {
-        unsafe { self.0.get_unchecked_mut(index as usize) }
+impl IndexMut<MoveIndex> for MoveList {
+    fn index_mut(&mut self, index: MoveIndex) -> &mut Self::Output {
+        unsafe { self.0.get_unchecked_mut(index.v as usize) }
     }
 }
 
@@ -537,5 +538,31 @@ impl fmt::Display for MoveList {
             .take_while(|mov| mov.v != 0)
             .map(|mov| mov.to_string());
         write!(f, "[{}]", moves.collect::<Vec<_>>().join(", "))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default)]
+pub struct MoveIndex {
+    pub v: u8,
+}
+
+impl_op!(+=|a: &mut MoveIndex, b: u8| { a.v += b });
+impl_op!(+|a: MoveIndex, b: u8| -> MoveIndex { Self { v: a.v + b } });
+
+impl TryFrom<usize> for MoveIndex {
+    type Error = ValueOutOfRangeError<usize>;
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        if value <= 255 {
+            Ok(Self { v: value as u8 })
+        }
+        else {
+            Err(ValueOutOfRangeError::new(value, 0..=255))
+        }
+    }
+}
+
+impl From<u8> for MoveIndex {
+    fn from(value: u8) -> Self {
+        Self { v: value }
     }
 }

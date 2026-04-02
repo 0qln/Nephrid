@@ -1,6 +1,6 @@
 use crate::core::search::mcts::{
     eval::Policy,
-    node::{CtNodeRef, node_state::HasBranches},
+    node::{NodeId, Tree, node_state::HasBranches},
     search::{BatchItem, Selection},
 };
 use rand::{Rng, SeedableRng, rngs::SmallRng};
@@ -45,12 +45,18 @@ impl Default for DummyEvaluator {
 impl Evaluator for DummyEvaluator {
     type TraceData = DummyTraceData;
 
-    fn trace<S: HasBranches>(&self, _node: CtNodeRef<S>, pos: &mut Position) -> Self::TraceData {
+    fn trace<S: HasBranches>(
+        &self,
+        _node: NodeId<S>,
+        _tree: &Tree,
+        pos: &mut Position,
+    ) -> Self::TraceData {
         DummyTraceData { turn: pos.get_turn() }
     }
 
     fn eval_batch<const X: usize>(
         &mut self,
+        tree: &Tree,
         _selection: &Selection<X, Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
@@ -67,8 +73,7 @@ impl Evaluator for DummyEvaluator {
 
             let raw_policy = RawPolicy::new(policy_arr);
 
-            let node = leaf.node.borrow();
-            let moves = node.move_indices();
+            let moves = tree.move_indices(leaf.node);
 
             evaluations.push(Evaluation::Guess(Box::new(Guess {
                 relative_to: trace_data.turn,

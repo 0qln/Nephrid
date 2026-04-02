@@ -1,16 +1,17 @@
-use std::ops::Try;
+use std::{cmp::Ordering, ops::Try};
 
 use itertools::Itertools;
 
 use crate::core::{
     Position,
     depth::Depth,
+    r#move::MoveIndex,
     search::mcts::{
         back::Backpropagater,
         eval::{Evaluation, Evaluator},
         limiter::{self, Limiter},
         node::{
-            Branch, CtNodeRef, Tree,
+            NodeId, NodeView, Tree,
             node_state::{self, *},
         },
         noise::Noiser,
@@ -25,19 +26,19 @@ use super::eval::GameResult;
 pub mod test;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NodeId(pub usize);
+pub struct SelNodeId(pub usize);
 
-/// Info about a selected node or it's ascendend in the tree.
+/// Info about a selected node or its ascendant in the tree.
 #[derive(Debug)]
 pub struct SelNode<T, S: node_state::Any> {
-    /// The node.
-    pub node: CtNodeRef<S>,
+    /// The node index wrapper
+    pub node: NodeId<S>,
 
     /// Current player's turn
     pub turn: Turn,
 
     /// The sel parent node.
-    pub parent: Option<NodeId>,
+    pub parent: Option<SelNodeId>,
 
     pub data: T,
 }
@@ -73,7 +74,7 @@ impl<T> PhaseItem<T> {
 
 pub struct Selection<const X: usize, T> {
     pub arena: Vec<SelNode<T, Evaluated>>,
-    pub root: Option<NodeId>,
+    pub root: Option<SelNodeId>,
     pub leafs: [PhaseItem<T>; X],
 }
 
@@ -95,13 +96,13 @@ impl<const X: usize, T> Selection<X, T> {
     /// Initializes a new root node.
     pub fn init_root(
         &mut self,
-        root_node: CtNodeRef<Evaluated>,
+        root_node: NodeId<Evaluated>,
         turn: Turn,
         trace_data: T,
-    ) -> NodeId {
+    ) -> SelNodeId {
         self.clear();
 
-        let root_id = NodeId(self.arena.len());
+        let root_id = SelNodeId(self.arena.len());
         self.arena.push(SelNode {
             node: root_node,
             turn,
@@ -123,12 +124,12 @@ impl<const X: usize, T> Selection<X, T> {
     /// Allocates a new Parent node in the arena and attaches it to the parent.
     pub fn append_parent(
         &mut self,
-        parent_id: NodeId,
-        parent_node: CtNodeRef<Evaluated>,
+        parent_id: SelNodeId,
+        parent_node: NodeId<Evaluated>,
         turn: Turn,
         trace_data: T,
-    ) -> NodeId {
-        let child_id = NodeId(self.arena.len());
+    ) -> SelNodeId {
+        let child_id = SelNodeId(self.arena.len());
 
         self.arena.push(SelNode {
             node: parent_node,
@@ -144,16 +145,16 @@ impl<const X: usize, T> Selection<X, T> {
         self.leafs[index] = item;
     }
 
-    pub fn get_node(&self, id: NodeId) -> &SelNode<T, Evaluated> {
+    pub fn get_node(&self, id: SelNodeId) -> &SelNode<T, Evaluated> {
         &self.arena[id.0]
     }
 
-    pub fn get_node_mut(&mut self, id: NodeId) -> &mut SelNode<T, Evaluated> {
+    pub fn get_node_mut(&mut self, id: SelNodeId) -> &mut SelNode<T, Evaluated> {
         &mut self.arena[id.0]
     }
 
     /// Applies `f` to the given node and all parent nodes, moving up the tree.
-    pub fn try_fold_up_mut<B, F, R>(&mut self, mut current: NodeId, mut init: B, mut f: F) -> R
+    pub fn try_fold_up_mut<B, F, R>(&mut self, mut current: SelNodeId, mut init: B, mut f: F) -> R
     where
         F: FnMut(B, &mut SelNode<T, Evaluated>) -> R,
         R: Try<Output = B>,
@@ -172,7 +173,7 @@ impl<const X: usize, T> Selection<X, T> {
         R::from_output(init)
     }
 
-    pub fn try_fold_up<B, F, R>(&self, mut current: Option<NodeId>, mut init: B, mut f: F) -> R
+    pub fn try_fold_up<B, F, R>(&self, mut current: Option<SelNodeId>, mut init: B, mut f: F) -> R
     where
         F: FnMut(B, &SelNode<T, Evaluated>) -> R,
         R: std::ops::Try<Output = B>,
@@ -231,21 +232,21 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     /// tree is prepared to be grown.
     pub fn init_root(&mut self, tree: &mut Tree) {
         loop {
-            match tree.get_root().into_ct() {
+            match tree.node_switch(tree.root()) {
                 // If the root is a leaf, expand and transition to next phase.
-                NodeSwitch::Leaf(node) => {
+                Switch::Leaf(node) => {
                     let _ = tree.expand_node(node, self.position, Depth::ROOT);
                 }
                 // If the root is branching, evaluate and transition to next phase.
-                NodeSwitch::Branching(node) => {
+                Switch::Branching(node) => {
                     // init selection
                     let turn = self.position.get_turn();
-                    let trace_data = self.evaluator.trace(node.clone(), self.position);
+                    let trace_data = self.evaluator.trace(node, tree, self.position);
                     self.selection.clear();
                     self.selection.set(
                         0,
                         PhaseItem::Batched(SelNode {
-                            node: node.clone(),
+                            node,
                             turn,
                             parent: None,
                             data: trace_data,
@@ -256,7 +257,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                     let eval = {
                         let leaf = self.selection.leafs[0].batch_item().unwrap();
                         self.evaluator
-                            .eval_batch(&self.selection, &[leaf])
+                            .eval_batch(tree, &self.selection, &[leaf])
                             .next()
                             .unwrap()
                     };
@@ -270,14 +271,14 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                     self.selection.clear();
                 }
                 // If the node is evaluated, apply noise and we're done.
-                NodeSwitch::Evaluated(node) => {
+                Switch::Evaluated(node) => {
                     if let Err(err) = self.noiser.apply_noise(node, tree) {
                         println!("Failed to apply noise to root node: {err}");
                     }
                     break;
                 }
                 // If the root node is terminal, we cannot grow it... just break here.
-                NodeSwitch::Terminal(_node) => {
+                Switch::Terminal(_node) => {
                     break;
                 }
             }
@@ -287,22 +288,22 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     pub fn grow(&mut self, tree: &mut Tree) {
         self.selection.clear();
         self.select_lines(tree);
-        self.eval_batched();
+        self.eval_batched(tree);
         self.backup_evals(tree);
     }
 
     fn select_lines(&mut self, tree: &mut Tree) {
-        let root = tree.get_root().clone();
+        let root_id = tree.root();
         let turn = self.position.get_turn();
 
-        let root = match root.into_ct() {
-            NodeSwitch::Evaluated(n) => n,
+        let root = match tree.node_switch(root_id) {
+            Switch::Evaluated(n) => n,
             _ => panic!("Root must be evaluated before selecting lines! Did you call init_root?"),
         };
 
-        let eval_data = self.evaluator.trace(root.clone(), self.position);
+        let eval_data = self.evaluator.trace(root, tree, self.position);
 
-        let sel_root_id = self.selection.init_root(root.clone(), turn, eval_data);
+        let sel_root_id = self.selection.init_root(root, turn, eval_data);
         self.pick_branches(MPV, 0, Depth::ROOT, root, tree, sel_root_id);
     }
 
@@ -311,58 +312,64 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         budget: usize,
         line_index: usize,
         depth: Depth,
-        parent_node: CtNodeRef<Evaluated>,
+        parent_node: NodeId<Evaluated>,
         tree: &mut Tree,
-        sel_node_id: NodeId,
+        sel_node_id: SelNodeId,
     ) -> usize {
-        let root_visits = parent_node.borrow().visits();
-        parent_node.borrow_mut().sort_by(|b| {
-            let score = {
-                let visit_threshold = 4; // todo: fine-tune this
-                let is_proven_loss = b.node().borrow().value().is_proven_loss();
-                let visits = b.node().borrow().visits();
+        let root_visits = NodeView::new(tree, parent_node).visits();
 
-                // make sure that we don't prune this node before it has been visited some
-                // times, to allow the parent node to pick up on some of the value
-                // of this node. otherwise this node's (bad) score wouldn't be propagated up the
-                // tree and the parent node would have an overestimated value.
-                if is_proven_loss && visits >= visit_threshold {
-                    self.selector.min_score()
-                }
-                else {
-                    self.selector.score(b, root_visits)
-                }
+        tree.sort_branches_by(parent_node, |child_a, branch_a, child_b, branch_b| {
+            let visit_threshold = 4; // todo: fine-tune this
+
+            let score_a = if child_a.value().is_proven_loss() && child_a.visits() >= visit_threshold
+            {
+                self.selector.min_score()
+            }
+            else {
+                self.selector.score(child_a, branch_a, root_visits)
             };
 
-            // negative so we sort descending
-            -score
+            let score_b = if child_b.value().is_proven_loss() && child_b.visits() >= visit_threshold
+            {
+                self.selector.min_score()
+            }
+            else {
+                self.selector.score(child_b, branch_b, root_visits)
+            };
+
+            // Negative so we sort descending
+            score_b.partial_cmp(&score_a).unwrap_or(Ordering::Equal)
         });
 
         let mut budget = budget;
         let mut used_budget = 0;
         let mut line_index = line_index;
-        let mut branch_index = 0;
+        let mut branch_index = MoveIndex::from(0);
 
-        while budget >= 1 {
-            if let Some(branch) = parent_node.borrow().get_branch(branch_index) {
-                let curr_budget = self.selector.budget(budget);
-                if curr_budget == 0 {
-                    break;
-                };
-
-                let used =
-                    self.select_branch(curr_budget, line_index, depth, branch, tree, sel_node_id);
-
-                budget -= curr_budget;
-                branch_index += 1;
-
-                line_index += used;
-                used_budget += used;
-            }
-            else {
+        let branch_count = tree.node(parent_node).branch_count();
+        while budget >= 1 && branch_index < branch_count {
+            let curr_budget = self.selector.budget(budget);
+            if curr_budget == 0 {
                 break;
-            }
+            };
+
+            let used = self.select_branch(
+                curr_budget,
+                line_index,
+                depth,
+                parent_node,
+                branch_index,
+                tree,
+                sel_node_id,
+            );
+
+            budget -= curr_budget;
+            branch_index.v += 1;
+
+            line_index += used;
+            used_budget += used;
         }
+
         used_budget
     }
 
@@ -371,39 +378,47 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         budget: usize,
         line_index: usize,
         depth: Depth,
-        branch: &Branch,
+        parent_node: NodeId<Evaluated>,
+        branch: MoveIndex,
         tree: &mut Tree,
-        parent_sel_id: NodeId,
+        parent_sel_id: SelNodeId,
     ) -> usize {
-        self.position.make_move(branch.mov());
+        let (mov, node) = {
+            let branch = tree
+                .branch(parent_node, branch)
+                .expect("Branch does not exist.");
+            (branch.mov(), branch.node())
+        };
+
+        self.position.make_move(mov);
         let depth = depth + 1;
         let turn = self.position.get_turn();
 
-        let used = match branch.node().into_ct() {
-            NodeSwitch::Branching(node) => {
-                self.select_branching(line_index, parent_sel_id, node, depth)
+        let used = match tree.node_switch(node) {
+            Switch::Branching(node) => {
+                self.select_branching(line_index, parent_sel_id, node, depth, tree)
             }
-            NodeSwitch::Evaluated(node) => {
-                let val = node.borrow().value();
+            Switch::Evaluated(node) => {
+                let val = NodeView::new(tree, node).value();
                 // skip further selection of proven_win/loss nodes.
                 if val.is_proven_win() {
                     let eval = Evaluation::Terminal(GameResult::Win { relative_to: !turn });
-                    self.select_skip(line_index, parent_sel_id, node.clone(), eval, depth)
+                    self.select_skip(line_index, parent_sel_id, node, eval, depth)
                 }
                 else if val.is_proven_loss() {
                     let eval = Evaluation::Terminal(GameResult::Win { relative_to: turn });
-                    self.select_skip(line_index, parent_sel_id, node.clone(), eval, depth)
+                    self.select_skip(line_index, parent_sel_id, node, eval, depth)
                 }
                 // otherwise continue down the tree
                 else {
-                    let trace_data = self.evaluator.trace(node.clone(), self.position);
+                    let trace_data = self.evaluator.trace(node, tree, self.position);
                     let child_id =
                         self.selection
-                            .append_parent(parent_sel_id, node.clone(), turn, trace_data);
+                            .append_parent(parent_sel_id, node, turn, trace_data);
                     self.pick_branches(budget, line_index, depth, node, tree, child_id)
                 }
             }
-            NodeSwitch::Leaf(node) => {
+            Switch::Leaf(node) => {
                 // shortcut leaf selection using twofold repetition
                 if depth > Depth::ROOT && self.position.has_twofold_repetition() {
                     let eval = Evaluation::Terminal(GameResult::Draw);
@@ -414,20 +429,20 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                     self.select_leaf(line_index, parent_sel_id, node, tree, depth)
                 }
             }
-            NodeSwitch::Terminal(node) => {
-                self.select_terminal(line_index, parent_sel_id, node, depth)
+            Switch::Terminal(node) => {
+                self.select_terminal(line_index, parent_sel_id, node, depth, tree)
             }
         };
 
-        self.position.unmake_move(branch.mov());
+        self.position.unmake_move(mov);
         used
     }
 
     fn select_skip(
         &mut self,
         line_index: usize,
-        parent_id: NodeId,
-        node: CtNodeRef<Evaluated>,
+        parent_id: SelNodeId,
+        node: NodeId<Evaluated>,
         eval: Evaluation,
         _depth: Depth,
     ) -> usize {
@@ -446,19 +461,19 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     fn select_leaf(
         &mut self,
         line_index: usize,
-        parent_sel_id: NodeId,
-        node: CtNodeRef<Leaf>,
+        parent_sel_id: SelNodeId,
+        node: NodeId<Leaf>,
         tree: &mut Tree,
         depth: Depth,
     ) -> usize {
         let expanded = tree.expand_node(node, self.position, depth);
 
         match expanded {
-            ExpandedRefSwitch::Terminal(node) => {
-                self.select_terminal(line_index, parent_sel_id, node, depth)
+            ExpandedSwitch::Terminal(node) => {
+                self.select_terminal(line_index, parent_sel_id, node, depth, tree)
             }
-            ExpandedRefSwitch::Branching(node) => {
-                self.select_branching(line_index, parent_sel_id, node, depth)
+            ExpandedSwitch::Branching(node) => {
+                self.select_branching(line_index, parent_sel_id, node, depth, tree)
             }
         }
     }
@@ -467,8 +482,8 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     fn select_shortcut(
         &mut self,
         line_index: usize,
-        parent_id: NodeId,
-        node: CtNodeRef<Leaf>,
+        parent_id: SelNodeId,
+        node: NodeId<Leaf>,
         eval: Evaluation,
         _depth: Depth,
     ) -> usize {
@@ -487,11 +502,12 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     fn select_terminal(
         &mut self,
         line_index: usize,
-        parent_id: NodeId,
-        node: CtNodeRef<Terminal>,
+        parent_id: SelNodeId,
+        node: NodeId<Terminal>,
         depth: Depth,
+        tree: &Tree,
     ) -> usize {
-        let eval = E::eval_terminal(node.clone(), depth, self.position);
+        let eval = E::eval_terminal(node, tree, depth, self.position);
         self.selection.set(
             line_index,
             PhaseItem::Terminal(SelNode {
@@ -507,9 +523,10 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     fn select_branching(
         &mut self,
         line_index: usize,
-        parent_id: NodeId,
-        node: CtNodeRef<Branching>,
+        parent_id: SelNodeId,
+        node: NodeId<Branching>,
         depth: Depth,
+        tree: &Tree,
     ) -> usize {
         let pos = &mut self.position;
 
@@ -517,7 +534,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             (1, PhaseItem::Unused)
         }
         else {
-            let trace_data = self.evaluator.trace(node.clone(), pos);
+            let trace_data = self.evaluator.trace(node, tree, pos);
             (
                 1,
                 PhaseItem::Batched(SelNode {
@@ -534,7 +551,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         used_budget
     }
 
-    fn eval_batched(&mut self) {
+    fn eval_batched(&mut self, tree: &Tree) {
         let batched_indices = self
             .selection
             .leafs
@@ -550,7 +567,9 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 .filter_map(|&i| self.selection.leafs[i].batch_item())
                 .collect_vec();
 
-            self.evaluator.eval_batch(&self.selection, &leafs).collect()
+            self.evaluator
+                .eval_batch(tree, &self.selection, &leafs)
+                .collect()
         };
 
         for (i, eval) in batched_indices.into_iter().zip(evals) {
@@ -558,7 +577,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             self.selection.set(
                 i,
                 PhaseItem::Evaluated(SelNode {
-                    node: batch_item.node.clone(),
+                    node: batch_item.node,
                     turn: batch_item.turn,
                     parent: batch_item.parent,
                     data: eval,

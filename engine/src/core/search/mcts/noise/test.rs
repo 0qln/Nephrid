@@ -6,7 +6,7 @@ use crate::core::{
     position::Position,
     search::mcts::{
         eval::Policy,
-        node::{Node, RtNodeRef},
+        node::node_state::{Branching, Leaf},
     },
 };
 
@@ -16,16 +16,18 @@ use super::*;
 fn test_dirichlet_noise_basic() {
     let mut rng = SmallRng::seed_from_u64(42);
 
-    let node = CtNodeRef::new(Node::new_leaf());
-    let mut tree = Tree::new(RtNodeRef::from_ct(node.clone()));
+    let mut tree = Tree::new();
 
     let pos = Position::start_position();
-    let node = tree.expand_node(node.clone(), &pos, Depth::ROOT);
-    let node = node.branching().expect("startpos should have branches");
+    let _node = tree.expand_node(
+        tree.node_switch(tree.root()).get::<Leaf>().unwrap(),
+        &pos,
+        Depth::ROOT,
+    );
+    let node = tree.node_switch(tree.root()).get::<Branching>().unwrap();
 
     let policy = {
-        let node = node.borrow();
-        let branches = node.branches();
+        let branches = tree.branches(node);
         Policy::from_logits(branches.iter().map(|_| rng.next_u32() as f32).collect_vec())
     };
     let node = tree.set_policy(node.clone(), &policy);
@@ -36,12 +38,7 @@ fn test_dirichlet_noise_basic() {
     assert!(result.is_ok());
 
     // Policies should be modified
-    let new_policy = node
-        .borrow()
-        .branches()
-        .iter()
-        .map(|b| b.policy())
-        .collect_vec();
+    let new_policy = tree.branches(node).iter().map(|b| b.policy()).collect_vec();
     assert_ne!(new_policy, policy.iter().collect_vec());
 
     // Policies should still sum to approximately 1

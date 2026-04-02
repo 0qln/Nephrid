@@ -1,7 +1,7 @@
 use crate::{
     core::{
         Depth, Limit, Move,
-        r#move::MoveList,
+        r#move::{MoveIndex, MoveList},
         move_iter::{fold_legal_moves, fold_legals},
         position::Position,
     },
@@ -36,7 +36,7 @@ pub fn perft<const Q: bool>(
         },
         |pos| {
             let mut list = MoveList::default();
-            let n = fold_legals::<Q, _, _, _>(pos, 0_u8, |curr, m| {
+            let n = fold_legals::<Q, _, _, _>(pos, MoveIndex::from(0), |curr, m| {
                 list[curr] = m;
                 ControlFlow::Continue::<(), _>(curr + 1)
             })
@@ -99,7 +99,7 @@ pub fn perft_inner_collect(
     cancellation_token: &CancellationToken,
     debug: &DebugMode,
     f: fn(Move, u64, Depth, bool) -> (),
-    moves: fn(&Position) -> (MoveList, u8),
+    moves: fn(&Position) -> (MoveList, MoveIndex),
 ) -> u64 {
     if cancellation_token.is_cancelled() {
         return 0;
@@ -112,7 +112,8 @@ pub fn perft_inner_collect(
     let (move_list, n_moves) = moves(pos);
 
     let mut acc = 0;
-    for i in 0..n_moves {
+    for i in 0..n_moves.v {
+        let i = MoveIndex::from(i);
         let m = move_list[i];
 
         pos.make_move(m);

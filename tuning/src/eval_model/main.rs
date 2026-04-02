@@ -8,7 +8,7 @@ use engine::core::{
         eval::{GameResult, Guess, RawPolicy, nn::NNEvaluator, softmax},
         mcts,
         nn::{BOARD_INPUT_HISTORY, POLICY_OUTPUTS, board_history_input},
-        node::{Branch, Value},
+        node::{Branch, NodeData, Value, node_state::Evaluated},
         select::puct,
         strategy::{MctsFindBest, MctsStrategy},
     },
@@ -864,7 +864,9 @@ struct SLCTarget {
 impl<'a> From<&'a Tree> for SLCTarget {
     fn from(tree: &'a Tree) -> Self {
         Self {
-            mov: tree.best_move().expect("Tree should have a bestmove"),
+            mov: tree
+                .maybe_best_move(tree.root())
+                .expect("Tree should have a bestmove"),
         }
     }
 }
@@ -879,7 +881,14 @@ struct MLCTarget {
 impl<'a> From<&'a Tree> for MLCTarget {
     fn from(tree: &'a Tree) -> Self {
         Self {
-            moves: tree.best_moves(Value(0.5)),
+            moves: tree
+                .best_moves(
+                    tree.node_switch(tree.root())
+                        .get::<Evaluated>()
+                        .expect("fuck"),
+                    Value(0.5),
+                )
+                .collect_vec(),
         }
     }
 }
@@ -895,16 +904,17 @@ impl From<&Tree> for ExactLossTarget {
     fn from(tree: &Tree) -> Self {
         Self {
             raw_policy: {
-                let root = tree.get_root();
-                let root = root.into_ct();
-                let root = root.evaluated().expect("Root should be evaluated");
-                let root = root.borrow();
+                let root = tree.node_switch(tree.root()).get::<Evaluated>();
+                let root = root.expect("Root should be evaluated");
 
-                let branches = root.branches();
+                let branches = tree.branches(root);
 
                 let mut raw_policy = RawPolicy::null();
                 for branch in branches.iter() {
-                    raw_policy.set(usize::from(branch.mov()), branch.visits() as f32);
+                    raw_policy.set(
+                        usize::from(branch.mov()),
+                        tree.node(branch.node()).visits() as f32,
+                    );
                 }
                 softmax(raw_policy.inner_mut(), 10.);
                 raw_policy
@@ -1041,7 +1051,7 @@ where
 
             println!("{pos:?}");
 
-            mcts_state.tree.advance_to(|b| b.mov() == mov);
+            mcts_state.advance_to(mov);
 
             let state = State { mov, moving_color: turn };
             let input = Input { board_in: b_in, state_in: s_in };
@@ -1160,9 +1170,9 @@ impl Default for TrainSelector {
 impl Selector for TrainSelector {
     type Score = puct::Score;
 
-    fn score(&self, branch: &Branch, cap_n_i: u32) -> Self::Score {
-        let n_i = branch.visits() as f32;
-        let value = branch.node().borrow().value();
+    fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Self::Score {
+        let n_i = node.visits() as f32;
+        let value = node.value();
         let policy = Self::weighted_policy(branch.policy(), self.policy_weight);
         let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
         let exploration = self.c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);

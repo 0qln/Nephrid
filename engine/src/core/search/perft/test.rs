@@ -5,7 +5,7 @@ use itertools::Itertools;
 use crate::{
     core::{
         depth::Depth,
-        r#move::MoveList,
+        r#move::{MoveIndex, MoveList},
         move_iter::{fold_legals, sliding_piece::magics},
         position::{FenExport, Position},
         search::{limit::Limit, perft::perft_inner_collect},
@@ -41,7 +41,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
         |_, _, _, _| {},
         move |pos| {
             let mut list_skipped = MoveList::default();
-            let n_skipped = fold_legals::<false, _, _, _>(pos, 0_u8, |curr, m| {
+            let n_skipped = fold_legals::<false, _, _, _>(pos, MoveIndex::from(0), |curr, m| {
                 list_skipped[curr] = m;
                 ControlFlow::Continue::<(), _>(curr + 1)
             })
@@ -49,7 +49,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
             .unwrap();
 
             let mut list_filtered = MoveList::default();
-            let n_filtered = fold_legals::<true, _, _, _>(pos, 0_u8, |curr, m| {
+            let n_filtered = fold_legals::<true, _, _, _>(pos, MoveIndex::from(0), |curr, m| {
                 if m.get_flag().is_capture() {
                     list_filtered[curr] = m;
                     ControlFlow::Continue::<(), _>(curr + 1)
