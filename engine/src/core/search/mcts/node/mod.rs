@@ -641,6 +641,7 @@ impl Tree {
     }
 
     pub fn set_proven<S: HasValue>(&mut self, node: NodeId<S>, state: Proven) {
+        self.arena.nodes[node.index as usize].visits += 1;
         self.arena.nodes[node.index as usize].value = Value::from(state);
     }
 
