@@ -292,3 +292,175 @@ fn test_value_unproven_beats_loss() {
     // We MUST prefer an unexplored/unproven move over a guaranteed, proven loss!
     assert!(unproven > loss);
 }
+
+// ================================================
+// ADVANCE_TO AND GARBAGE COLLECTION TESTS
+// ================================================
+
+#[test]
+fn test_advance_to_preserves_subtree_and_discards_siblings() {
+    let mut tree = Tree::default();
+    let mut back_buffer = Tree::default();
+    tree.arena.clear();
+
+    // Construct a manual tree:
+    // Root (0)
+    //  ├─ Sibling (1) - Leaf [To be discarded]
+    //  └─ Target (2) - Evaluated [New Root]
+    //      └─ Grandchild (3) - Leaf [Must be retained]
+
+    // Node 0: Root
+    tree.arena.nodes.push(NodeData {
+        branch_start: 0,
+        branch_count: MoveIndex::from(2),
+        visits: 10,
+        value: Value(0.),
+        state: NodeState::Evaluated,
+    });
+    // Node 1: Sibling
+    tree.arena.nodes.push(NodeData {
+        branch_start: 0,
+        branch_count: MoveIndex::from(0),
+        visits: 2,
+        value: Value(-1.),
+        state: NodeState::Leaf,
+    });
+    // Node 2: Target
+    tree.arena.nodes.push(NodeData {
+        branch_start: 2, // Starts after root's 2 branches
+        branch_count: MoveIndex::from(1),
+        visits: 8,
+        value: Value(1.),
+        state: NodeState::Evaluated,
+    });
+    // Node 3: Grandchild
+    tree.arena.nodes.push(NodeData {
+        branch_start: 0,
+        branch_count: MoveIndex::from(0),
+        visits: 5,
+        value: Value(2.),
+        state: NodeState::Leaf,
+    });
+
+    // Root branches
+    tree.arena.branches.push(Branch {
+        node: RtNodeId::new(1),
+        policy: 0.1,
+        mov: Move::new(squares::A1, squares::A2, move_flags::QUIET),
+    });
+    tree.arena.branches.push(Branch {
+        node: RtNodeId::new(2),
+        policy: 0.9,
+        mov: Move::new(squares::A1, squares::B1, move_flags::QUIET),
+    });
+    // Target branches
+    tree.arena.branches.push(Branch {
+        node: RtNodeId::new(3),
+        policy: 1.0,
+        mov: Move::new(squares::B1, squares::B2, move_flags::QUIET),
+    });
+
+    // Execute GC advance
+    tree.advance_to(&mut back_buffer, RtNodeId::new(2));
+
+    // Assert Global Tree State
+    // Size should strictly be 2 (Target + Grandchild). Height should be 2.
+    assert_eq!(tree.size(), 2);
+    assert_eq!(tree.maxheight(), Height(2));
+
+    // Assert New Root (formerly Target)
+    let new_root = tree.node(tree.root());
+    assert_eq!(new_root.visits(), 8);
+    assert_eq!(new_root.value(), Value(1.0));
+    assert_eq!(new_root.state(), NodeState::Evaluated);
+
+    let branches = tree.branches_rt(tree.root());
+    assert_eq!(branches.len(), 1);
+
+    // Assert Retained Child (formerly Grandchild)
+    let child = tree.node(branches[0].node());
+    assert_eq!(child.visits(), 5);
+    assert_eq!(child.value(), Value(2.0));
+    assert_eq!(child.state(), NodeState::Leaf);
+}
+
+#[test]
+fn test_advance_to_leaf_node_resets_tree_size_and_height() {
+    let mut tree = Tree::default();
+    let mut back_buffer = Tree::default();
+    tree.arena.clear();
+
+    // Node 0: Root
+    tree.arena.nodes.push(NodeData {
+        branch_start: 0,
+        branch_count: MoveIndex::from(1),
+        visits: 10,
+        value: Value(0.),
+        state: NodeState::Evaluated,
+    });
+    // Node 1: Leaf Target
+    tree.arena.nodes.push(NodeData {
+        branch_start: 0,
+        branch_count: MoveIndex::from(0),
+        visits: 5,
+        value: Value(5.5),
+        state: NodeState::Leaf,
+    });
+
+    tree.arena.branches.push(Branch {
+        node: RtNodeId::new(1),
+        policy: 1.0,
+        mov: Move::new(squares::E2, squares::E4, move_flags::QUIET),
+    });
+
+    // Advance to leaf
+    tree.advance_to(&mut back_buffer, RtNodeId::new(1));
+
+    // The tree should effectively behave like a newly initialized tree but with
+    // retained data
+    assert_eq!(tree.size(), 1);
+    assert_eq!(tree.maxheight(), Height::ROOT);
+
+    let new_root = tree.node(tree.root());
+    assert_eq!(new_root.visits(), 5);
+    assert_eq!(new_root.value(), Value(5.5));
+    assert_eq!(new_root.state(), NodeState::Leaf);
+    assert_eq!(tree.branches_rt(tree.root()).len(), 0);
+}
+
+#[test]
+fn test_advance_to_deeper_level_updates_pointers_correctly() {
+    let pos = create_position("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    let mut tree = Tree::default();
+    let mut back_buffer = Tree::default();
+
+    // Expand Root -> Level 1
+    let leaf = tree.node_switch(tree.root()).get::<Leaf>().unwrap();
+    tree.expand_node(leaf, &pos, Depth::ROOT);
+
+    // Grab first child and expand it -> Level 2
+    let level_1_branch = tree.branches_rt(tree.root())[0].clone();
+    let child_leaf = tree
+        .node_switch(level_1_branch.node())
+        .get::<Leaf>()
+        .unwrap();
+
+    // Fake a position for child expansion to simulate depth
+    let mut pos_copy = pos.clone();
+    pos_copy.make_move(level_1_branch.mov());
+    tree.expand_node(child_leaf, &pos_copy, Depth::new(1));
+
+    let initial_size_before_gc = tree.size();
+
+    // Advance to Level 1
+    tree.advance_to(&mut back_buffer, level_1_branch.node());
+
+    // We expect the tree size to shrink drastically because we discarded 19 of the
+    // 20 initial moves and only kept the 1 move we advanced to + its newly
+    // expanded children.
+    assert!(tree.size() < initial_size_before_gc);
+    assert_eq!(tree.maxheight(), Height(2));
+
+    // Ensure the new root has branches (since we expanded it prior to advance_to)
+    assert!(tree.branches_rt(tree.root()).len() > 0);
+}
