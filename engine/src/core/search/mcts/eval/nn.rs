@@ -7,7 +7,6 @@ use crate::core::search::mcts::{
         self, BOARD_INPUT_HISTORY, BoardInputFloats, Model, StateInputFloats, VALUE_OUTPUTS,
         board_input, state_input,
     },
-    node::CtNodeRef,
     search::{BatchItem, Selection},
 };
 
@@ -124,12 +123,18 @@ impl<'a, 'b, B: Backend> NNEvaluator<'a, 'b, B> {
 impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
     type TraceData = TraceInfo;
 
-    fn trace<S: HasBranches>(&self, _node: CtNodeRef<S>, pos: &mut Position) -> Self::TraceData {
+    fn trace<S: HasBranches>(
+        &self,
+        _node: NodeId<S>,
+        _tree: &Tree,
+        pos: &mut Position,
+    ) -> Self::TraceData {
         TraceInfo::new(pos)
     }
 
     fn eval_batch<const X: usize>(
         &mut self,
+        tree: &Tree,
         selection: &Selection<X, Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
@@ -178,8 +183,7 @@ impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
             .zip(raw_policies)
             .map(|((&leaf, value), raw_policy)| {
                 let turn = leaf.turn;
-                let node = leaf.node.borrow();
-                let moves = node.move_indices();
+                let moves = tree.move_indices(leaf.node);
 
                 Evaluation::Guess(Box::new(Guess {
                     relative_to: turn,

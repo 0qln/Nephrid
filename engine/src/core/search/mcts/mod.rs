@@ -5,6 +5,7 @@ use thiserror::Error;
 use crate::core::{
     Limit,
     config::Configuration,
+    r#move::Move,
     position::Position,
     search::mcts::{
         back::{Backpropagater, MctsSolver},
@@ -102,10 +103,20 @@ pub trait MctsState {
 ///
 /// (An option because maybe we just started something else like perft or some
 /// sht)
-#[derive(Default, Debug)]
+#[derive(Default)]
 pub struct SearchState {
     /// The game tree.
     pub tree: Tree,
+    pub back_buffer: Tree,
+}
+impl SearchState {
+    pub fn advance_to(&mut self, mov: Move) {
+        let root = self.tree.root();
+        if self.tree.node(root).state().has_branches()
+            && let Some(new_root) = self.tree.branches_rt(root).iter().find(|b| b.mov() == mov) {
+                self.tree.advance_to(&mut self.back_buffer, new_root.node());
+            }
+    }
 }
 
 impl MctsState for SearchState {

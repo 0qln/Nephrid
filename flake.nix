@@ -27,7 +27,13 @@
         system,
         ...
       }:
-        with pkgs.lib; {
+        with pkgs.lib; let
+          rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+          rustPlatform = pkgs.makeRustPlatform {
+            cargo = rustToolchain;
+            rustc = rustToolchain;
+          };
+        in {
           _module.args.pkgs-cuda = import inputs.nixpkgs-cuda {
             inherit system;
             config = {
@@ -45,6 +51,37 @@
           _module.args.pkgs = import inputs.nixpkgs {
             inherit system;
             overlays = [(import inputs.rust-overlay)];
+          };
+
+          packages = {
+            nephrid-nn = rustPlatform.buildRustPackage {
+              pname = "nephrid";
+              version = "nn";
+              src = ./.;
+              cargoLock.lockFile = ./Cargo.lock;
+              buildNoDefaultFeatures = true;
+              buildFeatures = ["mcts-nn" "gpu"];
+              nativeBuildInputs = [pkgs.pkg-config];
+              buildInputs =
+                [pkgs.zlib]
+                ++ (with pkgs-cuda; [
+                  cudaPackages_12_8.cuda_cudart
+                  cudaPackages_12_8.cudnn
+                  cudaPackages_12_8.cudatoolkit
+                ]);
+            };
+
+            nephrid-sa = rustPlatform.buildRustPackage {
+              pname = "nephrid";
+              version = "sa";
+              src = ./.;
+              cargoLock.lockFile = ./Cargo.lock;
+              buildNoDefaultFeatures = true;
+              buildFeatures = ["mcts-sa" "cpu"];
+              nativeBuildInputs = [pkgs.pkg-config];
+            };
+
+            default = config.packages.nephrid-sa;
           };
 
           devShells.default = pkgs.mkShell {
@@ -88,7 +125,7 @@
               ]);
 
             buildInputs = [
-              (pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml)
+              rustToolchain
             ];
 
             shellHook =

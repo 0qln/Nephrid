@@ -9,7 +9,7 @@ use crate::{
             eval::Cp,
             node::{
                 Tree, WinRate,
-                node_state::{Evaluated, NodeSwitch},
+                node_state::{Evaluated, Switch},
             },
             select::Selector,
         },
@@ -130,13 +130,13 @@ impl Worker {
             }
             Command::AdvanceState(mov) => {
                 self.backup_tree = Some(self.mcts_state.tree.clone());
-                self.mcts_state.tree.advance_to(|b| b.mov() == mov);
+                self.mcts_state.advance_to(mov);
                 Ok(())
             }
             Command::RollbackAndAdvance(mov) => {
                 if let Some(backup) = self.backup_tree.take() {
                     self.mcts_state.tree = backup;
-                    self.mcts_state.tree.advance_to(|b| b.mov() == mov);
+                    self.mcts_state.advance_to(mov);
                 }
                 else {
                     self.mcts_state.tree = Tree::default();
@@ -149,50 +149,50 @@ impl Worker {
             }
             Command::MctsDebugTree => {
                 let tree = &self.mcts_state.tree;
-                let root = tree.get_root();
+                let root = tree.node(tree.root());
+                let root_evaluated = tree.try_node::<Evaluated>(tree.root());
                 println!(
                     "({}) ----  v {: >8.2}/{: <8} w {} cp {}",
                     root.state(),
-                    root.clone().borrow().value(),
-                    root.clone().borrow().visits(),
-                    root.clone()
-                        .try_into::<Evaluated>()
+                    root.value(),
+                    root.visits(),
+                    root_evaluated
                         .map(|x| (-WinRate::from(x)).to_string())
                         .unwrap_or("/".to_string()),
-                    root.clone()
-                        .try_into::<Evaluated>()
+                    root_evaluated
                         .map(|x| Cp::from(-WinRate::from(x)).to_string())
                         .unwrap_or("/".to_string())
                 );
-                match root.into_ct() {
-                    NodeSwitch::Leaf(_node) => {}
-                    NodeSwitch::Branching(node) => {
-                        for branch in node.borrow().branches() {
-                            let node = branch.node();
+                match tree.node_switch(tree.root()) {
+                    Switch::Leaf(_node) => {}
+                    Switch::Branching(node) => {
+                        for branch in tree.branches(node) {
+                            let node = tree.node(branch.node());
                             let state = node.state();
                             println!("* ({}) {}", state, branch.mov());
                         }
                     }
-                    NodeSwitch::Terminal(_node) => {}
-                    NodeSwitch::Evaluated(node) => {
-                        let root_visits = node.borrow().visits();
-                        for branch in node.borrow().branches() {
+                    Switch::Terminal(_node) => {}
+                    Switch::Evaluated(root) => {
+                        let node = tree.node(root);
+                        let root_visits = node.visits();
+                        let root_best_move = tree.maybe_best_move(tree.root());
+                        for branch in node.branches() {
+                            let node = tree.node(branch.node());
                             let mov = branch.mov();
-                            let node = branch.node();
                             let state = node.state();
-                            let node = node.borrow();
                             let parts: &mcts::config::mcts::Parts =
                                 self.mcts_parts.as_ref().unwrap();
                             let selector = MctsParts::<{ mcts::config::MPV }>::selector(&parts);
                             println!(
                                 "{} {: >9} {: <5} v {: >8.2}/{: <8} p {:.3} ~ {}",
-                                if tree.best_move() == Some(mov) { '*' } else { '-' },
+                                if root_best_move == Some(mov) { '*' } else { '-' },
                                 state.to_string(),
                                 mov.to_string(),
                                 node.value(),
                                 node.visits(),
                                 branch.policy(),
-                                selector.score(branch, root_visits)
+                                selector.score(node.data(), branch, root_visits)
                             );
                         }
                     }

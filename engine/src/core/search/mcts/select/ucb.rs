@@ -21,11 +21,11 @@ impl Default for UcbSelector {
 impl Selector for UcbSelector {
     type Score = Score;
 
-    fn score(&self, branch: &Branch, cap_n_i: u32) -> Score {
-        match branch.visits() {
+    fn score(&self, node: &NodeData, _branch: &Branch, cap_n_i: u32) -> Score {
+        match node.visits() {
             0 => Score(f32::INFINITY),
             n_i => {
-                let w_i = branch.value();
+                let w_i = node.value();
                 let n_i = n_i as f32;
                 let exploitation = w_i / n_i;
                 let exploration = self.c * f32::sqrt((cap_n_i as f32).ln() / n_i);

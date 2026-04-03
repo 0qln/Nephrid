@@ -11,9 +11,9 @@ shift 4
 # -draw movenumber=40 movecount=8 score=10 \
 # -resign movecount=3 score=400 \
 cutechess-cli \
-    -engine cmd="$engine1" name="$engine1" option.gui-lag=200 \
-    -engine cmd="$engine2" name="$engine2" option.gui-lag=200 \
-    -each proto=uci tc=20+0.2 \
+    -engine cmd="$engine1" name="$engine1" option.gui-lag=100 \
+    -engine cmd="$engine2" name="$engine2" option.gui-lag=100 \
+    -each proto=uci tc=15+0.1 \
     -rounds 1000 -games 2 \
     -openings file="$openings" format=epd order=random -repeat \
     -recover \

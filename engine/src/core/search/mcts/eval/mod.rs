@@ -5,7 +5,7 @@ use crate::core::{
     search::mcts::{
         nn::POLICY_OUTPUTS,
         node::{
-            CtNodeRef, WinRate,
+            NodeId, Tree, WinRate,
             node_state::{HasBranches, Terminal, Valid},
         },
         search::{BatchItem, Selection},
@@ -29,13 +29,19 @@ pub trait Evaluator {
     /// selection phase.
     fn trace<S: const Valid + HasBranches>(
         &self,
-        node: CtNodeRef<S>,
+        node: NodeId<S>,
+        tree: &Tree,
         pos: &mut Position,
     ) -> Self::TraceData;
 
     /// Evaluate a node's terminal state. If the node is terminal, return the
     /// evaluation, else return None.
-    fn eval_terminal(_node: CtNodeRef<Terminal>, depth: Depth, pos: &Position) -> Evaluation {
+    fn eval_terminal(
+        _node: NodeId<Terminal>,
+        _tree: &Tree,
+        depth: Depth,
+        pos: &Position,
+    ) -> Evaluation {
         let game_result = pos.search_result(depth);
         let game_result = game_result.expect("Input requires a terminal node.");
         Evaluation::Terminal(game_result)
@@ -43,6 +49,7 @@ pub trait Evaluator {
 
     fn eval_batch<const X: usize>(
         &mut self,
+        tree: &Tree,
         selection: &Selection<X, Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation>;

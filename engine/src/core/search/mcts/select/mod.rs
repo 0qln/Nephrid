@@ -1,6 +1,6 @@
 use std::{cmp::max, ops};
 
-use crate::core::search::mcts::node::Branch;
+use crate::core::search::mcts::node::{Branch, NodeData};
 
 pub mod puct;
 pub mod ucb;
@@ -21,7 +21,7 @@ pub trait Selector {
     ///
     /// branch: The branch to be scored.
     /// cap_n_i: The number of times that the parent node has been visited.
-    fn score(&self, branch: &Branch, cap_n_i: u32) -> Self::Score;
+    fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Self::Score;
 
     fn budget(&self, remaining_budget: usize) -> usize {
         // todo: maybe make this relative to the branch's puct score.

@@ -1,7 +1,7 @@
 use std::{cmp::Reverse, marker::PhantomData, ops};
 
 use crate::core::{
-    r#move::MoveList,
+    r#move::{MoveIndex, MoveList},
     move_iter::{fold_legal_captures, fold_legal_moves},
     piece::PromoPieceType,
     position::CheckState,
@@ -15,7 +15,7 @@ use crate::{
         r#move::Move,
         piece::{PieceType, piece_type},
         position::{PieceInfo, StateInfo},
-        search::mcts::node::{Branch, node_state::Branching},
+        search::mcts::node::node_state::Branching,
     },
     impl_variants,
 };
@@ -332,7 +332,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     // consider captures (and quiets if in check)
     let mut move_list = MoveList::default();
     let n_moves = if in_check {
-        fold_legal_moves::<_, _, _>(pos, 0_u8, |curr, m| {
+        fold_legal_moves::<_, _, _>(pos, MoveIndex::from(0), |curr, m| {
             move_list[curr] = m;
             ControlFlow::Continue::<(), _>(curr + 1)
         })
@@ -340,7 +340,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
         .unwrap()
     }
     else {
-        fold_legal_captures::<_, _, _>(pos, 0_u8, |curr, m| {
+        fold_legal_captures::<_, _, _>(pos, MoveIndex::from(0), |curr, m| {
             move_list[curr] = m;
             ControlFlow::Continue::<(), _>(curr + 1)
         })
@@ -350,11 +350,12 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
 
     // move ordering
     move_list
-        .as_mut_slice(n_moves)
+        .as_mut_slice(n_moves.v)
         .sort_unstable_by_key(|&m| Reverse(PolicyInput::mvv_lva(pos.piece_info(), m)));
 
     // recurse
-    for i in 0..n_moves {
+    for i in 0..n_moves.v {
+        let i = MoveIndex::from(i);
         let m = move_list[i];
 
         // delta pruning
@@ -473,10 +474,9 @@ fn static_eval(pos: &PieceInfo, phase: TaperValue) -> i32 {
     w_q - b_q
 }
 
-#[derive(Debug)]
 pub struct EvalInfo {
     /// The to-be-evaluated that this eval info is for.
-    node: CtNodeRef<Branching>,
+    moves: Vec<Move>,
 
     /// Turn of the current player.
     turn: Turn,
@@ -495,7 +495,7 @@ pub struct EvalInfo {
 }
 
 impl EvalInfo {
-    pub fn new(node: CtNodeRef<Branching>, pos: &mut Position) -> Self {
+    pub fn new(node: NodeId<Branching>, tree: &Tree, pos: &mut Position) -> Self {
         let quality: Cp = match pos.get_turn().v() {
             colors::WHITE_C => qsearch::<WhiteP>(pos, Score::NEG_INF, Score::POS_INF).into(),
             colors::BLACK_C => qsearch::<BlackP>(pos, Score::NEG_INF, Score::POS_INF).into(),
@@ -506,7 +506,7 @@ impl EvalInfo {
             pos: pos.piece_info().clone(),
             state: pos.state_info().clone(),
             phase: TaperValue::from_position(pos.piece_info()),
-            node,
+            moves: tree.branches(node).iter().map(|b| b.mov()).collect(),
             turn: pos.get_turn(),
         }
     }
@@ -518,14 +518,13 @@ impl EvalInfo {
     }
 
     fn policy(&self) -> Policy {
-        let node = &self.node.borrow();
         let pos = &self.pos;
         let phase = self.phase;
         let state = &self.state;
         let color = self.turn;
 
         let mut logits = Vec::new();
-        for mov in node.branches().iter().map(|b: &Branch| b.mov()) {
+        for &mov in self.moves.iter() {
             // policy for each move in the position is the difference of the psqt score from
             // the previous position and the psqt score of the next position that is
             // achieved by the move.
@@ -557,15 +556,17 @@ impl Evaluator for StaticEvaluator {
 
     fn trace<S: const Valid + HasBranches>(
         &self,
-        node: CtNodeRef<S>,
+        node: NodeId<S>,
+        tree: &Tree,
         pos: &mut Position,
     ) -> Self::TraceData {
         node.try_into::<Branching>()
-            .map(|node| EvalInfo::new(node, pos))
+            .map(|node| EvalInfo::new(node, tree, pos))
     }
 
     fn eval_batch<const X: usize>(
         &mut self,
+        _tree: &Tree,
         _selection: &Selection<X, Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Evaluation> {
