@@ -8,17 +8,13 @@
 #![allow(clippy::len_without_is_empty)]
 // nightly features
 #![allow(incomplete_features)]
-#![feature(if_let_guard)]
 #![feature(const_trait_impl)]
 #![feature(debug_closure_helpers)]
 #![feature(macro_metavar_expr)]
 #![feature(step_trait)]
 #![feature(try_trait_v2)]
 #![feature(try_blocks)]
-#![feature(assert_matches)]
 #![feature(generic_const_exprs)]
-#![feature(iter_collect_into)]
-#![feature(new_range_api)]
 #![feature(range_into_bounds)]
 #![feature(control_flow_into_value)]
 // todo when feature (https://github.com/rust-lang/rust/issues/67792) is complete:
