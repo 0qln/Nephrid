@@ -115,6 +115,15 @@ impl fmt::Display for UciPondermove {
 }
 
 #[derive(Default, Debug)]
+pub struct UciDepth(Depth);
+
+impl fmt::Display for UciDepth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "depth {}", self.0)
+    }
+}
+
+#[derive(Default, Debug)]
 pub struct UciSeldepth(Depth);
 
 impl fmt::Display for UciSeldepth {
@@ -255,8 +264,8 @@ impl MctsUci {
         let score = UciArg::from(self.determine_score(tree, pv.len()));
         let nodes = UciArg::Some(UciNodes(tree_size));
         let nps = UciArg::from(self.nps(tree_size));
-        let depth = UciArg::<Depth>::None; // Some(format!("depth {}", tree.mindepth()));
-        let seldepth = UciArg::<UciSeldepth>::None; //UciArg::Some(UciSeldepth(tree.maxheight().into()));
+        let depth = UciArg::Some(UciDepth(tree.compute_minheight().into()));
+        let seldepth = UciArg::Some(UciSeldepth(tree.maxheight().into()));
         let pv = UciArg::Some(UciPv(pv));
         let time = UciArg::from(self.search_time());
         let string = UciArg::<String>::None;

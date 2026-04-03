@@ -9,7 +9,7 @@ use crate::{
     impl_variants,
 };
 use itertools::Itertools;
-use std::{cmp::Ordering, fmt, marker::PhantomData, ops, ptr};
+use std::{cmp::Ordering, collections::VecDeque, fmt, marker::PhantomData, ops, ptr};
 
 use crate::core::{
     Move, Position,
@@ -434,16 +434,35 @@ impl Tree {
                 .unwrap_or(Height::EMPTY)
     }
 
-    // todo: this can be sped up by sorting by visit count, then using alpha-beta
-    // pruning?
+    pub fn compute_minheight(&self) -> Height {
+        self.compute_subtree_minheight(self.root())
+    }
+
     pub fn compute_subtree_minheight(&self, node: RtNodeId) -> Height {
-        Height::ROOT
-            + self
-                .branches_rt(node)
-                .iter()
-                .map(|b| self.compute_subtree_minheight(b.node))
-                .min()
-                .unwrap_or(Height::EMPTY)
+        let mut queue = VecDeque::new();
+        queue.push_back((node, Height::ROOT));
+
+        while let Some((curr, height)) = queue.pop_front() {
+            let branches = self.branches_rt(curr);
+
+            // first time we encounter a node without branches, we've found the minimum
+            // height.
+            if branches.is_empty() {
+                return height;
+            }
+
+            // if this subtree goes deeper, queue up the children to be checked later
+            for branch in branches {
+                queue.push_back((branch.node, height + 1));
+            }
+        }
+
+        // SAFETY: This should be unreachable because every node should eventually lead
+        // to a leaf node with no branches, at which point we return from the function.
+        // If we exhaust the queue without finding such a node, it means there's a cycle
+        // in the tree structure, which should never happen in a well-formed MCTS tree.
+        // Therefore, we can safely assume this code is unreachable.
+        unreachable!()
     }
 
     pub fn root(&self) -> RtNodeId {
