@@ -1,4 +1,3 @@
-#![feature(assert_matches)]
 use burn::{nn::loss::BinaryCrossEntropyLossConfig, train::MultiLabelClassificationOutput};
 use engine::core::{
     config::Configuration,

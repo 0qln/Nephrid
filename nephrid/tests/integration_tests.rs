@@ -2,6 +2,7 @@ use assert_cmd::prelude::*;
 use ntest::timeout;
 use regex::Regex;
 use std::{
+    cmp::Reverse,
     io::{BufRead, BufReader, Write},
     ops::{Deref, DerefMut},
     process::{Child, ChildStdin, ChildStdout, Command, Stdio},
@@ -35,9 +36,10 @@ impl DerefMut for GuardedChild {
 fn extract_nodes(line: &str) -> Option<u64> {
     let parts: Vec<&str> = line.split_whitespace().collect();
     if let Some(pos) = parts.iter().position(|&s| s == "nodes")
-        && pos + 1 < parts.len() {
-            return parts[pos + 1].parse::<u64>().ok();
-        }
+        && pos + 1 < parts.len()
+    {
+        return parts[pos + 1].parse::<u64>().ok();
+    }
     None
 }
 
@@ -188,7 +190,7 @@ fn test_ponder_miss_retains_cached_tree() {
         }
     }
 
-    child_nodes.sort_by(|a, b| b.1.cmp(&a.1));
+    child_nodes.sort_by_key(|x| Reverse(x.1));
     if child_nodes.len() >= 2 {
         hit_move = child_nodes[0].0.clone(); // Most visited (Ponder move)
         miss_move = child_nodes[1].0.clone(); // Second most visited (Actual move)
@@ -231,8 +233,12 @@ fn test_ponder_miss_retains_cached_tree() {
 
     // 6. Capture the first info line of the new search
     let first_info_line = block_engine_line(&mut reader, |l| l.starts_with("info"));
-    let first_search_nodes = extract_nodes(&first_info_line).unwrap_or_else(|| panic!("Failed to extract nodes from first info line of new search! Line: {}",
-        first_info_line));
+    let first_search_nodes = extract_nodes(&first_info_line).unwrap_or_else(|| {
+        panic!(
+            "Failed to extract nodes from first info line of new search! Line: {}",
+            first_info_line
+        )
+    });
 
     // 7. Stop the second search and quit cleanly
     write_engine_line(&mut stdin, "stop");
@@ -341,8 +347,12 @@ fn test_ponder_miss_complete_divergence_resets_tree() {
     let first_info_line = block_engine_line(&mut reader, |l| {
         l.starts_with("info") && extract_nodes(l).is_some()
     });
-    let first_search_nodes = extract_nodes(&first_info_line).unwrap_or_else(|| panic!("Failed to extract nodes from first info line of new search! Line: {}",
-        first_info_line));
+    let first_search_nodes = extract_nodes(&first_info_line).unwrap_or_else(|| {
+        panic!(
+            "Failed to extract nodes from first info line of new search! Line: {}",
+            first_info_line
+        )
+    });
 
     write_engine_line(&mut stdin, "stop");
     block_engine_line(&mut reader, |l| l.starts_with("bestmove"));
@@ -359,4 +369,3 @@ fn test_ponder_miss_complete_divergence_resets_tree() {
 
     write_engine_line(&mut stdin, "quit");
 }
-
