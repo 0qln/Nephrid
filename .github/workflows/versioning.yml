@@ -1,44 +1,15 @@
-name: "Nephrid CI/CD"
+name: "Versioning"
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Tests"]
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: full
+    types:
+      - completed
 
 jobs:
-  test:
-    name: Tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      # Install Nix
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
-
-      # Lint with Clippy (Fails the build if there are warnings)
-      - name: Run Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-        shell: nix develop . --command bash -e {0}
-
-      # Run tests natively inside the Nix devshell
-      - name: Run Unit Tests
-        run: cargo test --workspace --verbose
-        shell: nix develop . --command bash -e {0}
-
-      - name: Dry Run Benchmarks
-        run: cargo test --benches --workspace --verbose
-        shell: nix develop . --command bash -e {0}
-
   versioning:
-    name: Versioning
-    # This job needs to wait for important jobs (e.g., testing and linting) to complete.
-    needs: [test]
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -46,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ github.event.workflow_run.head_commit.id }}
 
       - name: Generate version number
         run: |
