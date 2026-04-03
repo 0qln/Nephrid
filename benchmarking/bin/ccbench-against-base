@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -e
+
+mkdir -p ccbench/in ccbench/out
+
+FEAT_BRANCH=$(git branch --show-current)
+FEAT_HASH=$(git rev-parse --short HEAD)
+
+echo "Starting benchmark for feature branch: $FEAT_BRANCH ($FEAT_HASH)"
+
+echo "Checking out main branch..."
+git checkout main
+BASE_HASH=$(git rev-parse --short HEAD)
+
+echo "Building base ($BASE_HASH)..."
+cargo build --release --bin nephrid
+cp target/release/nephrid "ccbench/in/nephrid-${BASE_HASH}"
+
+echo "Returning to feature branch ($FEAT_BRANCH)..."
+git checkout "$FEAT_BRANCH"
+
+echo "Building feature ($FEAT_HASH)..."
+cargo build --release --bin nephrid
+cp target/release/nephrid "ccbench/in/nephrid-${FEAT_HASH}"
+
+echo "Executing ccbench..."
+
+ccbench \
+    "ccbench/in/nephrid-${FEAT_HASH}" \
+    "ccbench/in/nephrid-${BASE_HASH}" \
+    ~/Downloads/chess/popularpos_lichess_v3.epd \
+    ccbench/out/games.pgn
