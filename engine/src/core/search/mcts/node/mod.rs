@@ -804,7 +804,7 @@ pub struct BranchId {
 }
 
 impl BranchId {
-    pub fn new(index: u32) -> Self {
+    fn new(index: u32) -> Self {
         Self { index }
     }
 
