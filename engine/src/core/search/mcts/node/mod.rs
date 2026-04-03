@@ -9,7 +9,7 @@ use crate::{
     impl_variants,
 };
 use itertools::Itertools;
-use std::{cmp::Ordering, fmt, marker::PhantomData, ops};
+use std::{cmp::Ordering, fmt, marker::PhantomData, ops, ptr};
 
 use crate::core::{
     Move, Position,
@@ -702,7 +702,7 @@ impl Tree {
         (new_idx, total_size, Height(max_h))
     }
 
-    pub fn best_branch<'a>(&'a self, node_id: NodeId<Evaluated>) -> &'a Branch {
+    pub fn best_branch(&self, node_id: NodeId<Evaluated>) -> &Branch {
         self.branches(node_id)
             .iter()
             .max_by(|a, b| {
@@ -889,7 +889,7 @@ pub struct NodeView<'a, S: node_state::Any> {
 
 impl<'a, S: node_state::Any> PartialEq for NodeView<'a, S> {
     fn eq(&self, other: &Self) -> bool {
-        self.tree as *const _ == other.tree as *const _ && self.id == other.id
+        ptr::eq(self.tree, other.tree) && self.id == other.id
     }
 }
 

@@ -462,5 +462,5 @@ fn test_advance_to_deeper_level_updates_pointers_correctly() {
     assert_eq!(tree.maxheight(), Height(2));
 
     // Ensure the new root has branches (since we expanded it prior to advance_to)
-    assert!(tree.branches_rt(tree.root()).len() > 0);
+    assert!(!tree.branches_rt(tree.root()).is_empty());
 }

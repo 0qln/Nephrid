@@ -30,10 +30,10 @@ fn test_dirichlet_noise_basic() {
         let branches = tree.branches(node);
         Policy::from_logits(branches.iter().map(|_| rng.next_u32() as f32).collect_vec())
     };
-    let node = tree.set_policy(node.clone(), &policy);
+    let node = tree.set_policy(node, &policy);
 
     let mut noiser = DirichletNoiser::new(0.03, 0.25, rng);
-    let result = noiser.apply_noise(node.clone(), &mut tree);
+    let result = noiser.apply_noise(node, &mut tree);
 
     assert!(result.is_ok());
 
