@@ -702,25 +702,25 @@ impl Tree {
         (new_idx, total_size, Height(max_h))
     }
 
-    pub fn best_branch<'a, S: HasBranches + 'a>(&'a self, node_id: NodeId<S>) -> &'a Branch {
+    pub fn best_branch<'a>(&'a self, node_id: NodeId<Evaluated>) -> &'a Branch {
         self.branches(node_id)
             .iter()
-            .max_by_key(|b| self.arena.nodes[b.node.index as usize].visits)
+            .max_by(|a, b| {
+                self.node(a.node())
+                    .partial_cmp(&self.node(b.node()))
+                    .unwrap_or(Ordering::Equal)
+            })
             .expect("Branching node should have branches")
     }
 
-    pub fn best_move<S: HasBranches>(&self, node_id: NodeId<S>) -> Move {
+    pub fn best_move(&self, node_id: NodeId<Evaluated>) -> Move {
         self.best_branch(node_id).mov()
     }
 
     pub fn maybe_best_move(&self, node_id: RtNodeId) -> Option<Move> {
-        let node = &self.arena.nodes[node_id.index as usize];
-        if node.state.has_branches() {
-            Some(unsafe { self.best_move(node_id.cast::<node_state::Branching>()) })
-        }
-        else {
-            None
-        }
+        self.node_switch(node_id)
+            .get::<Evaluated>()
+            .map(|node| self.best_move(node))
     }
 
     pub fn best_moves<S: HasBranches>(
