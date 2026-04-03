@@ -533,7 +533,6 @@ impl Tree {
             acc.push(m);
             ControlFlow::Continue::<(), _>(acc)
         });
-        println!("{:?}", moves);
 
         let branches_count = MoveIndex::try_from(moves.len())
             .expect("fold_legal_moves will return all moves in a legal position and no more.");
