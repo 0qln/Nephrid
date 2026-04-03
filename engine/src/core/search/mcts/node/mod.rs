@@ -221,7 +221,7 @@ pub mod node_state {
         }
     }
 
-    pub const trait Any: Clone + Copy {}
+    pub const trait Any: Clone + Copy + PartialEq {}
 
     pub const trait Valid: Any {
         fn state() -> NodeState;
@@ -757,11 +757,7 @@ impl Tree {
         self.line(|a, b| {
             let a = self.node(a.node());
             let b = self.node(b.node());
-            // 1. Most visits
-            a.visits()
-                .cmp(&b.visits())
-                // 2. Highest value
-                .then_with(|| a.value().partial_cmp(&b.value()).unwrap_or(Ordering::Equal))
+            a.partial_cmp(&b).unwrap_or(Ordering::Equal)
         })
     }
 
@@ -889,6 +885,34 @@ impl<S: node_state::Any> fmt::Debug for NodeId<S> {
 pub struct NodeView<'a, S: node_state::Any> {
     pub tree: &'a Tree,
     pub id: NodeId<S>,
+}
+
+impl<'a, S: node_state::Any> PartialEq for NodeView<'a, S> {
+    fn eq(&self, other: &Self) -> bool {
+        self.tree as *const _ == other.tree as *const _ && self.id == other.id
+    }
+}
+
+impl<S: node_state::Any> PartialOrd for NodeView<'_, S> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        // compare the proven-tiers (WIN > DRAW/UNPROVEN > LOSS)
+        let tier_self = Proven::try_from(self.value()).ok().unwrap_or(proven::DRAW);
+        let tier_other = Proven::try_from(other.value()).ok().unwrap_or(proven::DRAW);
+        let tier_ord = tier_self.cmp(&tier_other);
+
+        match tier_ord {
+            // fall back to standard mcts visits comparison
+            Ordering::Equal => {
+                let visits_ord = self.visits().cmp(&other.visits());
+                match visits_ord {
+                    Ordering::Equal => self.value().partial_cmp(&other.value()),
+                    ordering => Some(ordering),
+                }
+            }
+            // otherwise, strictly obey the proven ranking.
+            ordering => Some(ordering),
+        }
+    }
 }
 
 impl<'a, S: node_state::Any> NodeView<'a, S> {
