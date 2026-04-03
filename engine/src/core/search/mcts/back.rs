@@ -37,7 +37,7 @@ impl Backpropagater for DefaultBackuper {
             let node = &leaf.node;
             let value = eval.to_value(!leaf.turn);
 
-            match node.clone().into_ct() {
+            match node.into_ct() {
                 Switch::Branching(node) => {
                     let evaluated = if let Evaluation::Guess(guess) = eval {
                         tree.set_policy(node, &guess.policy)
@@ -55,9 +55,9 @@ impl Backpropagater for DefaultBackuper {
 
         // Update the parents until root.
         _ = selection.try_fold_up(leaf.parent, (), |_, item| {
-            let node = item.node.clone();
+            let node = item.node;
             let value = eval.to_value(!item.turn);
-            tree.update_node(node.clone(), value);
+            tree.update_node(node, value);
 
             ControlFlow::Continue::<(), ()>(())
         });
@@ -82,7 +82,7 @@ impl Backpropagater for MctsSolver {
             let turn = leaf.turn;
             let value = eval.to_value(!turn);
 
-            match node.clone().into_ct() {
+            match node.into_ct() {
                 Switch::Branching(node) => {
                     let evaluated = if let Evaluation::Guess(guess) = eval {
                         tree.set_policy(node, &guess.policy)
@@ -128,7 +128,7 @@ impl Backpropagater for MctsSolver {
                                 .iter()
                                 .any(|b| tree.node(b.node()).value().is_proven_win()) =>
                         {
-                            tree.set_proven(node.clone(), proven::LOSS)
+                            tree.set_proven(node, proven::LOSS)
                         }
 
                         GameResult::Win { .. }
@@ -137,14 +137,14 @@ impl Backpropagater for MctsSolver {
                                 .iter()
                                 .all(|b| tree.node(b.node()).value().is_proven_loss()) =>
                         {
-                            tree.set_proven(node.clone(), proven::WIN)
+                            tree.set_proven(node, proven::WIN)
                         }
 
-                        x => tree.update_node(node.clone(), x.to_value(!turn)),
+                        x => tree.update_node(node, x.to_value(!turn)),
                     };
                 }
-                Evaluation::Guess(guess) => tree.update_node(node.clone(), guess.to_value(!turn)),
-                Evaluation::Nope => tree.update_node(node.clone(), eval::Value::draw()),
+                Evaluation::Guess(guess) => tree.update_node(node, guess.to_value(!turn)),
+                Evaluation::Nope => tree.update_node(node, eval::Value::draw()),
             }
 
             ControlFlow::Continue::<(), ()>(())

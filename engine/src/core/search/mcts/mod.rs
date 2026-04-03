@@ -112,11 +112,10 @@ pub struct SearchState {
 impl SearchState {
     pub fn advance_to(&mut self, mov: Move) {
         let root = self.tree.root();
-        if self.tree.node(root).state().has_branches() {
-            if let Some(new_root) = self.tree.branches(root).iter().find(|b| b.mov() == mov) {
+        if self.tree.node(root).state().has_branches()
+            && let Some(new_root) = self.tree.branches_rt(root).iter().find(|b| b.mov() == mov) {
                 self.tree.advance_to(&mut self.back_buffer, new_root.node());
             }
-        }
     }
 }
 

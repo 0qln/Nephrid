@@ -3,7 +3,7 @@ use crate::{
         depth::Depth,
         r#move::MoveIndex,
         search::mcts::node::node_state::{
-            ExpandedSwitch, HasBranches, HasValue, NodeState, Switch, Unknown,
+            ExpandedSwitch, HasBranches, HasValue, NodeState, Switch,
         },
     },
     impl_variants,
@@ -185,10 +185,10 @@ pub mod node_state {
         pub fn new(node_id: super::RtNodeId, state: NodeState) -> Self {
             use Switch as S;
             match state {
-                NodeState::Leaf => S::Leaf(unsafe { node_id.up_cast() }),
-                NodeState::Branching => S::Branching(unsafe { node_id.up_cast() }),
-                NodeState::Terminal => S::Terminal(unsafe { node_id.up_cast() }),
-                NodeState::Evaluated => S::Evaluated(unsafe { node_id.up_cast() }),
+                NodeState::Leaf => S::Leaf(unsafe { node_id.cast() }),
+                NodeState::Branching => S::Branching(unsafe { node_id.cast() }),
+                NodeState::Terminal => S::Terminal(unsafe { node_id.cast() }),
+                NodeState::Evaluated => S::Evaluated(unsafe { node_id.cast() }),
             }
         }
 
@@ -221,7 +221,7 @@ pub mod node_state {
         }
     }
 
-    pub const trait Any {}
+    pub const trait Any: Clone + Copy {}
 
     pub const trait Valid: Any {
         fn state() -> NodeState;
@@ -414,7 +414,7 @@ impl Tree {
 
     pub fn compute_subtree_size(&self, node_id: RtNodeId) -> usize {
         1 + self
-            .branches(node_id)
+            .branches_rt(node_id)
             .iter()
             .map(|b| self.compute_subtree_size(b.node))
             .sum::<usize>()
@@ -427,17 +427,19 @@ impl Tree {
     pub fn compute_subtree_maxheight(&self, node: RtNodeId) -> Height {
         Height::ROOT
             + self
-                .branches(node)
+                .branches_rt(node)
                 .iter()
                 .map(|b| self.compute_subtree_maxheight(b.node))
                 .max()
                 .unwrap_or(Height::EMPTY)
     }
 
+    // todo: this can be sped up by sorting by visit count, then using alpha-beta
+    // pruning?
     pub fn compute_subtree_minheight(&self, node: RtNodeId) -> Height {
         Height::ROOT
             + self
-                .branches(node)
+                .branches_rt(node)
                 .iter()
                 .map(|b| self.compute_subtree_minheight(b.node))
                 .min()
@@ -448,23 +450,38 @@ impl Tree {
         Self::ROOT_IDX
     }
 
-    /// Safely provides read access to a node's branches, enforced by typestate.
     #[inline]
-    pub fn branches<S: node_state::Any>(&self, node_id: NodeId<S>) -> &[Branch] {
-        let data = &self.arena.nodes[node_id.index as usize];
+    pub fn branches<S: HasBranches>(&self, node_id: NodeId<S>) -> &[Branch] {
+        let node = self.node(node_id);
+        let data = node.data();
         let start = data.branch_start as usize;
         let end = start + data.branch_count.v as usize;
         &self.arena.branches[start..end]
+    }
+
+    #[inline]
+    pub fn branches_rt(&self, node_id: RtNodeId) -> &[Branch] {
+        const EMPTY_SLICE: &[Branch] = &[];
+        match self.node_switch(node_id) {
+            Switch::Leaf(_) => EMPTY_SLICE,
+            Switch::Terminal(_) => EMPTY_SLICE,
+            Switch::Branching(node) => self.branches(node),
+            Switch::Evaluated(node) => self.branches(node),
+        }
+    }
+
+    #[inline]
+    pub fn branch_count<S: HasBranches>(&self, node_id: NodeId<S>) -> MoveIndex {
+        let node = self.node(node_id);
+        let data = node.data();
+        data.branch_count
     }
 
     /// Safely provides mutable access to a node's branches, enforced by
     /// typestate. This allows external sorting without leaking the inner
     /// ArenaBuffer arrays.
     #[inline]
-    pub fn branches_mut<S: node_state::HasBranches>(
-        &mut self,
-        node_id: NodeId<S>,
-    ) -> &mut [Branch] {
+    pub fn branches_mut<S: HasBranches>(&mut self, node_id: NodeId<S>) -> &mut [Branch] {
         let data = &self.arena.nodes[node_id.index as usize];
         let start = data.branch_start as usize;
         let end = start + data.branch_count.v as usize;
@@ -684,24 +701,21 @@ impl Tree {
         (new_idx, total_size, Height(max_h))
     }
 
-    pub fn best_branch<'a, S: node_state::HasBranches + 'a>(
-        &'a self,
-        node_id: NodeId<S>,
-    ) -> &'a Branch {
+    pub fn best_branch<'a, S: HasBranches + 'a>(&'a self, node_id: NodeId<S>) -> &'a Branch {
         self.branches(node_id)
             .iter()
             .max_by_key(|b| self.arena.nodes[b.node.index as usize].visits)
             .expect("Branching node should have branches")
     }
 
-    pub fn best_move<S: node_state::HasBranches>(&self, node_id: NodeId<S>) -> Move {
+    pub fn best_move<S: HasBranches>(&self, node_id: NodeId<S>) -> Move {
         self.best_branch(node_id).mov()
     }
 
     pub fn maybe_best_move(&self, node_id: RtNodeId) -> Option<Move> {
         let node = &self.arena.nodes[node_id.index as usize];
         if node.state.has_branches() {
-            Some(unsafe { self.best_move(node_id.up_cast::<node_state::Branching>()) })
+            Some(unsafe { self.best_move(node_id.cast::<node_state::Branching>()) })
         }
         else {
             None
@@ -724,12 +738,7 @@ impl Tree {
         let mut current = Self::ROOT_IDX;
 
         loop {
-            let node = self.node(current);
-            if !node.state().has_branches() {
-                break;
-            }
-
-            let best_branch_opt = self.branches(current).iter().max_by(|a, b| cmp(a, b));
+            let best_branch_opt = self.branches_rt(current).iter().max_by(|a, b| cmp(a, b));
 
             if let Some(branch) = best_branch_opt {
                 buf.push(branch.clone());
@@ -764,21 +773,27 @@ impl Tree {
         self.node_switch(node_id).get::<S>().map(|x| self.node(x))
     }
 
-    pub fn node_rt(&'_ self, node_id: RtNodeId) -> NodeView<'_, Unknown> {
-        NodeView::new(self, node_id.down_cast())
-    }
-
     pub fn node<S: node_state::Any>(&'_ self, node_id: NodeId<S>) -> NodeView<'_, S> {
         NodeView::new(self, node_id)
     }
 
-    pub fn branch<S: node_state::HasBranches>(
+    pub fn branch_id<S: HasBranches>(
         &self,
         node_id: NodeId<S>,
-        branch_index: MoveIndex,
-    ) -> Option<&Branch> {
+        mov_index: MoveIndex,
+    ) -> Option<BranchId> {
         let node = self.node(node_id);
-        node.branches().get(branch_index.v as usize)
+        let data = node.data();
+        if mov_index < data.branch_count {
+            Some(BranchId::new(data.branch_start + mov_index.v as u32))
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn branch(&self, branch: BranchId) -> &Branch {
+        unsafe { self.arena.branches.get_unchecked(branch.index()) }
     }
 }
 
@@ -786,16 +801,25 @@ impl Tree {
 // Typestates & Zero-Cost Views
 // -----------------------------------------------------------------------------
 
-pub type RtNodeId = NodeId<node_state::Unknown>;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct BranchId {
+    index: u32,
+}
 
-impl RtNodeId {
-    pub unsafe fn up_cast<S: node_state::Valid>(&self) -> NodeId<S> {
-        NodeId::new(self.index)
+impl BranchId {
+    pub fn new(index: u32) -> Self {
+        Self { index }
+    }
+
+    pub fn index(&self) -> usize {
+        self.index as usize
     }
 }
 
+pub type RtNodeId = NodeId<node_state::Unknown>;
+
 /// The Typestate ID is just a zero-cost wrapper around a `u32` index.
-#[derive(PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct NodeId<S: node_state::Any> {
     pub index: u32,
     _marker: PhantomData<S>,
@@ -812,7 +836,11 @@ impl<S: node_state::Any> NodeId<S> {
         Self { index, _marker: PhantomData }
     }
 
-    pub unsafe fn cast<T: node_state::Any>(self) -> NodeId<T> {
+    /// # Safety
+    /// The caller must ensure that the underlying node at this index is
+    /// actually of the target typestate `T`. This is guaranteed by the internal
+    /// logic of the Tree, but cannot be enforced by the type system.
+    unsafe fn cast<T: node_state::Any>(self) -> NodeId<T> {
         NodeId::new(self.index)
     }
 
@@ -849,13 +877,6 @@ impl<S: const node_state::Valid> NodeId<S> {
     }
 }
 
-impl<S: node_state::Any> Clone for NodeId<S> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-impl<S: node_state::Any> Copy for NodeId<S> {}
-
 impl<S: node_state::Any> fmt::Debug for NodeId<S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "CtNodeId({})", self.index)
@@ -863,18 +884,11 @@ impl<S: node_state::Any> fmt::Debug for NodeId<S> {
 }
 
 /// A transient "View" binding a typestate integer to a specific Tree instance.
+#[derive(Clone, Copy)]
 pub struct NodeView<'a, S: node_state::Any> {
     pub tree: &'a Tree,
     pub id: NodeId<S>,
 }
-
-impl<'a, S: node_state::Any> Clone for NodeView<'a, S> {
-    fn clone(&self) -> Self {
-        Self { tree: self.tree, id: self.id }
-    }
-}
-
-impl<'a, S: node_state::Any> Copy for NodeView<'a, S> {}
 
 impl<'a, S: node_state::Any> NodeView<'a, S> {
     pub fn new(tree: &'a Tree, id: NodeId<S>) -> Self {
@@ -913,7 +927,7 @@ impl<'a, S: node_state::Valid> NodeView<'a, S> {
     }
 }
 
-impl<'a, S: node_state::HasBranches> NodeView<'a, S> {
+impl<'a, S: HasBranches> NodeView<'a, S> {
     #[inline]
     pub fn branches(&self) -> &'a [Branch] {
         self.tree.branches(self.id)

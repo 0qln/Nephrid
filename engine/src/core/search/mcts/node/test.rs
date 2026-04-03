@@ -24,7 +24,7 @@ fn test_node_id_and_view_initialization() {
     let tree = Tree::new();
     let root_id = tree.root();
 
-    let view = tree.node_rt(root_id);
+    let view = tree.node(root_id);
     assert_eq!(view.state(), NodeState::Leaf);
     assert_eq!(view.visits(), 0);
     assert_eq!(view.value(), Value(0.0));
@@ -44,7 +44,7 @@ fn test_node_id_and_view_initialization() {
 #[test]
 fn test_tree_default_initializes_leaf_node() {
     let tree = Tree::default();
-    let root = tree.node_rt(tree.root());
+    let root = tree.node(tree.root());
 
     assert_eq!(root.state(), NodeState::Leaf);
     assert_eq!(root.visits(), 0);
@@ -64,7 +64,7 @@ fn test_node_expand_from_standard_position() {
     let expanded = tree.expand_node(leaf, &pos, Depth::ROOT);
 
     assert!(matches!(expanded, ExpandedSwitch::Branching(_)));
-    assert_eq!(tree.node_rt(tree.root()).state(), NodeState::Branching);
+    assert_eq!(tree.node(tree.root()).state(), NodeState::Branching);
 
     // Size should be 21 (1 root + 20 legal starting moves)
     assert_eq!(tree.size(), 21);
@@ -96,7 +96,7 @@ fn test_node_expand_from_checkmate_position_becomes_terminal() {
     let expanded = tree.expand_node(leaf, &pos, Depth::ROOT);
 
     assert!(matches!(expanded, ExpandedSwitch::Terminal(_)));
-    assert_eq!(tree.node_rt(tree.root()).state(), NodeState::Terminal);
+    assert_eq!(tree.node(tree.root()).state(), NodeState::Terminal);
     assert_eq!(tree.size(), 1); // Size should remain 1 as no branches are created
 }
 
@@ -113,7 +113,7 @@ fn test_node_expand_from_stalemate_position_becomes_terminal() {
     let expanded = tree.expand_node(leaf, &pos, Depth::ROOT);
 
     assert!(matches!(expanded, ExpandedSwitch::Terminal(_)));
-    assert_eq!(tree.node_rt(tree.root()).state(), NodeState::Terminal);
+    assert_eq!(tree.node(tree.root()).state(), NodeState::Terminal);
 }
 
 // --- Node Branch Sorting and Selection ---
@@ -182,8 +182,8 @@ fn test_tree_advance_best_moves_root() {
 
     // The new tree root should have the forced 100 visits and be back to a Leaf
     // state
-    assert_eq!(tree.node_rt(tree.root()).visits(), 100);
-    assert_eq!(tree.node_rt(tree.root()).state(), NodeState::Leaf);
+    assert_eq!(tree.node(tree.root()).visits(), 100);
+    assert_eq!(tree.node(tree.root()).state(), NodeState::Leaf);
 }
 
 #[test]
@@ -200,7 +200,7 @@ fn test_tree_advance_to_specific_move() {
 
     tree.advance_to(&mut back_buffer, target_node_id);
 
-    assert_eq!(tree.node_rt(tree.root()).state(), NodeState::Leaf);
+    assert_eq!(tree.node(tree.root()).state(), NodeState::Leaf);
 }
 
 #[test]

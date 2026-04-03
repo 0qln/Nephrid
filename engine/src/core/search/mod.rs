@@ -149,7 +149,7 @@ impl Worker {
             }
             Command::MctsDebugTree => {
                 let tree = &self.mcts_state.tree;
-                let root = tree.node_rt(tree.root());
+                let root = tree.node(tree.root());
                 let root_evaluated = tree.try_node::<Evaluated>(tree.root());
                 println!(
                     "({}) ----  v {: >8.2}/{: <8} w {} cp {}",

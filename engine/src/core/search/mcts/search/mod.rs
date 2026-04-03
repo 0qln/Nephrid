@@ -11,7 +11,7 @@ use crate::core::{
         eval::{Evaluation, Evaluator},
         limiter::{self, Limiter},
         node::{
-            NodeId, NodeView, Tree,
+            BranchId, NodeId, NodeView, Tree,
             node_state::{self, *},
         },
         noise::Noiser,
@@ -357,8 +357,8 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 curr_budget,
                 line_index,
                 depth,
-                parent_node,
-                branch_index,
+                tree.branch_id(parent_node, branch_index)
+                    .expect("The branch should exist..."),
                 tree,
                 sel_node_id,
             );
@@ -378,15 +378,12 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         budget: usize,
         line_index: usize,
         depth: Depth,
-        parent_node: NodeId<Evaluated>,
-        branch: MoveIndex,
+        branch: BranchId,
         tree: &mut Tree,
         parent_sel_id: SelNodeId,
     ) -> usize {
         let (mov, node) = {
-            let branch = tree
-                .branch(parent_node, branch)
-                .expect("Branch does not exist.");
+            let branch = tree.branch(branch);
             (branch.mov(), branch.node())
         };
 
