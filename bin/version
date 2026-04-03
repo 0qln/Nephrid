@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -e
+
+# Generate version number
+DATE=$(date +'%Y.%-m.%-d')
+COMMIT_SHA=$(git rev-parse --short HEAD)
+VERSION="${DATE#20}+$COMMIT_SHA"
+
+# Announce CI/CD
+echo "Running CI/CD for Nephrid Version $VERSION"
+
+# Helper function to bump the version in Cargo.toml
+# This uses awk to safely replace ONLY the first "version = ..."
+update_crate_version() {
+    local file=$1
+    if [ -f "$file" ]; then
+        awk -v ver="$VERSION" '/^version[[:space:]]*=/ && !done { sub(/".*"/, "\"" ver "\""); done=1 } 1' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+        echo "Updated $file"
+    else
+        echo "Error: $file not found!"
+        exit 1
+    fi
+}
+
+# Bump engine and nephrid crate versions
+update_crate_version "./engine/Cargo.toml"
+update_crate_version "./nephrid/Cargo.toml"
+
+# Update Cargo.lock to reflect the new workspace versions
+echo "Updating Cargo.lock..."
+cargo update --workspace
+
+# Commit Changes and Tag
+git add ./engine/Cargo.toml ./nephrid/Cargo.toml ./Cargo.lock
+git commit -m "Bump up crate version to $VERSION"
+git tag "$VERSION"
+
+echo "Successfully bumped version, committed, and tagged as $VERSION."
