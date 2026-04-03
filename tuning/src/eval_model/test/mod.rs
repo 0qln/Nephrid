@@ -16,7 +16,7 @@ use engine::core::{
     position::Position,
     search::{
         limit::Limit,
-        mcts::{NNParts, SearchState, mcts, nn::ModelConfig},
+        mcts::{NNParts, SearchState, mcts, nn::ModelConfig, node::node_state::Evaluated},
     },
     zobrist,
 };
@@ -102,8 +102,8 @@ pub fn learn_mate_in_1() {
         config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
         config_path.push("tuning/src/eval_model/test/config.json");
 
-        let config = TrainingConfig::load(&config_path).unwrap_or_else(|_| panic!("Couldn't load config.json at {:?}",
-            config_path.to_str()));
+        let config = TrainingConfig::load(&config_path)
+            .unwrap_or_else(|_| panic!("Couldn't load config.json at {:?}", config_path.to_str()));
 
         config
             .save(format!("{OUT_DIR}/config.json"))
@@ -150,7 +150,7 @@ pub fn learn_mate_in_1() {
             MctsTrain::default(),
         )
     };
-    println!("{:#?}", result);
+    println!("{:#?}", result.0);
 
     assert_eq!(
         result.0,
@@ -175,8 +175,8 @@ pub fn learn_mate_in_2() {
         config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
         config_path.push("tuning/src/eval_model/test/config.json");
 
-        let config = TrainingConfig::load(&config_path).unwrap_or_else(|_| panic!("Couldn't load config.json at {:?}",
-            config_path.to_str()));
+        let config = TrainingConfig::load(&config_path)
+            .unwrap_or_else(|_| panic!("Couldn't load config.json at {:?}", config_path.to_str()));
 
         config
             .save(format!("{OUT_DIR}/config.json"))
@@ -225,7 +225,7 @@ pub fn learn_mate_in_2() {
         );
         let mov = result.0.expect("Search should have completed by now");
         pos.make_move(mov);
-        mcts_state.tree.advance_to(|b| b.mov() == mov);
+        mcts_state.advance_to(mov);
 
         // them/mov-1
         let result = mcts(
@@ -237,7 +237,7 @@ pub fn learn_mate_in_2() {
         );
         let mov = result.0.expect("Search should have completed by now");
         pos.make_move(mov);
-        mcts_state.tree.advance_to(|b| b.mov() == mov);
+        mcts_state.advance_to(mov);
 
         // us/mov-2
         let result = mcts(
@@ -249,14 +249,12 @@ pub fn learn_mate_in_2() {
         );
         let mov = result.0.expect("Search should have completed by now");
         pos.make_move(mov);
-        mcts_state.tree.advance_to(|b| b.mov() == mov);
+        mcts_state.advance_to(mov);
 
-        let root = mcts_state.tree.get_root();
-        let root = root.into_ct();
-        let root = root.evaluated().expect("Root should be evaluated");
-        let root = root.borrow();
+        let root = mcts_state.tree.node_switch(mcts_state.tree.root());
+        let _root = root.get::<Evaluated>().expect("Root should be evaluated");
 
-        let branches = root.branches();
+        let branches = mcts_state.tree.branches_rt(mcts_state.tree.root());
         branches.len()
     };
 
