@@ -298,7 +298,12 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         let root = match tree.node_switch(root_id) {
             Switch::Evaluated(n) => n,
-            _ => panic!("Root must be evaluated before selecting lines! Did you call init_root?"),
+            Switch::Terminal(_) => {
+                panic!("Root must not be terminal! Did you forget to abandon the search?")
+            }
+            Switch::Leaf(_) | Switch::Branching(_) => {
+                panic!("Root must be evaluated before selecting lines! Did you call init_root?")
+            }
         };
 
         let eval_data = self.evaluator.trace(root, tree, self.position);
