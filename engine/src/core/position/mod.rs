@@ -1200,21 +1200,26 @@ impl fmt::Display for PgnMoveTextSection {
         // section, a single empty line follows the last line of data to
         // conclude the movetext section.
         let mut width = 0;
-        let mut append_text = |text: &str| {
-            width += text.len();
-            if width >= 80 {
-                width = 0;
-                f.write_char('\n')?;
-            }
-            f.write_str(text)
-        };
-
         let mut iter = self.0.iter();
+
         if let Some(first) = iter.next() {
-            append_text(&format!("{first}"))?;
+            let text = first.to_string();
+            f.write_str(&text)?;
+            width = text.len();
         }
+
         for token in iter {
-            append_text(&format!(" {token}"))?;
+            let text = token.to_string();
+            if width + 1 + text.len() >= 80 {
+                f.write_char('\n')?;
+                f.write_str(&text)?;
+                width = text.len();
+            }
+            else {
+                f.write_char(' ')?;
+                f.write_str(&text)?;
+                width += 1 + text.len();
+            }
         }
 
         writeln!(f)
