@@ -1,20 +1,25 @@
 use burn::{nn::loss::BinaryCrossEntropyLossConfig, train::MultiLabelClassificationOutput};
-use engine::core::{
-    config::Configuration,
-    search::mcts::{
-        CreateNNPartsError, MctsParts, SearchState,
-        back::DefaultBackuper,
-        eval::{GameResult, Guess, RawPolicy, nn::NNEvaluator, softmax},
-        mcts,
-        nn::{BOARD_INPUT_HISTORY, POLICY_OUTPUTS, board_history_input},
-        node::{Branch, NodeData, Value, node_state::Evaluated},
-        select::puct,
-        strategy::{MctsFindBest, MctsStrategy},
+use engine::{
+    core::{
+        Game,
+        config::Configuration,
+        position::FenImport,
+        search::mcts::{
+            CreateNNPartsError, MctsParts, SearchState,
+            back::DefaultBackuper,
+            eval::{GameResult, Guess, RawPolicy, nn::NNEvaluator, softmax},
+            mcts,
+            nn::{BOARD_INPUT_HISTORY, POLICY_OUTPUTS, board_history_input},
+            node::{Branch, NodeData, Value, node_state::Evaluated},
+            select::puct,
+            strategy::{MctsFindBest, MctsStrategy},
+        },
+        turn::Turn,
     },
-    turn::Turn,
+    uci::tokens::Tokenizer,
 };
 use rand::SeedableRng;
-use std::cmp::max;
+use std::{cmp::max, time::Instant};
 
 use burn::{
     prelude::Module,
@@ -282,8 +287,6 @@ impl FenDataset {
             .into_iter()
             .map(|s| FenItemRaw::new(s.to_owned()))
             .collect();
-
-        println!("{:?}", items);
 
         let dataset = InMemDataset::new(items);
 
@@ -785,18 +788,13 @@ fn generate_batch<B: AutodiffBackend>(
 
             match self_play::<_, ExactLossPlayoutItem>(&fen, model, device) {
                 Ok(result) => {
-                    // todo: replace this with printing the game in PGN format
-                    // log::debug!(target: "games", "[Fen {fen}] {moves}");
-
-                    // log misc information
-                    let moves = result
-                        .iter()
-                        .map(|x| format!("({}, {:?})", x.decision.state.mov, x.decision.stats))
-                        .join(" ");
-                    log::debug!(target: "games", "[Fen {fen}] {moves}");
+                    // log pgn information
+                    let pgn = result.0.to_pgn();
+                    log::debug!(target: "games", "{pgn}");
 
                     // map each playout_item to a training target.
-                    result.iter().map(|x| x.playout_item.clone()).collect_vec()
+                    let items = result.1;
+                    items.iter().map(|x| x.playout_item.clone()).collect_vec()
                 }
                 Err(err) => {
                     log::error!(target: "games", "[Fen {fen}] Error: {err}");
@@ -813,14 +811,16 @@ fn generate_batch<B: AutodiffBackend>(
 #[derive(Default, Debug)]
 pub struct MctsTrain {
     infer: MctsFindBest,
-    steps: usize,
+    nodes_begin: u64,
+    iterations: u64,
+    time_limit: Option<Instant>,
 }
 
 impl MctsTrain {
     pub fn new() -> Self {
         Self {
             infer: MctsFindBest::default(),
-            steps: 0,
+            ..Default::default()
         }
     }
 }
@@ -829,20 +829,45 @@ impl MctsStrategy for MctsTrain {
     type Result = (<MctsFindBest as MctsStrategy>::Result, Tree);
     type Step = (<MctsFindBest as MctsStrategy>::Step,);
 
+    fn start(&mut self, tree: &mut Tree, pos: &Position, limit: &Limit) {
+        let time_per_move = limit.time_per_move(pos);
+
+        self.infer.start(tree, pos, limit);
+        self.nodes_begin = tree.size() as u64;
+        self.time_limit = Some(Instant::now() + time_per_move);
+        self.iterations = 0;
+    }
+
+    fn step(&mut self, tree: &mut Tree) -> Self::Step {
+        self.iterations += 1;
+        let step = self.infer.step(tree);
+        (step,)
+    }
+
+    fn should_stop(&mut self, tree: &Tree, limit: &Limit) -> bool {
+        if limit.is_active()
+            && limit.is_reached(
+                tree.size() as u64 - self.nodes_begin,
+                Instant::now(),
+                self.time_limit.unwrap(),
+                self.iterations,
+            )
+        {
+            return true;
+        }
+
+        false
+    }
+
     fn result(&mut self, tree: &mut Tree) -> Self::Result {
         let inference_result = self.infer.result(tree);
         let tree = tree.to_owned();
-        log::info!(target: "games", "Completed MCTS Iterations: {}", self.steps);
+        log::info!(target: "games", "Completed MCTS Iterations: {}", self.iterations);
         // todo: log::info!(target: "games", "Base Policy: {:#?}",
         // tree.get_root().borrow().iter_branches().map(|b| format!("[{}] p: {}, WDL
         // found: {}", b.mov(), b.policy(), todo!("Gather how many w/d/l we have found
         // in the game tree during mcts"))).collect_vec());
         (inference_result, tree)
-    }
-
-    fn step(&mut self, tree: &mut Tree) -> Self::Step {
-        self.steps += 1;
-        (self.infer.step(tree),)
     }
 }
 
@@ -985,70 +1010,56 @@ struct SelfPlayResult<P: PlayoutItem> {
 }
 
 fn self_play<B: Backend, P: PlayoutItem>(
-    pos: &str,
+    fen: &str,
     model: Model<B>,
     device: B::Device,
-) -> Result<Vec<SelfPlayResult<P>>, Box<dyn Error>>
+) -> Result<(Game, Vec<SelfPlayResult<P>>), Box<dyn Error>>
 where
     P::Target: Clone,
 {
     let limit = Limit {
         is_active: true,
-        winc: 10000,
-        binc: 10000,
-        wtime: 0,
-        btime: 0,
+        iterations: 50,
         ..Default::default()
     };
-    let mut pos = Position::from_fen(pos)?;
+
+    let fen = FenImport(&mut Tokenizer::new(fen));
+    let mut game = Game::from_fen(fen)?;
 
     let mut decisions = Vec::<Decision<P::Target>>::new();
     let nn_state = TrainParts::new(model, device, 0.3, 0.25);
     let mut mcts_state = SearchState::default();
 
-    println!("{pos:?}");
-
     let eval: GameResult = {
-        let mut x = 0;
         let game_result;
         loop {
-            x += 1;
-            if x > 5 {
-                game_result = GameResult::Draw;
-                break;
-            }
-            let turn = pos.get_turn();
-            let strat = MctsTrain::new();
-            let result = mcts(&mut pos, &nn_state, &mut mcts_state, &limit, strat);
-
-            let mov = result.0;
-            let tree = result.1;
-
-            if let Some(result) = pos.game_result() {
+            if let Some(result) = game.position().game_result() {
                 game_result = result;
                 break;
             }
 
-            // let model = &nn_state.nn;
-            // let device = &nn_state.device;
-            // let mut evaluator = NNEvaluator::<_, 1>::new(model, device);
-            // let eval_node = evaluator.init(tree.get_root(), &pos);
-            // let sel_node =
-            // evaluator.batch_eval(0, eval_node);
-            // evaluator.eval_guesses();
-            // let guess = evaluator.get_eval(0);
-            // let guess = guess.expect("The evaluator should have generated the guess");
-            // let guess = guess.guess().expect(
-            //     "We specifically told the evaluator to make a guess and not a terminal
-            // evaluation.", );
+            let strat = MctsTrain::new();
+            let result = mcts(
+                game.position_mut(),
+                &nn_state,
+                &mut mcts_state,
+                &limit,
+                strat,
+            );
+
+            let pos = game.position();
+            let turn = pos.get_turn();
+
+            let mov = result.0;
+            let tree = result.1;
 
             let b_in = board_input(&pos);
             let s_in = state_input(&pos);
 
-            let mov = mov.expect("");
-            pos.make_move(mov);
-
-            println!("{pos:?}");
+            let mov = mov.expect(
+                "if we don't have a gameresult then the search should've yielded a bestmove.",
+            );
+            game.push_move(mov);
 
             mcts_state.advance_to(mov);
 
@@ -1076,7 +1087,7 @@ where
         });
     }
 
-    Ok(result)
+    Ok((game, result))
 }
 
 #[derive(Debug)]
@@ -1120,7 +1131,7 @@ impl<B: Backend> TryFrom<&Configuration> for TrainParts<B> {
         let epsilon = config.dirichlet_epsilon();
         let weights = PathBuf::from(config.weights_path());
         let device = B::Device::default();
-        let nn = Model::try_from((weights, &device)).map_err(Self::Error::LoadNNError)?;
+        let nn = Model::try_from((weights, &device))?;
         Ok(Self::new(nn, device, alpha, epsilon))
     }
 }
