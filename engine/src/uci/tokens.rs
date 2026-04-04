@@ -1,5 +1,7 @@
-use std::iter::{Enumerate, Peekable};
-use std::str::Chars;
+use std::{
+    iter::{Enumerate, Peekable},
+    str::Chars,
+};
 
 pub struct Tokenizer<'a> {
     src: &'a str,
@@ -51,6 +53,24 @@ impl<'a> Tokenizer<'a> {
 
     pub fn chars_with_index(&mut self) -> CharsWithIndexIterator<'_, 'a> {
         CharsWithIndexIterator(self)
+    }
+
+    /// Unconditionally consumes and returns the next character.
+    pub fn consume_char(&mut self) -> Option<char> {
+        self.seq.next().map(|(_, c)| c)
+    }
+
+    /// Reads characters into a slice until the delimiter is found, consuming
+    /// the delimiter.
+    pub fn take_until(&mut self, delimiter: char) -> Option<&'a str> {
+        let start = self.seq.peek()?.0;
+
+        while let Some((idx, c)) = self.seq.next() {
+            if c == delimiter {
+                return Some(&self.src[start..idx]);
+            }
+        }
+        None
     }
 }
 

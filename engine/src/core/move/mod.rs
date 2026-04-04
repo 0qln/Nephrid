@@ -1,8 +1,8 @@
 use core::fmt;
 use move_flags as f;
-use std::ops;
 use std::{
     fmt::Write,
+    ops,
     ops::{ControlFlow, Index, IndexMut},
 };
 use thiserror::Error;
@@ -52,7 +52,40 @@ impl<'a, 'b, 'c> LongAlgebraicUciNotation<'a, 'b, 'c> {
     }
 }
 
-pub struct StandardAlgebraicNotation;
+pub struct StandardAlgebraicNotationParser<'a, 'b> {
+    pub san: &'a str,
+    pub context: &'b Position,
+}
+
+impl<'a, 'b> StandardAlgebraicNotationParser<'a, 'b> {
+    pub const fn new(san: &'a str, context: &'b Position) -> Self {
+        Self { san, context }
+    }
+}
+
+impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
+    type Error = MoveParseError;
+
+    fn try_from(parser: StandardAlgebraicNotationParser<'a, 'b>) -> Result<Self, Self::Error> {
+        let context = parser.context;
+        let target_san = parser.san.trim();
+
+        // kind of hacky but idc if this part slow so dklfjdlkfj
+        let matched_move = fold_legal_moves(context, Option::<Move>::None, |_, mov| {
+            if (SAN { context, mov }).to_string() == target_san {
+                ControlFlow::Break(Some(mov))
+            }
+            else {
+                ControlFlow::Continue(None)
+            }
+        });
+
+        match matched_move {
+            ControlFlow::Break(Some(m)) => Ok(m),
+            _ => Err(MoveParseError::InvalidSan(target_san.to_string())),
+        }
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct MoveFlag {
@@ -228,6 +261,13 @@ impl Move {
         let mov = LongAlgebraicUciNotation::new(tok, context);
         Move::try_from(mov)
     }
+
+    /// Convenience wrapper.
+    #[inline]
+    pub fn from_san(san: &str, context: &Position) -> Result<Move, MoveParseError> {
+        let mov = StandardAlgebraicNotationParser::new(san, context);
+        Move::try_from(mov)
+    }
 }
 
 impl From<Move> for (Square, Square, MoveFlag) {
@@ -398,6 +438,9 @@ pub enum MoveParseError {
 
     #[error("Expected a legal castling move, but destination file was unexpected: {0}")]
     IllegalCastling(CastlingSideParseError),
+
+    #[error("Invalid SAN string: {0}")]
+    InvalidSan(String),
 }
 
 impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {

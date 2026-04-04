@@ -13,15 +13,15 @@ use crate::{
             squares,
         },
         depth::Depth,
-        r#move::{Move, SAN, move_flags},
+        r#move::{Move, MoveParseError, SAN, move_flags},
         move_iter::{bishop, fold_legal_moves, king, knight, pawn, rook},
         piece::{Piece, PieceParseError, PieceType, PromoPieceType, piece_type},
-        ply::{FullMoveCountTokenizationError, PlyTokenizationError},
+        ply::{FullMoveCountParseError, FullMoveCountTokenizationError, PlyTokenizationError},
         search::mcts::eval::GameResult,
         turn::Turn,
         zobrist,
     },
-    misc::ConstFrom,
+    misc::{ConstFrom, ValueOutOfSetError},
     uci::tokens::Tokenizer,
 };
 
@@ -829,9 +829,14 @@ impl Position {
         unsafe { Self::try_from(fen).unwrap_unchecked() }
     }
 
-    /// Convenience wrapper
+    // Convenience wrappers
+
     pub fn from_fen(fen: &str) -> Result<Self, FenParseError> {
         Self::try_from(FenImport(&mut Tokenizer::new(fen)))
+    }
+
+    pub fn from_pgn(pgn: &str) -> Result<Self, PgnImportError> {
+        Self::try_from(PgnImport(&mut Tokenizer::new(pgn)))
     }
 
     #[inline]
@@ -955,9 +960,73 @@ impl<'a> fmt::Display for FenExport<'a> {
 // pgn spec: https://www.thechessdrum.net/PGN_Reference.txt
 
 /// 3.2.4: Reduced export format
-pub struct PgnExport(pub PgnTagPairSection, pub PgnMoveTextSection);
+///
+/// A PGN game represented using export format is said to be in "reduced export
+/// format" if all of the following hold: 1) it has no commentary, 2) it has
+/// only the standard seven tag roster identification information ("STR", see
+/// below), 3) it has no recursive annotation variations ("RAV", see below), and
+/// 4) it has no numeric annotation glyphs ("NAG", see below).  Reduced export
+/// format is used for bulk storage of unannotated games.  It represents a
+/// minimum level of standard conformance for a PGN exporting application.
+pub struct ReducedPgn(pub PgnTagPairSection, pub PgnMoveTextSection);
 
-impl PgnExport {
+impl ReducedPgn {
+    /// 9.7: Alternative starting positions
+    ///
+    /// There are two tags defined for assistance with describing games that did
+    /// not start from the usual initial array.
+    ///
+    ///
+    /// 9.7.1: Tag: SetUp
+    ///
+    /// This tag takes an integer that denotes the "set-up" status of the game.
+    /// A value of "0" indicates that the game has started from the usual
+    /// initial array. A value of "1" indicates that the game started from a
+    /// set-up position; this position is given in the "FEN" tag pair.  This
+    /// tag must appear for a game starting with a set-up position.  If it
+    /// appears with a tag value of "1", a FEN tag pair must also appear.
+    ///
+    ///
+    /// 9.7.2: Tag: FEN
+    ///
+    /// This tag uses a string that gives the Forsyth-Edwards Notation for the
+    /// starting position used in the game.  FEN is described in a later
+    /// section of this document.  If a SetUp tag appears with a tag value
+    /// of "1", the FEN tag pair is also required.
+    pub fn start_position(&self) -> Result<Position, FenParseError> {
+        let mut has_setup = false;
+        let mut fen_string = None;
+
+        for PgnTagPair(key, value) in &self.0.0 {
+            match *key {
+                "SetUp" if value == "1" => has_setup = true,
+                "FEN" => fen_string = Some(value),
+                _ => {}
+            }
+        }
+
+        // Apply the custom FEN if provided
+        if has_setup || fen_string.is_some() {
+            if let Some(fen) = fen_string {
+                return Ok(Position::from_fen(&fen)?);
+            }
+        }
+
+        Ok(Position::start_position())
+    }
+
+    /// Returns the moves in SAN format, without move numbers or annotations.
+    pub fn moves<'a>(&'a self) -> impl Iterator<Item = &'a str> {
+        self.1.0.iter().filter_map(|move_info| {
+            if let PgnMoveInfo::Move(san_str) = move_info {
+                Some(san_str.as_str())
+            }
+            else {
+                None
+            }
+        })
+    }
+
     /// From<(Current Position, Subsequent Moves)>
     pub fn from_current_pos(mut pos: Position, moves: &[Move]) -> Self {
         let (move_tokens, game_result) = {
@@ -993,8 +1062,8 @@ impl PgnExport {
 
         let moves_sec = PgnMoveTextSection(move_tokens);
         let tags_sec = PgnTagPairSection(vec![
-            PgnTagPair("FEN", Box::new(fen)),
-            PgnTagPair("Result", Box::new(game_result)),
+            PgnTagPair("FEN", fen),
+            PgnTagPair("Result", game_result.to_string()),
         ]);
 
         Self(tags_sec, moves_sec)
@@ -1045,18 +1114,114 @@ impl PgnExport {
 
         let moves_sec = PgnMoveTextSection(move_tokens);
         let tags_sec = PgnTagPairSection(vec![
-            PgnTagPair("FEN", Box::new(fen)),
-            PgnTagPair("Result", Box::new(game_result)),
+            PgnTagPair("FEN", fen),
+            PgnTagPair("Result", game_result.to_string()),
         ]);
 
         Self(tags_sec, moves_sec)
     }
 }
 
-impl fmt::Display for PgnExport {
+impl fmt::Display for ReducedPgn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)?;
         self.1.fmt(f)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum PgnParseError {
+    #[error("Malformed tag: missing closing bracket or space separator")]
+    MalformedTag,
+
+    #[error("Unknown or invalid tag key (Reduced PGN only supports STR and FEN/SetUp)")]
+    UnknownTagKey,
+
+    #[error("Invalid PGN move text token: {0}")]
+    InvalidMoveTextToken(#[from] PgnMoveInfoParseError),
+}
+
+impl TryFrom<&mut Tokenizer<'_>> for ReducedPgn {
+    type Error = PgnParseError;
+
+    fn try_from(value: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
+        let mut tags = Vec::new();
+        let mut moves = Vec::new();
+
+        loop {
+            value.skip_ws();
+
+            // not splitting the tag and moves section by newlines, such that we can also
+            // parse a flattened pgn, like in the uci input format.
+            match value.peek_next_char() {
+                Some('[') => {
+                    value.consume_char(); // Consume the '['
+
+                    let inner = value.take_until(']').ok_or(PgnParseError::MalformedTag)?;
+                    let (key, val) = inner
+                        .trim()
+                        .split_once(' ')
+                        .ok_or(PgnParseError::MalformedTag)?;
+
+                    // Strictly enforce the Reduced PGN specification keys.
+                    let static_key: &'static str = match key {
+                        "Event" => "Event",
+                        "Site" => "Site",
+                        "Date" => "Date",
+                        "Round" => "Round",
+                        "White" => "White",
+                        "Black" => "Black",
+                        "Result" => "Result",
+                        "FEN" => "FEN",
+                        "SetUp" => "SetUp",
+                        _ => return Err(PgnParseError::UnknownTagKey),
+                    };
+
+                    let clean_val = val.trim().trim_matches('"').to_string();
+
+                    tags.push(PgnTagPair(static_key, clean_val));
+                }
+                Some(_) if let Some(token) = value.next_token() => {
+                    moves.push(PgnMoveInfo::try_from(token)?)
+                }
+                // end of stream
+                _ => {
+                    break;
+                }
+            }
+        }
+
+        Ok(Self(PgnTagPairSection(tags), PgnMoveTextSection(moves)))
+    }
+}
+
+pub struct PgnImport<'a, 'b>(pub &'a mut Tokenizer<'b>);
+
+#[derive(Debug, Error)]
+pub enum PgnImportError {
+    #[error("Invalid FEN provided in PGN tags: {0}")]
+    FenError(#[from] FenParseError),
+
+    #[error("Error parsing PGN: {0}")]
+    PgnParseError(#[from] PgnParseError),
+
+    #[error("Invalid SAN move: {0}")]
+    InvalidSanMove(#[from] MoveParseError),
+}
+
+impl<'a, 'b> TryFrom<PgnImport<'a, 'b>> for Position {
+    type Error = PgnImportError;
+
+    fn try_from(pgn: PgnImport<'a, 'b>) -> Result<Self, Self::Error> {
+        let pgn = ReducedPgn::try_from(pgn.0)?;
+
+        let mut position = pgn.start_position()?;
+
+        for san in pgn.moves() {
+            position.make_move(Move::from_san(san, &position)?);
+        }
+
+        Ok(position)
     }
 }
 
@@ -1104,6 +1269,25 @@ impl fmt::Display for PgnResultValue {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum PgnResultValueParseError {
+    #[error("Invalid game termination marker: {0}")]
+    InvalidValue(#[from] ValueOutOfSetError<&'static str>),
+}
+
+impl TryFrom<&str> for PgnResultValue {
+    type Error = PgnResultValueParseError;
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "1-0" => Ok(Self(Some(GameResult::Win { relative_to: colors::WHITE }))),
+            "0-1" => Ok(Self(Some(GameResult::Win { relative_to: colors::BLACK }))),
+            "1/2-1/2" => Ok(Self(Some(GameResult::Draw))),
+            "*" => Ok(Self(None)),
+            _ => Err(ValueOutOfSetError::new("The value", &["1-0", "0-1", "1/2-1/2", "*"]).into()),
+        }
+    }
+}
+
 // Some tag values may be composed of a sequence of items.  For example, a
 // consultation game may have more than one player for a given side.  When this
 // occurs, the single character ":" (colon) appears between adjacent items.
@@ -1133,7 +1317,7 @@ where
 /// 8.1: Tag pair section
 ///
 /// The tag pair section is composed of a series of zero or more tag pairs.
-pub struct PgnTagPairSection(pub Vec<PgnTagPair<&'static str, Box<dyn fmt::Display>>>);
+pub struct PgnTagPairSection(pub Vec<PgnTagPair<&'static str, String>>);
 
 impl fmt::Display for PgnTagPairSection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -1142,7 +1326,7 @@ impl fmt::Display for PgnTagPairSection {
         // each tag pair to appear left justified on a line by itself; a single
         // empty line follows the last tag pair.
         for tag_pair in self.0.iter() {
-            writeln!(f, "{}", tag_pair)?;
+            writeln!(f, "{tag_pair}")?;
         }
         writeln!(f)
     }
@@ -1180,6 +1364,43 @@ impl fmt::Display for PgnMoveInfo {
             Self::Move(san) => write!(f, "{san}"),
             Self::Annotation(text) => write!(f, "({text})"),
             Self::GameTerminationMarker(result) => write!(f, "{result}"),
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum PgnMoveInfoParseError {
+    #[error("Invalid game termination marker: {0}")]
+    InvalidGameTerminationMarker(PgnResultValueParseError),
+
+    #[error("Invalid move number indication: {0}")]
+    InvalidFmc(#[from] FullMoveCountParseError),
+
+    #[error("Unknown move info token: {0}")]
+    UnknownMoveInfoTokenError(String),
+}
+
+impl TryFrom<&str> for PgnMoveInfo {
+    type Error = PgnMoveInfoParseError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.ends_with("...") {
+            let fmc = FullMoveCount::try_from(&value[..value.len() - 3])?;
+            Ok(Self::MoveNumberIndication(fmc, colors::BLACK))
+        }
+        else if value.ends_with('.') {
+            let fmc = FullMoveCount::try_from(&value[..value.len() - 1])?;
+            Ok(Self::MoveNumberIndication(fmc, colors::WHITE))
+        }
+        else if value.starts_with('(') && value.ends_with(')') {
+            let annotation = value[1..value.len() - 1].trim();
+            Ok(Self::Annotation(annotation.to_string()))
+        }
+        else if let Ok(termination) = PgnResultValue::try_from(value) {
+            Ok(Self::GameTerminationMarker(termination))
+        }
+        else {
+            Ok(PgnMoveInfo::Move(value.to_string()))
         }
     }
 }
@@ -1260,19 +1481,6 @@ impl From<&Position> for String {
         result
     }
 }
-
-// pub struct PgnImport<'a, 'b>(&'a mut Tokenizer<'b>);
-
-// #[derive(Debug, Error)]
-// pub enum PgnParseError {}
-
-// impl<'a, 'b> TryFrom<PgnImport<'a, 'b>> for Position {
-//     type Error = PgnParseError;
-
-//     fn try_from(value: PgnImport<'a, 'b>) -> Result<Self, Self::Error> {
-//         todo!()
-//     }
-// }
 
 pub struct FenImport<'a, 'b>(pub &'a mut Tokenizer<'b>);
 

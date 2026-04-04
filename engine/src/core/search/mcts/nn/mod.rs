@@ -496,16 +496,14 @@ impl ModelConfig {
 #[derive(Debug, Error)]
 pub enum LoadNNError {
     #[error("Bad nn record: {0}")]
-    BadRecord(RecorderError),
+    BadRecord(#[from] RecorderError),
 }
 
 impl<B: Backend> TryFrom<(PathBuf, &B::Device)> for Model<B> {
     type Error = LoadNNError;
 
     fn try_from((path, device): (PathBuf, &B::Device)) -> Result<Self, Self::Error> {
-        let record = CompactRecorder::new()
-            .load(path, device)
-            .map_err(LoadNNError::BadRecord)?;
+        let record = CompactRecorder::new().load(path, device)?;
         let nn = ModelConfig::new().init(device).load_record(record);
         Ok(nn)
     }

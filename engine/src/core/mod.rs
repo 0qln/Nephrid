@@ -10,7 +10,7 @@ use crate::{
         config::Configuration,
         depth::Depth,
         r#move::Move,
-        position::{FenImport, PgnExport, Position},
+        position::{FenImport, FenParseError, PgnImport, PgnImportError, Position, ReducedPgn},
         search::{Command, PonderToken, Thread},
     },
     misc::{DebugMode, trim_newline},
@@ -47,8 +47,36 @@ pub struct Game {
 }
 
 impl Game {
-    pub fn new(position: Position) -> Self {
+    pub fn from_moves(position: Position, moves: impl Iterator<Item = Move>) -> Self {
+        let mut game = Self::from_position(position);
+        for mov in moves {
+            game.push_move(mov);
+        }
+        game
+    }
+
+    pub fn from_history(position: Position, history: Vec<Move>) -> Self {
+        Self { position, history }
+    }
+
+    pub fn from_position(position: Position) -> Self {
         Self { position, ..Default::default() }
+    }
+
+    pub fn from_fen(fen: FenImport<'_, '_>) -> Result<Self, FenParseError> {
+        Ok(Self::from_position(Position::try_from(fen)?))
+    }
+
+    pub fn from_pgn(pgn: PgnImport<'_, '_>) -> Result<Self, PgnImportError> {
+        let pgn = ReducedPgn::try_from(pgn.0)?;
+
+        let position = pgn.start_position()?;
+        let mut game = Self::from_position(position);
+        for san in pgn.moves() {
+            let mov = Move::from_san(san, &game.position)?;
+            game.push_move(mov);
+        }
+        Ok(game)
     }
 
     pub fn moves(&self) -> &[Move] {
@@ -68,8 +96,8 @@ impl Game {
         self.position.make_move(mov);
     }
 
-    pub fn to_pgn(&self) -> PgnExport {
-        PgnExport::from_current_pos(self.position.clone(), &self.history[..])
+    pub fn to_pgn(&self) -> ReducedPgn {
+        ReducedPgn::from_current_pos(self.position.clone(), &self.history[..])
     }
 }
 
@@ -80,7 +108,7 @@ pub struct Engine {
 
     /// Search thread
     search_t: Thread,
-    
+
     /// A token to trigger the transition from pondering to normal search.
     ponder_hit: PonderToken,
 
@@ -216,7 +244,7 @@ pub fn execute_uci(
                     let ponder_hit = engine.ponder_hit.clone();
                     ponder_hit.start_ponder();
                     Command::Ponder(position, limit, token, debug, ponder_hit)
-                },
+                }
                 Mode::Perft => Command::Perft(position, limit, token, debug),
             };
 
@@ -265,12 +293,13 @@ pub fn execute_uci(
                     process_move(engine, tok)?;
                 }
             }
-            // Otherwise, we have a diverging position string. 
+            // Otherwise, we have a diverging position string.
             else {
                 // 1. Parse the new base position into a temporary game state
-                let mut new_game = Game::new(match tokenizer.next_token() {
-                    Some("fen") => Position::try_from(FenImport(&mut tokenizer))?,
-                    Some("startpos") => Position::start_position(),
+                let mut new_game = match tokenizer.next_token() {
+                    Some("pgn") => Game::from_pgn(PgnImport(&mut tokenizer))?,
+                    Some("fen") => Game::from_fen(FenImport(&mut tokenizer))?,
+                    Some("startpos") => Game::from_position(Position::start_position()),
                     None => return Err(UciError::MissingArgument("value").into()),
                     Some(x) => {
                         return Err(UciError::InvalidValue(
@@ -279,7 +308,7 @@ pub fn execute_uci(
                         )
                         .into());
                     }
-                });
+                };
 
                 // 2. Parse all the new moves into our temporary game state
                 if tokenizer.next_token() == Some("moves") {
@@ -293,7 +322,7 @@ pub fn execute_uci(
                 let old_moves = engine.game.moves();
                 let new_moves = new_game.moves();
 
-                let is_ponder_miss = !old_moves.is_empty() 
+                let is_ponder_miss = !old_moves.is_empty()
                     && new_moves.len() == old_moves.len()
                     && old_moves[..old_moves.len() - 1] == new_moves[..new_moves.len() - 1]
                     && old_moves.last() != new_moves.last();
@@ -305,10 +334,15 @@ pub fn execute_uci(
                     .unwrap_or(false);
 
                 if is_ponder_miss && game_tree_caching {
-                    // Ponder Miss detected! Restore the 1-ply backup and advance down the actual move.
+                    // Ponder Miss detected! Restore the 1-ply backup and advance down the actual
+                    // move.
                     let actual_move = *new_moves.last().unwrap();
-                    engine.search_t.tx.send(Command::RollbackAndAdvance(actual_move))?;
-                } else {
+                    engine
+                        .search_t
+                        .tx
+                        .send(Command::RollbackAndAdvance(actual_move))?;
+                }
+                else {
                     // Completely new game or caching disabled: safely reset the tree entirely.
                     engine.search_t.tx.send(Command::ResetState)?;
                 }

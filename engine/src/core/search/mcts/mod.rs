@@ -113,9 +113,10 @@ impl SearchState {
     pub fn advance_to(&mut self, mov: Move) {
         let root = self.tree.root();
         if self.tree.node(root).state().has_branches()
-            && let Some(new_root) = self.tree.branches_rt(root).iter().find(|b| b.mov() == mov) {
-                self.tree.advance_to(&mut self.back_buffer, new_root.node());
-            }
+            && let Some(new_root) = self.tree.branches_rt(root).iter().find(|b| b.mov() == mov)
+        {
+            self.tree.advance_to(&mut self.back_buffer, new_root.node());
+        }
     }
 }
 
@@ -167,7 +168,7 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
 #[derive(Error, Debug)]
 pub enum CreateNNPartsError {
     #[error("Error while creating nn-parts: {0}")]
-    LoadNNError(LoadNNError),
+    LoadNNError(#[from] LoadNNError),
 }
 
 impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
@@ -178,7 +179,7 @@ impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
         let epsilon = config.dirichlet_epsilon();
         let weights = PathBuf::from(config.weights_path());
         let device = B::Device::default();
-        let nn = Model::try_from((weights, &device)).map_err(Self::Error::LoadNNError)?;
+        let nn = Model::try_from((weights, &device))?;
         Ok(Self::new(nn, device, alpha, epsilon))
     }
 }

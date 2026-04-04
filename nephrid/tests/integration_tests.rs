@@ -69,6 +69,24 @@ fn block_engine_line(
     }
 }
 
+/// Reads and accumulates lines from the engine until a line fulfills the
+/// predicate. Returns all lines read *before* the matching line as a single
+/// joined string.
+fn collect_engine_lines_until(
+    reader: &mut BufReader<ChildStdout>,
+    mut pred: impl FnMut(&str) -> bool,
+) -> String {
+    let mut lines = Vec::new();
+    loop {
+        let out = read_engine_line(reader);
+        if pred(&out) {
+            break;
+        }
+        lines.push(out);
+    }
+    lines.join("\n")
+}
+
 fn write_engine_line(stdin: &mut ChildStdin, line: &str) {
     writeln!(stdin, "{line}").unwrap();
     println!("Gui: {}", line);
@@ -367,5 +385,60 @@ fn test_ponder_miss_complete_divergence_resets_tree() {
         first_search_nodes
     );
 
+    write_engine_line(&mut stdin, "quit");
+}
+
+#[test]
+#[timeout(1000)]
+fn test_pgn_input_command() {
+    let mut child = GuardedChild(
+        Command::cargo_bin("nephrid")
+            .unwrap()
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .expect("Failed to spawn engine"),
+    );
+
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout);
+
+    // init
+
+    write_engine_line(&mut stdin, "uci");
+    block_engine_line(&mut reader, |l| l == "uciok");
+
+    write_engine_line(&mut stdin, "isready");
+    block_engine_line(&mut reader, |l| l == "readyok");
+
+    // input pgn
+
+    let pgn_in = include_str!("game-1_in.pgn").trim();
+    write_engine_line(&mut stdin, &format!("position pgn {pgn_in}"));
+
+    write_engine_line(&mut stdin, "isready");
+    block_engine_line(&mut reader, |l| l == "readyok");
+
+    // output pgn
+
+    write_engine_line(&mut stdin, &format!("pgn"));
+    write_engine_line(&mut stdin, "isready");
+
+    let actual_pgn = collect_engine_lines_until(&mut reader, |l| l == "readyok");
+    let actual_pgn = actual_pgn.trim();
+
+    // assertions
+    let pgn_expected = include_str!("game-1_expected.pgn").trim();
+
+    let actual_tokens: Vec<&str> = actual_pgn.split_whitespace().collect();
+    let expected_tokens: Vec<&str> = pgn_expected.split_whitespace().collect();
+
+    assert_eq!(
+        actual_tokens, expected_tokens,
+        "The PGN outputted by the engine did not match the expected PGN!"
+    );
+
+    // 6. Clean up
     write_engine_line(&mut stdin, "quit");
 }
