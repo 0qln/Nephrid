@@ -2,20 +2,8 @@
 name = "tuning"
 edition = "2024"
 
-[[bin]]
-name = "zobrist-seed"
-path = "src/zobrist_seed.rs"
-
-[[bin]]
-name = "magic-seeds"
-path = "src/magic_seeds.rs"
-
-[[bin]]
-name = "eval-model"
-path = "src/eval_model/main.rs"
-
 [dependencies]
-engine = { version = "*", path = "../engine" }
+engine = { version = "*", path = "../engine", default-features = false, features = ["nn-backend-cuda", "mcts-nn"]  }
 itertools = "0.14.0"
 rand = "0.9.0"
 burn = { version = "0.19.1", features = ["ndarray", "train"] }
@@ -23,3 +11,7 @@ burn-cuda = "0.19.1"
 rayon = "1.11.0"
 log = "0.4.28"
 log4rs = "1.4.0"
+
+[[bin]]
+name = "eval-model"
+path = "src/eval_model/main.rs"

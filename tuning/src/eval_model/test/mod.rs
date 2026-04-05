@@ -1,11 +1,16 @@
 use std::{env::var, path::PathBuf};
 
-use crate::{FenDataset, FenItemRaw, MctsTrainStrategy, TrainingConfig, train};
+use crate::{
+    data::{FenDataset, FenItemRaw},
+    io::get_config,
+    self_play::MctsTrainStrategy,
+    train,
+};
 use burn::{
     backend::Autodiff,
     config::Config,
     data::dataset::Dataset,
-    prelude::Module,
+    module::Module,
     record::{CompactRecorder, Recorder},
 };
 use burn_cuda::{Cuda, CudaDevice};
@@ -16,7 +21,7 @@ use engine::core::{
     position::Position,
     search::{
         limit::Limit,
-        mcts::{NNParts, SearchState, mcts, nn::ModelConfig, node::node_state::Evaluated},
+        mcts::{NNParts, SearchState, mcts, nn::ModelConfig, node::node_state::NodeState},
     },
     zobrist,
 };
@@ -34,55 +39,10 @@ pub mod logs {
         buf.push("tuning/src/eval_model/test/log4rs.yml");
         let config = buf.to_str().unwrap();
         println!("{:?}", config);
-        log4rs::init_file(config, Default::default()).unwrap();
+        // Ignore the result so tests don't panic if initialized twice
+        let _ = log4rs::init_file(config, Default::default());
     }
 }
-
-// todo
-// #[test]
-// pub fn can_approximate_policy() {
-//     magics::init();
-//     zobrist::init();
-
-//     // This is the policy that we want to learn. e.g. if we pretend that this
-// policy was the     // result of the selfplay phase, training the enging
-// toward this should result in very     // mminimal loss.
-//     let target_move = Move::new(squares::B5, squares::A5, move_flags::QUIET);
-//     let target_policy = {
-//         let mut pol = RawPolicy::null();
-//         pol.set(usize::from(target_move), 1.0_f32);
-//         pol
-//     };
-
-//     type Backend = Cuda<f32>;
-//     type AutodiffBackend = Autodiff<Backend>;
-
-//     let device = CudaDevice::default();
-//     log::info!("Device: {:?}", device);
-
-//     let result_weights = {
-//         let mut config_path = PathBuf::new();
-//         config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT
-// variable"));         config_path.push("tuning/src/eval_model/test/config.
-// json");
-
-//         let config = TrainingConfig::load(&config_path).expect(&format!(
-//             "Couldn't load config.json at {:?}",
-//             config_path.to_str()
-//         ));
-
-//         config
-//             .save(&format!("{OUT_DIR}/config.json"))
-//             .expect("Failed to save config.");
-
-//         train::<AutodiffBackend>(
-//             &format!("{OUT_DIR}/learn_mate_in_1"),
-//             config,
-//             device.clone(),
-//         )
-//         .expect("No epoch was completed")
-//     };
-// }
 
 #[ignore]
 #[test]
@@ -97,30 +57,30 @@ pub fn learn_mate_in_1() {
     let device = CudaDevice::default();
     log::info!("Device: {:?}", device);
 
-    let result_weights = {
-        let mut config_path = PathBuf::new();
-        config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
-        config_path.push("tuning/src/eval_model/test/config.json");
+    let mut config_path = PathBuf::new();
+    config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
+    config_path.push("tuning/src/eval_model/test/config.json");
 
-        let config = TrainingConfig::load(&config_path)
-            .unwrap_or_else(|_| panic!("Couldn't load config.json at {:?}", config_path.to_str()));
+    let config = get_config(config_path.to_str().expect("Invalid config path"));
 
-        config
-            .save(format!("{OUT_DIR}/config.json"))
-            .expect("Failed to save config.");
+    config
+        .save(format!("{OUT_DIR}/config.json"))
+        .expect("Failed to save config.");
 
-        train::<AutodiffBackend>(
-            &format!("{OUT_DIR}/learn_mate_in_1"),
-            config,
-            device.clone(),
-        )
-        .expect("No epoch was completed")
-    };
+    let num_fens_total = config.edp_dataset_fens_total;
+
+    let result_weights = train::<AutodiffBackend>(
+        &format!("{OUT_DIR}/learn_mate_in_1"),
+        config,
+        device.clone(),
+    )
+    .expect("No epoch was completed");
 
     // test
-    let test_fen = FenDataset::new("mate_in_1.edp", "train");
+    let test_fen = FenDataset::new("mate_in_1.edp", "train", num_fens_total);
     let fen = Dataset::<FenItemRaw>::get(&test_fen, 0).expect("no fen in dataset");
     let mut pos = Position::from_fen(&fen.fen).expect("Bad fen");
+
     let result = {
         let record = CompactRecorder::new()
             .load(result_weights.into(), &device)
@@ -147,13 +107,17 @@ pub fn learn_mate_in_1() {
             &nn_state,
             &mut mcts_state,
             &limit,
-            MctsTrainStrategy::default(),
+            MctsTrainStrategy::new(),
         )
+        .0
     };
-    println!("{:#?}", result.0);
 
+    println!("{:#?}", result);
+
+    // Note: ensure this target move matches the first FEN in your specific .edp
+    // file!
     assert_eq!(
-        result.0,
+        result,
         Some(Move::new(squares::B5, squares::A5, move_flags::QUIET))
     )
 }
@@ -161,6 +125,7 @@ pub fn learn_mate_in_1() {
 #[ignore]
 #[test]
 pub fn learn_mate_in_2() {
+    logs::init();
     magics::init();
     zobrist::init();
 
@@ -170,30 +135,30 @@ pub fn learn_mate_in_2() {
     let device = CudaDevice::default();
     log::info!("Device: {:?}", device);
 
-    let result_weights = {
-        let mut config_path = PathBuf::new();
-        config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
-        config_path.push("tuning/src/eval_model/test/config.json");
+    let mut config_path = PathBuf::new();
+    config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
+    config_path.push("tuning/src/eval_model/test/config.json");
 
-        let config = TrainingConfig::load(&config_path)
-            .unwrap_or_else(|_| panic!("Couldn't load config.json at {:?}", config_path.to_str()));
+    let config = get_config(config_path.to_str().expect("Invalid config path"));
 
-        config
-            .save(format!("{OUT_DIR}/config.json"))
-            .expect("Failed to save config.");
+    config
+        .save(format!("{OUT_DIR}/config.json"))
+        .expect("Failed to save config.");
 
-        train::<AutodiffBackend>(
-            &format!("{OUT_DIR}/learn_mate_in_2"),
-            config,
-            device.clone(),
-        )
-        .expect("No epoch was completed")
-    };
+    let num_fens_total = config.edp_dataset_fens_total;
+
+    let result_weights = train::<AutodiffBackend>(
+        &format!("{OUT_DIR}/learn_mate_in_2"),
+        config,
+        device.clone(),
+    )
+    .expect("No epoch was completed");
 
     // test
-    let test_fen = FenDataset::new("mate_in_2.edp", "train");
+    let test_fen = FenDataset::new("mate_in_2.edp", "train", num_fens_total);
     let fen = Dataset::<FenItemRaw>::get(&test_fen, 0).expect("no fen in dataset");
     let mut pos = Position::from_fen(&fen.fen).expect("Bad fen");
+
     let result = {
         let record = CompactRecorder::new()
             .load(result_weights.into(), &device)
@@ -221,7 +186,7 @@ pub fn learn_mate_in_2() {
             &nn_state,
             &mut mcts_state,
             &limit,
-            MctsTrainStrategy::default(),
+            MctsTrainStrategy::new(),
         );
         let mov = result.0.expect("Search should have completed by now");
         pos.make_move(mov);
@@ -233,31 +198,29 @@ pub fn learn_mate_in_2() {
             &nn_state,
             &mut mcts_state,
             &limit,
-            MctsTrainStrategy::default(),
+            MctsTrainStrategy::new(),
         );
         let mov = result.0.expect("Search should have completed by now");
         pos.make_move(mov);
         mcts_state.advance_to(mov);
 
-        // us/mov-2
+        // us/mov-2 (This search should find the mate!)
         let result = mcts(
             &mut pos,
             &nn_state,
             &mut mcts_state,
             &limit,
-            MctsTrainStrategy::default(),
+            MctsTrainStrategy::new(),
         );
-        let mov = result.0.expect("Search should have completed by now");
-        pos.make_move(mov);
-        mcts_state.advance_to(mov);
 
-        let root = mcts_state.tree.node_switch(mcts_state.tree.root());
-        let _root = root.get::<Evaluated>().expect("Root should be evaluated");
+        // Apply the mate
+        if let Some(mov) = result.0 {
+            pos.make_move(mov);
+            mcts_state.advance_to(mov);
+        }
 
-        let branches = mcts_state.tree.branches_rt(mcts_state.tree.root());
-        branches.len()
+        mcts_state.tree.node(mcts_state.tree.root()).state()
     };
 
-    // result should be a mating position
-    assert_eq!(0, result)
+    assert_eq!(NodeState::Terminal, result)
 }

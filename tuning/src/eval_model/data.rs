@@ -52,7 +52,7 @@ impl Dataset<FenItemRaw> for FenDataset {
 }
 
 impl FenDataset {
-    fn new(path: &str, split: &str, num_fens_total: usize) -> Self {
+    pub fn new(path: &str, split: &str, num_fens_total: usize) -> Self {
         let root = FenDataset::load_path(path, split);
         let fens = FenDataset::read_edp(&root, split, 0.9, num_fens_total);
 
@@ -66,7 +66,7 @@ impl FenDataset {
         Self { dataset }
     }
 
-    fn load_path(path: &str, _split: &str) -> PathBuf {
+    pub fn load_path(path: &str, _split: &str) -> PathBuf {
         let mut buf = PathBuf::new();
         buf.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
         buf.push("tuning/resources/datasets/edp");
@@ -75,7 +75,7 @@ impl FenDataset {
     }
 
     /// num_fens_total: the number of fens in |train + test|
-    fn read_edp<P: AsRef<Path>>(
+    pub fn read_edp<P: AsRef<Path>>(
         root: &P,
         split: &str,
         split_ratio: f32,
