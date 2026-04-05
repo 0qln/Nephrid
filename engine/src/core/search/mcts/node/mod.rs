@@ -387,6 +387,7 @@ pub struct Tree {
     arena: ArenaBuffer,
     size: usize,
     maxheight: Height,
+    terminal_nodes: usize,
 }
 
 impl Default for Tree {
@@ -404,6 +405,7 @@ impl Tree {
         Self {
             arena,
             size: 1,
+            terminal_nodes: 0,
             maxheight: Height::ROOT,
         }
     }
@@ -412,12 +414,27 @@ impl Tree {
         self.size
     }
 
+    pub fn terminal_nodes(&self) -> usize {
+        self.terminal_nodes
+    }
+
     pub fn compute_subtree_size(&self, node_id: RtNodeId) -> usize {
         1 + self
             .branches_rt(node_id)
             .iter()
             .map(|b| self.compute_subtree_size(b.node))
             .sum::<usize>()
+    }
+
+    pub fn compute_subtree_terminal_nodes_count(&self, node_id: RtNodeId) -> usize {
+        let node = self.node(node_id);
+        let terminal_node = if node.state() == NodeState::Terminal { 1 } else { 0 };
+        terminal_node
+            + self
+                .branches_rt(node_id)
+                .iter()
+                .map(|b| self.compute_subtree_terminal_nodes_count(b.node))
+                .sum::<usize>()
     }
 
     pub fn maxheight(&self) -> Height {
@@ -559,6 +576,7 @@ impl Tree {
     ) -> ExpandedSwitch {
         if pos.game_result().is_some() {
             self.arena.nodes[node_id.index as usize].state = NodeState::Terminal;
+            self.terminal_nodes += 1;
             unsafe {
                 return ExpandedSwitch::Terminal(node_id.cast());
             }
@@ -669,12 +687,13 @@ impl Tree {
     /// move.
     pub fn advance_to(&mut self, back_buffer: &mut Tree, new_root_index: RtNodeId) {
         back_buffer.arena.clear();
-        let (_, new_size, new_height) =
+        let (_, new_size, terminal_nodes, new_height) =
             self.copy_subtree(new_root_index, &mut back_buffer.arena, 1);
 
         std::mem::swap(&mut self.arena, &mut back_buffer.arena);
 
         self.size = new_size;
+        self.terminal_nodes = terminal_nodes;
         self.maxheight = new_height;
     }
 
@@ -683,13 +702,14 @@ impl Tree {
         old_idx: RtNodeId,
         back_buffer: &mut ArenaBuffer,
         current_height: u16,
-    ) -> (u32, usize, Height) {
+    ) -> (u32, usize, usize, Height) {
         let old_node = &self.arena.nodes[old_idx.index as usize];
         let new_idx = back_buffer.nodes.len() as u32;
 
         back_buffer.nodes.push(old_node.clone());
 
         let mut total_size = 1;
+        let mut total_terminal_nodes = if old_node.state == NodeState::Terminal { 1 } else { 0 };
         let mut max_h = current_height;
 
         if old_node.branch_count > MoveIndex::from(0) {
@@ -707,9 +727,10 @@ impl Tree {
 
             for (i, branch_idx) in (branch_start..branch_end).enumerate() {
                 let old_branch = &self.arena.branches[branch_idx];
-                let (child_new_idx, sub_size, sub_height) =
+                let (child_new_idx, sub_size, sub_terminal_nodes, sub_height) =
                     self.copy_subtree(old_branch.node, back_buffer, current_height + 1);
                 total_size += sub_size;
+                total_terminal_nodes += sub_terminal_nodes;
                 max_h = max_h.max(sub_height.0);
 
                 back_buffer.branches[(new_branch_start as usize) + i]
@@ -718,7 +739,7 @@ impl Tree {
             }
         }
 
-        (new_idx, total_size, Height(max_h))
+        (new_idx, total_size, total_terminal_nodes, Height(max_h))
     }
 
     pub fn best_branch(&self, node_id: NodeId<Evaluated>) -> &Branch {

@@ -215,7 +215,7 @@ pub fn execute_uci(
                         "movestogo" => collect_and_parse!(limit.movestogo),
                         "depth" => collect_and_parse!(limit.depth),
                         "iterations" => collect_and_parse!(limit.iterations),
-                        "nodes" => collect_and_parse!(limit.nodes),
+                        "nodes" => collect_and_parse!(limit.max_nodes),
                         "mate" => collect_and_parse!(limit.mate),
                         "movetime" => collect_and_parse!(limit.movetime),
                         "infinite" => limit.is_active = false,

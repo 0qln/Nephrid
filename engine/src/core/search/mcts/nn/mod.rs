@@ -5,13 +5,11 @@ use burn::{
     config::Config,
     module::Module,
     nn::{
-        BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, PaddingConfig2d,
-        Relu, Tanh,
+        BatchNorm, BatchNormConfig, Linear, LinearConfig, PaddingConfig2d, Relu, Tanh,
         conv::{Conv2d, Conv2dConfig},
-        pool::{MaxPool2d, MaxPool2dConfig},
     },
     prelude::Backend,
-    tensor::{Tensor, activation::softmax},
+    tensor::Tensor,
 };
 use itertools::Itertools;
 use thiserror::Error;
@@ -82,7 +80,7 @@ pub const VALUE_OUTPUT_TENSOR_DIM: usize = {
     1
 };
 
-pub type BoardInputTensor<B> = Tensor<B, 4>;
+pub type BoardInputTensor<B> = Tensor<B, BOARD_INPUT_TENSOR_DIM>;
 
 pub type BoardInputFloats = [bitboard::Floats; BOARD_INPUT_CHANNELS];
 
@@ -160,7 +158,7 @@ pub fn board_history_input<B: Backend>(
     }
 }
 
-pub type StateInputTensor<B> = Tensor<B, 2>;
+pub type StateInputTensor<B> = Tensor<B, STATE_INPUT_TENSOR_DIM>;
 
 pub type StateInputFloats = [f32; STATE_INPUT_LEN];
 
@@ -175,7 +173,7 @@ pub fn state_input(pos: &Position) -> StateInputFloats {
         castling.get_float(castling_sides::QUEEN_SIDE, them),
         // todo: figure out what the right scale is. maybe make it dependent on the max depth at
         // which the limiter stops the mcts search? maybe just a sigmoid or something?
-        pos.plys_50().v as f32 / 50.0,
+        pos.plys_50().v as f32 / 100.0,
     ]
 }
 
@@ -193,12 +191,16 @@ pub const VALUE_WIN: f32 = 1.0;
 pub const VALUE_DRAW: f32 = 0.0;
 pub const VALUE_LOSE: f32 = -1.0;
 
+pub type ValueOutputTensor<B> = Tensor<B, VALUE_OUTPUT_TENSOR_DIM>;
+
 pub const POLICY_OUTPUTS: usize = {
     // from * to
     squares::N_VARIANTS * squares::N_VARIANTS +
     // Possible promotions
     promo_piece_type::N_VARIANTS * files::N_VARIANTS
 };
+
+pub type PolicyOutputTensor<B> = Tensor<B, POLICY_OUTPUT_TENSOR_DIM>;
 
 #[derive(Module, Debug)]
 pub struct ConvBlock<B: Backend> {
@@ -221,189 +223,138 @@ impl<B: Backend> ConvBlock<B> {
 #[derive(Config, Debug)]
 pub struct ConvBlockConfig {
     channels_in: usize,
-    channels: usize,
+    channels_out: usize,
     kernel_size: [usize; 2],
 }
 
 impl ConvBlockConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> ConvBlock<B> {
         ConvBlock {
-            conv: Conv2dConfig::new([self.channels_in, self.channels], self.kernel_size)
+            conv: Conv2dConfig::new([self.channels_in, self.channels_out], self.kernel_size)
+                // PaddingConfig2d::Same ensures our 8x8 spatial grid is preserved.
                 .with_padding(PaddingConfig2d::Same)
                 .init(device),
-            activation: Default::default(),
-            b_norm: BatchNormConfig::new(self.channels).init(device),
+            b_norm: BatchNormConfig::new(self.channels_out).init(device),
+            activation: Relu::new(),
         }
     }
 }
 
 #[derive(Module, Debug)]
-pub struct MultiConvBlock<B: Backend> {
-    convs: Vec<ConvBlock<B>>,
+pub struct ResidualBlock<B: Backend> {
+    conv1: Conv2d<B>,
+    bn1: BatchNorm<B>,
+    relu1: Relu,
+    conv2: Conv2d<B>,
+    bn2: BatchNorm<B>,
+    relu2: Relu,
 }
 
-impl<B: Backend> MultiConvBlock<B> {
+impl<B: Backend> ResidualBlock<B> {
     pub fn forward(
         &self,
         x: Tensor<B, { BOARD_INPUT_TENSOR_DIM }>,
     ) -> Tensor<B, { BOARD_INPUT_TENSOR_DIM }> {
-        Tensor::cat(
-            self.convs
-                .iter()
-                .map(|conv| conv.forward(x.clone()))
-                .collect_vec(),
-            1,
-        )
+        let identity = x.clone();
+
+        let out = self.conv1.forward(x);
+        let out = self.bn1.forward(out);
+        let out = self.relu1.forward(out);
+
+        let out = self.conv2.forward(out);
+        let out = self.bn2.forward(out);
+
+        // Residual skip-connection: add the original input before the final activation
+        let out = out + identity;
+        self.relu2.forward(out)
     }
 }
 
 #[derive(Config, Debug)]
-pub struct MultiConvBlockConfig {
-    heads: Vec<[usize; 2]>,
-    channels_in: usize,
+pub struct ResidualBlockConfig {
     channels: usize,
 }
 
-impl MultiConvBlockConfig {
-    pub fn init<B: Backend>(self, device: &B::Device) -> MultiConvBlock<B> {
-        let convs = self
-            .heads
-            .into_iter()
-            .map(|k| ConvBlockConfig::new(self.channels_in, self.channels, k).init(device))
-            .collect_vec();
-
-        MultiConvBlock { convs }
-    }
-}
-
-#[derive(Module, Debug)]
-pub struct ResidualConvBlock<B: Backend> {
-    // If we want this to be a residual layer, we need to transform the output
-    // to have as many features as the input
-    adapter: ConvBlock<B>,
-    conv_block: MultiConvBlock<B>,
-}
-
-impl<B: Backend> ResidualConvBlock<B> {
-    pub fn forward(
-        &self,
-        mut x: Tensor<B, { BOARD_INPUT_TENSOR_DIM }>,
-    ) -> Tensor<B, { BOARD_INPUT_TENSOR_DIM }> {
-        x = self.adapter.forward(x);
-        x = x.clone() + self.conv_block.forward(x);
-        x
-    }
-}
-
-#[derive(Config, Debug)]
-pub struct ResidualConvBlockConfig {
-    conv_block: MultiConvBlockConfig,
-    channels_in: usize,
-}
-
-impl ResidualConvBlockConfig {
-    pub fn init<B: Backend>(self, device: &B::Device) -> ResidualConvBlock<B> {
-        // need an adapter layer to go from [n,c_0,w,h] to [n,c_1,w,h]
-        let adapter = ConvBlockConfig::new(
-            self.channels_in,
-            self.conv_block.channels * self.conv_block.heads.len(),
-            [1, 1],
-        )
-        .init(device);
-
-        let conv_block = self.conv_block.init(device);
-
-        ResidualConvBlock { adapter, conv_block }
+impl ResidualBlockConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> ResidualBlock<B> {
+        ResidualBlock {
+            conv1: Conv2dConfig::new([self.channels, self.channels], [3, 3])
+                .with_padding(PaddingConfig2d::Same)
+                .init(device),
+            bn1: BatchNormConfig::new(self.channels).init(device),
+            relu1: Relu::new(),
+            conv2: Conv2dConfig::new([self.channels, self.channels], [3, 3])
+                .with_padding(PaddingConfig2d::Same)
+                .init(device),
+            bn2: BatchNormConfig::new(self.channels).init(device),
+            relu2: Relu::new(),
+        }
     }
 }
 
 #[derive(Module, Debug)]
 pub struct Model<B: Backend> {
-    pool: MaxPool2d,
+    // Shared Layers (The Tower)
+    initial_conv: ConvBlock<B>,
+    res_blocks: Vec<ResidualBlock<B>>,
 
-    convs1: MultiConvBlock<B>,
-    convs2: MultiConvBlock<B>,
-    convs3: MultiConvBlock<B>,
-    convs4: MultiConvBlock<B>,
-    convs5: MultiConvBlock<B>,
-    convs6: MultiConvBlock<B>,
-    convs7: MultiConvBlock<B>,
-    convs8: MultiConvBlock<B>,
-    dropout: Dropout,
+    // Value Head
+    value_conv: Conv2d<B>,
+    value_bn: BatchNorm<B>,
+    value_relu: Relu,
+    value_dense1: Linear<B>,
+    value_dense2: Linear<B>,
+    value_tanh: Tanh,
 
-    dense0: Linear<B>,
-    dense1: Linear<B>,
-    dense2: Linear<B>,
-    dense3: Linear<B>,
-
-    value_dense: Linear<B>,
-    value_out: Linear<B>,
-    value_activ: Tanh,
-
+    // Policy Head
+    policy_conv: Conv2d<B>,
+    policy_bn: BatchNorm<B>,
+    policy_relu: Relu,
     policy_dense: Linear<B>,
-    policy_out: Linear<B>,
 }
 
 impl<B: Backend> Model<B> {
-    /// # Shapes
-    /// - `value_out`: (batch_size, 1)
-    /// - `policy_out`: (batch_size, num_moves)
     pub fn forward(
         &self,
-        // getting some kind of recursive evaluation error here, so inline the constants （´＿｀）
-        board_input: Tensor<B, 4>, // BOARD_INPUT_TENSOR_DIM
-        state_input: Tensor<B, 2>, // STATE_INPUT_TENSOR_DIM
+        board_input: Tensor<B, 4>,
+        state_input: Tensor<B, 2>,
     ) -> (
         Tensor<B, 2>, // VALUE_OUTPUT_TENSOR_DIM
         Tensor<B, 2>, // POLICY_OUTPUT_TENSOR_DIM
     ) {
-        let [bi_batch_size, bil, rs, fs] = board_input.dims();
-        let [si_batch_size, sil] = state_input.dims();
+        // --- 1. SHARED TOWER ---
+        let mut x = self.initial_conv.forward(board_input);
 
-        assert_eq!(si_batch_size, bi_batch_size);
+        for block in self.res_blocks.iter() {
+            x = block.forward(x);
+        }
 
-        assert_eq!(bil, BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY);
-        assert_eq!(rs, ranks::N_VARIANTS);
-        assert_eq!(fs, files::N_VARIANTS);
+        // --- 2. VALUE HEAD ---
+        let v = self.value_conv.forward(x.clone());
+        let v = self.value_bn.forward(v);
+        let v = self.value_relu.forward(v);
 
-        assert_eq!(sil, STATE_INPUT_LEN);
+        // Flatten spatial dimensions
+        let v = v.flatten(1, 3);
 
-        let x = board_input;
+        // Inject state inputs (castling, fifty-move rule)
+        let v = Tensor::cat(vec![v, state_input], 1);
 
-        let x = self.convs1.forward(x);
+        let v = self.value_dense1.forward(v);
+        let v = self.value_relu.forward(v);
 
-        let x = self.convs2.forward(x);
-        let x = self.convs3.forward(x);
-        let x = self.convs4.forward(x);
-        let x = self.convs5.forward(x);
-        let x = self.convs6.forward(x);
-        let x = self.pool.forward(x);
+        let value_out = self.value_dense2.forward(v);
+        let value_out = self.value_tanh.forward(value_out);
 
-        let x = self.convs7.forward(x);
-        let x = self.pool.forward(x);
+        // --- 3. POLICY HEAD ---
+        let p = self.policy_conv.forward(x);
+        let p = self.policy_bn.forward(p);
+        let p = self.policy_relu.forward(p);
 
-        let x = self.convs8.forward(x);
-        let x = self.pool.forward(x);
+        // Flatten spatial dimensions
+        let p = p.flatten(1, 3);
 
-        let x = x.flatten(1, 3);
-
-        // todo: should we always use a dropout layer?
-        // let x = self.dropout.forward(x);
-
-        let x = Tensor::cat(vec![x, state_input], 1);
-
-        let x = self.dense0.forward(x);
-        let x = self.dense1.forward(x);
-        let x = self.dense2.forward(x);
-        let x = self.dense3.forward(x);
-
-        let value_out = self.value_dense.forward(x.clone());
-        let value_out = self.value_out.forward(value_out);
-        let value_out = self.value_activ.forward(value_out);
-
-        let policy_out = self.policy_dense.forward(x.clone());
-        let policy_out = self.policy_out.forward(policy_out);
-        let policy_out = softmax(policy_out, 1);
+        let policy_out = self.policy_dense.forward(p);
 
         (value_out, policy_out)
     }
@@ -411,84 +362,64 @@ impl<B: Backend> Model<B> {
 
 #[derive(Config, Debug)]
 pub struct ModelConfig {
-    #[config(default = 0.2)]
-    dropout: f64,
+    #[config(default = 128)]
+    pub channels: usize,
+    #[config(default = 8)]
+    pub num_res_blocks: usize,
 }
 
 impl ModelConfig {
-    /// Returns the initialized model.
     pub fn init<B: Backend>(&self, device: &B::Device) -> Model<B> {
-        let pool = MaxPool2dConfig::new([2, 2]);
+        let input_channels = BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY;
 
-        const B1_CHANNELS: usize = 16;
-        const B1_HEADS: [[usize; 2]; 6] = [[3, 3], [5, 5], [9, 9], [15, 15], [1, 7], [7, 1]];
+        // --- 1. SHARED TOWER INITIALIZATION ---
+        let initial_conv = ConvBlockConfig::new(input_channels, self.channels, [3, 3]).init(device);
 
-        const B6_CHANNELS: usize = 32;
-        const B6_HEADS: [[usize; 2]; 6] = B1_HEADS; // [[3, 3], [5, 5]];
+        let mut res_blocks = Vec::with_capacity(self.num_res_blocks);
+        for _ in 0..self.num_res_blocks {
+            res_blocks.push(ResidualBlockConfig::new(self.channels).init(device));
+        }
 
-        const B7_CHANNELS: usize = 256;
-        const B7_HEADS: [[usize; 2]; 2] = [[3, 3], [5, 5]];
+        // --- 2. VALUE HEAD INITIALIZATION ---
+        let value_head_channels = 1;
+        let value_conv =
+            Conv2dConfig::new([self.channels, value_head_channels], [1, 1]).init(device);
+        let value_bn = BatchNormConfig::new(value_head_channels).init(device);
 
-        const B8_CHANNELS: usize = 1024;
-        const B8_HEADS: [[usize; 2]; 2] = [[1, 1], [3, 3]];
+        // 8x8 squares * 1 channel + state info
+        let value_flattened_size =
+            (ranks::N_VARIANTS * files::N_VARIANTS * value_head_channels) + STATE_INPUT_LEN;
+        let value_dense_hidden = 256;
 
-        let convs1_in = BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY;
-        let convs1 = MultiConvBlockConfig::new(B1_HEADS.to_vec(), convs1_in, B1_CHANNELS);
+        let value_dense1 = LinearConfig::new(value_flattened_size, value_dense_hidden).init(device);
+        let value_dense2 = LinearConfig::new(value_dense_hidden, VALUE_OUTPUTS).init(device);
 
-        let convs2_in = B1_CHANNELS * B1_HEADS.len();
-        let convs2 = MultiConvBlockConfig::new(B1_HEADS.to_vec(), convs2_in, B1_CHANNELS);
+        // --- 3. POLICY HEAD INITIALIZATION ---
+        let policy_head_channels = 2;
+        let policy_conv =
+            Conv2dConfig::new([self.channels, policy_head_channels], [1, 1]).init(device);
+        let policy_bn = BatchNormConfig::new(policy_head_channels).init(device);
 
-        let convs6_in = B1_CHANNELS * B1_HEADS.len();
-        let convs6 = MultiConvBlockConfig::new(B6_HEADS.to_vec(), convs6_in, B6_CHANNELS);
-        // let convs2 = ResidualConvBlockConfig::new(convs2, convs2_in);
+        // 8x8 squares * 2 channels
+        let policy_flattened_size = ranks::N_VARIANTS * files::N_VARIANTS * policy_head_channels;
 
-        let convs7_in = B6_CHANNELS * B6_HEADS.len();
-        let convs7 = MultiConvBlockConfig::new(B7_HEADS.to_vec(), convs7_in, B7_CHANNELS);
-        // let convs3 = ResidualConvBlockConfig::new(convs3, convs3_in);
-
-        let convs8_in = B7_CHANNELS * B7_HEADS.len();
-        let convs8 = MultiConvBlockConfig::new(B8_HEADS.to_vec(), convs8_in, B8_CHANNELS);
-        // let convs4 = ResidualConvBlockConfig::new(convs4, convs4_in);
-
-        let dropout = DropoutConfig::new(self.dropout);
-
-        let dense0 = LinearConfig::new(B8_CHANNELS * B8_HEADS.len() + STATE_INPUT_LEN, 64 << 4);
-        let dense1 = LinearConfig::new(64 << 4, 64 << 3);
-        let dense2 = LinearConfig::new(64 << 3, 64 << 2);
-        let dense3 = LinearConfig::new(64 << 2, 64 << 2);
-
-        let value_dense = LinearConfig::new(64 << 2, 64 << 1);
-        let value_out = LinearConfig::new(64 << 1, VALUE_OUTPUTS);
-        let value_activ = Tanh::new();
-
-        let policy_dense = LinearConfig::new(64 << 2, 64 << 4);
-        let policy_out = LinearConfig::new(64 << 4, POLICY_OUTPUTS);
+        let policy_dense = LinearConfig::new(policy_flattened_size, POLICY_OUTPUTS).init(device);
 
         Model {
-            convs1: convs1.clone().init(device),
-            convs2: convs2.clone().init(device),
-            convs3: convs2.clone().init(device),
-            convs4: convs2.clone().init(device),
-            convs5: convs2.clone().init(device),
-            convs6: convs6.init(device),
-            convs7: convs7.init(device),
-            convs8: convs8.init(device),
+            initial_conv,
+            res_blocks,
 
-            pool: pool.init(),
+            value_conv,
+            value_bn,
+            value_relu: Relu::new(),
+            value_dense1,
+            value_dense2,
+            value_tanh: Tanh::new(),
 
-            dropout: dropout.init(),
-
-            dense0: dense0.init(device),
-            dense1: dense1.init(device),
-            dense2: dense2.init(device),
-            dense3: dense3.init(device),
-
-            value_dense: value_dense.init(device),
-            value_out: value_out.init(device),
-            value_activ,
-
-            policy_dense: policy_dense.init(device),
-            policy_out: policy_out.init(device),
+            policy_conv,
+            policy_bn,
+            policy_relu: Relu::new(),
+            policy_dense,
         }
     }
 }

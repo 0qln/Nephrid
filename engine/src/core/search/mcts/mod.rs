@@ -287,7 +287,7 @@ pub mod config {
     pub const MPV: usize = 1;
 
     #[cfg(all(feature = "nn-backend-cuda", not(feature = "mcts-pure")))]
-    pub const MPV: usize = 32;
+    pub const MPV: usize = 64;
 
     #[cfg(all(feature = "nn-backend-ndarray", not(feature = "mcts-pure")))]
     pub const MPV: usize = 1;

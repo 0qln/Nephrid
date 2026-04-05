@@ -46,7 +46,10 @@ where
 
             assert_eq!(&pos, &pos_clone);
             assert_eq!(tree.size(), tree.compute_subtree_size(tree.root()));
-            // assert_eq!(tree.mindepth(), tree.compute_mindepth());
+            assert_eq!(
+                tree.terminal_nodes(),
+                tree.compute_subtree_terminal_nodes_count(tree.root())
+            );
             assert_eq!(
                 tree.maxheight(),
                 tree.compute_subtree_maxheight(tree.root())

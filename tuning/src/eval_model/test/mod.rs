@@ -1,6 +1,6 @@
 use std::{env::var, path::PathBuf};
 
-use crate::{FenDataset, FenItemRaw, MctsTrain, TrainingConfig, train};
+use crate::{FenDataset, FenItemRaw, MctsTrainStrategy, TrainingConfig, train};
 use burn::{
     backend::Autodiff,
     config::Config,
@@ -147,7 +147,7 @@ pub fn learn_mate_in_1() {
             &nn_state,
             &mut mcts_state,
             &limit,
-            MctsTrain::default(),
+            MctsTrainStrategy::default(),
         )
     };
     println!("{:#?}", result.0);
@@ -221,7 +221,7 @@ pub fn learn_mate_in_2() {
             &nn_state,
             &mut mcts_state,
             &limit,
-            MctsTrain::default(),
+            MctsTrainStrategy::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
         pos.make_move(mov);
@@ -233,7 +233,7 @@ pub fn learn_mate_in_2() {
             &nn_state,
             &mut mcts_state,
             &limit,
-            MctsTrain::default(),
+            MctsTrainStrategy::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
         pos.make_move(mov);
@@ -245,7 +245,7 @@ pub fn learn_mate_in_2() {
             &nn_state,
             &mut mcts_state,
             &limit,
-            MctsTrain::default(),
+            MctsTrainStrategy::default(),
         );
         let mov = result.0.expect("Search should have completed by now");
         pos.make_move(mov);

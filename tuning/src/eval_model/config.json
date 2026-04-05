@@ -1,0 +1,26 @@
+{
+  "model": {
+    "channels": 128,
+    "num_res_blocks": 8
+  },
+  "optimizer": {
+    "weight_decay": null,
+    "grad_clipping": null,
+    "beta_1": 0.9,
+    "beta_2": 0.999,
+    "epsilon": 0.00001
+  },
+  "limit": {
+    "max_iterations": 200,
+    "max_nodes": null,
+    "min_nodes": null,
+    "max_terminal_nodes": null
+  },
+  "edp_dataset_path": "mate_in_1_and_2.epd",
+  "edp_dataset_fens_total": 100,
+  "num_epochs": 100,
+  "batch_size": 8,
+  "mini_batch_size": 256,
+  "seed": 3735928559,
+  "learning_rate": 0.00001
+}

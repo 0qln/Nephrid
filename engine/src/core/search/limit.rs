@@ -14,7 +14,17 @@ pub struct Limit {
     pub winc: u64,
     pub binc: u64,
     pub movestogo: u16,
-    pub nodes: u64,
+
+    /// NEVER stop if we haven't found atleast this many nodes.
+    pub min_nodes: u64,
+
+    /// ALWAYS stop if we have found atleast this many terminal nodes.
+    pub terminal_nodes: u64,
+
+    /// ALWAYS stop if we have found atleast this many nodes.
+    /// (equivalent to the UCI nodes limit)
+    pub max_nodes: u64,
+
     pub movetime: u64,
     pub mate: Depth,
     pub depth: Depth,
@@ -32,7 +42,9 @@ impl Limit {
             winc: u64::MAX,
             binc: u64::MAX,
             movestogo: u16::MAX,
-            nodes: u64::MAX,
+            min_nodes: u64::MIN,
+            terminal_nodes: u64::MAX,
+            max_nodes: u64::MAX,
             movetime: u64::MAX,
             mate: Depth::MAX,
             depth: Depth::MAX,
@@ -70,11 +82,16 @@ impl Limit {
     pub fn is_reached(
         &self,
         nodes: u64,
+        terminal_nodes: u64,
         curr_time: Instant,
         time_limit: Instant,
         iterations: u64,
     ) -> bool {
-        nodes >= self.nodes || curr_time >= time_limit || iterations >= self.iterations
+        if nodes < self.min_nodes {
+            return false;
+        }
+
+        nodes >= self.max_nodes || terminal_nodes >= self.terminal_nodes || curr_time >= time_limit || iterations >= self.iterations
     }
 }
 
@@ -87,7 +104,9 @@ impl Default for Limit {
             winc: 0,
             binc: 0,
             movestogo: u16::MAX,
-            nodes: u64::MAX,
+            min_nodes: u64::MIN,
+            terminal_nodes: u64::MAX,
+            max_nodes: u64::MAX,
             movetime: u64::MAX,
             mate: Depth::MAX,
             depth: Depth::MAX,

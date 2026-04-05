@@ -1,5 +1,5 @@
 use crate::core::search::mcts::{
-    eval::Policy,
+    eval::{Policy, RawPolicy},
     node::{NodeId, Tree, node_state::HasBranches},
     search::{BatchItem, Selection},
 };
@@ -8,7 +8,7 @@ use rand::{Rng, SeedableRng, rngs::SmallRng};
 use crate::core::{
     position::Position,
     search::mcts::{
-        eval::{Evaluation, Evaluator, Guess, Quality, RawPolicy},
+        eval::{Evaluation, Evaluator, Guess, Quality},
         nn::POLICY_OUTPUTS,
     },
     turn::Turn,

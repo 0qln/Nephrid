@@ -253,11 +253,7 @@ impl Policy {
             policy.push(raw_policy.get(index)?);
         }
 
-        let mut result = Self(policy);
-
-        normalize(&mut result.0);
-
-        Some(result)
+        Some(Self::from_logits(policy))
     }
 
     /// Construct a `Policy` from logits by applying softmax.
@@ -275,42 +271,6 @@ impl Policy {
 
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {
         self.0.iter_mut()
-    }
-}
-
-pub fn normalize(xs: &mut [f32]) {
-    let f32_eq = |a: f32, b: f32, e: f32| f32::abs(a - b) < e;
-
-    // make sure all values are positive.
-    if let Some(min) = xs.iter().min_by(|a, b| f32::total_cmp(a, b)).cloned()
-        && min < 0.
-    {
-        for policy in xs.iter_mut() {
-            *policy += -min;
-        }
-    }
-
-    let sum = xs.iter().sum();
-    if f32_eq(sum, 0., 0.001) {
-        // Fallback to uniform distribution
-        let uniform = 1.0 / xs.len() as f32;
-        for policy in xs.iter_mut() {
-            *policy = uniform;
-        }
-    }
-    else {
-        for policy in xs.iter_mut() {
-            *policy /= sum;
-        }
-    }
-
-    {
-        let sum = xs.iter().sum::<f32>();
-        debug_assert!(
-            f32_eq(sum, 1., 0.001),
-            "Evaluator should return a probability distribution. Sum was expected to be 1, but \
-             was {sum}"
-        );
     }
 }
 

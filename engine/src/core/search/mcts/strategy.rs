@@ -200,6 +200,7 @@ pub struct MctsUci {
     time_per_move: Duration,
     time_limit: Option<Instant>,
     nodes_begin: u64,
+    terminal_nodes_begin: u64,
     iterations: u64,
     is_not_pondering: bool,
 }
@@ -303,6 +304,7 @@ impl MctsStrategy for MctsUci {
     fn start(&mut self, tree: &mut Tree, pos: &Position, limit: &Limit) {
         self.search_start = Some(Instant::now());
         self.nodes_begin = tree.size() as u64;
+        self.terminal_nodes_begin = tree.terminal_nodes() as u64;
         self.iterations = 0;
 
         self.time_per_move = limit.time_per_move(pos);
@@ -360,6 +362,7 @@ impl MctsStrategy for MctsUci {
         if limit.is_active()
             && limit.is_reached(
                 tree.size() as u64 - self.nodes_begin,
+                tree.terminal_nodes() as u64 - self.terminal_nodes_begin,
                 Instant::now(),
                 self.time_limit.unwrap(),
                 self.iterations,
