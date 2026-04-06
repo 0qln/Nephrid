@@ -40,7 +40,11 @@ pub struct SelNode<T, S: node_state::Any> {
     /// The sel parent node.
     pub parent: Option<SelNodeId>,
 
+    /// Payload `T`
     pub data: T,
+
+    /// Weight.
+    pub weight: f32,
 }
 
 pub type BatchItem<T> = SelNode<T, Branching>;
@@ -108,6 +112,7 @@ impl<const X: usize, T> Selection<X, T> {
             turn,
             parent: None,
             data: trace_data,
+            weight: 1.,
         });
 
         self.root = Some(root_id);
@@ -136,6 +141,7 @@ impl<const X: usize, T> Selection<X, T> {
             turn,
             parent: Some(parent_id),
             data: trace_data,
+            weight: 1.,
         });
 
         child_id
@@ -250,6 +256,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                             turn,
                             parent: None,
                             data: trace_data,
+                            weight: 1.,
                         }),
                     );
 
@@ -321,7 +328,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         tree: &mut Tree,
         sel_node_id: SelNodeId,
     ) -> usize {
-        let root_visits = NodeView::new(tree, parent_node).visits();
+        let parent_visits = NodeView::new(tree, parent_node).visits();
 
         tree.sort_branches_by(parent_node, |child_a, branch_a, child_b, branch_b| {
             let visit_threshold = 4; // todo: fine-tune this
@@ -331,7 +338,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 self.selector.min_score()
             }
             else {
-                self.selector.score(child_a, branch_a, root_visits)
+                self.selector.score(child_a, branch_a, parent_visits)
             };
 
             let score_b = if child_b.value().is_proven_loss() && child_b.visits() >= visit_threshold
@@ -339,7 +346,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 self.selector.min_score()
             }
             else {
-                self.selector.score(child_b, branch_b, root_visits)
+                self.selector.score(child_b, branch_b, parent_visits)
             };
 
             // Negative so we sort descending
@@ -353,20 +360,24 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         let branch_count = tree.node(parent_node).branch_count();
         while budget >= 1 && branch_index < branch_count {
+            let branch_id = tree
+                .branch_id(parent_node, branch_index)
+                .expect("The branch should exist...");
+            // let branch = tree.branch(branch_id);
+            // let child = tree.node(branch.node());
+
+            // todo when making the budget relative to the score, maybe use something
+            // similar to policy::from_visit_counts ?
+
+            // let score = self.selector.score(child.data(), branch, parent_visits);
+
             let curr_budget = self.selector.budget(budget);
             if curr_budget == 0 {
                 break;
             };
 
-            let used = self.select_branch(
-                curr_budget,
-                line_index,
-                depth,
-                tree.branch_id(parent_node, branch_index)
-                    .expect("The branch should exist..."),
-                tree,
-                sel_node_id,
-            );
+            let used =
+                self.select_branch(curr_budget, line_index, depth, branch_id, tree, sel_node_id);
 
             budget -= curr_budget;
             branch_index.v += 1;
@@ -398,18 +409,18 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         let used = match tree.node_switch(node) {
             Switch::Branching(node) => {
-                self.select_branching(line_index, parent_sel_id, node, depth, tree)
+                self.select_branching(budget, line_index, parent_sel_id, node, depth, tree)
             }
             Switch::Evaluated(node) => {
                 let val = NodeView::new(tree, node).value();
                 // skip further selection of proven_win/loss nodes.
                 if val.is_proven_win() {
                     let eval = Evaluation::Terminal(GameResult::Win { relative_to: !turn });
-                    self.select_skip(line_index, parent_sel_id, node, eval, depth)
+                    self.select_skip(budget, line_index, parent_sel_id, node, eval, depth)
                 }
                 else if val.is_proven_loss() {
                     let eval = Evaluation::Terminal(GameResult::Win { relative_to: turn });
-                    self.select_skip(line_index, parent_sel_id, node, eval, depth)
+                    self.select_skip(budget, line_index, parent_sel_id, node, eval, depth)
                 }
                 // otherwise continue down the tree
                 else {
@@ -424,15 +435,15 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 // shortcut leaf selection using twofold repetition
                 if depth > Depth::ROOT && self.position.has_twofold_repetition() {
                     let eval = Evaluation::Terminal(GameResult::Draw);
-                    self.select_shortcut(line_index, parent_sel_id, node, eval, depth)
+                    self.select_shortcut(budget, line_index, parent_sel_id, node, eval, depth)
                 }
                 // otherwise select this leaf for evaluation in the next phase
                 else {
-                    self.select_leaf(line_index, parent_sel_id, node, tree, depth)
+                    self.select_leaf(budget, line_index, parent_sel_id, node, tree, depth)
                 }
             }
             Switch::Terminal(node) => {
-                self.select_terminal(line_index, parent_sel_id, node, depth, tree)
+                self.select_terminal(budget, line_index, parent_sel_id, node, depth, tree)
             }
         };
 
@@ -440,8 +451,10 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         used
     }
 
+    #[inline]
     fn select_skip(
         &mut self,
+        budget: usize,
         line_index: usize,
         parent_id: SelNodeId,
         node: NodeId<Evaluated>,
@@ -455,13 +468,16 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 turn: self.position.get_turn(),
                 parent: Some(parent_id),
                 data: eval,
+                weight: budget as f32,
             }),
         );
-        1
+        budget
     }
 
+    #[inline]
     fn select_leaf(
         &mut self,
+        budget: usize,
         line_index: usize,
         parent_sel_id: SelNodeId,
         node: NodeId<Leaf>,
@@ -472,17 +488,19 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         match expanded {
             ExpandedSwitch::Terminal(node) => {
-                self.select_terminal(line_index, parent_sel_id, node, depth, tree)
+                self.select_terminal(budget, line_index, parent_sel_id, node, depth, tree)
             }
             ExpandedSwitch::Branching(node) => {
-                self.select_branching(line_index, parent_sel_id, node, depth, tree)
+                self.select_branching(budget, line_index, parent_sel_id, node, depth, tree)
             }
         }
     }
 
     /// Select a shortcut to a node that can be considered terminal.
+    #[inline]
     fn select_shortcut(
         &mut self,
+        budget: usize,
         line_index: usize,
         parent_id: SelNodeId,
         node: NodeId<Leaf>,
@@ -496,13 +514,15 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 turn: self.position.get_turn(),
                 parent: Some(parent_id),
                 data: eval,
+                weight: budget as f32,
             }),
         );
-        1
+        budget
     }
 
     fn select_terminal(
         &mut self,
+        budget: usize,
         line_index: usize,
         parent_id: SelNodeId,
         node: NodeId<Terminal>,
@@ -517,13 +537,15 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                 turn: self.position.get_turn(),
                 parent: Some(parent_id),
                 data: eval,
+                weight: budget as f32,
             }),
         );
-        1
+        budget
     }
 
     fn select_branching(
         &mut self,
+        budget: usize,
         line_index: usize,
         parent_id: SelNodeId,
         node: NodeId<Branching>,
@@ -533,17 +555,19 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         let pos = &mut self.position;
 
         let (used_budget, item) = if self.limiter.should_stop(limiter::Params { pos, depth }) {
-            (1, PhaseItem::Unused)
+            // todo: also add the budget as a weight here?
+            (budget, PhaseItem::Unused)
         }
         else {
             let trace_data = self.evaluator.trace(node, tree, pos);
             (
-                1,
+                budget,
                 PhaseItem::Batched(SelNode {
                     node,
                     turn: self.position.get_turn(),
                     parent: Some(parent_id),
                     data: trace_data,
+                    weight: budget as f32,
                 }),
             )
         };
@@ -583,6 +607,9 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
                     turn: batch_item.turn,
                     parent: batch_item.parent,
                     data: eval,
+                    // todo: unlcear if wegiht 1 is correct here... maybe use the weight from
+                    // budgeting...
+                    weight: 1.0,
                 }),
             )
         }

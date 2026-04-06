@@ -1,2 +1,3 @@
-perft_depth, fen
-3, K7/3p4/k7/4P3/5P2/8/3p4/4R3 b - - 0 1
+version https://git-lfs.github.com/spec/v1
+oid sha256:1d7859643a46c2645edca427b0e7d47c651efcbe83c9e4f9b0e7d6d9612ef8dd
+size 58

@@ -538,7 +538,7 @@ impl EvalInfo {
             logits.push(score as f32);
         }
 
-        Policy::from_logits(logits)
+        Policy::from_logits(Logits(logits), 10.)
     }
 }
 

@@ -6,7 +6,7 @@ appenders:
 
   file:
     kind: file
-    path: "tuning/out/eval_model/test/mod.log"
+    path: "out/eval_model/test/main.log"
     encoder:
       pattern: "{d(%Y-%m-%d %H:%M:%S)} {l} {t} - {m}{n}"
 

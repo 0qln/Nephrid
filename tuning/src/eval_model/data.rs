@@ -69,7 +69,7 @@ impl FenDataset {
     pub fn load_path(path: &str, _split: &str) -> PathBuf {
         let mut buf = PathBuf::new();
         buf.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
-        buf.push("tuning/resources/datasets/edp");
+        buf.push("resources/datasets/edp");
         buf.push(path);
         buf
     }
@@ -81,6 +81,7 @@ impl FenDataset {
         split_ratio: f32,
         num_fens_total: usize,
     ) -> Vec<String> {
+        println!("Reading EDP from path: {:?}", root.as_ref());
         let edp = fs::read_to_string(root).expect("Couldn't read path");
         let lines = edp
             .lines()

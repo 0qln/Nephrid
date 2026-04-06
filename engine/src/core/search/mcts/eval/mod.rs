@@ -2,6 +2,7 @@ use crate::core::{
     Position,
     color::Color,
     depth::Depth,
+    r#move::Move,
     search::mcts::{
         nn::POLICY_OUTPUTS,
         node::{
@@ -157,8 +158,24 @@ pub trait PolicySource {
     fn into<I: IntoIterator<Item = usize>>(&self, move_indices: I) -> Policy;
 }
 
-#[derive(PartialEq, Clone)]
+// todo: this better belongs in `nn/mod.rs`, right?
+// todo: shoudln't be pub
+/// Probability distribution over possible moves, as output by the network
+/// before filtering the moves to the legal ones.
+#[derive(Clone)]
 pub struct RawPolicy([f32; POLICY_OUTPUTS]);
+
+impl RawPolicy {
+    pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
+        // todo:
+        // assertions that `p` is a probability distribution (non-negative, sums to 1)
+        Self(p)
+    }
+
+    pub fn into_inner(self) -> [f32; POLICY_OUTPUTS] {
+        self.0
+    }
+}
 
 impl std::fmt::Debug for RawPolicy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -166,13 +183,25 @@ impl std::fmt::Debug for RawPolicy {
     }
 }
 
-impl Default for RawPolicy {
+// todo: this better belongs in `nn/mod.rs`, right?
+// todo: can be pub
+/// Raw logits outputs of the network.
+#[derive(PartialEq, Clone)]
+pub struct RawLogits([f32; POLICY_OUTPUTS]);
+
+impl std::fmt::Debug for RawLogits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RawLogits").field(&"...").finish()
+    }
+}
+
+impl Default for RawLogits {
     fn default() -> Self {
         Self::null()
     }
 }
 
-impl RawPolicy {
+impl RawLogits {
     pub fn get(&self, i: usize) -> Option<f32> {
         self.0.get(i).cloned()
     }
@@ -212,6 +241,15 @@ impl RawPolicy {
     }
 }
 
+/// Visit counts for each legal move in a position.
+#[derive(Debug, PartialEq, Clone)]
+pub struct VisitCounts(pub Vec<(Move, u32)>);
+
+/// Some kind of logits for each legal move in a position.
+#[derive(Debug, PartialEq, Clone)]
+pub struct Logits(pub Vec<f32>);
+
+/// A probability distribution over moves.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Policy(Vec<f32>);
 
@@ -242,27 +280,43 @@ impl Policy {
         Self(vec![probability; len])
     }
 
-    /// Construct a `Policy` from probability-like values by normalizing them to
-    /// sum to 1.
-    pub fn from_raw<I>(raw_policy: &RawPolicy, indeces_of_interest: I) -> Option<Self>
+    /// Construct a `Policy` from raw logits by normalizing them.
+    pub fn from_raw_logits<I>(
+        raw_logits: &RawLogits,
+        indeces_of_interest: I,
+        temp: f32,
+    ) -> Option<Self>
     where
         I: Iterator<Item = usize>,
     {
         let mut policy = Vec::<f32>::new();
         for index in indeces_of_interest {
-            policy.push(raw_policy.get(index)?);
+            policy.push(raw_logits.get(index)?);
         }
 
-        Some(Self::from_logits(policy))
+        softmax(&mut policy, temp);
+
+        Some(Self(policy))
+    }
+
+    /// Construct a `Policy` from a raw policy.
+    pub fn from_raw_policy<I>(raw_policy: &RawPolicy, indeces_of_interest: I) -> Option<Self>
+    where
+        I: Iterator<Item = usize>,
+    {
+        let mut policy = Vec::<f32>::new();
+        for index in indeces_of_interest {
+            policy.push(*raw_policy.0.get(index)?);
+        }
+
+        Some(Self(policy))
     }
 
     /// Construct a `Policy` from logits by applying softmax.
-    pub fn from_logits(logits: Vec<f32>) -> Self {
-        debug_assert!(!logits.is_empty(), "Should have at least one policy item");
-
-        let mut result = Self(logits);
-        softmax(&mut result.0, 10.);
-        result
+    pub fn from_logits(logits: Logits, temp: f32) -> Self {
+        let mut values = logits.0;
+        softmax(&mut values, temp);
+        Self(values)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = f32> {
@@ -274,6 +328,7 @@ impl Policy {
     }
 }
 
+/// Applies the softmax function to `xs` in-place, yielding a policy.
 pub fn softmax(xs: &mut [f32], temperature: f32) {
     let max = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
     let exps: Vec<f32> = xs.iter().map(|x| ((x - max) / temperature).exp()).collect();
@@ -281,6 +336,56 @@ pub fn softmax(xs: &mut [f32], temperature: f32) {
     for (x, e) in xs.iter_mut().zip(exps) {
         *x = e / sum;
     }
+}
+
+/// Construct a policy from visit counts by applying the AlphaZero
+/// temperature formula.
+pub fn normalize_visits<const N: usize>(xs: &[f32; N], temp: f32) -> [f32; N] {
+    debug_assert!(!xs.is_empty(), "Should have at least one visit count");
+
+    let mut probabilities = [0.0; N];
+
+    // Temperature of 0 means pure greedy play (competitive play)
+    if temp == 0.0 {
+        let mut max_visits = 0.;
+        let mut best_idx = 0;
+        for (i, &v) in xs.iter().enumerate() {
+            if v > max_visits {
+                max_visits = v;
+                best_idx = i;
+            }
+        }
+        probabilities[best_idx] = 1.0;
+        return probabilities;
+    }
+
+    // AlphaZero visit distribution: P_i = N_i^(1/T) / sum(N_j^(1/T))
+    let inv_temp = 1.0 / temp;
+    let mut sum = 0.0;
+
+    for (i, &v) in xs.iter().enumerate() {
+        if v > 0. {
+            let powered = (v as f32).powf(inv_temp);
+            probabilities[i] = powered;
+            sum += powered;
+        }
+    }
+
+    // Normalize so they sum to 1.0
+    if sum > 0.0 {
+        for p in probabilities.iter_mut() {
+            *p /= sum;
+        }
+    }
+    else {
+        // Fallback if all visits were 0 (shouldn't happen in a valid MCTS)
+        let uniform = 1.0 / xs.len() as f32;
+        for p in probabilities.iter_mut() {
+            *p = uniform;
+        }
+    }
+
+    probabilities
 }
 
 /// A value in range [-1; 1]

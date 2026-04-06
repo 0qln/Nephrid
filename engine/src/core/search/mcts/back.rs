@@ -31,6 +31,7 @@ impl Backpropagater for DefaultBackuper {
         leaf: &SelNode<Evaluation, S>,
     ) {
         let eval = &leaf.data;
+        let weight = leaf.weight;
 
         // Update the leaf itself.
         {
@@ -45,11 +46,11 @@ impl Backpropagater for DefaultBackuper {
                     else {
                         tree.skip_policy(node)
                     };
-                    tree.update_node(evaluated, value);
+                    tree.update_node(evaluated, value, weight);
                 }
-                Switch::Evaluated(node) => tree.update_node(node, value),
-                Switch::Terminal(node) => tree.update_node(node, value),
-                Switch::Leaf(node) => tree.update_node(node, value),
+                Switch::Evaluated(node) => tree.update_node(node, value, weight),
+                Switch::Terminal(node) => tree.update_node(node, value, weight),
+                Switch::Leaf(node) => tree.update_node(node, value, weight),
             }
         }
 
@@ -57,7 +58,7 @@ impl Backpropagater for DefaultBackuper {
         _ = selection.try_fold_up(leaf.parent, (), |_, item| {
             let node = item.node;
             let value = eval.to_value(!item.turn);
-            tree.update_node(node, value);
+            tree.update_node(node, value, weight);
 
             ControlFlow::Continue::<(), ()>(())
         });
@@ -75,6 +76,7 @@ impl Backpropagater for MctsSolver {
         leaf: &SelNode<Evaluation, S>,
     ) {
         let eval = &leaf.data;
+        let weight = leaf.weight;
 
         // Update the leaf itself.
         {
@@ -90,27 +92,27 @@ impl Backpropagater for MctsSolver {
                     else {
                         tree.skip_policy(node)
                     };
-                    tree.update_node(evaluated, value);
+                    tree.update_node(evaluated, value, weight);
                 }
-                Switch::Evaluated(node) => tree.update_node(node, value),
+                Switch::Evaluated(node) => tree.update_node(node, value, weight),
                 Switch::Terminal(node) => match eval {
                     Evaluation::Terminal(game_result) => match *game_result {
                         GameResult::Win { relative_to } if relative_to == turn => {
-                            tree.set_proven(node, proven::LOSS)
+                            tree.set_proven(node, proven::LOSS, weight)
                         }
                         GameResult::Win { relative_to } if relative_to != turn => {
-                            tree.set_proven(node, proven::WIN)
+                            tree.set_proven(node, proven::WIN, weight)
                         }
-                        _ => tree.update_node(node, value),
+                        _ => tree.update_node(node, value, weight),
                     },
-                    _ => tree.update_node(node, value),
+                    _ => tree.update_node(node, value, weight),
                 },
 
                 // There could be a leaf node here (e.g. in the case of a 2fold-shortcut.) Make sure
                 // that we also update leaf node values. Otherwise the exploration score of such a
                 // node will be overinflated and the searcher will get stuck picking
                 // this leaf node.
-                Switch::Leaf(node) => tree.update_node(node, value),
+                Switch::Leaf(node) => tree.update_node(node, value, weight),
             }
         }
 
@@ -128,7 +130,7 @@ impl Backpropagater for MctsSolver {
                                 .iter()
                                 .any(|b| tree.node(b.node()).value().is_proven_win()) =>
                         {
-                            tree.set_proven(node, proven::LOSS)
+                            tree.set_proven(node, proven::LOSS, weight)
                         }
 
                         GameResult::Win { .. }
@@ -137,14 +139,14 @@ impl Backpropagater for MctsSolver {
                                 .iter()
                                 .all(|b| tree.node(b.node()).value().is_proven_loss()) =>
                         {
-                            tree.set_proven(node, proven::WIN)
+                            tree.set_proven(node, proven::WIN, weight)
                         }
 
-                        x => tree.update_node(node, x.to_value(!turn)),
+                        x => tree.update_node(node, x.to_value(!turn), weight),
                     };
                 }
-                Evaluation::Guess(guess) => tree.update_node(node, guess.to_value(!turn)),
-                Evaluation::Nope => tree.update_node(node, eval::Value::draw()),
+                Evaluation::Guess(guess) => tree.update_node(node, guess.to_value(!turn), weight),
+                Evaluation::Nope => tree.update_node(node, eval::Value::draw(), weight),
             }
 
             ControlFlow::Continue::<(), ()>(())

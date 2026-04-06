@@ -1,6 +1,11 @@
 use std::fs;
 
-use burn::{config::Config, module::Module, record::{CompactRecorder, Recorder}, tensor::backend::AutodiffBackend};
+use burn::{
+    config::Config,
+    module::Module,
+    record::{CompactRecorder, Recorder},
+    tensor::backend::AutodiffBackend,
+};
 use engine::core::search::mcts::nn::Model;
 
 use crate::TrainingConfig;
@@ -36,14 +41,11 @@ pub fn get_resume_state(artifact_dir: &str) -> (usize, usize, Option<String>) {
 
 pub fn setup_environment<B: AutodiffBackend>(
     artifact_dir: &str,
-    output_dir: &str,
+    _output_dir: &str,
     config: &TrainingConfig,
     device: &B::Device,
 ) {
     fs::create_dir_all(artifact_dir).ok();
-    config
-        .save(format!("{output_dir}/config.json"))
-        .expect("Config should be saved successfully");
     B::seed(device, config.seed);
 }
 

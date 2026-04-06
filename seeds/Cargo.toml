@@ -3,7 +3,7 @@ name = "seeds"
 edition = "2024"
 
 [dependencies]
-engine = { version = "*", path = "../engine", features = ["nn-backend-ndarray", "mcts-sa"] }
+engine = { version = "*", path = "../engine", default-features = false, features = ["nn-backend-ndarray", "mcts-sa"] }
 itertools = "0.14.0"
 rand = "0.9.0"
 rayon = "1.11.0"

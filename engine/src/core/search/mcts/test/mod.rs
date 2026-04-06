@@ -78,7 +78,7 @@ impl Evaluator for DummyEvaluator {
             evaluations.push(Evaluation::Guess(Box::new(Guess {
                 relative_to: trace_data.turn,
                 quality: Quality::new(quality),
-                policy: Policy::from_raw(&raw_policy, moves).expect("a policy"),
+                policy: Policy::from_raw_policy(&raw_policy, moves).expect("a policy"),
             })));
         }
 

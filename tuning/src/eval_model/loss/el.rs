@@ -1,15 +1,14 @@
-//! Exact loss. (KL-divergence between the policy target and the predicted
-//! policy, and MSE between the value target and the predicted value)
+//! Exact loss. (Soft cross-entropy loss between the policy target and the
+//! predicted policy, and MSE between the value target and the predicted value)
 
 use burn::{
     data::dataloader::batcher::Batcher,
-    module::Module,
     nn::loss::{MseLoss, Reduction},
-    tensor::{Float, TensorData, backend::AutodiffBackend},
+    tensor::{Float, TensorData, activation::log_softmax, backend::AutodiffBackend},
     train::{RegressionOutput, TrainOutput, TrainStep},
 };
 use engine::core::search::mcts::{
-    eval::{GameResult, RawPolicy, softmax},
+    eval::{GameResult, RawPolicy, VisitCounts, normalize_visits},
     nn::{
         BoardInputTensor, Model, POLICY_OUTPUT_TENSOR_DIM, POLICY_OUTPUTS, STATE_INPUT_TENSOR_DIM,
         StateInputTensor, VALUE_OUTPUT_TENSOR_DIM, board_history_input,
@@ -40,11 +39,24 @@ pub struct ExactLossPlayoutBatch<B: Backend> {
 pub type ValueTarget = super::ValueTarget;
 
 #[derive(Clone, Debug)]
-pub struct PolicyTarget(Vec<f32>);
+pub struct PolicyTarget(pub RawPolicy);
 
 impl From<&ExactLossTarget> for PolicyTarget {
     fn from(target: &ExactLossTarget) -> Self {
-        Self(target.raw_policy.iter().collect_vec())
+        let mut visit_counts = [0.; POLICY_OUTPUTS];
+        for &(mov, visits) in &target.visit_counts.0 {
+            visit_counts[usize::from(mov)] = visits as f32;
+        }
+
+        let raw_policy = normalize_visits(&visit_counts, 1.);
+
+        println!("Policy target:");
+        for &(mov, visits) in &target.visit_counts.0 {
+            let policy = raw_policy[usize::from(mov)];
+            println!("[{mov}]: {visits:>4} - {policy:6>.4}");
+        }
+
+        Self(RawPolicy::new(raw_policy))
     }
 }
 
@@ -77,27 +89,22 @@ impl PlayoutItem for ExactLossPlayoutItem {
 
 #[derive(Debug, Clone)]
 pub struct ExactLossTarget {
-    raw_policy: RawPolicy,
+    /// vec<(move, visit_count)> on all legal moves in the position
+    visit_counts: VisitCounts,
 }
 
 impl From<&Tree> for ExactLossTarget {
     fn from(tree: &Tree) -> Self {
         Self {
-            raw_policy: {
+            visit_counts: {
                 let root = tree.node_switch(tree.root()).get::<Evaluated>();
                 let root = root.expect("Root should be evaluated");
-
-                let branches = tree.branches(root);
-
-                let mut raw_policy = RawPolicy::null();
-                for branch in branches.iter() {
-                    raw_policy.set(
-                        usize::from(branch.mov()),
-                        tree.node(branch.node()).visits() as f32,
-                    );
-                }
-                softmax(raw_policy.inner_mut(), 10.);
-                raw_policy
+                VisitCounts(
+                    tree.branches(root)
+                        .into_iter()
+                        .map(|branch| (branch.mov(), tree.node(branch.node()).visits()))
+                        .collect_vec(),
+                )
             },
         }
     }
@@ -105,49 +112,44 @@ impl From<&Tree> for ExactLossTarget {
 
 impl Target for ExactLossTarget {}
 
-/// Calculate the KL divergence loss from predictions and probabilistic targets.
-#[derive(Module, Debug, Clone)]
-pub struct KLDivergenceLoss {}
+#[derive(Clone, Debug, Default)]
+pub struct SoftCrossEntropyLoss;
 
-impl Default for KLDivergenceLoss {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl KLDivergenceLoss {
+impl SoftCrossEntropyLoss {
+    /// Creates a new SoftCrossEntropyLoss.
     pub fn new() -> Self {
-        Self {}
+        Self
     }
 
-    /// Compute the KL divergence loss.
+    /// Computes the soft cross entropy loss between raw logits and target
+    /// probabilities.
     ///
-    /// `predictions` is expected to be a probability distribution.
+    /// # Arguments
     ///
-    /// # Shapes
+    /// * `logits` - The raw unnormalized predictions from the model. Expected
+    ///   shape: `[batch_size, num_classes]`
+    /// * `targets` - The target probability distributions from MCTS. Expected
+    ///   shape: `[batch_size, num_classes]`
     ///
-    /// - predictions: `[batch_size]` or `[batch_size, num_classes]`
-    /// - targets: `[batch_size]` or `[batch_size, num_classes]` (probabilities)
+    /// # Returns
+    ///
+    /// A scalar tensor containing the batch-averaged loss.
     pub fn forward<B: Backend, const D: usize>(
         &self,
-        predictions: Tensor<B, D>,
-        targets: Tensor<B, D>,
-    ) -> Tensor<B, 1> {
-        // For numerical stability, clamp values to avoid log(0)
-        let epsilon = 1e-8;
-        let predictions_clamped = predictions.clone().clamp(epsilon, 1.0);
-        let targets_clamped = targets.clone().clamp(epsilon, 1.0);
+        logits: Tensor<B, D, Float>,
+        targets: Tensor<B, D, Float>,
+    ) -> Tensor<B, 1, Float> {
+        // 1. Convert raw logits to log-probabilities safely using the LogSumExp trick.
+        // We apply it over the last dimension (the class/move dimension).
+        let class_dim = D - 1;
+        let log_preds = log_softmax(logits, class_dim);
 
-        // KL(P||Q) = sum[ P * log(P) - P * log(Q) ]
-        // where P = targets, Q = predictions
-        let kl_div = targets_clamped.clone() * targets_clamped.clone().log()
-            - targets_clamped * predictions_clamped.log();
+        // 2. Calculate the cross-entropy: -sum(target * log(pred))
+        // This computes the loss for each individual board in the batch.
+        let batch_losses = -(targets * log_preds).sum_dim(class_dim);
 
-        // Sum over class dimension if multi-dimensional
-        let loss_per_sample = if D > 1 { kl_div.sum_dim(D - 1) } else { kl_div };
-
-        // Average over batch
-        loss_per_sample.mean()
+        // 3. Average the loss across the entire batch to get a single scalar
+        batch_losses.mean()
     }
 }
 
@@ -164,7 +166,8 @@ pub fn forward_with_loss_exact_loss<B: Backend>(
     let value_loss =
         MseLoss::new().forward(value_output.clone(), target_value.clone(), Reduction::Auto);
 
-    let policy_loss = KLDivergenceLoss::new().forward(policy_output.clone(), target_policy.clone());
+    let policy_loss =
+        SoftCrossEntropyLoss::new().forward(policy_output.clone(), target_policy.clone());
 
     LossOutput::new(
         RegressionOutput::new(value_loss, value_output, target_value).loss,
@@ -212,11 +215,7 @@ impl<B: Backend> Batcher<B, ExactLossPlayoutItem, ExactLossPlayoutBatch<B>> for 
 
         let policies = items
             .into_iter()
-            .map(|x| {
-                TensorData::from([
-                    TryInto::<[f32; POLICY_OUTPUTS]>::try_into(x.policy_target.0).expect("")
-                ])
-            })
+            .map(|x| TensorData::from([x.policy_target.0.into_inner()]))
             .map(|x| Tensor::from_data(x, device))
             .collect();
 

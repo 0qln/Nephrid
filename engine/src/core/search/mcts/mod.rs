@@ -283,41 +283,57 @@ impl From<&Configuration> for PureParts {
 }
 
 pub mod config {
+    // --- MPV ---
     #[cfg(feature = "mcts-pure")]
     pub const MPV: usize = 1;
 
     #[cfg(all(feature = "nn-backend-cuda", not(feature = "mcts-pure")))]
     pub const MPV: usize = 64;
 
-    #[cfg(all(feature = "nn-backend-ndarray", not(feature = "mcts-pure")))]
+    // We must ensure ndarray only triggers if cuda is NOT enabled
+    #[cfg(all(
+        feature = "nn-backend-ndarray",
+        not(feature = "mcts-pure"),
+        not(feature = "nn-backend-cuda")
+    ))]
     pub const MPV: usize = 1;
 
+    // --- nn_backend ---
     #[cfg(feature = "nn-backend-cuda")]
     pub mod nn_backend {
         pub type Backend = burn_cuda::Cuda<f32>;
         pub type Device = <self::Backend as burn::prelude::Backend>::Device;
     }
 
-    #[cfg(feature = "nn-backend-ndarray")]
+    // NdArray only wins if Cuda is not requested
+    #[cfg(all(feature = "nn-backend-ndarray", not(feature = "nn-backend-cuda")))]
     pub mod nn_backend {
         use burn::backend::NdArray;
         pub type Backend = NdArray;
         pub type Device = <self::Backend as burn::prelude::Backend>::Device;
     }
 
+    // --- mcts ---
+    // Highest priority: Neural Network
     #[cfg(feature = "mcts-nn")]
     pub mod mcts {
         use crate::core::search::mcts::NNParts;
         pub type Parts = NNParts<super::nn_backend::Backend>;
     }
 
-    #[cfg(feature = "mcts-sa")]
+    // Secondary priority: Static Analysis
+    #[cfg(all(feature = "mcts-sa", not(feature = "mcts-nn")))]
     pub mod mcts {
         use crate::core::search::mcts::StaticParts;
         pub type Parts = StaticParts;
     }
 
-    #[cfg(feature = "mcts-pure")]
+    // Lowest priority: Pure
+    #[cfg(all(
+        feature = "mcts-pure",
+        not(feature = "mcts-nn"),
+        not(feature = "mcts-sa")
+    ))]
     pub mod mcts {
         use crate::core::search::mcts::PureParts;
         pub type Parts = PureParts;

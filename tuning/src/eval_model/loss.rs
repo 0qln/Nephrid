@@ -44,7 +44,7 @@ impl<B: Backend> Adaptor<LossInput<B>> for LossOutput<B> {
 pub struct PlayoutBatcher;
 
 #[derive(Clone, Debug)]
-pub struct ValueTarget(f32);
+pub struct ValueTarget(pub f32);
 
 impl From<(GameResult, Turn)> for ValueTarget {
     /// value target depending on the game result and the current moving player.

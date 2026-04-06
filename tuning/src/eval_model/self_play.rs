@@ -2,7 +2,7 @@ use engine::core::{
     config::Configuration,
     search::mcts::{
         CreateNNPartsError, MctsParts,
-        back::DefaultBackuper,
+        back::MctsSolver,
         eval::nn::NNEvaluator,
         node::{Branch, NodeData},
         noise::DirichletNoiser,
@@ -224,7 +224,12 @@ impl<'a, T: Target> From<&'a Decision<T>> for StateInput {
 
 impl<'a, T: Target> From<&'a [Decision<T>]> for BoardInput {
     fn from(decisions: &'a [Decision<T>]) -> Self {
-        Self(decisions.iter().map(|d| d.input.board_in).collect::<Vec<_>>())
+        Self(
+            decisions
+                .iter()
+                .map(|d| d.input.board_in)
+                .collect::<Vec<_>>(),
+        )
     }
 }
 
@@ -319,7 +324,7 @@ pub struct MctsTrainParts<B: Backend> {
 
 impl<'a, B: Backend> MctsParts for &'a MctsTrainParts<B> {
     type Selector = MctsTrainSelector;
-    type Backprop = DefaultBackuper;
+    type Backprop = MctsSolver;
     type Evaluator = NNEvaluator<'a, 'a, B>;
     type Noiser = DirichletNoiser;
     type Instance = MctsTrainParts<B>;

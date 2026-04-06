@@ -94,6 +94,7 @@ impl PartialOrd for Value {
 
 impl_op!(/ |l: Value, r: f32| -> f32 { l.0 / r });
 impl_op!(+= |l: &mut Value, r: eval::Value| { l.0 += r.v() } );
+impl_op!(+= |l: &mut Value, r: f32| { l.0 += r } );
 
 impl Eq for Value {}
 
@@ -672,13 +673,13 @@ impl Tree {
         }
     }
 
-    pub fn update_node<S: HasValue>(&mut self, node: NodeId<S>, value: eval::Value) {
-        self.arena.nodes[node.index as usize].visits += 1;
-        self.arena.nodes[node.index as usize].value += value;
+    pub fn update_node<S: HasValue>(&mut self, node: NodeId<S>, value: eval::Value, weight: f32) {
+        self.arena.nodes[node.index as usize].visits += weight as u32;
+        self.arena.nodes[node.index as usize].value += value.v() * weight;
     }
 
-    pub fn set_proven<S: HasValue>(&mut self, node: NodeId<S>, state: Proven) {
-        self.arena.nodes[node.index as usize].visits += 1;
+    pub fn set_proven<S: HasValue>(&mut self, node: NodeId<S>, state: Proven, weight: f32) {
+        self.arena.nodes[node.index as usize].visits += weight as u32;
         self.arena.nodes[node.index as usize].value = Value::from(state);
     }
 

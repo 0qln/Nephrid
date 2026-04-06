@@ -143,7 +143,7 @@ impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
         let values_shape = Shape::new([batch_size, VALUE_OUTPUTS]);
         let policy_shape = Shape::new([batch_size, POLICY_OUTPUTS]);
 
-        let (values, raw_policies) = if batch_size != 0 {
+        let (values, raw_logits) = if batch_size != 0 {
             let board_batch = self.build_board_batch(selection, leafs.iter().copied());
             let state_batch = self.build_state_batch(leafs.iter().copied());
             let (values, raw_policies) = self.model.forward(board_batch, state_batch);
@@ -152,9 +152,9 @@ impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
             assert_eq!(raw_policies.shape(), policy_shape);
 
             let values = values.into_data();
-            let raw_policies = raw_policies.into_data();
+            let raw_logits = raw_policies.into_data();
 
-            (values, raw_policies)
+            (values, raw_logits)
         }
         else {
             (
@@ -167,28 +167,28 @@ impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
             .as_slice::<f32>()
             .expect("Qualities could not be converted to vec.");
 
-        let raw_policies = raw_policies
+        let raw_logits = raw_logits
             .as_slice::<f32>()
             .expect("Policy could not be converted to vec.");
 
         let values = values.chunks(VALUE_OUTPUTS);
 
-        let raw_policies = raw_policies
+        let raw_logits = raw_logits
             .chunks(POLICY_OUTPUTS)
-            .map(|raw_policy| RawPolicy(raw_policy.try_into().unwrap()));
+            .map(|raw_logits| RawLogits(raw_logits.try_into().unwrap()));
 
         leafs
             .iter()
             .zip(values)
-            .zip(raw_policies)
-            .map(|((&leaf, value), raw_policy)| {
+            .zip(raw_logits)
+            .map(|((&leaf, value), raw_logits)| {
                 let turn = leaf.turn;
                 let moves = tree.move_indices(leaf.node);
 
                 Evaluation::Guess(Box::new(Guess {
                     relative_to: turn,
                     quality: Quality::new(value[0]),
-                    policy: Policy::from_raw(&raw_policy, moves).expect("a policy"),
+                    policy: Policy::from_raw_logits(&raw_logits, moves, 1.).expect("a policy"),
                 }))
             })
             .collect_vec()

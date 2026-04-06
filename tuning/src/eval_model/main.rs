@@ -47,7 +47,7 @@ fn main() {
     let device = CudaDevice::default();
     log::info!("Device: {:?}", device);
 
-    let train_dir = "tuning/out/eval_model";
+    let train_dir = "tuning/out/eval_model/main";
     let config = get_config("tuning/src/eval_model/config.json");
 
     train::<AutodiffBackend>(train_dir, config, device);
