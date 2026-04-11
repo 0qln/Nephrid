@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::{
     core::{
         bitboard::Bitboard,
-        castling::{CastlingRights, CastlingSideTokenizationError, castling_sides},
+        castling::{CastlingRights, CastlingSideTokenizationError},
         color::{Color, ColorTokenizationError, colors},
         coordinates::{
             EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, ranks,
@@ -651,6 +651,14 @@ impl Position {
         next_state.key.toggle_turn();
         next_state.captured_piece = Piece::default();
 
+        // castling
+        next_state
+            .castling
+            .apply_mask(CastlingRights::MASKS[from.index()]);
+        next_state
+            .castling
+            .apply_mask(CastlingRights::MASKS[to.index()]);
+
         // captures
         if flag.is_capture() {
             let captured_piece = match flag {
@@ -677,8 +685,6 @@ impl Position {
             next_state.captured_piece = captured_piece;
             next_state.key.toggle_piece_sq(captured_sq, captured_piece);
             next_state.plys50 = Ply { v: 0 };
-
-            remove_castling(captured_sq, !us, &mut next_state.castling);
         }
 
         // move the piece
@@ -687,34 +693,25 @@ impl Position {
 
         match moving_piece.piece_type() {
             // castling
-            piece_type::KING => {
-                next_state
-                    .castling
-                    .set_false(castling_sides::QUEEN_SIDE, us);
-                next_state.castling.set_false(castling_sides::KING_SIDE, us);
-                match flag {
-                    move_flags::KING_CASTLE => {
-                        let rank = Rank::from_c(to);
-                        let rook_from = Square::from_c((files::H, rank));
-                        let rook_to = Square::from_c((files::F, rank));
-                        let rook = self.get_piece(rook_from);
-                        self.move_piece(rook_from, rook_to);
-                        next_state.key.move_piece_sq(rook_from, rook_to, rook);
-                    }
-                    move_flags::QUEEN_CASTLE => {
-                        let rank = Rank::from_c(to);
-                        let rook_from = Square::from_c((files::A, rank));
-                        let rook_to = Square::from_c((files::D, rank));
-                        let rook = self.get_piece(rook_from);
-                        self.move_piece(rook_from, rook_to);
-                        next_state.key.move_piece_sq(rook_from, rook_to, rook);
-                    }
-                    _ => (),
+            piece_type::KING => match flag {
+                move_flags::KING_CASTLE => {
+                    let rank = Rank::from_c(to);
+                    let rook_from = Square::from_c((files::H, rank));
+                    let rook_to = Square::from_c((files::F, rank));
+                    let rook = self.get_piece(rook_from);
+                    self.move_piece(rook_from, rook_to);
+                    next_state.key.move_piece_sq(rook_from, rook_to, rook);
                 }
-            }
-            piece_type::ROOK => {
-                remove_castling(from, us, &mut next_state.castling);
-            }
+                move_flags::QUEEN_CASTLE => {
+                    let rank = Rank::from_c(to);
+                    let rook_from = Square::from_c((files::A, rank));
+                    let rook_to = Square::from_c((files::D, rank));
+                    let rook = self.get_piece(rook_from);
+                    self.move_piece(rook_from, rook_to);
+                    next_state.key.move_piece_sq(rook_from, rook_to, rook);
+                }
+                _ => (),
+            },
             // pawns
             piece_type::PAWN => {
                 match flag.v() {
@@ -754,17 +751,6 @@ impl Position {
 
         next_state.init(self);
         self.state.incr();
-
-        #[inline(always)]
-        fn remove_castling(sq: Square, c: Color, cr: &mut CastlingRights) {
-            let color_case = squares::A8_C * c.v();
-            if sq.v() == (squares::A1_C | color_case) {
-                cr.set_false(castling_sides::QUEEN_SIDE, c)
-            }
-            else if sq.v() == (squares::H1_C | color_case) {
-                cr.set_false(castling_sides::KING_SIDE, c)
-            }
-        }
     }
 
     pub fn unmake_move(&mut self, m: Move) {

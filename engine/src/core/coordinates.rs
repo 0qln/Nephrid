@@ -105,6 +105,10 @@ impl Square {
     pub const fn flip_v(self) -> Self {
         Self { v: self.v ^ 56 }
     }
+
+    pub const fn index(&self) -> usize {
+        self.v as usize
+    }
 }
 
 impl fmt::Display for Square {
