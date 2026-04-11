@@ -1,6 +1,7 @@
 use std::{cmp::Reverse, marker::PhantomData, ops};
 
 use crate::core::{
+    color::{Perspective, perspectives},
     r#move::{MoveIndex, MoveList},
     move_iter::{fold_legal_captures, fold_legal_moves},
     piece::PromoPieceType,
@@ -219,25 +220,6 @@ impl TaperValue {
         let total = piece_phases::TOTAL_C as i32;
         ((mg_eval * (total - phase)) + (eg_eval * phase)) / total
     }
-}
-
-pub trait Perspective: Clone + Copy {
-    const IS_WHITE: bool;
-    type Opponent: Perspective<Opponent = Self>;
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct WhiteP;
-impl Perspective for WhiteP {
-    const IS_WHITE: bool = true;
-    type Opponent = BlackP;
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct BlackP;
-impl Perspective for BlackP {
-    const IS_WHITE: bool = false;
-    type Opponent = WhiteP;
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -497,8 +479,12 @@ pub struct EvalInfo {
 impl EvalInfo {
     pub fn new(node: NodeId<Branching>, tree: &Tree, pos: &mut Position) -> Self {
         let quality: Cp = match pos.get_turn().v() {
-            colors::WHITE_C => qsearch::<WhiteP>(pos, Score::NEG_INF, Score::POS_INF).into(),
-            colors::BLACK_C => qsearch::<BlackP>(pos, Score::NEG_INF, Score::POS_INF).into(),
+            colors::WHITE_C => {
+                qsearch::<perspectives::White>(pos, Score::NEG_INF, Score::POS_INF).into()
+            }
+            colors::BLACK_C => {
+                qsearch::<perspectives::Black>(pos, Score::NEG_INF, Score::POS_INF).into()
+            }
             _ => unreachable!(),
         };
         Self {

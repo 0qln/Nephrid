@@ -77,3 +77,29 @@ impl fmt::Display for Color {
         write!(f, "{}", Into::<char>::into(*self))
     }
 }
+
+pub trait Perspective: Clone + Copy {
+    const IS_WHITE: bool;
+    const COLOR: Color;
+    type Opponent: Perspective<Opponent = Self>;
+}
+
+pub mod perspectives {
+    use super::*;
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct White;
+    impl Perspective for White {
+        const IS_WHITE: bool = true;
+        const COLOR: Color = WHITE;
+        type Opponent = Black;
+    }
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct Black;
+    impl Perspective for Black {
+        const IS_WHITE: bool = false;
+        const COLOR: Color = BLACK;
+        type Opponent = White;
+    }
+}

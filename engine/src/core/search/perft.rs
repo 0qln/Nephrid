@@ -1,6 +1,7 @@
 use crate::{
     core::{
         Depth, Limit, Move,
+        color::{Perspective, colors, perspectives},
         r#move::{MoveIndex, MoveList},
         move_iter::{fold_legal_moves, fold_legals},
         position::Position,
@@ -101,6 +102,38 @@ pub fn perft_inner_collect(
     f: fn(Move, u64, Depth, bool) -> (),
     moves: fn(&Position) -> (MoveList, MoveIndex),
 ) -> u64 {
+    match pos.get_turn() {
+        colors::WHITE => perft_inner_collect_for::<perspectives::White>(
+            pos,
+            depth,
+            limit,
+            cancellation_token,
+            debug,
+            f,
+            moves,
+        ),
+        colors::BLACK => perft_inner_collect_for::<perspectives::Black>(
+            pos,
+            depth,
+            limit,
+            cancellation_token,
+            debug,
+            f,
+            moves,
+        ),
+        _ => unreachable!("Invalid program state."),
+    }
+}
+
+pub fn perft_inner_collect_for<P: Perspective>(
+    pos: &mut Position,
+    depth: Depth,
+    limit: &Limit,
+    cancellation_token: &CancellationToken,
+    debug: &DebugMode,
+    f: fn(Move, u64, Depth, bool) -> (),
+    moves: fn(&Position) -> (MoveList, MoveIndex),
+) -> u64 {
     if cancellation_token.is_cancelled() {
         return 0;
     }
@@ -116,8 +149,8 @@ pub fn perft_inner_collect(
         let i = MoveIndex::from(i);
         let m = move_list[i];
 
-        pos.make_move(m);
-        let c = perft_inner_collect(
+        pos.make_move_for::<P>(m);
+        let c = perft_inner_collect_for::<P::Opponent>(
             pos,
             depth - 1,
             limit,
@@ -127,7 +160,7 @@ pub fn perft_inner_collect(
             moves,
         );
         f(m, c, limit.depth - depth, debug.get());
-        pos.unmake_move(m);
+        pos.unmake_move_for::<P>(m);
         acc += c;
     }
     acc

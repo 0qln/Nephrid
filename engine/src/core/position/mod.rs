@@ -7,7 +7,7 @@ use crate::{
     core::{
         bitboard::Bitboard,
         castling::{CastlingRights, CastlingSideTokenizationError},
-        color::{Color, ColorTokenizationError, colors},
+        color::{Color, ColorTokenizationError, Perspective, colors, perspectives},
         coordinates::{
             EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, ranks,
             squares,
@@ -293,6 +293,48 @@ impl PieceInfo {
         // without checking that the value is in range.
         unsafe { self.piece_counts.get_unchecked_mut(piece.v() as usize) }
     }
+
+    fn remove_piece(&mut self, sq: Square) {
+        let target = Bitboard::from_c(sq);
+        let piece = self.get_piece(sq);
+        assert_ne!(piece, Piece::default(), "No piece at {sq}");
+        *self.get_piece_bb_mut(piece.piece_type()) ^= target;
+        *self.get_color_bb_mut(piece.color()) ^= target;
+        *self.get_piece_mut(sq) = Piece::default();
+        *self.get_piece_count_mut(piece) -= 1;
+    }
+
+    fn put_piece(&mut self, sq: Square, piece: Piece) {
+        let target = Bitboard::from_c(sq);
+        assert_eq!(
+            self.get_piece(sq),
+            Piece::default(),
+            "Piece already at {sq}: {}",
+            self.get_piece(sq)
+        );
+        *self.get_piece_bb_mut(piece.piece_type()) |= target;
+        *self.get_color_bb_mut(piece.color()) |= target;
+        *self.get_piece_mut(sq) = piece;
+        *self.get_piece_count_mut(piece) += 1;
+    }
+
+    fn move_piece(&mut self, from: Square, to: Square) {
+        assert!(
+            self.get_piece(from) != Piece::default(),
+            "No piece at {from}"
+        );
+        assert!(
+            self.get_piece(to) == Piece::default(),
+            "Piece already at {to}: {}",
+            self.get_piece(to)
+        );
+        let piece = self.get_piece(from);
+        let from_to = Bitboard::from_c(from) | Bitboard::from_c(to);
+        *self.get_color_bb_mut(piece.color()) ^= from_to;
+        *self.get_piece_bb_mut(piece.piece_type()) ^= from_to;
+        *self.get_piece_mut(from) = Piece::default();
+        *self.get_piece_mut(to) = piece;
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -536,40 +578,13 @@ impl Position {
         (rook_checkers | bishop_checkers) & enemies
     }
 
-    #[inline]
-    fn put_piece(&mut self, sq: Square, piece: Piece) {
-        let target = Bitboard::from_c(sq);
-        assert_eq!(
-            self.get_piece(sq),
-            Piece::default(),
-            "Piece already at {sq}: {}",
-            self.get_piece(sq)
-        );
-        *self.get_piece_bb_mut(piece.piece_type()) |= target;
-        *self.get_color_bb_mut(piece.color()) |= target;
-        *self.get_piece_mut(sq) = piece;
-        *self.get_piece_count_mut(piece) += 1;
-    }
-
     /// # Safety
     /// This is unsafe, because it allows you to modify the internal
     /// representation, without updating the state.
     ///
     /// This pub, because it is used for benchmarking.
-    #[inline(never)]
     pub unsafe fn put_piece_unsafe(&mut self, sq: Square, piece: Piece) {
-        self.put_piece(sq, piece)
-    }
-
-    #[inline]
-    fn remove_piece(&mut self, sq: Square) {
-        let target = Bitboard::from_c(sq);
-        let piece = self.get_piece(sq);
-        assert_ne!(piece, Piece::default(), "No piece at {sq}");
-        *self.get_piece_bb_mut(piece.piece_type()) ^= target;
-        *self.get_color_bb_mut(piece.color()) ^= target;
-        *self.get_piece_mut(sq) = Piece::default();
-        *self.get_piece_count_mut(piece) -= 1;
+        self.piece_info.put_piece(sq, piece)
     }
 
     /// # Safety
@@ -577,28 +592,8 @@ impl Position {
     /// representation, without updating the state.
     ///
     /// This pub, because it is used for benchmarking.
-    #[inline(never)]
     pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) {
-        self.remove_piece(sq)
-    }
-
-    #[inline]
-    fn move_piece(&mut self, from: Square, to: Square) {
-        assert!(
-            self.get_piece(from) != Piece::default(),
-            "No piece at {from}"
-        );
-        assert!(
-            self.get_piece(to) == Piece::default(),
-            "Piece already at {to}: {}",
-            self.get_piece(to)
-        );
-        let piece = self.get_piece(from);
-        let from_to = Bitboard::from_c(from) | Bitboard::from_c(to);
-        *self.get_color_bb_mut(piece.color()) ^= from_to;
-        *self.get_piece_bb_mut(piece.piece_type()) ^= from_to;
-        *self.get_piece_mut(from) = Piece::default();
-        *self.get_piece_mut(to) = piece;
+        self.piece_info.remove_piece(sq)
     }
 
     /// # Safety
@@ -606,14 +601,29 @@ impl Position {
     /// representation, without updating the state.
     ///
     /// This pub, because it is used for benchmarking.
-    #[inline(never)]
     pub unsafe fn move_piece_unsafe(&mut self, from: Square, to: Square) {
-        self.move_piece(from, to)
+        self.piece_info.move_piece(from, to)
     }
 
     /// Makes a move on the board.
     pub fn make_move(&mut self, m: Move) {
-        let us = self.get_turn();
+        if self.get_turn() == colors::WHITE {
+            self.make_move_for::<perspectives::White>(m);
+        }
+        else {
+            self.make_move_for::<perspectives::Black>(m);
+        }
+    }
+
+    // todo: use these in the mcts searh functions instead of make_move(..)
+    pub fn make_move_for<P: Perspective>(&mut self, m: Move) {
+        let us = P::COLOR;
+        debug_assert_eq!(
+            us,
+            self.get_turn(),
+            "Color parameter C must match the current turn."
+        );
+
         let (from, to, flag) = m.into();
         let moving_piece = self.get_piece(from);
         let target_piece = self.get_piece(to);
@@ -635,13 +645,14 @@ impl Position {
 
         // These might change across leafes on the same depth, so the
         // need to be reinitialized for each leaf.
-        next_state.castling = self.state.get_current().castling;
-        next_state.plys50 = self.state.get_current().plys50 + 1;
+        let curr_state = self.state.get_current();
+        next_state.castling = curr_state.castling;
+        next_state.plys50 = curr_state.plys50 + 1;
         next_state.ep_capture_square = EpCaptureSquare::default();
-        next_state.key = self.state.get_current().key;
+        next_state.key = curr_state.key;
         next_state
             .key
-            .toggle_ep_square(self.state.get_current().ep_capture_square);
+            .toggle_ep_square(curr_state.ep_capture_square);
         next_state.key.toggle_turn();
         next_state.captured_piece = Piece::default();
 
@@ -674,7 +685,7 @@ impl Position {
                 _ => to,
             };
 
-            self.remove_piece(captured_sq);
+            self.piece_info.remove_piece(captured_sq);
 
             next_state.captured_piece = captured_piece;
             next_state.key.toggle_piece_sq(captured_sq, captured_piece);
@@ -682,7 +693,7 @@ impl Position {
         }
 
         // move the piece
-        self.move_piece(from, to);
+        self.piece_info.move_piece(from, to);
         next_state.key.move_piece_sq(from, to, moving_piece);
 
         match moving_piece.piece_type() {
@@ -693,7 +704,7 @@ impl Position {
                     let rook_from = Square::from_c((files::H, rank));
                     let rook_to = Square::from_c((files::F, rank));
                     let rook = self.get_piece(rook_from);
-                    self.move_piece(rook_from, rook_to);
+                    self.piece_info.move_piece(rook_from, rook_to);
                     next_state.key.move_piece_sq(rook_from, rook_to, rook);
                 }
                 move_flags::QUEEN_CASTLE => {
@@ -701,7 +712,7 @@ impl Position {
                     let rook_from = Square::from_c((files::A, rank));
                     let rook_to = Square::from_c((files::D, rank));
                     let rook = self.get_piece(rook_from);
-                    self.move_piece(rook_from, rook_to);
+                    self.piece_info.move_piece(rook_from, rook_to);
                     next_state.key.move_piece_sq(rook_from, rook_to, rook);
                 }
                 _ => (),
@@ -722,9 +733,9 @@ impl Position {
                         // Safety: We just checked, that the flag is in a valid range.
                         let promo_t = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
                         let promo = Piece::from_c((us, promo_t));
-                        self.remove_piece(to);
+                        self.piece_info.remove_piece(to);
                         next_state.key.toggle_piece_sq(to, moving_piece);
-                        self.put_piece(to, promo);
+                        self.piece_info.put_piece(to, promo);
                         next_state.key.toggle_piece_sq(to, promo);
                     }
                     _ => (),
@@ -736,19 +747,35 @@ impl Position {
         }
 
         // update castling rights in the hash, if they have changed.
-        if next_state.castling != self.state.get_current().castling {
+        if next_state.castling != curr_state.castling {
             next_state
                 .key
-                .toggle_castling(self.state.get_current().castling)
+                .toggle_castling(curr_state.castling)
                 .toggle_castling(next_state.castling);
         }
 
+        // update state stack
         next_state.init(self);
         self.state.incr();
     }
 
     pub fn unmake_move(&mut self, m: Move) {
-        let us = !self.get_turn();
+        if self.get_turn() == colors::BLACK {
+            self.unmake_move_for::<perspectives::White>(m);
+        }
+        else {
+            self.unmake_move_for::<perspectives::Black>(m);
+        }
+    }
+
+    pub fn unmake_move_for<P: Perspective>(&mut self, m: Move) {
+        let us = P::COLOR;
+        debug_assert_eq!(
+            !us,
+            self.get_turn(),
+            "Color parameter C must be the opposite of the current turn."
+        );
+
         let (from, to, flag) = m.into();
 
         // Safety: During the lifetime of this pointer, no other pointer
@@ -761,25 +788,25 @@ impl Position {
                 let rank = Rank::from_c(to);
                 let rook_from = Square::from_c((files::H, rank));
                 let rook_to = Square::from_c((files::F, rank));
-                self.move_piece(rook_to, rook_from);
+                self.piece_info.move_piece(rook_to, rook_from);
             }
             move_flags::QUEEN_CASTLE_C => {
                 let rank = Rank::from_c(to);
                 let rook_from = Square::from_c((files::A, rank));
                 let rook_to = Square::from_c((files::D, rank));
-                self.move_piece(rook_to, rook_from);
+                self.piece_info.move_piece(rook_to, rook_from);
             }
             // promotions
             move_flags::PROMOTION_KNIGHT_C..=move_flags::CAPTURE_PROMOTION_QUEEN_C => {
                 let pawn = Piece::from_c((us, piece_type::PAWN));
-                self.remove_piece(to);
-                self.put_piece(to, pawn);
+                self.piece_info.remove_piece(to);
+                self.piece_info.put_piece(to, pawn);
             }
             _ => {}
         }
 
         // move the piece
-        self.move_piece(to, from);
+        self.piece_info.move_piece(to, from);
 
         // captures
         let captured_piece = popped_state.captured_piece;
@@ -798,7 +825,7 @@ impl Position {
                 _ => to,
             };
 
-            self.put_piece(captured_sq, captured_piece);
+            self.piece_info.put_piece(captured_sq, captured_piece);
         }
     }
 
@@ -829,22 +856,10 @@ impl Position {
         self.piece_info.get_color_bb(color)
     }
 
-    #[inline]
-    fn get_color_bb_mut(&mut self, color: Color) -> &mut Bitboard {
-        self.piece_info.get_color_bb_mut(color)
-    }
-
-    #[inline]
     pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
         self.piece_info.get_piece_bb(piece_type)
     }
 
-    #[inline]
-    fn get_piece_bb_mut(&mut self, piece_type: PieceType) -> &mut Bitboard {
-        self.piece_info.get_piece_bb_mut(piece_type)
-    }
-
-    #[inline]
     pub fn get_occupancy(&self) -> Bitboard {
         self.piece_info.get_occupancy()
     }
@@ -854,19 +869,8 @@ impl Position {
         self.piece_info.get_piece(sq)
     }
 
-    #[inline]
-    fn get_piece_mut(&mut self, sq: Square) -> &mut Piece {
-        self.piece_info.get_piece_mut(sq)
-    }
-
-    #[inline]
     pub fn get_piece_count(&self, piece: Piece) -> i8 {
         self.piece_info.get_piece_count(piece)
-    }
-
-    #[inline]
-    fn get_piece_count_mut(&mut self, piece: Piece) -> &mut i8 {
-        self.piece_info.get_piece_count_mut(piece)
     }
 
     pub fn piece_info(&self) -> &PieceInfo {
@@ -1514,7 +1518,7 @@ impl<'a, 'b> TryFrom<FenImport<'a, 'b>> for Position {
                         .map_err(|_| Self::Error::InvalidFenSquare)?
                         .flip_h();
 
-                    position.put_piece(pos_sq, piece);
+                    position.piece_info.put_piece(pos_sq, piece);
                     sq -= 1;
                 }
             }
