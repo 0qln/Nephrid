@@ -1,5 +1,7 @@
 use engine::core::{
     config::Configuration,
+    ply::Ply,
+    position::PgnResultValue,
     search::mcts::{
         CreateNNPartsError, MctsParts,
         back::MctsSolver,
@@ -9,11 +11,17 @@ use engine::core::{
         select::{Selector, puct},
     },
 };
+use itertools::Itertools;
 use rand::{SeedableRng, rngs::SmallRng};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::{
+    ThreadPoolBuilder,
+    iter::{IntoParallelRefIterator, ParallelIterator},
+};
 use std::{error::Error, path::PathBuf, sync::Mutex, time::Instant};
 
-use burn::{module::AutodiffModule, prelude::Backend, tensor::backend::AutodiffBackend};
+use burn::{
+    config::Config, module::AutodiffModule, prelude::Backend, tensor::backend::AutodiffBackend,
+};
 use engine::{
     core::{
         Game,
@@ -40,6 +48,38 @@ use engine::{
 
 use crate::data::{BoardInput, FenItemRaw, StateInput};
 
+#[derive(Config, Debug)]
+pub struct SelfplayConfig {
+    pub concurrency: usize,
+    pub stop_after: Option<u16>,
+}
+
+#[derive(Config, Debug)]
+pub struct MctsConfig {
+    pub dirichlet_alpha: f32,
+    pub dirichlet_epsilon: f32,
+}
+
+#[derive(Config, Debug)]
+pub struct LimitConfig {
+    pub max_iterations: Option<u64>,
+    pub max_nodes: Option<u64>,
+    pub min_nodes: Option<u64>,
+    pub max_terminal_nodes: Option<u64>,
+}
+
+impl LimitConfig {
+    pub fn init(&self) -> Limit {
+        Limit {
+            iterations: self.max_iterations.unwrap_or(u64::MAX),
+            max_nodes: self.max_nodes.unwrap_or(u64::MAX),
+            min_nodes: self.min_nodes.unwrap_or(0),
+            terminal_nodes: self.max_terminal_nodes.unwrap_or(u64::MAX),
+            ..Default::default()
+        }
+    }
+}
+
 pub trait PlayoutItem: for<'a> From<(GameResult, &'a [Decision<Self::Target>])> {
     type Target: Target;
 }
@@ -48,44 +88,61 @@ pub fn generate_batch<B: AutodiffBackend, P: PlayoutItem + Send>(
     model: &Model<B>,
     fens: &[FenItemRaw],
     limit: &Limit,
+    config: &SelfplayConfig,
+    mcts: &MctsConfig,
 ) -> Result<Vec<P>, Box<dyn Error>>
 where
     P: Clone,
     P::Target: Clone,
 {
+    let pool = ThreadPoolBuilder::new()
+        .num_threads(config.concurrency)
+        .build()?;
+
     let mutex = Mutex::new(model.to_owned());
-    let playout_items = fens
-        .par_iter()
-        .flat_map(|fen| {
-            let fen = fen.fen.clone();
-            let model = {
-                let lock_result = mutex.lock();
-                let model_lock = lock_result.expect("Unable to acquire lock.");
-                model_lock.valid()
-            };
 
-            let device = B::Device::default();
+    let num_fens = fens.len();
 
-            match self_play::<_, P>(&fen, limit.clone(), model, device) {
-                Ok(result) => {
-                    // log pgn information
-                    let pgn = result.0.to_pgn();
-                    log::debug!(target: "games", "{pgn}");
+    let playout_items = pool.install(|| {
+        fens.iter()
+            .enumerate()
+            .collect_vec()
+            .par_iter()
+            .flat_map(|(i, fen)| {
+                let i = i + 1; // so it starts at 1
+                let n = num_fens;
 
-                    // map each playout_item to a training target.
-                    let items = result.1;
-                    items
-                        .iter()
-                        .map(|x| x.playout_item.clone())
-                        .collect::<Vec<_>>()
+                let fen = fen.fen.clone();
+
+                let model = {
+                    let lock_result = mutex.lock();
+                    let model_lock = lock_result.expect("Unable to acquire lock.");
+                    model_lock.valid()
+                };
+
+                let device = B::Device::default();
+
+                match self_play::<_, P>(i, n, &fen, limit.clone(), config, mcts, model, device) {
+                    Ok(result) => {
+                        // log pgn information
+                        let pgn = result.0.to_pgn();
+                        log::info!(target: "data", "[FEN {i:>2}/{n:<2}] Generated game:\n{pgn}");
+
+                        // map each playout_item to a training target.
+                        let items = result.1;
+                        items
+                            .iter()
+                            .map(|x| x.playout_item.clone())
+                            .collect::<Vec<_>>()
+                    }
+                    Err(err) => {
+                        log::error!(target: "data", "[FEN {i:>2}/{n:<2}] Error while playing fen '{fen}':\n{err}");
+                        vec![]
+                    }
                 }
-                Err(err) => {
-                    log::error!(target: "games", "[Fen {fen}] Error: {err}");
-                    vec![]
-                }
-            }
-        })
-        .collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>()
+    });
 
     Ok(playout_items)
 }
@@ -93,16 +150,22 @@ where
 #[derive(Default, Debug)]
 pub struct MctsTrainStrategy {
     infer: MctsFindBest,
+
     nodes_begin: u64,
     terminal_nodes_begin: u64,
     iterations: u64,
     time_limit: Option<Instant>,
+
+    i: usize,
+    n: usize,
 }
 
 impl MctsTrainStrategy {
-    pub fn new() -> Self {
+    pub fn new(i: usize, n: usize) -> Self {
         Self {
             infer: MctsFindBest::default(),
+            i,
+            n,
             ..Default::default()
         }
     }
@@ -146,7 +209,7 @@ impl MctsStrategy for MctsTrainStrategy {
 
     fn result(&mut self, tree: &mut Tree) -> Self::Result {
         let inference_result = self.infer.result(tree);
-        log::info!(target: "games", "[MCTS] Iterations: {} Nodes: {}", self.iterations, tree.size() as u64 - self.nodes_begin);
+        log::debug!(target: "data", "[MCTS {:>2}/{:<2}] Iterations: {} Nodes: {}", self.i, self.n, self.iterations, tree.size() as u64 - self.nodes_begin);
         // todo: log::info!(target: "games", "Base Policy: {:#?}",
         // tree.get_root().borrow().iter_branches().map(|b| format!("[{}] p: {}, WDL
         // found: {}", b.mov(), b.policy(), todo!("Gather how many w/d/l we have found
@@ -240,30 +303,49 @@ pub struct SelfPlayResult<P: PlayoutItem> {
 }
 
 pub fn self_play<B: Backend, P: PlayoutItem>(
+    i: usize,
+    n: usize,
     fen: &str,
     limit: Limit,
+    config: &SelfplayConfig,
+    mcts_cfg: &MctsConfig,
     model: Model<B>,
     device: B::Device,
 ) -> Result<(Game, Vec<SelfPlayResult<P>>), Box<dyn Error>>
 where
     P::Target: Clone,
 {
-    let fen = FenImport(&mut Tokenizer::new(fen));
-    let mut game = Game::from_fen(fen)?;
+    let mut game = Game::from_fen(FenImport(&mut Tokenizer::new(fen)))?;
 
     let mut decisions = Vec::<Decision<P::Target>>::new();
-    let nn_state = MctsTrainParts::new(model, device, 0.3, 0.25);
+    let nn_state = MctsTrainParts::new(
+        model,
+        device,
+        mcts_cfg.dirichlet_alpha,
+        mcts_cfg.dirichlet_epsilon,
+    );
     let mut mcts_state = SearchState::default();
+
+    log::debug!(target: "data", "[FEN {i:>2}/{n:<2}] Starting self-play with fen '{fen}'");
 
     let eval: GameResult = {
         let game_result;
+        let mut ply = Ply { v: 0 };
         loop {
+            if config.stop_after.is_some_and(|stop| ply.v > stop) {
+                game_result = GameResult::Draw;
+                break;
+            }
+            else {
+                ply.v += 1;
+            }
+
             if let Some(result) = game.position().game_result() {
                 game_result = result;
                 break;
             }
 
-            let strat = MctsTrainStrategy::new();
+            let strat = MctsTrainStrategy::new(i, n);
             let result = mcts(
                 game.position_mut(),
                 &nn_state,
@@ -296,6 +378,8 @@ where
         }
         game_result
     };
+
+    log::debug!(target: "data", "[FEN {i:>2}/{n:<2}] Finished self-play with result '{}'", PgnResultValue(Some(eval)));
 
     let mut result = Vec::<SelfPlayResult<_>>::new();
 
@@ -410,10 +494,10 @@ impl Selector for MctsTrainSelector {
         let policy = Self::weighted_policy(branch.policy(), self.policy_weight);
         let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
         let exploration = self.c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);
-        puct::Score(exploitation + exploration)
+        puct::Score::new(exploitation + exploration)
     }
 
     fn min_score(&self) -> Self::Score {
-        puct::Score(f32::NEG_INFINITY)
+        puct::Score::new(f32::NEG_INFINITY)
     }
 }

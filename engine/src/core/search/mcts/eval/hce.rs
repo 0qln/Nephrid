@@ -543,15 +543,15 @@ impl EvalInfo {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct StaticEvaluator;
+pub struct HceEvaluator;
 
-impl StaticEvaluator {
+impl HceEvaluator {
     pub fn new() -> Self {
         Self
     }
 }
 
-impl Evaluator for StaticEvaluator {
+impl Evaluator for HceEvaluator {
     type TraceData = Option<EvalInfo>;
 
     fn trace<S: const Valid + HasBranches>(

@@ -2,7 +2,7 @@
 
 use burn::{
     nn::loss::BinaryCrossEntropyLossConfig,
-    train::{MultiLabelClassificationOutput, TrainOutput},
+    train::{MultiLabelClassificationOutput, TrainOutput, ValidStep},
 };
 use engine::core::search::mcts::{
     eval::GameResult,
@@ -88,6 +88,18 @@ impl<B: AutodiffBackend> TrainStep<MLCPlayoutBatch<B>, LossOutput<B>> for Model<
     }
 }
 
+impl<B: Backend> ValidStep<MLCPlayoutBatch<B>, LossOutput<B>> for Model<B> {
+    fn step(&self, batch: MLCPlayoutBatch<B>) -> LossOutput<B> {
+        forward_with_loss_mlc(
+            self,
+            batch.board_inputs,
+            batch.state_inputs,
+            batch.value_targets,
+            batch.policy_targets,
+        )
+    }
+}
+
 /// Foward with loss. (Policy loss: multi label classification)
 pub fn forward_with_loss_mlc<B: Backend>(
     this: &Model<B>,
@@ -166,52 +178,3 @@ impl<'a> From<&'a Tree> for MLCTarget {
 }
 
 impl Target for MLCTarget {}
-
-// impl<B: Backend> ValidStep<PlayoutBatch<B>, MLCLossOutput<B>> for Model<B> {
-//     fn step(&self, batch: PlayoutBatch<B>) -> MLCLossOutput<B> {
-//         forward_with_loss_mlc(
-//             self,
-//             batch.board_inputs,
-//             batch.state_inputs,
-//             batch.value_targets,
-//             batch.policy_targets,
-//         )
-//     }
-// }
-
-// /// Multi-label classification output adapted for multiple metrics.
-// pub struct ExactProbsClassificationOutput<B: Backend> {
-//     /// The loss.
-//     pub loss: Tensor<B, 1>,
-
-//     /// The output.
-//     pub output: Tensor<B, 2>,
-
-//     /// The targets.
-//     pub targets: Tensor<B, 2>,
-// }
-
-// impl<B: Backend> ExactProbsClassificationOutput<B> {
-//     pub fn new
-// }
-// impl<B: Backend> ItemLazy for MultiLabelClassificationOutput<B> {
-//     type ItemSync = MultiLabelClassificationOutput<NdArray>;
-
-//     fn sync(self) -> Self::ItemSync {
-//         let [output, loss, targets] = Transaction::default()
-//             .register(self.output)
-//             .register(self.loss)
-//             .register(self.targets)
-//             .execute()
-//             .try_into()
-//             .expect("Correct amount of tensor data");
-
-//         let device = &Default::default();
-
-//         MultiLabelClassificationOutput {
-//             output: Tensor::from_data(output, device),
-//             loss: Tensor::from_data(loss, device),
-//             targets: Tensor::from_data(targets, device),
-//         }
-//     }
-// }

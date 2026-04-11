@@ -4,7 +4,6 @@ use std::{
     thread, time,
 };
 
-use self::r#move::LongAlgebraicUciNotation;
 use crate::{
     core::{
         config::Configuration,
@@ -222,9 +221,8 @@ pub fn execute_uci(
                         "searchmoves" => {
                             // interpret all remaining arguments as moves.
                             while let Some(token) = tokenizer.next_token() {
-                                let mut token = Tokenizer::new(token);
-                                let mov = LongAlgebraicUciNotation::new(&mut token, &position);
-                                limit.search_moves.push(Move::try_from(mov)?);
+                                let mov = Move::from_lan(token, &position)?;
+                                limit.search_moves.push(mov);
                             }
                             break;
                         }

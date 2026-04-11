@@ -9,7 +9,7 @@ use crate::core::{
     position::Position,
     search::mcts::{
         back::{Backpropagater, MctsSolver},
-        eval::{Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator, r#static::StaticEvaluator},
+        eval::{Evaluator, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator},
         limiter::{DefaultLimiter, Limiter},
         nn::{LoadNNError, Model},
         node::Tree,
@@ -197,17 +197,17 @@ impl<B: Backend> NNParts<B> {
 
 /// Mcts parts for mcts with puct + static analysis.
 #[derive(Debug)]
-pub struct StaticParts {
+pub struct HceParts {
     alpha: f32,
     epsilon: f32,
 }
 
-impl<const X: usize> MctsParts<X> for &StaticParts {
+impl<const X: usize> MctsParts<X> for &HceParts {
     type Selector = PuctSelector;
-    type Evaluator = StaticEvaluator;
+    type Evaluator = HceEvaluator;
     type Backprop = MctsSolver;
     type Noiser = DirichletNoiser;
-    type Instance = StaticParts;
+    type Instance = HceParts;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -227,7 +227,7 @@ impl<const X: usize> MctsParts<X> for &StaticParts {
     }
 }
 
-impl From<&Configuration> for StaticParts {
+impl From<&Configuration> for HceParts {
     fn from(config: &Configuration) -> Self {
         let alpha = config.dirichlet_alpha();
         let epsilon = config.dirichlet_epsilon();
@@ -235,13 +235,13 @@ impl From<&Configuration> for StaticParts {
     }
 }
 
-impl Default for StaticParts {
+impl Default for HceParts {
     fn default() -> Self {
         Self::new(0.3, 0.25)
     }
 }
 
-impl StaticParts {
+impl HceParts {
     pub fn new(alpha: f32, epsilon: f32) -> Self {
         Self { alpha, epsilon }
     }
@@ -321,18 +321,18 @@ pub mod config {
         pub type Parts = NNParts<super::nn_backend::Backend>;
     }
 
-    // Secondary priority: Static Analysis
-    #[cfg(all(feature = "mcts-sa", not(feature = "mcts-nn")))]
+    // Secondary priority: HCE Analysis
+    #[cfg(all(feature = "mcts-hce", not(feature = "mcts-nn")))]
     pub mod mcts {
-        use crate::core::search::mcts::StaticParts;
-        pub type Parts = StaticParts;
+        use crate::core::search::mcts::HceParts;
+        pub type Parts = HceParts;
     }
 
     // Lowest priority: Pure
     #[cfg(all(
         feature = "mcts-pure",
         not(feature = "mcts-nn"),
-        not(feature = "mcts-sa")
+        not(feature = "mcts-hce")
     ))]
     pub mod mcts {
         use crate::core::search::mcts::PureParts;

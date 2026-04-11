@@ -1576,3 +1576,14 @@ impl<'a, 'b> TryFrom<FenImport<'a, 'b>> for Position {
         Ok(position)
     }
 }
+
+pub struct EpdImport<'a, 'b>(pub &'a mut Tokenizer<'b>);
+
+pub struct EpdLine(
+    pub PiecePlacementInfo<'static>,
+    pub Turn,
+    pub CastlingRights,
+    pub EpTargetSquare,
+);
+
+// ...

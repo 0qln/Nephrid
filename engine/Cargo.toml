@@ -25,4 +25,4 @@ nn-backend-ndarray = []
 
 mcts-pure = []
 mcts-nn = []
-mcts-sa = []
+mcts-hce = []

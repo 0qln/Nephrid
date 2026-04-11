@@ -16,11 +16,8 @@ use burn::{
 use burn_cuda::{Cuda, CudaDevice};
 use engine::core::{
     color::colors,
-    coordinates::squares::{self, A5, B5, F3, G1},
-    r#move::{
-        Move,
-        move_flags::{self, QUIET},
-    },
+    coordinates::squares::{A5, B5, F3, G1},
+    r#move::{Move, move_flags::QUIET},
     move_iter::sliding_piece::magics,
     position::Position,
     search::{
@@ -30,7 +27,6 @@ use engine::core::{
             eval::{GameResult, RawPolicy},
             mcts,
             nn::ModelConfig,
-            node::node_state::NodeState,
         },
     },
     zobrist,
@@ -197,7 +193,7 @@ pub fn learn_mate_in_1() {
     type AutodiffBackend = Autodiff<Backend>;
 
     let device = CudaDevice::default();
-    log::info!(target: "reports::test", "Device: {:?}", device);
+    log::info!(target: "test", "Device: {:?}", device);
 
     let mut config_path = PathBuf::new();
     config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
@@ -207,8 +203,8 @@ pub fn learn_mate_in_1() {
 
     let config = get_config(config_path.to_str().expect("Invalid config path"));
 
-    let num_fens_total = config.edp_dataset_fens_total;
-    let fen_path = &config.edp_dataset_path.clone();
+    let num_fens_total = config.epd_dataset_fens_total;
+    let fen_path = &config.epd_dataset_path.clone();
 
     let result_weights = train::<AutodiffBackend>(
         &format!("{OUT_DIR}/learn_mate_in_1"),
@@ -218,7 +214,7 @@ pub fn learn_mate_in_1() {
     .expect("No epoch was completed");
 
     // test
-    let test_fen = FenDataset::new(fen_path, "train", num_fens_total);
+    let test_fen = FenDataset::from_epd(fen_path, "train", num_fens_total);
     let fen = Dataset::<FenItemRaw>::get(&test_fen, 0).expect("no fen in dataset");
     let mut pos = Position::from_fen(&fen.fen).expect("Bad fen");
 
@@ -246,11 +242,11 @@ pub fn learn_mate_in_1() {
             &parts,
             &mut mcts_state,
             &limit,
-            MctsTrainStrategy::new(),
+            MctsTrainStrategy::new(1, 1),
         );
 
         for b in mcts_state.tree.branches_rt(mcts_state.tree.root()) {
-            log::info!(target: "reports::test", "Move: {:?}, Policy: {:.5}", b.mov(), b.policy());
+            log::debug!(target: "test", "Move: {:?}, Policy: {:.5}", b.mov(), b.policy());
         }
 
         let best_policy = mcts_state
@@ -301,8 +297,8 @@ pub fn learn_mate_in_2() {
 
     let config = get_config(config_path.to_str().expect("Invalid config path"));
 
-    let num_fens_total = config.edp_dataset_fens_total;
-    let fen_path = &config.edp_dataset_path.clone();
+    let num_fens_total = config.epd_dataset_fens_total;
+    let fen_path = &config.epd_dataset_path.clone();
 
     let result_weights = train::<AutodiffBackend>(
         &format!("{OUT_DIR}/learn_mate_in_2"),
@@ -312,7 +308,7 @@ pub fn learn_mate_in_2() {
     .expect("No epoch was completed");
 
     // test
-    let test_fen = FenDataset::new(fen_path, "train", num_fens_total);
+    let test_fen = FenDataset::from_epd(fen_path, "train", num_fens_total);
     let fen = Dataset::<FenItemRaw>::get(&test_fen, 0).expect("no fen in dataset");
     let mut pos = Position::from_fen(&fen.fen).expect("Bad fen");
 
@@ -340,11 +336,11 @@ pub fn learn_mate_in_2() {
                 &nn_state,
                 &mut mcts_state,
                 &limit,
-                MctsTrainStrategy::new(),
+                MctsTrainStrategy::new(1, 1),
             );
 
             for b in mcts_state.tree.branches_rt(mcts_state.tree.root()) {
-                log::info!(target: "reports::test", "Move: {:?}, Policy: {:.5}", b.mov(), b.policy());
+                log::debug!(target: "test", "Move: {:?}, Policy: {:.5}", b.mov(), b.policy());
             }
 
             let best_policy = mcts_state
@@ -359,8 +355,8 @@ pub fn learn_mate_in_2() {
             pos.make_move(best_move);
             mcts_state.advance_to(best_move);
 
-            log::info!(target: "reports::test", "Best move: {best_move}");
-            log::info!(target: "reports::test", "Best by policy: {best_policy}");
+            log::info!(target: "test", "Best move: {best_move}");
+            log::info!(target: "test", "Best by policy: {best_policy}");
         }
 
         pos.game_result()

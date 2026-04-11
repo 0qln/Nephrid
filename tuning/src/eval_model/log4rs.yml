@@ -6,7 +6,7 @@ appenders:
 
   file:
     kind: file
-    path: "tuning/out/eval_model/main.log"
+    path: "tuning/out/eval_model/main/main.log"
     encoder:
       pattern: "{d(%Y-%m-%d %H:%M:%S)} {l} {t} - {m}{n}"
 
@@ -16,21 +16,21 @@ root:
     - file
 
 loggers:
-  reports::train:
+  train:
     level: info
     appenders:
       - stdout
       - file
     additive: false
 
-  reports::test:
-    level: info
+  test:
+    level: debug
     appenders:
       - stdout
       - file
     additive: false
 
-  games:
+  data:
     level: debug
     appenders:
       - file

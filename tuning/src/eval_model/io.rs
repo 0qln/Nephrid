@@ -55,14 +55,14 @@ pub fn load_weights<B: AutodiffBackend>(
     checkpoint_path: &Option<String>,
 ) -> Model<B> {
     if let Some(path) = checkpoint_path {
-        log::info!(target: "reports::train", "Resuming training from {}", path);
+        log::info!(target: "train", "Resuming training from {}", path);
         let record = CompactRecorder::new()
             .load(path.clone().into(), device)
             .expect("Failed to load checkpoint weights.");
         model.load_record(record)
     }
     else {
-        log::info!(target: "reports::train", "Starting training from scratch.");
+        log::info!(target: "train", "Starting training from scratch.");
         model
     }
 }

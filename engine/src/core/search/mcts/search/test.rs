@@ -3,8 +3,8 @@ use crate::core::{
     move_iter::sliding_piece::magics,
     position::Position,
     search::mcts::{
-        MctsParts, NullNoiser, StaticParts, back::DefaultBackuper, limiter::NoopLimiter,
-        node::Tree, search::TreeSearcher, select::ucb::UcbSelector, test::DummyEvaluator,
+        HceParts, MctsParts, NullNoiser, back::DefaultBackuper, limiter::NoopLimiter, node::Tree,
+        search::TreeSearcher, select::ucb::UcbSelector, test::DummyEvaluator,
     },
     zobrist,
 };
@@ -64,7 +64,7 @@ where
 pub fn sa_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
     fuzz::<1, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        StaticParts::default(),
+        HceParts::default(),
         50_000,
     );
     Ok(())
@@ -74,7 +74,7 @@ pub fn sa_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
 pub fn sa_fuzz_bs_8() -> Result<(), Box<dyn Error>> {
     fuzz::<8, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        StaticParts::default(),
+        HceParts::default(),
         50_000,
     );
     Ok(())
@@ -84,7 +84,7 @@ pub fn sa_fuzz_bs_8() -> Result<(), Box<dyn Error>> {
 pub fn sa_fuzz_bs_64() -> Result<(), Box<dyn Error>> {
     fuzz::<64, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        StaticParts::default(),
+        HceParts::default(),
         50_000,
     );
     Ok(())

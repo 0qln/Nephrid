@@ -5,10 +5,9 @@ use itertools::Itertools;
 use crate::core::{
     Position,
     depth::Depth,
-    r#move::MoveIndex,
     search::mcts::{
         back::Backpropagater,
-        eval::{Evaluation, Evaluator},
+        eval::{Evaluation, Evaluator, softmax},
         limiter::{self, Limiter},
         node::{
             BranchId, NodeId, NodeView, Tree,
@@ -353,34 +352,70 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
             score_b.partial_cmp(&score_a).unwrap_or(Ordering::Equal)
         });
 
-        let mut budget = budget;
-        let mut used_budget = 0;
-        let mut line_index = line_index;
-        let mut branch_index = MoveIndex::from(0);
-
         let branch_count = tree.node(parent_node).branch_count();
-        while budget >= 1 && branch_index < branch_count {
+
+        let mut scores = (0..branch_count.v)
+            .map(|branch_index| {
+                let branch_id = tree
+                    .branch_id(parent_node, branch_index.into())
+                    .expect("The branch should exist...");
+
+                let branch = tree.branch(branch_id);
+                let child = tree.node(branch.node());
+
+                // todo when making the budget relative to the score, maybe use something
+                // similar to policy::from_visit_counts ?
+
+                let score = self.selector.score(child.data(), branch, parent_visits);
+
+                Into::<f32>::into(score)
+            })
+            .collect_vec();
+
+        softmax(scores.as_mut_slice(), 1.);
+
+        // 1. Calculate precise floating-point budgets
+        let float_budgets: Vec<f32> = scores.iter().map(|&p| p * budget as f32).collect();
+
+        // 2. Assign the guaranteed floor to each branch
+        let mut allocated_budgets: Vec<usize> =
+            float_budgets.iter().map(|&f| f.floor() as usize).collect();
+
+        // 3. Calculate how much budget is left to distribute
+        let remaining_budget = budget - allocated_budgets.iter().sum::<usize>();
+
+        // 4. Distribute the remainder based on the highest fractional parts
+        if remaining_budget > 0 {
+            // Pair original index with its remainder
+            let mut remainders: Vec<(usize, f32)> = float_budgets
+                .iter()
+                .enumerate()
+                .map(|(i, &f)| (i, f - f.floor()))
+                .collect();
+
+            // Sort descending by remainder
+            remainders.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+
+            // Give 1 extra budget to the top branches until we run out
+            for (index, _) in remainders.into_iter().take(remaining_budget) {
+                allocated_budgets[index] += 1;
+            }
+        }
+
+        let mut line_index = line_index;
+        let mut used_budget = 0;
+
+        for (branch_index, curr_budget) in (0..branch_count.v).zip(allocated_budgets.into_iter()) {
             let branch_id = tree
-                .branch_id(parent_node, branch_index)
+                .branch_id(parent_node, branch_index.into())
                 .expect("The branch should exist...");
-            // let branch = tree.branch(branch_id);
-            // let child = tree.node(branch.node());
 
-            // todo when making the budget relative to the score, maybe use something
-            // similar to policy::from_visit_counts ?
-
-            // let score = self.selector.score(child.data(), branch, parent_visits);
-
-            let curr_budget = self.selector.budget(budget);
             if curr_budget == 0 {
-                break;
+                continue;
             };
 
             let used =
                 self.select_branch(curr_budget, line_index, depth, branch_id, tree, sel_node_id);
-
-            budget -= curr_budget;
-            branch_index.v += 1;
 
             line_index += used;
             used_budget += used;

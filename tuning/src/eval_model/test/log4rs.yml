@@ -16,21 +16,21 @@ root:
     - file
 
 loggers:
-  reports::train:
+  train:
     level: info
     appenders:
       - stdout
       - file
     additive: false
 
-  reports::test:
-    level: info
+  test:
+    level: debug
     appenders:
       - stdout
       - file
     additive: false
 
-  games:
+  data:
     level: debug
     appenders:
       - file

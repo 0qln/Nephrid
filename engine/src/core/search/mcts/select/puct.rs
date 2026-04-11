@@ -1,8 +1,7 @@
-use core::fmt;
-
-use crate::core::search::mcts::{eval, node::NodeData};
-
-use super::*;
+use crate::core::search::mcts::{
+    eval,
+    node::{Branch, NodeData},
+};
 
 pub struct PuctSelector {
     // todo: fine tune c. or make a uci option out of it idk
@@ -21,7 +20,7 @@ impl Default for PuctSelector {
     }
 }
 
-impl Selector for PuctSelector {
+impl super::Selector for PuctSelector {
     type Score = Score;
 
     fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Score {
@@ -42,37 +41,12 @@ impl Selector for PuctSelector {
 
         let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1. + n_i);
 
-        Score(exploitation + exploration)
+        Score::new(exploitation + exploration)
     }
 
     fn min_score(&self) -> Self::Score {
-        Score(f32::NEG_INFINITY)
+        Score::new(f32::NEG_INFINITY)
     }
 }
 
-#[derive(PartialEq, Clone, Copy, Debug, Default)]
-pub struct Score(pub f32);
-
-impl fmt::Display for Score {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl_op!(-|x: Score| -> Score { Score(-x.0) });
-
-impl Eq for Score {}
-
-impl PartialOrd for Score {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Score {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0
-            .partial_cmp(&other.0)
-            .expect("This shouldn't happen for puct scores.")
-    }
-}
+pub type Score = super::Score;

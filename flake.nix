@@ -71,17 +71,17 @@
                 ]);
             };
 
-            nephrid-sa = rustPlatform.buildRustPackage {
+            nephrid-hce = rustPlatform.buildRustPackage {
               pname = "nephrid";
-              version = "sa";
+              version = "hce";
               src = ./.;
               cargoLock.lockFile = ./Cargo.lock;
               buildNoDefaultFeatures = true;
-              buildFeatures = ["mcts-sa" "cpu"];
+              buildFeatures = ["mcts-hce" "cpu"];
               nativeBuildInputs = [pkgs.pkg-config];
             };
 
-            default = config.packages.nephrid-sa;
+            default = config.packages.nephrid-hce;
           };
 
           devShells.default = pkgs.mkShell {
@@ -91,6 +91,7 @@
                 bacon
                 perf
                 act
+                python3
               ])
               ++ (with pkgs-cuda; [
                 # reference: https://discourse.nixos.org/t/cuda-12-8-support-in-nixpkgs/60645/39

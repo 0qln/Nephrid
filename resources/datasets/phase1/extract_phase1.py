@@ -1,11 +1,13 @@
 import csv
 import sys
+import os
+from os import path
 
 # File paths
-INPUT_FILE = 'lichess_db_puzzle.csv'
-OUTPUT_FILE = 'mate_in_1_and_2.epd'
+PROJECT_ROOT = os.environ['PROJECT_ROOT']
+INPUT_FILE = path.join(PROJECT_ROOT, 'resources/datasets/lichess_db_puzzle.csv')
+OUTPUT_FILE = path.join(PROJECT_ROOT, 'resources/datasets/phase1/mate_in_1_and_2.epd')
 
-# The specific themes we want for Curriculum Phase 1
 TARGET_THEMES = {'mateIn1', 'mateIn2'}
 
 def main():
@@ -14,7 +16,6 @@ def main():
     total_processed = 0
     total_written = 0
 
-    # Open files with standard UTF-8 encoding
     try:
         with open(INPUT_FILE, 'r', encoding='utf-8') as infile, \
              open(OUTPUT_FILE, 'w', encoding='utf-8') as outfile:
@@ -24,24 +25,21 @@ def main():
             for row in reader:
                 total_processed += 1
 
-                # Skip the header row if your CSV happens to have one
                 if row[0] == 'PuzzleId':
                     continue
 
-                # Ensure the row has the expected number of columns (prevent IndexErrors)
                 if len(row) < 8:
                     continue
 
                 fen = row[1]
-                # Themes are space-separated in the 8th column (index 7)
+                moves_str = row[2] # Example: "d4e6 d6h2"
                 themes = set(row[7].split(' '))
 
-                # Check if the puzzle contains ANY of our target themes
                 if TARGET_THEMES.intersection(themes):
-                    outfile.write(f"{fen}\n")
+                    first_move = moves_str.split(' ')[0]
+                    outfile.write(f"{fen} fm {first_move}\n")
                     total_written += 1
 
-                # Print progress every 500k rows so you know it hasn't frozen
                 if total_processed % 500_000 == 0:
                     print(f"Processed {total_processed:,} puzzles... (Saved {total_written:,} mates)")
 

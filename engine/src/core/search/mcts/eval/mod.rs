@@ -20,7 +20,7 @@ pub mod test;
 
 pub mod nn;
 pub mod playout;
-pub mod r#static;
+pub mod hce;
 
 pub trait Evaluator {
     type TraceData;

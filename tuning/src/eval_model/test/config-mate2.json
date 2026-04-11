@@ -16,8 +16,8 @@
     "min_nodes": null,
     "max_terminal_nodes": null
   },
-  "edp_dataset_path": "mate_in_2.edp",
-  "edp_dataset_fens_total": 1,
+  "epd_dataset_path": "epd/mate_in_2.epd",
+  "epd_dataset_fens_total": 1,
   "num_epochs": 100,
   "batch_size": 1,
   "mini_batch_size": 256,

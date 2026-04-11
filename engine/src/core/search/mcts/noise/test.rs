@@ -5,7 +5,7 @@ use crate::core::{
     depth::Depth,
     position::Position,
     search::mcts::{
-        eval::Policy,
+        eval::{Logits, Policy},
         node::node_state::{Branching, Leaf},
     },
 };
@@ -28,7 +28,8 @@ fn test_dirichlet_noise_basic() {
 
     let policy = {
         let branches = tree.branches(node);
-        Policy::from_logits(branches.iter().map(|_| rng.next_u32() as f32).collect_vec())
+        let logits = Logits(branches.iter().map(|_| rng.next_u32() as f32).collect_vec());
+        Policy::from_logits(logits, 1.)
     };
     let node = tree.set_policy(node, &policy);
 

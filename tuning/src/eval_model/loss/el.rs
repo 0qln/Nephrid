@@ -5,7 +5,7 @@ use burn::{
     data::dataloader::batcher::Batcher,
     nn::loss::{MseLoss, Reduction},
     tensor::{Float, TensorData, activation::log_softmax, backend::AutodiffBackend},
-    train::{RegressionOutput, TrainOutput, TrainStep},
+    train::{RegressionOutput, TrainOutput, TrainStep, ValidStep},
 };
 use engine::core::search::mcts::{
     eval::{GameResult, RawPolicy, VisitCounts, normalize_visits},
@@ -50,11 +50,11 @@ impl From<&ExactLossTarget> for PolicyTarget {
 
         let raw_policy = normalize_visits(&visit_counts, 1.);
 
-        println!("Policy target:");
-        for &(mov, visits) in &target.visit_counts.0 {
-            let policy = raw_policy[usize::from(mov)];
-            println!("[{mov}]: {visits:>4} - {policy:6>.4}");
-        }
+        // println!("Policy target:");
+        // for &(mov, visits) in &target.visit_counts.0 {
+        //     let policy = raw_policy[usize::from(mov)];
+        //     println!("[{mov}]: {visits:>4} - {policy:6>.4}");
+        // }
 
         Self(RawPolicy::new(raw_policy))
     }
@@ -174,6 +174,18 @@ pub fn forward_with_loss_exact_loss<B: Backend>(
         // ExactProbsClassificationOutput::new(policy_loss, policy_output, target_policy).loss,
         policy_loss,
     )
+}
+
+impl<B: Backend> ValidStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for Model<B> {
+    fn step(&self, batch: ExactLossPlayoutBatch<B>) -> LossOutput<B> {
+        forward_with_loss_exact_loss(
+            self,
+            batch.board_inputs,
+            batch.state_inputs,
+            batch.value_targets,
+            batch.policy_targets,
+        )
+    }
 }
 
 impl<B: AutodiffBackend> TrainStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for Model<B> {
