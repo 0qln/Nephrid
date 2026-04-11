@@ -8,6 +8,7 @@ use std::{
     any::type_name,
     error::Error,
     fmt::{Debug, Write},
+    hint::unreachable_unchecked,
     iter::Step,
     marker::PhantomData,
     ops,
@@ -98,14 +99,17 @@ impl Square {
     pub const MAX: Square = H8;
     pub const MIN: Square = A1;
 
+    #[inline]
     pub const fn flip_h(self) -> Self {
         Self { v: self.v ^ 7 }
     }
 
+    #[inline]
     pub const fn flip_v(self) -> Self {
         Self { v: self.v ^ 56 }
     }
 
+    #[inline]
     pub const fn index(&self) -> usize {
         self.v as usize
     }
@@ -139,46 +143,12 @@ impl TryFrom<TSquare> for Square {
     }
 }
 
-// impl TryFrom<u16> for Square {
-//     type Error = OneOf<(ValueOutOfRangeError<u16>,)>;
-
-//     #[inline]
-//     fn try_from(value: u16) -> Result<Self, Self::Error> {
-//         match value {
-//             MIN_C..=MAX_C => Ok(Square { v: value as u8 }),
-//             x => Err(OneOf::new(ValueOutOfRangeError::new(x,
-// MIN_C..=MAX_C))),         }
-//     }
-// }
-
 impl const ConstFrom<(File, Rank)> for Square {
     #[inline]
     fn from_c(value: (File, Rank)) -> Self {
         Square { v: value.0.v + value.1.v * 8u8 }
     }
 }
-
-// #[derive(Error, Debug)]
-// #[error("Failed to tokenize a {}: {err}", type_name::<T>())]
-// pub struct TokenizationError<T, E: Error> {
-//     _t: PhantomData<T>,
-//     err: E,
-// }
-
-// impl<T, E: Error> TokenizationError<T, E> {
-//     pub fn new(err: E) -> Self {
-//         Self { err, _t: PhantomData }
-//     }
-// }
-
-// impl<T: Default, E: Error + Default> Default for TokenizationError<T, E> {
-//     fn default() -> Self {
-//         Self {
-//             _t: Default::default(),
-//             err: Default::default(),
-//         }
-//     }
-// }
 
 #[derive(Error, Debug)]
 pub enum SquareTokenizationError {
@@ -343,7 +313,8 @@ impl From<EpTargetSquare> for EpCaptureSquare {
                 let rank = match Rank::from_c(sq) {
                     ranks::_3 => ranks::_4,
                     ranks::_6 => ranks::_5,
-                    _ => unreachable!("Input was an invalid EpTargetSquare."),
+                    // SAFETY: Input is a valid EpTargetSquare.
+                    _ => unsafe { unreachable_unchecked() },
                 };
                 let file = File::from_c(sq);
                 Square::from_c((file, rank))
