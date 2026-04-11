@@ -170,12 +170,6 @@ impl StateStack {
         unsafe { self.states.get_unchecked_mut(self.current) }
     }
 
-    // /// Returns a pointer to the current state.
-    // #[inline]
-    // pub fn get_current_ptr(&mut self) -> NonNull<StateInfo> {
-    //     NonNull::from_ref(self.get_current_mut())
-    // }
-
     /// Returns the pushed state.
     #[inline]
     pub fn get_next(&mut self, new: fn(&StateInfo) -> StateInfo) -> NonNull<StateInfo> {
