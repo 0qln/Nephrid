@@ -92,6 +92,7 @@
                 perf
                 act
                 python3
+                gnuplot
               ])
               ++ (with pkgs-cuda; [
                 # reference: https://discourse.nixos.org/t/cuda-12-8-support-in-nixpkgs/60645/39
