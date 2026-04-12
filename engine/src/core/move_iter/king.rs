@@ -1,4 +1,4 @@
-use std::ops::Try;
+use std::{hint, ops::Try};
 
 use crate::{
     core::{
@@ -33,21 +33,25 @@ impl<const Q: bool> FoldMoves<NoCheck, Q> for King {
         R: Try<Output = B>,
     {
         let color = pos.get_turn();
-        let nstm_attacks = pos.get_nstm_attacks();
 
         let king_bb = pos.get_bitboard(King::ID, color);
-        let king = king_bb
-            .lsb()
-            .expect("King bb has to contain atleast one king.");
+        if let Some(king) = king_bb.lsb() {
+            let nstm_attacks = pos.get_nstm_attacks();
 
-        let attacks = lookup_attacks(king);
-        let legal_attacks = attacks & !nstm_attacks;
+            let attacks = lookup_attacks(king);
+            let legal_attacks = attacks & !nstm_attacks;
 
-        let legal_captures = legal_attacks & NoCheck::captures_mask(pos, color);
-        let legal_quiets = legal_attacks & NoCheck::quiets_mask::<Q>(pos, color);
+            let legal_captures = legal_attacks & NoCheck::captures_mask(pos, color);
+            let legal_quiets = legal_attacks & NoCheck::quiets_mask::<Q>(pos, color);
 
-        init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
-        map_quiets(legal_quiets, king).try_fold(init, &mut f)
+            init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
+            map_quiets(legal_quiets, king).try_fold(init, &mut f)
+        }
+        else {
+            // legal positions should have a king...
+            hint::cold_path();
+            try { init }
+        }
     }
 }
 
