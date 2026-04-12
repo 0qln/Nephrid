@@ -397,7 +397,7 @@ impl<const Q: bool, C: NoDoubleCheck> FoldMoves<C, Q> for Pawn {
     }
 }
 
-const fn compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
+pub const fn compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
     Color::assert_variant(C); // Safety
     let color = unsafe { Color::from_v(C) };
     Bitboard {

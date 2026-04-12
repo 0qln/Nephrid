@@ -1,5 +1,10 @@
 use core::fmt;
-use std::{fmt::Write, ops::ControlFlow, ptr::NonNull};
+use std::{
+    fmt::Write,
+    hint::{self},
+    ops::ControlFlow,
+    ptr::NonNull,
+};
 
 use thiserror::Error;
 
@@ -14,7 +19,15 @@ use crate::{
         },
         depth::Depth,
         r#move::{Move, MoveParseError, SAN, move_flags},
-        move_iter::{bishop, fold_legal_moves, king, knight, pawn, rook},
+        move_iter::{
+            bishop::{self, Bishop},
+            fold_legal_moves,
+            king::{self},
+            knight::{self},
+            pawn,
+            rook::{self, Rook},
+            sliding_piece::SlidingAttacks,
+        },
         piece::{Piece, PieceParseError, PieceType, PromoPieceType, piece_type},
         ply::{FullMoveCountParseError, FullMoveCountTokenizationError, PlyTokenizationError},
         search::mcts::eval::GameResult,
@@ -27,7 +40,6 @@ use crate::{
 
 use super::{
     coordinates::{EpCaptureSquare, EpTargetSquare},
-    move_iter::{bishop::Bishop, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks},
     ply::{FullMoveCount, Ply},
 };
 
@@ -61,40 +73,73 @@ pub struct StateInfo {
 }
 
 impl StateInfo {
+    // todo:
+    // these are really only needed when generating more moves from the
+    // position that we are currently in. maybe make this lazy or something? (only
+    // call really for initis in the make_move function, but reads mostly happen
+    // when we generate moves from the position that is beeing moved into...)
+    //
     /// Initiate checkers, blockers, nstm_attacks, check_state
     pub fn init(&mut self, pos: &Position) {
         let stm = self.turn;
         let nstm = !stm;
-        let king = pos.get_bitboard(piece_type::KING, stm);
         let occupancy = pos.get_occupancy();
         let enemies = pos.get_color_bb(nstm);
-        (self.nstm_attacks, self.checkers) = {
-            enemies.fold((Bitboard::empty(), Bitboard::empty()), |acc, enemy_sq| {
-                let enemy = pos.get_piece(enemy_sq);
-                let enemy_attacks = match enemy.piece_type() {
-                    piece_type::PAWN => pawn::lookup_attacks(enemy_sq, nstm),
-                    piece_type::KNIGHT => knight::lookup_attacks(enemy_sq),
-                    piece_type::BISHOP => Bishop::lookup_attacks(enemy_sq, occupancy),
-                    piece_type::ROOK => Rook::lookup_attacks(enemy_sq, occupancy),
-                    piece_type::QUEEN => Queen::lookup_attacks(enemy_sq, occupancy),
-                    piece_type::KING => king::lookup_attacks(enemy_sq),
-                    _ => unreachable!(
-                        "We are iterating the squares which contain enemies. piece_type::NONE \
-                         should not be here."
-                    ),
-                };
-                (
-                    acc.0 | enemy_attacks,
-                    match enemy_attacks & king {
-                        Bitboard { v: 0 } => acc.1,
-                        _ => acc.1 | Bitboard::from_c(enemy_sq),
-                    },
-                )
-            })
+        let allies = pos.get_color_bb(stm);
+        let pawns = pos.get_piece_bb(piece_type::PAWN) & enemies;
+        let knights = pos.get_piece_bb(piece_type::KNIGHT) & enemies;
+        let queens = pos.get_piece_bb(piece_type::QUEEN) & enemies;
+        let kings = pos.get_piece_bb(piece_type::KING);
+        let r_n_q = (pos.get_piece_bb(piece_type::ROOK) | queens) & enemies;
+        let b_n_q = (pos.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
+
+        self.nstm_attacks = {
+            let mut nstm_attacks = Bitboard::empty();
+
+            nstm_attacks |= if nstm == colors::WHITE {
+                pawn::compute_attacks::<{ colors::WHITE_C }>(pawns)
+            }
+            else {
+                pawn::compute_attacks::<{ colors::BLACK_C }>(pawns)
+            };
+
+            for sq in knights {
+                nstm_attacks |= knight::lookup_attacks(sq);
+            }
+
+            for sq in b_n_q {
+                nstm_attacks |= Bishop::lookup_attacks(sq, occupancy);
+            }
+
+            for sq in r_n_q {
+                nstm_attacks |= Rook::lookup_attacks(sq, occupancy);
+            }
+
+            if let Some(sq) = (enemies & kings).lsb() {
+                nstm_attacks |= king::lookup_attacks(sq);
+            }
+
+            nstm_attacks
         };
 
-        if let Some(king_sq) = king.lsb() {
-            let x_ray_checkers = pos.get_x_ray_checkers(king_sq, enemies);
+        if let Some(king_sq) = (allies & kings).lsb() {
+            // Normal checkers
+            self.checkers = {
+                Bitboard::empty()
+                    | (pawn::lookup_attacks(king_sq, stm) & pawns)
+                    | (knight::lookup_attacks(king_sq) & knights)
+                    | (Bishop::lookup_attacks(king_sq, occupancy) & b_n_q)
+                    | (Rook::lookup_attacks(king_sq, occupancy) & r_n_q)
+            };
+
+            // The X-Ray checkers for the given king. X-Ray checkers are pieces which attack
+            // a king through zero or more pieces.
+            let x_ray_checkers = {
+                Bitboard::empty()
+                    | (rook::lookup_attacks_0_occ(king_sq) & r_n_q)
+                    | (bishop::lookup_attacks_0_occ(king_sq) & b_n_q)
+            };
+
             self.blockers = x_ray_checkers.fold(Bitboard::empty(), |acc, x_ray_checker| {
                 let between_squares = Bitboard::between(x_ray_checker, king_sq);
                 let between_occupancy = occupancy & between_squares;
@@ -105,6 +150,12 @@ impl StateInfo {
                     acc
                 }
             });
+        }
+        else {
+            // there is almost always a king on the board... might aswell make this
+            // unreachable_unchecked and do validation when setting up positions given by
+            // the user. (todo)
+            hint::cold_path();
         }
 
         self.check_state = match self.checkers.pop_cnt() {
@@ -297,7 +348,7 @@ impl PieceInfo {
     fn remove_piece(&mut self, sq: Square) {
         let target = Bitboard::from_c(sq);
         let piece = self.get_piece(sq);
-        assert_ne!(piece, Piece::default(), "No piece at {sq}");
+        debug_assert_ne!(piece, Piece::default(), "No piece at {sq}");
         *self.get_piece_bb_mut(piece.piece_type()) ^= target;
         *self.get_color_bb_mut(piece.color()) ^= target;
         *self.get_piece_mut(sq) = Piece::default();
@@ -306,7 +357,7 @@ impl PieceInfo {
 
     fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from_c(sq);
-        assert_eq!(
+        debug_assert_eq!(
             self.get_piece(sq),
             Piece::default(),
             "Piece already at {sq}: {}",
@@ -319,11 +370,11 @@ impl PieceInfo {
     }
 
     fn move_piece(&mut self, from: Square, to: Square) {
-        assert!(
+        debug_assert!(
             self.get_piece(from) != Piece::default(),
             "No piece at {from}"
         );
-        assert!(
+        debug_assert!(
             self.get_piece(to) == Piece::default(),
             "Piece already at {to}: {}",
             self.get_piece(to)
@@ -565,24 +616,12 @@ impl Position {
         fold_legal_moves(self, false, |_, _| ControlFlow::Break(true)).into_value()
     }
 
-    /// Returns the X-Ray checkers for the given king.
-    /// X-Ray checkers are pieces which attack a king
-    /// through zero or more pieces.
-    #[inline]
-    pub fn get_x_ray_checkers(&self, king: Square, enemies: Bitboard) -> Bitboard {
-        let rooks = self.get_piece_bb(piece_type::ROOK);
-        let bishops = self.get_piece_bb(piece_type::BISHOP);
-        let queens = self.get_piece_bb(piece_type::QUEEN);
-        let rook_checkers = rook::compute_attacks_0_occ(king) & (rooks | queens);
-        let bishop_checkers = bishop::compute_attacks_0_occ(king) & (bishops | queens);
-        (rook_checkers | bishop_checkers) & enemies
-    }
-
     /// # Safety
     /// This is unsafe, because it allows you to modify the internal
     /// representation, without updating the state.
     ///
     /// This pub, because it is used for benchmarking.
+    #[inline]
     pub unsafe fn put_piece_unsafe(&mut self, sq: Square, piece: Piece) {
         self.piece_info.put_piece(sq, piece)
     }
@@ -592,6 +631,7 @@ impl Position {
     /// representation, without updating the state.
     ///
     /// This pub, because it is used for benchmarking.
+    #[inline]
     pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) {
         self.piece_info.remove_piece(sq)
     }
@@ -601,6 +641,7 @@ impl Position {
     /// representation, without updating the state.
     ///
     /// This pub, because it is used for benchmarking.
+    #[inline]
     pub unsafe fn move_piece_unsafe(&mut self, from: Square, to: Square) {
         self.piece_info.move_piece(from, to)
     }

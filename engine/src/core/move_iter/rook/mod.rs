@@ -1,16 +1,15 @@
-use crate::core::coordinates::{files, ranks, squares};
-use crate::core::piece::piece_type;
 use crate::{
     core::{
         bitboard::Bitboard,
-        coordinates::{compass_rose, File, Rank, Square},
+        coordinates::{File, Rank, Square, compass_rose, files, ranks, squares},
         move_iter::rook,
-        piece::{IPieceType, PieceType},
+        piece::{IPieceType, PieceType, piece_type},
     },
     misc::ConstFrom,
 };
+use const_for::const_for;
 
-use super::sliding_piece::{self, magics::MagicGen, SlidingAttacks, SlidingPieceType};
+use super::sliding_piece::{self, SlidingAttacks, SlidingPieceType, magics::MagicGen};
 
 #[cfg(test)]
 mod tests;
@@ -75,6 +74,19 @@ pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
     Bitboard {
         v: (file_bb.v | rank_bb.v) ^ Bitboard::from_c(sq).v,
     }
+}
+
+/// Lookup the attacks of the rook on the square `sq`.
+pub fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
+    const ATTACKS: [Bitboard; 64] = {
+        let mut result = [Bitboard::empty(); 64];
+        const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
+            let sq = unsafe { Square::from_v(sq) };
+            result[sq.index()] = compute_attacks_0_occ(sq);
+        });
+        result
+    };
+    unsafe { *ATTACKS.get_unchecked(sq.index()) }
 }
 
 /// Computes the attacks of the rook on the square `sq` with the given
