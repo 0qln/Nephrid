@@ -355,11 +355,11 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
             }
         }
 
-        pos.make_move(m);
+        pos.make_move_for::<P>(m);
 
         let score = !qsearch(pos, !beta, !alpha);
 
-        pos.unmake_move(m);
+        pos.unmake_move_for::<P>(m);
 
         if score >= beta {
             return score;
