@@ -2,8 +2,8 @@ use core::fmt;
 use move_flags as f;
 use std::{
     fmt::Write,
-    ops,
-    ops::{ControlFlow, Index, IndexMut},
+    mem::MaybeUninit,
+    ops::{self, ControlFlow, Index, IndexMut},
 };
 use thiserror::Error;
 
@@ -529,33 +529,66 @@ impl From<Move> for usize {
 /// Since the 218 is the maximum number of moves in a single position,
 /// we can use a fixed length array to store the moves and by using a
 /// size of 256 we can safely index into the array with a u8.
-#[derive(Debug, Clone)]
-pub struct MoveList([Move; 256]);
+#[derive(Debug)]
+pub struct MoveList {
+    moves: [MaybeUninit<Move>; 256],
+    pub len: u8,
+}
 
 impl MoveList {
-    /// Returns a mutable slice of the initialized moves up to `len`.
-    pub fn as_mut_slice(&mut self, len: u8) -> &mut [Move] {
-        // SAFETY: len is guaranteed to be <= 256 because it's a u8.
-        unsafe { self.0.get_unchecked_mut(..len as usize) }
+    /// Creates a new, empty move list without initializing the underlying
+    /// array.
+    pub fn new() -> Self {
+        Self {
+            // This is completely free at runtime.
+            moves: [MaybeUninit::uninit(); 256],
+            len: 0,
+        }
     }
 
-    /// Returns an iterator over the initialized moves up to the first null
-    /// move.
-    ///
-    /// NOTE: This could maybe be written more efficently. And also, just use
-    /// indexing instead maybe, since we can easily prove the bounds checks
-    /// in most cases.
-    pub fn iter(&self) -> impl Iterator<Item = Move> {
-        self.0
-            .iter()
-            .take_while(|&mov| *mov != Move::null())
-            .copied()
+    /// Pushes a move to the list.
+    #[inline]
+    pub fn push(&mut self, m: Move) {
+        // SAFETY: The maximum number of legal chess moves is 218.
+        // A standard u8 maxes at 255, so we will never exceed 256.
+        unsafe {
+            self.moves.get_unchecked_mut(self.len as usize).write(m);
+        }
+        self.len += 1;
+    }
+
+    /// Returns a mutable slice of the initialized moves up to `len`.
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [Move] {
+        // SAFETY: We only cast the slice up to `self.len`, which we
+        // guarantee has been initialized via the `push` method.
+        unsafe {
+            let slice = self.moves.get_unchecked_mut(..self.len as usize);
+            &mut *(slice as *mut [MaybeUninit<Move>] as *mut [Move])
+        }
+    }
+
+    /// Returns a slice of the initialized moves.
+    #[inline]
+    pub fn as_slice(&self) -> &[Move] {
+        // SAFETY: We only cast the slice up to `self.len`, which we
+        // guarantee has been initialized via the `push` method.
+        unsafe {
+            let slice = self.moves.get_unchecked(..self.len as usize);
+            &*(slice as *const [MaybeUninit<Move>] as *const [Move])
+        }
+    }
+
+    /// Returns an iterator over the initialized moves.
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = Move> + '_ {
+        self.as_slice().iter().copied()
     }
 }
 
 impl Default for MoveList {
     fn default() -> Self {
-        Self([Move::default(); 256])
+        Self::new()
     }
 }
 
@@ -563,23 +596,19 @@ impl Index<MoveIndex> for MoveList {
     type Output = Move;
 
     fn index(&self, index: MoveIndex) -> &Self::Output {
-        unsafe { self.0.get_unchecked(index.v as usize) }
+        unsafe { self.as_slice().get_unchecked(index.v as usize) }
     }
 }
 
 impl IndexMut<MoveIndex> for MoveList {
     fn index_mut(&mut self, index: MoveIndex) -> &mut Self::Output {
-        unsafe { self.0.get_unchecked_mut(index.v as usize) }
+        unsafe { self.as_mut_slice().get_unchecked_mut(index.v as usize) }
     }
 }
 
 impl fmt::Display for MoveList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let moves = self
-            .0
-            .iter()
-            .take_while(|mov| mov.v != 0)
-            .map(|mov| mov.to_string());
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let moves = self.iter().map(|mov| mov.to_string());
         write!(f, "[{}]", moves.collect::<Vec<_>>().join(", "))
     }
 }

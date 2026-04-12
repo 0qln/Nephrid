@@ -332,7 +332,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
 
     // move ordering
     move_list
-        .as_mut_slice(n_moves.v)
+        .as_mut_slice()
         .sort_unstable_by_key(|&m| Reverse(PolicyInput::mvv_lva(pos.piece_info(), m)));
 
     // recurse
