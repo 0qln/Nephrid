@@ -39,7 +39,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
         &ct,
         &debug,
         |_, _, _, _| {},
-        move |pos| {
+        move |pos, list| {
             let mut list_skipped = MoveList::default();
             fold_legals::<false, _, _, _>(pos, (), |_, m| {
                 list_skipped.push(m);
@@ -48,7 +48,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
             .continue_value()
             .unwrap();
 
-            let mut list_filtered = MoveList::default();
+            let list_filtered = list;
             _ = fold_legals::<true, _, _, _>(pos, (), |_, m| {
                 if m.get_flag().is_capture() {
                     list_filtered.push(m);
@@ -74,8 +74,6 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
                         .collect_vec()
                 }
             );
-
-            list_filtered
         },
     );
 }

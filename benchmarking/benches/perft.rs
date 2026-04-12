@@ -8,7 +8,6 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::{
     core::{
         depth::Depth,
-        r#move::{MoveIndex, MoveList},
         move_iter::{fold_legals, sliding_piece::magics},
         position::Position,
         search::{limit::Limit, perft::perft_inner_collect},
@@ -27,15 +26,11 @@ fn bench_perft<const Q: bool>(mut pos: Position, depth: Depth) {
         &CancellationToken::default(),
         &DebugMode::default(),
         |_, _, _, _| {},
-        |pos| {
-            let mut list = MoveList::default();
-            let n = fold_legals::<Q, _, _, _>(pos, MoveIndex::from(0), |curr, m| {
-                list[curr] = m;
-                ControlFlow::Continue::<(), _>(curr + 1)
-            })
-            .continue_value()
-            .unwrap();
-            (list, n)
+        |pos, list| {
+            _ = fold_legals::<Q, _, _, _>(pos, (), |(), m| {
+                list.push(m);
+                ControlFlow::Continue::<(), ()>(())
+            });
         },
     )
 }

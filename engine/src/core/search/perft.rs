@@ -35,13 +35,11 @@ pub fn perft<const Q: bool>(
                 sync::out(&format!("{mov}: {count}"));
             }
         },
-        |pos| {
-            let mut list = MoveList::default();
+        |pos, list| {
             _ = fold_legals::<Q, _, _, _>(pos, (), |_, m| {
                 list.push(m);
                 ControlFlow::Continue::<(), _>(())
             });
-            list
         },
     )
 }
@@ -98,7 +96,7 @@ pub fn perft_inner_collect(
     cancellation_token: &CancellationToken,
     debug: &DebugMode,
     f: fn(Move, u64, Depth, bool) -> (),
-    moves: fn(&Position) -> MoveList,
+    mut moves: impl FnMut(&Position, &mut MoveList),
 ) -> u64 {
     match pos.get_turn() {
         colors::WHITE => perft_inner_collect_for::<perspectives::White>(
@@ -108,7 +106,7 @@ pub fn perft_inner_collect(
             cancellation_token,
             debug,
             f,
-            moves,
+            &mut moves,
         ),
         colors::BLACK => perft_inner_collect_for::<perspectives::Black>(
             pos,
@@ -117,7 +115,7 @@ pub fn perft_inner_collect(
             cancellation_token,
             debug,
             f,
-            moves,
+            &mut moves,
         ),
         _ => unreachable!("Invalid program state."),
     }
@@ -130,7 +128,7 @@ pub fn perft_inner_collect_for<P: Perspective>(
     cancellation_token: &CancellationToken,
     debug: &DebugMode,
     f: fn(Move, u64, Depth, bool) -> (),
-    moves: fn(&Position) -> MoveList,
+    moves: &mut impl FnMut(&Position, &mut MoveList),
 ) -> u64 {
     if cancellation_token.is_cancelled() {
         return 0;
@@ -140,10 +138,11 @@ pub fn perft_inner_collect_for<P: Perspective>(
         return 1;
     }
 
-    let move_list = moves(pos);
+    let mut move_list = MoveList::new();
+    moves(pos, &mut move_list);
 
     let mut acc = 0;
-    for m in move_list.iter() {
+    for &m in move_list.iter() {
         pos.make_move_for::<P>(m);
         let c = perft_inner_collect_for::<P::Opponent>(
             pos,

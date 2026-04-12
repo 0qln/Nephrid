@@ -3,7 +3,8 @@ use move_flags as f;
 use std::{
     fmt::Write,
     mem::MaybeUninit,
-    ops::{self, ControlFlow, Index, IndexMut},
+    ops::{self, ControlFlow},
+    slice,
 };
 use thiserror::Error;
 
@@ -540,7 +541,6 @@ impl MoveList {
     /// array.
     pub fn new() -> Self {
         Self {
-            // This is completely free at runtime.
             moves: [MaybeUninit::uninit(); 256],
             len: 0,
         }
@@ -566,10 +566,7 @@ impl MoveList {
     pub fn as_mut_slice(&mut self) -> &mut [Move] {
         // SAFETY: We only cast the slice up to `self.len`, which we
         // guarantee has been initialized via the `push` method.
-        unsafe {
-            let slice = self.moves.get_unchecked_mut(..self.len as usize);
-            &mut *(slice as *mut [MaybeUninit<Move>] as *mut [Move])
-        }
+        unsafe { slice::from_raw_parts_mut(self.moves.as_mut_ptr().cast(), self.len as usize) }
     }
 
     /// Returns a slice of the initialized moves.
@@ -577,36 +574,21 @@ impl MoveList {
     pub fn as_slice(&self) -> &[Move] {
         // SAFETY: We only cast the slice up to `self.len`, which we
         // guarantee has been initialized via the `push` method.
-        unsafe {
-            let slice = self.moves.get_unchecked(..self.len as usize);
-            &*(slice as *const [MaybeUninit<Move>] as *const [Move])
-        }
+        unsafe { slice::from_raw_parts(self.moves.as_ptr().cast(), self.len as usize) }
     }
 
     /// Returns an iterator over the initialized moves.
     #[inline]
-    pub fn iter(&self) -> impl Iterator<Item = Move> + '_ {
-        self.as_slice().iter().copied()
+    pub fn iter(&self) -> slice::Iter<'_, Move> {
+        // SAFETY: We only cast the slice up to `self.len`, which we
+        // guarantee has been initialized via the `push` method.
+        unsafe { slice::from_raw_parts(self.moves.as_ptr().cast(), self.len as usize) }.iter()
     }
 }
 
 impl Default for MoveList {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Index<MoveIndex> for MoveList {
-    type Output = Move;
-
-    fn index(&self, index: MoveIndex) -> &Self::Output {
-        unsafe { self.as_slice().get_unchecked(index.v as usize) }
-    }
-}
-
-impl IndexMut<MoveIndex> for MoveList {
-    fn index_mut(&mut self, index: MoveIndex) -> &mut Self::Output {
-        unsafe { self.as_mut_slice().get_unchecked_mut(index.v as usize) }
     }
 }
 
