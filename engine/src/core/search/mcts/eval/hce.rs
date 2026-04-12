@@ -2,7 +2,7 @@ use std::{cmp::Reverse, marker::PhantomData, ops};
 
 use crate::core::{
     color::{Perspective, perspectives},
-    r#move::{MoveIndex, MoveList},
+    r#move::MoveList,
     move_iter::{fold_legal_captures, fold_legal_moves},
     piece::PromoPieceType,
     position::CheckState,
@@ -313,21 +313,17 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
 
     // consider captures (and quiets if in check)
     let mut move_list = MoveList::default();
-    let n_moves = if in_check {
-        fold_legal_moves::<_, _, _>(pos, MoveIndex::from(0), |curr, m| {
-            move_list[curr] = m;
-            ControlFlow::Continue::<(), _>(curr + 1)
-        })
-        .continue_value()
-        .unwrap()
+    if in_check {
+        _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
+            move_list.push(m);
+            ControlFlow::Continue::<(), ()>(())
+        });
     }
     else {
-        fold_legal_captures::<_, _, _>(pos, MoveIndex::from(0), |curr, m| {
-            move_list[curr] = m;
-            ControlFlow::Continue::<(), _>(curr + 1)
-        })
-        .continue_value()
-        .unwrap()
+        _ = fold_legal_captures::<_, _, _>(pos, (), |_, m| {
+            move_list.push(m);
+            ControlFlow::Continue::<(), ()>(())
+        });
     };
 
     // move ordering
@@ -336,10 +332,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
         .sort_unstable_by_key(|&m| Reverse(PolicyInput::mvv_lva(pos.piece_info(), m)));
 
     // recurse
-    for i in 0..n_moves.v {
-        let i = MoveIndex::from(i);
-        let m = move_list[i];
-
+    for m in move_list.iter() {
         // delta pruning
         if !in_check && phase < TaperValue(16) {
             let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {

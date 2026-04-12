@@ -532,7 +532,7 @@ impl From<Move> for usize {
 #[derive(Debug)]
 pub struct MoveList {
     moves: [MaybeUninit<Move>; 256],
-    pub len: u8,
+    len: u8,
 }
 
 impl MoveList {
@@ -544,6 +544,10 @@ impl MoveList {
             moves: [MaybeUninit::uninit(); 256],
             len: 0,
         }
+    }
+
+    pub fn len(&self) -> u8 {
+        self.len
     }
 
     /// Pushes a move to the list.

@@ -5,7 +5,7 @@ use itertools::Itertools;
 use crate::{
     core::{
         depth::Depth,
-        r#move::{MoveIndex, MoveList},
+        r#move::MoveList,
         move_iter::{fold_legals, sliding_piece::magics},
         position::{FenExport, Position},
         search::{limit::Limit, perft::perft_inner_collect},
@@ -41,29 +41,26 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
         |_, _, _, _| {},
         move |pos| {
             let mut list_skipped = MoveList::default();
-            let n_skipped = fold_legals::<false, _, _, _>(pos, MoveIndex::from(0), |curr, m| {
-                list_skipped[curr] = m;
-                ControlFlow::Continue::<(), _>(curr + 1)
+            fold_legals::<false, _, _, _>(pos, (), |_, m| {
+                list_skipped.push(m);
+                ControlFlow::Continue::<(), ()>(())
             })
             .continue_value()
             .unwrap();
 
             let mut list_filtered = MoveList::default();
-            let n_filtered = fold_legals::<true, _, _, _>(pos, MoveIndex::from(0), |curr, m| {
+            _ = fold_legals::<true, _, _, _>(pos, (), |_, m| {
                 if m.get_flag().is_capture() {
-                    list_filtered[curr] = m;
-                    ControlFlow::Continue::<(), _>(curr + 1)
+                    list_filtered.push(m);
                 }
-                else {
-                    ControlFlow::Continue::<(), _>(curr)
-                }
+                ControlFlow::Continue::<(), ()>(())
             })
             .continue_value()
             .unwrap();
 
             assert_eq!(
-                n_skipped,
-                n_filtered,
+                list_skipped.len(),
+                list_filtered.len(),
                 "Move count mismatch in position: {} \nExpected: {} \nGot: {} \nDiff: {:?}",
                 FenExport(pos),
                 &list_filtered,
@@ -78,7 +75,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
                 }
             );
 
-            (list_filtered, n_filtered)
+            list_filtered
         },
     );
 }

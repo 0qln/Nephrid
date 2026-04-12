@@ -2,7 +2,7 @@ use crate::{
     core::{
         Depth, Limit, Move,
         color::{Perspective, colors, perspectives},
-        r#move::{MoveIndex, MoveList},
+        r#move::MoveList,
         move_iter::{fold_legal_moves, fold_legals},
         position::Position,
     },
@@ -37,13 +37,11 @@ pub fn perft<const Q: bool>(
         },
         |pos| {
             let mut list = MoveList::default();
-            let n = fold_legals::<Q, _, _, _>(pos, MoveIndex::from(0), |curr, m| {
-                list[curr] = m;
-                ControlFlow::Continue::<(), _>(curr + 1)
-            })
-            .continue_value()
-            .unwrap();
-            (list, n)
+            _ = fold_legals::<Q, _, _, _>(pos, (), |_, m| {
+                list.push(m);
+                ControlFlow::Continue::<(), _>(())
+            });
+            list
         },
     )
 }
@@ -100,7 +98,7 @@ pub fn perft_inner_collect(
     cancellation_token: &CancellationToken,
     debug: &DebugMode,
     f: fn(Move, u64, Depth, bool) -> (),
-    moves: fn(&Position) -> (MoveList, MoveIndex),
+    moves: fn(&Position) -> MoveList,
 ) -> u64 {
     match pos.get_turn() {
         colors::WHITE => perft_inner_collect_for::<perspectives::White>(
@@ -132,7 +130,7 @@ pub fn perft_inner_collect_for<P: Perspective>(
     cancellation_token: &CancellationToken,
     debug: &DebugMode,
     f: fn(Move, u64, Depth, bool) -> (),
-    moves: fn(&Position) -> (MoveList, MoveIndex),
+    moves: fn(&Position) -> MoveList,
 ) -> u64 {
     if cancellation_token.is_cancelled() {
         return 0;
@@ -142,13 +140,10 @@ pub fn perft_inner_collect_for<P: Perspective>(
         return 1;
     }
 
-    let (move_list, n_moves) = moves(pos);
+    let move_list = moves(pos);
 
     let mut acc = 0;
-    for i in 0..n_moves.v {
-        let i = MoveIndex::from(i);
-        let m = move_list[i];
-
+    for m in move_list.iter() {
         pos.make_move_for::<P>(m);
         let c = perft_inner_collect_for::<P::Opponent>(
             pos,
