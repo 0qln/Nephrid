@@ -180,6 +180,7 @@ impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
         let weights = PathBuf::from(config.weights_path());
         let device = B::Device::default();
         let nn = Model::try_from((weights, &device))?;
+        nn.warmup(config::MPV, &device);
         Ok(Self::new(nn, device, alpha, epsilon))
     }
 }

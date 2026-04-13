@@ -358,6 +358,30 @@ impl<B: Backend> Model<B> {
 
         (value_out, policy_out)
     }
+
+    pub fn warmup(&self, batch_size_max: usize, device: &B::Device) -> () {
+        // todo:
+        // this or just doing one batchsize and then filling with zeroes if not full?
+        for batch_size in 1..=batch_size_max {
+            let dummy_state = StateInputTensor::<B>::zeros([batch_size, STATE_INPUT_LEN], device);
+            let dummy_board = BoardInputTensor::<B>::zeros(
+                [
+                    batch_size,
+                    BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
+                    ranks::N_VARIANTS,
+                    files::N_VARIANTS,
+                ],
+                device,
+            );
+
+            let output = self.forward(dummy_board, dummy_state);
+
+            let _warmup = output.0.sum().into_scalar();
+            let _warmup = output.1.sum().into_scalar();
+        }
+
+        B::sync(&device);
+    }
 }
 
 #[derive(Config, Debug)]
@@ -436,25 +460,6 @@ impl<B: Backend> TryFrom<(PathBuf, &B::Device)> for Model<B> {
     fn try_from((path, device): (PathBuf, &B::Device)) -> Result<Self, Self::Error> {
         let record = CompactRecorder::new().load(path, device)?;
         let nn = ModelConfig::new().init(device).load_record(record);
-        // todo: figure out a workaround for the lazy eval of the burn framework
-        // let _warmup = nn
-        //     .forward(
-        //         BoardInputTensor::<B>::zeros(
-        //             [
-        //                 1,
-        //                 BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
-        //                 ranks::N_VARIANTS,
-        //                 files::N_VARIANTS,
-        //             ],
-        //             device,
-        //         ),
-        //         StateInputTensor::<B>::zeros([1, STATE_INPUT_LEN], device),
-        //     )
-        //     .1
-        //     .to_data()
-        //     .to_vec::<f32>();
-        // B::sync(&device);
-        // (the above does not work)
         Ok(nn)
     }
 }
