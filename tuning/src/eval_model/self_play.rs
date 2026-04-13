@@ -6,7 +6,7 @@ use engine::core::{
         CreateNNPartsError, MctsParts,
         back::MctsSolver,
         eval::nn::NNEvaluator,
-        node::{Branch, NodeData},
+        node::{Branch, NodeData, node_state::Evaluated},
         noise::DirichletNoiser,
         select::{Selector, puct},
     },
@@ -15,9 +15,9 @@ use itertools::Itertools;
 use rand::{SeedableRng, rngs::SmallRng};
 use rayon::{
     ThreadPoolBuilder,
-    iter::{IntoParallelRefIterator, ParallelIterator},
+    iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator},
 };
-use std::{error::Error, path::PathBuf, sync::Mutex, time::Instant};
+use std::{cmp::max, error::Error, path::PathBuf, sync::Mutex, time::Instant};
 
 use burn::{
     config::Config, module::AutodiffModule, prelude::Backend, tensor::backend::AutodiffBackend,
@@ -107,7 +107,8 @@ where
         fens.iter()
             .enumerate()
             .collect_vec()
-            .par_iter()
+            .into_par_iter()
+            .with_max_len(1)
             .flat_map(|(i, fen)| {
                 let i = i + 1; // so it starts at 1
                 let n = num_fens;
@@ -155,6 +156,7 @@ pub struct MctsTrainStrategy {
     terminal_nodes_begin: u64,
     iterations: u64,
     time_limit: Option<Instant>,
+    start_time: Option<Instant>,
 
     i: usize,
     n: usize,
@@ -177,12 +179,14 @@ impl MctsStrategy for MctsTrainStrategy {
 
     fn start(&mut self, tree: &mut Tree, pos: &Position, limit: &Limit) {
         let time_per_move = limit.time_per_move(pos);
+        let now = Instant::now();
 
         self.infer.start(tree, pos, limit);
         self.nodes_begin = tree.size() as u64;
         self.terminal_nodes_begin = tree.terminal_nodes() as u64;
-        self.time_limit = Some(Instant::now() + time_per_move);
         self.iterations = 0;
+        self.start_time = Some(now);
+        self.time_limit = Some(now + time_per_move);
     }
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
@@ -192,6 +196,7 @@ impl MctsStrategy for MctsTrainStrategy {
     }
 
     fn should_stop(&mut self, tree: &Tree, limit: &Limit) -> bool {
+        // check limits
         if limit.is_active()
             && limit.is_reached(
                 tree.size() as u64 - self.nodes_begin,
@@ -204,16 +209,31 @@ impl MctsStrategy for MctsTrainStrategy {
             return true;
         }
 
+        // proven win/loss at root.
+        let root = tree.node(tree.root());
+        let root_value = root.value();
+        if root_value.is_proven_win() || root_value.is_proven_loss() {
+            return true;
+        }
+
         false
     }
 
     fn result(&mut self, tree: &mut Tree) -> Self::Result {
         let inference_result = self.infer.result(tree);
-        log::debug!(target: "data", "[MCTS {:>2}/{:<2}] Iterations: {} Nodes: {}", self.i, self.n, self.iterations, tree.size() as u64 - self.nodes_begin);
-        // todo: log::info!(target: "games", "Base Policy: {:#?}",
-        // tree.get_root().borrow().iter_branches().map(|b| format!("[{}] p: {}, WDL
-        // found: {}", b.mov(), b.policy(), todo!("Gather how many w/d/l we have found
-        // in the game tree during mcts"))).collect_vec());
+        let iters = self.iterations;
+        let nodes = tree.size() as u64 - self.nodes_begin;
+        let now = Instant::now();
+        let elapsed = now.saturating_duration_since(self.start_time.unwrap());
+        let millis = elapsed.as_millis();
+        let nps = (nodes as u128 * 1_000_000_000) / max(elapsed.as_nanos(), 1);
+        let root = tree.node_switch(tree.root()).get::<Evaluated>().unwrap();
+        let policy = tree.branches(root).iter().map(|b| b.policy()).collect_vec();
+        let entropy = entropy(policy.iter().cloned());
+        let seldepth = tree.maxheight();
+        let depth = tree.compute_minheight();
+        let nps_str = if millis > 0 { &format!(" {nps}nps ") } else { "" };
+        log::debug!(target: "data", "[MCTS {:>3}/{:<3}] {} iters  {} nodes  {}ms {nps_str} {}d/{}sd  {} S(π)", self.i, self.n, iters, nodes, millis, depth, seldepth, entropy);
         (inference_result,)
     }
 }
@@ -240,32 +260,38 @@ pub struct State {
 #[derive(Debug, Default, Clone)]
 pub struct Stats {
     pub policy_avg: f32,
-    pub policy_variance: f32,
+    pub policy_stddev: f32,
     pub policy_entropy: f32,
+}
+
+fn entropy(xs: impl Iterator<Item = f32>) -> f32 {
+    -xs.filter(|&x| x > 0.).map(|x| x * x.log2()).sum::<f32>()
+}
+
+fn avg(xs: &[f32]) -> f32 {
+    xs.iter().sum::<f32>() / xs.len() as f32
+}
+
+fn variance(xs: &[f32]) -> f32 {
+    let avg = avg(xs);
+    xs.iter().map(|x| (x - avg).powi(2)).sum::<f32>() / xs.len() as f32
+}
+
+fn stddev(xs: &[f32]) -> f32 {
+    variance(xs).sqrt()
 }
 
 impl Stats {
     pub fn new(guess: Guess) -> Self {
         let policy_values = guess.policy();
 
-        let policy_avg = policy_values.sum() / policy_values.len() as f32;
-
-        let variance = policy_values
-            .iter()
-            .map(|p| (p - policy_avg).powi(2))
-            .sum::<f32>()
-            / policy_values.len() as f32;
-        let policy_variance = variance.sqrt();
-
-        let policy_entropy = -policy_values
-            .iter()
-            .filter(|&p| p > 0.0)
-            .map(|p| p * p.log2())
-            .sum::<f32>();
+        let policy_avg = avg(policy_values.as_slice());
+        let policy_stddev = stddev(policy_values.as_slice());
+        let policy_entropy = entropy(policy_values.iter());
 
         Self {
             policy_avg,
-            policy_variance,
+            policy_stddev,
             policy_entropy,
         }
     }

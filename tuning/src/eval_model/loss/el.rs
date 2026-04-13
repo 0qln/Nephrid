@@ -50,12 +50,6 @@ impl From<&ExactLossTarget> for PolicyTarget {
 
         let raw_policy = normalize_visits(&visit_counts, 1.);
 
-        // println!("Policy target:");
-        // for &(mov, visits) in &target.visit_counts.0 {
-        //     let policy = raw_policy[usize::from(mov)];
-        //     println!("[{mov}]: {visits:>4} - {policy:6>.4}");
-        // }
-
         Self(RawPolicy::new(raw_policy))
     }
 }
@@ -97,14 +91,37 @@ impl From<&Tree> for ExactLossTarget {
     fn from(tree: &Tree) -> Self {
         Self {
             visit_counts: {
-                let root = tree.node_switch(tree.root()).get::<Evaluated>();
-                let root = root.expect("Root should be evaluated");
-                VisitCounts(
-                    tree.branches(root)
-                        .into_iter()
-                        .map(|branch| (branch.mov(), tree.node(branch.node()).visits()))
-                        .collect_vec(),
-                )
+                let root_id = tree.root();
+                let root = tree.node_switch(root_id).get::<Evaluated>();
+                let root_node = tree.node(root_id);
+                let root_value = root_node.value();
+                let root_evaluated = root.expect("Root should be evaluated");
+
+                let branches = tree.branches(root_evaluated);
+
+                // override for proven wins (proven loss for parent node is a proven win for our
+                // current root)
+                if root_value.is_proven_loss() {
+                    VisitCounts(
+                        branches
+                            .into_iter()
+                            .map(|branch| {
+                                let child_node = tree.node(branch.node());
+                                let is_winning_move = child_node.value().is_proven_win();
+                                (branch.mov(), if is_winning_move { 1 } else { 0 })
+                            })
+                            .collect_vec(),
+                    )
+                }
+                // otherwise use visit counts
+                else {
+                    VisitCounts(
+                        branches
+                            .into_iter()
+                            .map(|branch| (branch.mov(), tree.node(branch.node()).visits()))
+                            .collect_vec(),
+                    )
+                }
             },
         }
     }

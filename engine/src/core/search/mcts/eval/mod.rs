@@ -326,6 +326,10 @@ impl Policy {
     pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut f32> {
         self.0.iter_mut()
     }
+
+    pub fn as_slice(&self) -> &[f32] {
+        self.0.as_slice()
+    }
 }
 
 /// Applies the softmax function to `xs` in-place, yielding a policy.

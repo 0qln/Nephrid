@@ -11,7 +11,7 @@
     "epsilon": 0.00001
   },
   "limit": {
-    "max_iterations": 400,
+    "max_iterations": 200,
     "max_nodes": null,
     "min_nodes": null,
     "max_terminal_nodes": null

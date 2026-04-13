@@ -5,6 +5,7 @@ use crate::{
     self_play::{Decision, LimitConfig, MctsConfig, SelfplayConfig, Target, generate_batch},
 };
 use burn::{
+    module::AutodiffModule,
     prelude::ToElement,
     train::{TrainOutput, ValidStep},
 };
@@ -145,50 +146,55 @@ pub fn train<B: AutodiffBackend>(
             );
         }
 
-        let mut val_loss_sum = 0.0;
-        let mut val_value_loss_sum = 0.0;
-        let mut val_policy_loss_sum = 0.0;
-        let mut val_batches = 0;
+        // Test
+        {
+            let mut val_loss_sum = 0.0;
+            let mut val_value_loss_sum = 0.0;
+            let mut val_policy_loss_sum = 0.0;
+            let mut val_batches = 0;
 
-        for (_val_iteration, fens_batch) in test.iter().enumerate() {
-            // Generate playouts for the validation batch
-            // (You might want to pass a smaller LimitConfig here if MCTS validation takes
-            // too long)
-            let playout_items = generate_batch::<B, ExactLossPlayoutItem>(
-                &model,
-                &fens_batch,
-                &limit,
-                &self_play,
-                &mcts_cfg,
-            )
-            .expect("Failed to generate validation batch");
+            for (_val_iteration, fens_batch) in test.iter().enumerate() {
+                // Generate playouts for the validation batch
+                // (You might want to pass a smaller LimitConfig here if MCTS validation takes
+                // too long)
+                let playout_items = generate_batch::<_, ExactLossPlayoutItem>(
+                    &model,
+                    &fens_batch,
+                    &limit,
+                    &self_play,
+                    &mcts_cfg,
+                )
+                .expect("Failed to generate validation batch");
 
-            let batcher = PlayoutBatcher;
-            for chunk in playout_items.chunks(config.mini_batch_size) {
-                let playouts_batch = batcher.batch(chunk.to_vec(), &device);
+                let model = model.valid();
 
-                // Use ValidStep to evaluate without computing gradients
-                // If your model uses dropout, you may need to call `.valid()` on it first
-                // depending on your Burn version
-                let result = ValidStep::step(&model, playouts_batch);
+                let batcher = PlayoutBatcher;
+                for chunk in playout_items.chunks(config.mini_batch_size) {
+                    let playouts_batch = batcher.batch(chunk.to_vec(), &device);
 
-                // Accumulate losses for averaging
-                val_loss_sum += result.loss.into_scalar().to_f64();
-                val_value_loss_sum += result.value_loss.into_scalar().to_f64();
-                val_policy_loss_sum += result.policy_loss.into_scalar().to_f64();
-                val_batches += 1;
+                    // Use ValidStep to evaluate without computing gradients
+                    // If your model uses dropout, you may need to call `.valid()` on it first
+                    // depending on your Burn version
+                    let result = ValidStep::step(&model, playouts_batch);
+
+                    // Accumulate losses for averaging
+                    val_loss_sum += result.loss.into_scalar().to_f64();
+                    val_value_loss_sum += result.value_loss.into_scalar().to_f64();
+                    val_policy_loss_sum += result.policy_loss.into_scalar().to_f64();
+                    val_batches += 1;
+                }
             }
-        }
 
-        // Log the averaged validation metrics for the epoch
-        if val_batches > 0 {
-            log::info!(target: "valid",
-                "[Test - Epoch {}] Avg Loss {:.5} (Value: {:.5}, Policy: {:.5})",
-                epoch,
-                val_loss_sum / val_batches as f64,
-                val_value_loss_sum / val_batches as f64,
-                val_policy_loss_sum / val_batches as f64,
-            );
+            // Log the averaged validation metrics for the epoch
+            if val_batches > 0 {
+                log::info!(target: "valid",
+                    "[Test - Epoch {}] Avg Loss {:.5} (Value: {:.5}, Policy: {:.5})",
+                    epoch,
+                    val_loss_sum / val_batches as f64,
+                    val_value_loss_sum / val_batches as f64,
+                    val_policy_loss_sum / val_batches as f64,
+                );
+            }
         }
     }
 
