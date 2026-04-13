@@ -14,8 +14,8 @@ use super::*;
 
 #[derive(Debug, PartialEq)]
 pub struct InputFloats {
-    board: BoardInputFloats,
-    state: StateInputFloats,
+    pub board: BoardInputFloats,
+    pub state: StateInputFloats,
 }
 
 impl InputFloats {
@@ -30,7 +30,7 @@ impl InputFloats {
 #[derive(Debug)]
 pub struct TraceInfo {
     /// Input floats for the eval model.
-    inputs: InputFloats,
+    pub inputs: InputFloats,
 }
 
 impl TraceInfo {
@@ -46,6 +46,33 @@ pub struct NNEvaluator<'a, 'b, B: Backend> {
 
     // Device on which the nn will run.
     device: &'b B::Device,
+}
+
+/// Returns the history of the given selected leaf in following order:
+/// - the oldest board state is the first index
+/// - the youngest board state is the last index
+pub fn get_node_history<const X: usize>(
+    selection: &Selection<X, TraceInfo>,
+    leaf: &BatchItem<TraceInfo>,
+) -> Vec<BoardInputFloats> {
+    let mut vec: Vec<BoardInputFloats> = vec![];
+
+    // 1. Insert the leaf's own board input first
+    vec.insert(0, leaf.data.inputs.board);
+
+    // 2. Traverse up the tree to gather parent board inputs
+    _ = selection.try_fold_up(leaf.parent, (), |_, node| {
+        if vec.len() == BOARD_INPUT_HISTORY {
+            return ControlFlow::Break(());
+        }
+
+        let board_input = node.data.inputs.board;
+        vec.insert(0, board_input);
+
+        ControlFlow::Continue::<(), ()>(())
+    });
+
+    vec
 }
 
 impl<'a, 'b, B: Backend> NNEvaluator<'a, 'b, B> {
@@ -67,40 +94,12 @@ impl<'a, 'b, B: Backend> NNEvaluator<'a, 'b, B> {
         // concatenate the board inputs along the batch dimension.
         Tensor::cat(
             batch
-                .map(|leaf| self.get_node_history(selection, leaf))
+                .map(|leaf| get_node_history(selection, leaf))
                 // concatenate the board inputs along the channel dimension.
                 .map(|history| nn::board_history_input(&history, self.device()))
                 .collect_vec(),
             0,
         )
-    }
-
-    /// Returns the history of the given selected leaf in following order:
-    /// - the oldest board state is the first index
-    /// - the youngest board state is the last index
-    fn get_node_history<const X: usize>(
-        &self,
-        selection: &Selection<X, TraceInfo>,
-        leaf: &BatchItem<TraceInfo>,
-    ) -> Vec<BoardInputFloats> {
-        let mut vec: Vec<BoardInputFloats> = vec![];
-
-        // 1. Insert the leaf's own board input first
-        vec.insert(0, leaf.data.inputs.board);
-
-        // 2. Traverse up the tree to gather parent board inputs
-        _ = selection.try_fold_up(leaf.parent, (), |_, node| {
-            if vec.len() == BOARD_INPUT_HISTORY {
-                return ControlFlow::Break(());
-            }
-
-            let board_input = node.data.inputs.board;
-            vec.insert(0, board_input);
-
-            ControlFlow::Continue::<(), ()>(())
-        });
-
-        vec
     }
 
     fn build_state_batch<'c>(
