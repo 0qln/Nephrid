@@ -354,6 +354,12 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
 
         let branch_count = tree.node(parent_node).branch_count();
 
+        // todo:
+        // it was not benchmarked that this is actually better than the previous
+        // budgeting strategy. for sure it is better when training the
+        // eval-model, but maybe not vor eval/hce and not when actually
+        // inferencing? this should be benchmarked and optimized before merge
+        // into main.
         let mut scores = (0..branch_count.v)
             .map(|branch_index| {
                 let branch_id = tree
