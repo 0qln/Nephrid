@@ -35,7 +35,7 @@ use engine::core::{
 const OUT_DIR: &str = "out/eval_model/test";
 const SRC_DIR: &str = "src/eval_model/test";
 const DIRICHLET_ALPHA: f32 = 0.3;
-const DIRICHLET_EPS: f32 = 0.25;
+// const DIRICHLET_EPS: f32 = 0.25;
 
 pub mod logs {
     use super::*;
