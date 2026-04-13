@@ -184,10 +184,9 @@ impl std::fmt::Debug for RawPolicy {
 }
 
 // todo: this better belongs in `nn/mod.rs`, right?
-// todo: can be pub
 /// Raw logits outputs of the network.
 #[derive(PartialEq, Clone)]
-pub struct RawLogits([f32; POLICY_OUTPUTS]);
+pub struct RawLogits(pub [f32; POLICY_OUTPUTS]);
 
 impl std::fmt::Debug for RawLogits {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
