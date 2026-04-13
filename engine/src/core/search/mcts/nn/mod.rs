@@ -436,6 +436,25 @@ impl<B: Backend> TryFrom<(PathBuf, &B::Device)> for Model<B> {
     fn try_from((path, device): (PathBuf, &B::Device)) -> Result<Self, Self::Error> {
         let record = CompactRecorder::new().load(path, device)?;
         let nn = ModelConfig::new().init(device).load_record(record);
+        // todo: figure out a workaround for the lazy eval of the burn framework
+        // let _warmup = nn
+        //     .forward(
+        //         BoardInputTensor::<B>::zeros(
+        //             [
+        //                 1,
+        //                 BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
+        //                 ranks::N_VARIANTS,
+        //                 files::N_VARIANTS,
+        //             ],
+        //             device,
+        //         ),
+        //         StateInputTensor::<B>::zeros([1, STATE_INPUT_LEN], device),
+        //     )
+        //     .1
+        //     .to_data()
+        //     .to_vec::<f32>();
+        // B::sync(&device);
+        // (the above does not work)
         Ok(nn)
     }
 }
