@@ -595,6 +595,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     ) -> usize {
         let pos = &mut self.position;
 
+        // todo: is this good? not even sure tbh... should be benchmarked
         let (used_budget, item) = if self.limiter.should_stop(limiter::Params { pos, depth }) {
             // todo: also add the budget as a weight here?
             (budget, PhaseItem::Unused)
