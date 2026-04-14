@@ -1,6 +1,6 @@
 use crate::{
     data::build_dataloader,
-    io::{get_resume_state, load_weights, save_checkpoint, setup_environment},
+    io::{load_weights, save_checkpoint, setup_environment},
     loss::PlayoutBatcher,
     self_play::{Decision, LimitConfig, MctsConfig, SelfplayConfig, Target, generate_batch},
 };
@@ -9,6 +9,7 @@ use burn::{
     prelude::ToElement,
     train::{TrainOutput, ValidStep},
 };
+use clap::Parser;
 use rand::{SeedableRng, seq::SliceRandom};
 
 use burn::{
@@ -45,12 +46,27 @@ fn main() {
     type AutodiffBackend = Autodiff<Backend>;
 
     let device = CudaDevice::default();
-    log::info!(target: "train", "Device: {:?}", device);
+    let args = Args::parse();
 
-    let train_dir = "tuning/out/eval_model/main";
-    let config = get_config("tuning/src/eval_model/config.json");
+    let base_dir = "tuning/out/eval_model/main";
+    let phase_name = format!("phase{}", args.phase);
+    let output_dir = format!("{base_dir}/{phase_name}");
+    let artifact_dir = format!("{output_dir}/artifacts");
+    let config_file = format!("tuning/src/eval_model/{phase_name}-config.json");
 
-    train::<AutodiffBackend>(train_dir, config, device);
+    let config = get_config(&config_file);
+
+    let resume_action = io::resolve_checkpoint(base_dir, args.phase);
+
+    train::<AutodiffBackend>(&phase_name, &config, &artifact_dir, resume_action, &device);
+}
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// The phase number to train (e.g., 1, 2, 3)
+    #[arg(short, long)]
+    phase: usize,
 }
 
 #[derive(Config, Debug)]
@@ -87,36 +103,50 @@ pub struct TrainingConfig {
 }
 
 pub fn train<B: AutodiffBackend>(
-    output_dir: &str,
-    config: TrainingConfig,
-    device: B::Device,
+    phase_name: &str,
+    config: &TrainingConfig,
+    artifact_dir: &str,
+    resume_action: io::ResumeAction,
+    device: &B::Device,
 ) -> Option<String> {
-    let artifact_dir = format!("{output_dir}/artifacts");
-    setup_environment::<B>(&artifact_dir, output_dir, &config, &device);
+    let (start_epoch, next_iteration, mut current_model_path) = match resume_action {
+        io::ResumeAction::Resume(e, i, path) => {
+            log::info!(target: "train", "Resuming {} from epoch {}, iteration {}", phase_name, e, i);
+            (e, i, Some(path))
+        }
+        io::ResumeAction::Transfer(path) => {
+            log::info!(target: "train", "Starting {} fresh, utilizing weights from: {}", phase_name, path);
+            (1, 0, Some(path))
+        }
+        io::ResumeAction::Scratch => {
+            log::info!(target: "train", "Starting {} entirely from scratch.", phase_name);
+            (1, 0, None)
+        }
+    };
+
+    log_mdc::insert("p", phase_name);
+
+    setup_environment::<B>(&artifact_dir, &config, &device);
 
     let train = build_dataloader::<B>(&config, "train");
     let test = build_dataloader::<B>(&config, "test");
 
-    // 1. Discover where we left off
-    let (start_epoch, next_iteration, mut latest_checkpoint) = get_resume_state(&artifact_dir);
-
-    // 2. Initialize Model & Optimizer
     let limit = config.limit.init();
-    let self_play = config.self_play;
-    let mcts_cfg = config.mcts;
+    let self_play = &config.self_play;
+    let mcts_cfg = &config.mcts;
     let mut optim = config.optimizer.init();
     let mut model = config.model.init::<B>(&device);
-    model = load_weights(model, &device, &latest_checkpoint);
 
-    // 3. Main Training Loop
+    model = load_weights(model, &device, &current_model_path);
+
     let mut rng = SmallRng::seed_from_u64(config.seed);
     for epoch in start_epoch..=config.num_epochs {
         let skip_count = if epoch == start_epoch { next_iteration } else { 0 };
 
         for (iteration, fens_batch) in train.iter().enumerate().skip(skip_count) {
             // Generate and shuffle MCTS playouts
-            let mut playout_items = generate_batch::<B, ExactLossPlayoutItem>(
-                &model,
+            let mut playout_items = generate_batch::<_, ExactLossPlayoutItem>(
+                model.valid(),
                 &fens_batch,
                 &limit,
                 &self_play,
@@ -128,7 +158,7 @@ pub fn train<B: AutodiffBackend>(
             // Process Mini-batches
             let batcher = PlayoutBatcher;
             for (chunk_idx, chunk) in playout_items.chunks(config.mini_batch_size).enumerate() {
-                let playouts_batch = batcher.batch(chunk.to_vec(), &device);
+                let playouts_batch = batcher.batch(chunk.to_vec(), device);
                 let result = TrainStep::step(&model, playouts_batch);
 
                 log_step(epoch, iteration, chunk_idx, &result);
@@ -142,7 +172,7 @@ pub fn train<B: AutodiffBackend>(
                 &artifact_dir,
                 epoch,
                 iteration,
-                &mut latest_checkpoint,
+                &mut current_model_path,
             );
         }
 
@@ -153,12 +183,12 @@ pub fn train<B: AutodiffBackend>(
             let mut val_policy_loss_sum = 0.0;
             let mut val_batches = 0;
 
+            let model = model.valid();
+
             for (_val_iteration, fens_batch) in test.iter().enumerate() {
                 // Generate playouts for the validation batch
-                // (You might want to pass a smaller LimitConfig here if MCTS validation takes
-                // too long)
                 let playout_items = generate_batch::<_, ExactLossPlayoutItem>(
-                    &model,
+                    model.clone(),
                     &fens_batch,
                     &limit,
                     &self_play,
@@ -166,15 +196,11 @@ pub fn train<B: AutodiffBackend>(
                 )
                 .expect("Failed to generate validation batch");
 
-                let model = model.valid();
-
                 let batcher = PlayoutBatcher;
                 for chunk in playout_items.chunks(config.mini_batch_size) {
-                    let playouts_batch = batcher.batch(chunk.to_vec(), &device);
+                    let playouts_batch = batcher.batch(chunk.to_vec(), device);
 
                     // Use ValidStep to evaluate without computing gradients
-                    // If your model uses dropout, you may need to call `.valid()` on it first
-                    // depending on your Burn version
                     let result = ValidStep::step(&model, playouts_batch);
 
                     // Accumulate losses for averaging
@@ -187,7 +213,7 @@ pub fn train<B: AutodiffBackend>(
 
             // Log the averaged validation metrics for the epoch
             if val_batches > 0 {
-                log::info!(target: "valid",
+                log::info!(target: "test",
                     "[Test - Epoch {}] Avg Loss {:.5} (Value: {:.5}, Policy: {:.5})",
                     epoch,
                     val_loss_sum / val_batches as f64,
@@ -198,7 +224,7 @@ pub fn train<B: AutodiffBackend>(
         }
     }
 
-    latest_checkpoint
+    current_model_path
 }
 
 fn log_step<B: AutodiffBackend>(

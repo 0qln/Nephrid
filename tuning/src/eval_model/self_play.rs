@@ -1,3 +1,4 @@
+use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use engine::core::{
     config::Configuration,
     ply::Ply,
@@ -5,9 +6,17 @@ use engine::core::{
     search::mcts::{
         CreateNNPartsError, MctsParts,
         back::MctsSolver,
-        eval::nn::NNEvaluator,
-        node::{Branch, NodeData, node_state::Evaluated},
+        eval::{
+            Evaluation, Evaluator, Policy, Quality, RawLogits,
+            nn::{TraceInfo, get_node_history},
+        },
+        nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor},
+        node::{
+            self, Branch, NodeData,
+            node_state::{Evaluated, HasBranches},
+        },
         noise::DirichletNoiser,
+        search::{BatchItem, Selection},
         select::{Selector, puct},
     },
 };
@@ -17,11 +26,15 @@ use rayon::{
     ThreadPoolBuilder,
     iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator},
 };
-use std::{cmp::max, error::Error, path::PathBuf, sync::Mutex, time::Instant};
-
-use burn::{
-    config::Config, module::AutodiffModule, prelude::Backend, tensor::backend::AutodiffBackend,
+use std::{
+    cmp::max,
+    error::Error,
+    sync::atomic::{AtomicUsize, Ordering},
+    thread,
+    time::{Duration, Instant},
 };
+
+use burn::{Tensor, config::Config, prelude::Backend};
 use engine::{
     core::{
         Game,
@@ -52,6 +65,9 @@ use crate::data::{BoardInput, FenItemRaw, StateInput};
 pub struct SelfplayConfig {
     pub concurrency: usize,
     pub stop_after: Option<u16>,
+    pub eval_models: usize,
+    pub eval_batch_size: usize,
+    pub eval_batch_wait_timeout_ms: u64,
 }
 
 #[derive(Config, Debug)]
@@ -84,8 +100,8 @@ pub trait PlayoutItem: for<'a> From<(GameResult, &'a [Decision<Self::Target>])> 
     type Target: Target;
 }
 
-pub fn generate_batch<B: AutodiffBackend, P: PlayoutItem + Send>(
-    model: &Model<B>,
+pub fn generate_batch<B: Backend, P: PlayoutItem + Send>(
+    model: Model<B>,
     fens: &[FenItemRaw],
     limit: &Limit,
     config: &SelfplayConfig,
@@ -99,9 +115,22 @@ where
         .num_threads(config.concurrency)
         .build()?;
 
-    let mutex = Mutex::new(model.to_owned());
+    let device = B::Device::default();
+
+    let worker_tx = spawn_inference_workers(
+        model.clone(),
+        device.clone(),
+        config.eval_models,
+        config.eval_batch_size,
+        Duration::from_millis(config.eval_batch_wait_timeout_ms),
+    );
 
     let num_fens = fens.len();
+
+    let games_total = fens.len();
+    let games_completed = AtomicUsize::new(0);
+
+    let time_start = Instant::now();
 
     let playout_items = pool.install(|| {
         fens.iter()
@@ -115,29 +144,32 @@ where
 
                 let fen = fen.fen.clone();
 
-                let model = {
-                    let lock_result = mutex.lock();
-                    let model_lock = lock_result.expect("Unable to acquire lock.");
-                    model_lock.valid()
-                };
+                let parts = MctsTrainParts::new(
+                    BatchedNNEvaluator::new(worker_tx.clone()),
+                    mcts.dirichlet_alpha,
+                    mcts.dirichlet_epsilon,
+                );
 
-                let device = B::Device::default();
-
-                match self_play::<_, P>(i, n, &fen, limit.clone(), config, mcts, model, device) {
+                match self_play::<P>(i, n, &fen, limit.clone(), config, &parts) {
                     Ok(result) => {
-                        // log pgn information
                         let pgn = result.0.to_pgn();
-                        log::info!(target: "data", "[FEN {i:>2}/{n:<2}] Generated game:\n{pgn}");
+                        log::info!(target: "data", "[FEN {i:>3}/{n:<3}] Generated game:\n{pgn}");
 
-                        // map each playout_item to a training target.
-                        let items = result.1;
-                        items
+                        games_completed.fetch_add(1, Ordering::Relaxed);
+                        let games_completed = games_completed.load(Ordering::Relaxed);
+                        let elapsed = time_start.elapsed().as_secs_f32();
+                        let games_per_sec = games_completed as f32 / elapsed;
+                        let games_per_hour = games_per_sec * 60. * 60.;
+                        let perc_complete = (games_completed as f32 / games_total as f32) * 100.0;
+                        log::info!(target: "data", "[FEN] {perc_complete:>3.2}% complete  {games_per_hour} games/h  ");
+
+                        result.1
                             .iter()
                             .map(|x| x.playout_item.clone())
                             .collect::<Vec<_>>()
                     }
                     Err(err) => {
-                        log::error!(target: "data", "[FEN {i:>2}/{n:<2}] Error while playing fen '{fen}':\n{err}");
+                        log::error!(target: "data", "[FEN {i:>3}/{n:<3}] Error while playing fen '{fen}':\n{err}");
                         vec![]
                     }
                 }
@@ -233,7 +265,7 @@ impl MctsStrategy for MctsTrainStrategy {
         let seldepth = tree.maxheight();
         let depth = tree.compute_minheight();
         let nps_str = if millis > 0 { &format!(" {nps}nps ") } else { "" };
-        log::debug!(target: "data", "[MCTS {:>3}/{:<3}] {} iters  {} nodes  {}ms {nps_str} {}d/{}sd  {} S(π)", self.i, self.n, iters, nodes, millis, depth, seldepth, entropy);
+        log::debug!(target: "data", "[MCTS {:>3}/{:<3}] {} iters  {} nodes  {}ms {nps_str} {}d/{}sd  {:.3} H(π)", self.i, self.n, iters, nodes, millis, depth, seldepth, entropy);
         (inference_result,)
     }
 }
@@ -328,15 +360,13 @@ pub struct SelfPlayResult<P: PlayoutItem> {
     pub decision: Decision<P::Target>,
 }
 
-pub fn self_play<B: Backend, P: PlayoutItem>(
+pub fn self_play<P: PlayoutItem>(
     i: usize,
     n: usize,
     fen: &str,
     limit: Limit,
     config: &SelfplayConfig,
-    mcts_cfg: &MctsConfig,
-    model: Model<B>,
-    device: B::Device,
+    parts: &MctsTrainParts,
 ) -> Result<(Game, Vec<SelfPlayResult<P>>), Box<dyn Error>>
 where
     P::Target: Clone,
@@ -344,12 +374,6 @@ where
     let mut game = Game::from_fen(FenImport(&mut Tokenizer::new(fen)))?;
 
     let mut decisions = Vec::<Decision<P::Target>>::new();
-    let nn_state = MctsTrainParts::new(
-        model,
-        device,
-        mcts_cfg.dirichlet_alpha,
-        mcts_cfg.dirichlet_epsilon,
-    );
     let mut mcts_state = SearchState::default();
 
     log::debug!(target: "data", "[FEN {i:>2}/{n:<2}] Starting self-play with fen '{fen}'");
@@ -359,8 +383,8 @@ where
         let mut ply = Ply { v: 0 };
         loop {
             if config.stop_after.is_some_and(|stop| ply.v > stop) {
-                game_result = GameResult::Draw;
-                break;
+                // ignore bad self plays
+                return Ok((game, vec![]));
             }
             else {
                 ply.v += 1;
@@ -372,13 +396,7 @@ where
             }
 
             let strat = MctsTrainStrategy::new(i, n);
-            let result = mcts(
-                game.position_mut(),
-                &nn_state,
-                &mut mcts_state,
-                &limit,
-                strat,
-            );
+            let result = mcts(game.position_mut(), parts, &mut mcts_state, &limit, strat);
 
             let pos = game.position();
             let turn = pos.get_turn();
@@ -410,9 +428,9 @@ where
     let mut result = Vec::<SelfPlayResult<_>>::new();
 
     for (index, decision) in decisions.iter().enumerate() {
-        // Subtract (HISTORY - 1) so that the inclusive range length is exactly HISTORY.
         let decisions_begin = index.saturating_sub(BOARD_INPUT_HISTORY - 1);
-        let decisions = &decisions[decisions_begin..=index];
+        let decisions_end = index;
+        let decisions = &decisions[decisions_begin..=decisions_end];
         let playout_item = P::from((eval, decisions));
 
         result.push(SelfPlayResult {
@@ -425,26 +443,25 @@ where
 }
 
 #[derive(Debug)]
-pub struct MctsTrainParts<B: Backend> {
-    pub nn: Box<Model<B>>,
-    pub device: B::Device,
+pub struct MctsTrainParts {
+    pub evaluator: BatchedNNEvaluator,
     alpha: f32,
     epsilon: f32,
 }
 
-impl<'a, B: Backend> MctsParts for &'a MctsTrainParts<B> {
+impl<'a> MctsParts for &'a MctsTrainParts {
     type Selector = MctsTrainSelector;
     type Backprop = MctsSolver;
-    type Evaluator = NNEvaluator<'a, 'a, B>;
+    type Evaluator = BatchedNNEvaluator;
     type Noiser = DirichletNoiser;
-    type Instance = MctsTrainParts<B>;
+    type Instance = MctsTrainParts;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        NNEvaluator::<_>::new(&self.nn, &self.device)
+        self.evaluator.clone()
     }
 
     fn backprop(&self) -> Self::Backprop {
@@ -457,27 +474,17 @@ impl<'a, B: Backend> MctsParts for &'a MctsTrainParts<B> {
     }
 }
 
-impl<B: Backend> TryFrom<&Configuration> for MctsTrainParts<B> {
+impl TryFrom<&Configuration> for MctsTrainParts {
     type Error = CreateNNPartsError;
 
-    fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
-        let alpha = config.dirichlet_alpha();
-        let epsilon = config.dirichlet_epsilon();
-        let weights = PathBuf::from(config.weights_path());
-        let device = B::Device::default();
-        let nn = Model::try_from((weights, &device))?;
-        Ok(Self::new(nn, device, alpha, epsilon))
+    fn try_from(_config: &Configuration) -> Result<Self, Self::Error> {
+        unimplemented!("dont use this here")
     }
 }
 
-impl<B: Backend> MctsTrainParts<B> {
-    pub fn new(nn: Model<B>, device: B::Device, alpha: f32, epsilon: f32) -> Self {
-        Self {
-            nn: Box::new(nn),
-            device,
-            alpha,
-            epsilon,
-        }
+impl MctsTrainParts {
+    pub fn new(evaluator: BatchedNNEvaluator, alpha: f32, epsilon: f32) -> Self {
+        Self { evaluator, alpha, epsilon }
     }
 }
 
@@ -525,5 +532,182 @@ impl Selector for MctsTrainSelector {
 
     fn min_score(&self) -> Self::Score {
         puct::Score::new(f32::NEG_INFINITY)
+    }
+}
+
+/// The request sent from an MCTS thread to the Inference Worker.
+pub struct NNRequest {
+    pub board_history: Vec<BoardInputFloats>,
+    pub state: StateInputFloats,
+    /// The channel where the worker will send the evaluation back to the
+    /// specific MCTS thread.
+    pub responder: Sender<NNResponse>,
+}
+
+/// The raw output from the neural network sent back to the MCTS thread.
+pub struct NNResponse {
+    pub value: f32,
+    pub raw_logits: RawLogits,
+}
+
+/// Spawns a pool of dedicated inference threads pulling from a single
+/// load-balanced queue.
+pub fn spawn_inference_workers<B: Backend>(
+    model: Model<B>,
+    device: B::Device,
+    num_workers: usize,
+    batch_size_max: usize,
+    batch_wait_timeout: Duration,
+) -> Sender<NNRequest> {
+    // 1. Create a single, bounded global queue.
+    // Bounding it to ~4x the total batch capacity provides natural backpressure,
+    // preventing the 256 MCTS threads from OOM-crashing your RAM.
+    let capacity = batch_size_max * num_workers * 4;
+    let (req_tx, req_rx) = bounded::<NNRequest>(capacity);
+
+    // 2. Spawn the requested number of worker threads
+    for _ in 0..num_workers {
+        let req_rx = req_rx.clone();
+        let model = model.clone();
+        let device = device.clone();
+
+        thread::spawn(move || {
+            let mut batch: Vec<NNRequest> = Vec::with_capacity(batch_size_max);
+
+            loop {
+                // Block and wait for the first request to start a new batch
+                let Ok(first_req) = req_rx.recv()
+                else {
+                    break; // Channel closed, gracefully exit thread
+                };
+                batch.push(first_req);
+
+                // Try to fill the rest of the batch up to `batch_size_max`
+                while batch.len() < batch_size_max {
+                    // Since your config has eval_batch_wait_timeout_ms: 0,
+                    // this will instantly drain available requests and fire.
+                    match req_rx.recv_timeout(batch_wait_timeout) {
+                        Ok(req) => batch.push(req),
+                        Err(RecvTimeoutError::Timeout) => break, // Fire what we have
+                        Err(RecvTimeoutError::Disconnected) => break,
+                    }
+                }
+
+                // --- TENSOR CONSTRUCTION AND FORWARD PASS ---
+                let board_batch = BoardInputTensor::<B>::cat(
+                    batch
+                        .iter()
+                        .map(|req| nn::board_history_input(&req.board_history, &device))
+                        .collect_vec(),
+                    0,
+                );
+
+                let state_batch = StateInputTensor::<B>::cat(
+                    batch
+                        .iter()
+                        .map(|req| Tensor::from_floats([req.state], &device))
+                        .collect_vec(),
+                    0,
+                );
+
+                let (values, raw_policies) = model.forward(board_batch, state_batch);
+
+                let values_data = values.into_data().as_slice::<f32>().unwrap().to_vec();
+                let policies_data = raw_policies.into_data().as_slice::<f32>().unwrap().to_vec();
+
+                // --- ROUTE RESPONSES BACK ---
+                for (i, req) in batch.drain(..).enumerate() {
+                    let value = values_data[i];
+                    let mut raw_logits = RawLogits::null();
+
+                    let start_idx = i * POLICY_OUTPUTS;
+                    raw_logits
+                        .0
+                        .copy_from_slice(&policies_data[start_idx..start_idx + POLICY_OUTPUTS]);
+
+                    let _ = req.responder.send(NNResponse { value, raw_logits });
+                }
+            }
+        });
+    }
+
+    req_tx
+}
+
+#[derive(Clone, Debug)]
+pub struct BatchedNNEvaluator {
+    /// The global queue to send requests to the Inference Worker.
+    worker_tx: Sender<NNRequest>,
+}
+
+impl BatchedNNEvaluator {
+    pub fn new(worker_tx: Sender<NNRequest>) -> Self {
+        Self { worker_tx }
+    }
+}
+
+impl Evaluator for BatchedNNEvaluator {
+    type TraceData = TraceInfo;
+
+    fn trace<S: HasBranches>(
+        &self,
+        _node: node::NodeId<S>,
+        _tree: &Tree,
+        pos: &mut Position,
+    ) -> Self::TraceData {
+        TraceInfo::new(pos)
+    }
+
+    fn eval_batch<const X: usize>(
+        &mut self,
+        tree: &Tree,
+        selection: &Selection<X, Self::TraceData>,
+        leafs: &[&BatchItem<Self::TraceData>],
+    ) -> impl Iterator<Item = Evaluation> {
+        let batch_size = leafs.len();
+        if batch_size == 0 {
+            return vec![].into_iter();
+        }
+
+        // Create a one-off channel just for this specific evaluation batch
+        let (resp_tx, resp_rx) = bounded::<NNResponse>(batch_size);
+
+        // 1. Submit all leaves to the inference worker
+        for &leaf in leafs {
+            let history = get_node_history(selection, leaf);
+            let state = leaf.data.inputs.state;
+
+            let _ = self.worker_tx.send(NNRequest {
+                board_history: history,
+                state,
+                responder: resp_tx.clone(),
+            });
+        }
+
+        // 2. Wait for the worker to process them and reply.
+        // Because the worker processes requests in the exact order they are received,
+        // the responses will arrive in the same order we sent them.
+        let mut evaluations = Vec::with_capacity(batch_size);
+
+        for &leaf in leafs {
+            // This blocks the MCTS thread until the GPU is done with this specific node.
+            let response = resp_rx
+                .recv()
+                .expect("Inference worker died or disconnected");
+
+            let turn = leaf.turn;
+            let moves = tree.move_indices(leaf.node);
+
+            let raw_logits = response.raw_logits;
+            let guess = Guess {
+                relative_to: turn,
+                quality: Quality::new(response.value),
+                policy: Policy::from_raw_logits(&raw_logits, moves, 1.0).expect("a policy"),
+            };
+
+            evaluations.push(Evaluation::Guess(Box::new(guess)));
+        }
+
+        evaluations.into_iter()
     }
 }

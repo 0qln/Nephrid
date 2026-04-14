@@ -2,13 +2,13 @@ appenders:
   stdout:
     kind: console
     encoder:
-      pattern: "{d(%H:%M:%S)} {l} {t} - {m}{n}"
+      pattern: "{d(%H:%M:%S)} {l} {t} {K(p)} - {m}{n}"
 
   file:
     kind: file
     path: "tuning/out/eval_model/main/main.log"
     encoder:
-      pattern: "{d(%Y-%m-%d %H:%M:%S)} {l} {t} - {m}{n}"
+      pattern: "{d(%Y-%m-%d %H:%M:%S)} {l} {t} {K(p)} - {m}{n}"
 
 root:
   level: debug

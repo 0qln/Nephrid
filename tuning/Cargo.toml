@@ -9,8 +9,12 @@ rand = "0.9.0"
 burn = { version = "0.19.1", features = ["ndarray", "train"] }
 burn-cuda = "0.19.1"
 rayon = "1.11.0"
-log = "0.4.28"
-log4rs = "1.4.0"
+log = { version = "0.4.28", features = ["kv"] }
+log4rs = { version = "1.4.0", features = ["log_kv"] }
+crossbeam-channel = "0.5.15"
+log-mdc = "0.1.0"
+clap = { version = "4.5.0", features = ["derive"] }
+clap_derive = { version = "4.5.0" }
 
 [[bin]]
 name = "eval-model"

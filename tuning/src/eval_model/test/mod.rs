@@ -2,7 +2,7 @@ use std::{env::var, path::PathBuf};
 
 use crate::{
     data::{FenDataset, FenItemRaw},
-    io::get_config,
+    io::{ResumeAction, get_config},
     loss::ValueTarget,
     self_play::MctsTrainStrategy,
     train,
@@ -34,21 +34,47 @@ use engine::core::{
 
 const OUT_DIR: &str = "out/eval_model/test";
 const SRC_DIR: &str = "src/eval_model/test";
-const DIRICHLET_ALPHA: f32 = 0.3;
-// const DIRICHLET_EPS: f32 = 0.25;
+
+fn proj_root() -> String {
+    var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable")
+}
+
+fn config_file(test_name: &str) -> String {
+    let mut buf = PathBuf::new();
+    buf.push(&proj_root());
+    buf.push("tuning");
+    buf.push(SRC_DIR);
+    buf.push(format!("{}.json", test_name));
+    buf.to_str().unwrap().to_string()
+}
+
+fn log_config_file() -> String {
+    let mut buf = PathBuf::new();
+    buf.push(proj_root());
+    buf.push("tuning");
+    buf.push(SRC_DIR);
+    buf.push("log4rs.yml");
+    buf.to_str().unwrap().to_string()
+}
+
+fn artifact_dir(test_name: &str) -> String {
+    let mut buf = PathBuf::new();
+    buf.push(&proj_root());
+    buf.push("tuning");
+    buf.push(OUT_DIR);
+    buf.push(test_name);
+    buf.push("artifacts");
+    buf.to_str().unwrap().to_string()
+}
 
 pub mod logs {
     use super::*;
 
     pub fn init() {
-        let mut buf = PathBuf::new();
-        buf.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
-        buf.push("tuning");
-        buf.push(SRC_DIR);
-        buf.push("log4rs.yml");
-        let config = buf.to_str().unwrap();
+        let config = log_config_file();
+
         // Ignore the result so tests don't panic if initialized twice
-        match log4rs::init_file(config, Default::default()) {
+        match log4rs::init_file(&config, Default::default()) {
             Ok(()) => {
                 println!("Loaded logging config from {config}");
             }
@@ -193,27 +219,26 @@ pub fn learn_mate_in_1() {
     type AutodiffBackend = Autodiff<Backend>;
 
     let device = CudaDevice::default();
-    log::info!(target: "test", "Device: {:?}", device);
 
-    let mut config_path = PathBuf::new();
-    config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
-    config_path.push("tuning");
-    config_path.push(SRC_DIR);
-    config_path.push("config-mate1.json");
+    let test_name = "learn_mate_in_1";
+    let phase_name = test_name;
+    let config_file = config_file(test_name);
+    let artifact_dir = artifact_dir(test_name);
 
-    let config = get_config(config_path.to_str().expect("Invalid config path"));
-
-    let num_fens_total = config.epd_dataset_fens_total;
-    let fen_path = &config.epd_dataset_path.clone();
+    let config = get_config(&config_file);
 
     let result_weights = train::<AutodiffBackend>(
-        &format!("{OUT_DIR}/learn_mate_in_1"),
-        config,
-        device.clone(),
+        phase_name,
+        &config,
+        &artifact_dir,
+        ResumeAction::Scratch,
+        &device,
     )
-    .expect("No epoch was completed");
+    .unwrap();
 
     // test
+    let num_fens_total = config.epd_dataset_fens_total;
+    let fen_path = &config.epd_dataset_path.clone();
     let test_fen = FenDataset::from_epd(fen_path, "train", num_fens_total);
     let fen = Dataset::<FenItemRaw>::get(&test_fen, 0).expect("no fen in dataset");
     let mut pos = Position::from_fen(&fen.fen).expect("Bad fen");
@@ -228,7 +253,7 @@ pub fn learn_mate_in_1() {
             .load_record(record);
 
         let mut mcts_state = SearchState::default();
-        let parts = NNParts::new(model, device, DIRICHLET_ALPHA, 0.);
+        let parts = NNParts::new(model, device, 0.3, 0.);
 
         let limit = Limit {
             is_active: true,
@@ -289,25 +314,25 @@ pub fn learn_mate_in_2() {
     let device = CudaDevice::default();
     log::info!("Device: {:?}", device);
 
-    let mut config_path = PathBuf::new();
-    config_path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
-    config_path.push("tuning");
-    config_path.push(SRC_DIR);
-    config_path.push("config-mate2.json");
+    let test_name = "learn_mate_in_2";
+    let phase_name = test_name;
+    let config_file = config_file(test_name);
+    let artifact_dir = artifact_dir(test_name);
 
-    let config = get_config(config_path.to_str().expect("Invalid config path"));
-
-    let num_fens_total = config.epd_dataset_fens_total;
-    let fen_path = &config.epd_dataset_path.clone();
+    let config = get_config(&config_file);
 
     let result_weights = train::<AutodiffBackend>(
-        &format!("{OUT_DIR}/learn_mate_in_2"),
-        config,
-        device.clone(),
+        phase_name,
+        &config,
+        &artifact_dir,
+        ResumeAction::Scratch,
+        &device,
     )
-    .expect("No epoch was completed");
+    .unwrap();
 
     // test
+    let num_fens_total = config.epd_dataset_fens_total;
+    let fen_path = &config.epd_dataset_path.clone();
     let test_fen = FenDataset::from_epd(fen_path, "train", num_fens_total);
     let fen = Dataset::<FenItemRaw>::get(&test_fen, 0).expect("no fen in dataset");
     let mut pos = Position::from_fen(&fen.fen).expect("Bad fen");
@@ -328,7 +353,7 @@ pub fn learn_mate_in_2() {
         };
 
         let mut mcts_state = SearchState::default();
-        let nn_state = NNParts::new(model, device, DIRICHLET_ALPHA, 0.);
+        let nn_state = NNParts::new(model, device, 0.3, 0.);
 
         for _ in 0..3 {
             let result = mcts(

@@ -14,6 +14,38 @@ pub fn get_config(path: &str) -> TrainingConfig {
     TrainingConfig::load(&path).expect("Couldn't load config.json at {path:?}")
 }
 
+pub enum ResumeAction {
+    /// Resume an existing phase: (Start Epoch, Start Iteration, Path)
+    Resume(usize, usize, String),
+    /// Start a new phase using previous phase's weights: (Path)
+    Transfer(String),
+    /// Start completely from scratch
+    Scratch,
+}
+
+pub fn resolve_checkpoint(base_dir: &str, target_phase: usize) -> ResumeAction {
+    // 1. Try to resume the current phase
+    let current_artifact_dir = format!("{base_dir}/phase{target_phase}/artifacts");
+    let (epoch, iter, path) = get_resume_state(&current_artifact_dir);
+
+    if let Some(p) = path {
+        return ResumeAction::Resume(epoch, iter, p);
+    }
+
+    // 2. Waterfall backwards to find the highest completed previous phase
+    for p in (1..target_phase).rev() {
+        let prev_artifact_dir = format!("{base_dir}/phase{p}/artifacts");
+        let (_, _, prev_path) = get_resume_state(&prev_artifact_dir);
+
+        if let Some(p) = prev_path {
+            return ResumeAction::Transfer(p);
+        }
+    }
+
+    // 3. No previous checkpoints found
+    ResumeAction::Scratch
+}
+
 /// Scans the artifact directory and returns: (Start Epoch, Next Iteration,
 /// Option<Checkpoint Path>)
 pub fn get_resume_state(artifact_dir: &str) -> (usize, usize, Option<String>) {
@@ -24,7 +56,7 @@ pub fn get_resume_state(artifact_dir: &str) -> (usize, usize, Option<String>) {
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| {
             let name = entry.path().file_stem()?.to_str()?.to_owned();
-            let (e_str, i_str) = name.strip_prefix("model_e-")?.split_once("_i-")?;
+            let (e_str, i_str) = name.strip_prefix(&format!("model_e-"))?.split_once("_i-")?;
 
             let e = e_str.parse::<usize>().ok()?;
             let i = i_str.parse::<usize>().ok()?;
@@ -41,7 +73,6 @@ pub fn get_resume_state(artifact_dir: &str) -> (usize, usize, Option<String>) {
 
 pub fn setup_environment<B: AutodiffBackend>(
     artifact_dir: &str,
-    _output_dir: &str,
     config: &TrainingConfig,
     device: &B::Device,
 ) {
@@ -74,7 +105,7 @@ pub fn save_checkpoint<B: AutodiffBackend>(
     iteration: usize,
     last_checkpoint: &mut Option<String>,
 ) {
-    let weights_path = format!("{artifact_dir}/model_e-{epoch}_i-{iteration}");
+    let weights_path = format!("{artifact_dir}/model_e-{epoch:0>4}_i-{iteration:0>5}");
 
     model
         .clone()

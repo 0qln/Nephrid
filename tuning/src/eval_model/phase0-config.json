@@ -11,23 +11,26 @@
     "epsilon": 0.00001
   },
   "limit": {
-    "max_iterations": 400,
+    "max_iterations": 50,
     "max_nodes": null,
     "min_nodes": null,
     "max_terminal_nodes": null
   },
   "self_play": {
-    "concurrency": 32,
-    "stop_after": 20
+    "concurrency": 256,
+    "stop_after": 4,
+    "eval_models": 2,
+    "eval_batch_size": 512,
+    "eval_batch_wait_timeout_ms": 0
   },
   "mcts": {
     "dirichlet_alpha": 0.3,
     "dirichlet_epsilon": 0.25
   },
-  "epd_dataset_path": "phase1/mate_in_1_and_2.epd",
-  "epd_dataset_fens_total": 10000,
+  "epd_dataset_path": "phase0/default.epd",
+  "epd_dataset_fens_total": 200000,
   "num_epochs": 1000,
-  "batch_size": 256,
+  "batch_size": 512,
   "mini_batch_size": 512,
   "seed": 3735928559,
   "learning_rate": 0.0002
