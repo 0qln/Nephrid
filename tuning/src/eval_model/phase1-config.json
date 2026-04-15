@@ -4,7 +4,9 @@
     "num_res_blocks": 8
   },
   "optimizer": {
-    "weight_decay": 0.01,
+    "weight_decay": {
+      "penalty": 0.01
+    },
     "grad_clipping": null,
     "beta_1": 0.8,
     "beta_2": 0.999,
