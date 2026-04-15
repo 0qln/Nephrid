@@ -6,6 +6,10 @@
 
 - larger batchsizes in earlier phases to encourage discovery of more basic rules
 
+#### Phase 0 (MateIn1s)
+
+overfitting the value to a win seems to resolve itself in later phases, because atleast we can easily farm a good policy.
+
 ### Selfplay
 
 - even in early phases, where we learn mateInX, we allow for deeper than X plies in the selfplay to allow to punish bad moves
