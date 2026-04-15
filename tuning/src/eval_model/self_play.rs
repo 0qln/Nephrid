@@ -1,7 +1,6 @@
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use engine::core::{
     config::Configuration,
-    ply::Ply,
     position::PgnResultValue,
     search::mcts::{
         CreateNNPartsError, MctsParts,
@@ -64,7 +63,7 @@ use crate::data::{BoardInput, FenItemRaw, StateInput};
 #[derive(Config, Debug)]
 pub struct SelfplayConfig {
     pub concurrency: usize,
-    pub stop_after: Option<u16>,
+    pub allowed_moves: Option<u16>,
     pub eval_models: usize,
     pub eval_batch_size: usize,
     pub eval_batch_wait_timeout_ms: u64,
@@ -100,13 +99,19 @@ pub trait PlayoutItem: for<'a> From<(GameResult, &'a [Decision<Self::Target>])> 
     type Target: Target;
 }
 
+pub struct BatchStats {
+    pub games_total: usize,
+    pub games_completed: usize,
+    pub games_solved: usize,
+}
+
 pub fn generate_batch<B: Backend, P: PlayoutItem + Send>(
     model: Model<B>,
     fens: &[FenItemRaw],
     limit: &Limit,
     config: &SelfplayConfig,
     mcts: &MctsConfig,
-) -> Result<Vec<P>, Box<dyn Error>>
+) -> Result<(Vec<P>, BatchStats), Box<dyn Error>>
 where
     P: Clone,
     P::Target: Clone,
@@ -129,6 +134,7 @@ where
 
     let games_total = fens.len();
     let games_completed = AtomicUsize::new(0);
+    let games_solved = AtomicUsize::new(0);
 
     let time_start = Instant::now();
 
@@ -163,6 +169,10 @@ where
                         let perc_complete = (games_completed as f32 / games_total as f32) * 100.0;
                         log::info!(target: "data", "[FEN] {perc_complete:>3.2}% complete  {games_per_hour} games/h  ");
 
+                        if !result.1.is_empty() {
+                            games_solved.fetch_add(1, Ordering::Relaxed);
+                        }
+
                         result.1
                             .iter()
                             .map(|x| x.playout_item.clone())
@@ -177,7 +187,13 @@ where
             .collect::<Vec<_>>()
     });
 
-    Ok(playout_items)
+    let stats = BatchStats {
+        games_total,
+        games_completed: games_completed.load(Ordering::Relaxed),
+        games_solved: games_solved.load(Ordering::Relaxed),
+    };
+
+    Ok((playout_items, stats))
 }
 
 #[derive(Default, Debug)]
@@ -380,19 +396,22 @@ where
 
     let eval: GameResult = {
         let game_result;
-        let mut ply = Ply { v: 0 };
+        let mut completed_moves = 0;
         loop {
-            if config.stop_after.is_some_and(|stop| ply.v > stop) {
+            if let Some(result) = game.position().game_result() {
+                game_result = result;
+                break;
+            }
+
+            if config
+                .allowed_moves
+                .is_some_and(|max_moves| completed_moves >= max_moves)
+            {
+                // todo: don't do this in later phases
                 // ignore bad self plays
                 return Ok((game, vec![]));
             }
             else {
-                ply.v += 1;
-            }
-
-            if let Some(result) = game.position().game_result() {
-                game_result = result;
-                break;
             }
 
             let strat = MctsTrainStrategy::new(i, n);
@@ -419,6 +438,7 @@ where
 
             game.push_move(mov);
             mcts_state.advance_to(mov);
+            completed_moves += 1;
         }
         game_result
     };

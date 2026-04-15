@@ -2,7 +2,9 @@ use crate::{
     data::build_dataloader,
     io::{load_weights, save_checkpoint, setup_environment},
     loss::PlayoutBatcher,
-    self_play::{Decision, LimitConfig, MctsConfig, SelfplayConfig, Target, generate_batch},
+    self_play::{
+        BatchStats, Decision, LimitConfig, MctsConfig, SelfplayConfig, Target, generate_batch,
+    },
 };
 use burn::{
     module::AutodiffModule,
@@ -145,7 +147,7 @@ pub fn train<B: AutodiffBackend>(
 
         for (iteration, fens_batch) in train.iter().enumerate().skip(skip_count) {
             // Generate and shuffle MCTS playouts
-            let mut playout_items = generate_batch::<_, ExactLossPlayoutItem>(
+            let (mut playout_items, stats) = generate_batch::<_, ExactLossPlayoutItem>(
                 model.valid(),
                 &fens_batch,
                 &limit,
@@ -161,7 +163,7 @@ pub fn train<B: AutodiffBackend>(
                 let playouts_batch = batcher.batch(chunk.to_vec(), device);
                 let result = TrainStep::step(&model, playouts_batch);
 
-                log_step(epoch, iteration, chunk_idx, &result);
+                log_step(epoch, iteration, chunk_idx, &result, &stats);
 
                 model = optim.step(config.learning_rate, model, result.grads);
             }
@@ -182,12 +184,13 @@ pub fn train<B: AutodiffBackend>(
             let mut val_value_loss_sum = 0.0;
             let mut val_policy_loss_sum = 0.0;
             let mut val_batches = 0;
+            let mut solved_games = 0.;
 
             let model = model.valid();
 
             for (_val_iteration, fens_batch) in test.iter().enumerate() {
                 // Generate playouts for the validation batch
-                let playout_items = generate_batch::<_, ExactLossPlayoutItem>(
+                let (playout_items, stats) = generate_batch::<_, ExactLossPlayoutItem>(
                     model.clone(),
                     &fens_batch,
                     &limit,
@@ -208,17 +211,19 @@ pub fn train<B: AutodiffBackend>(
                     val_value_loss_sum += result.value_loss.into_scalar().to_f64();
                     val_policy_loss_sum += result.policy_loss.into_scalar().to_f64();
                     val_batches += 1;
+                    solved_games += stats.games_solved as f64 / stats.games_total as f64 * 100.0;
                 }
             }
 
             // Log the averaged validation metrics for the epoch
             if val_batches > 0 {
                 log::info!(target: "test",
-                    "[Test - Epoch {}] Avg Loss {:.5} (Value: {:.5}, Policy: {:.5})",
+                    "[Test - Epoch {}] Avg Loss {:.5} (Value: {:.5}, Policy: {:.5}, Solved: {:.2}%)",
                     epoch,
                     val_loss_sum / val_batches as f64,
                     val_value_loss_sum / val_batches as f64,
                     val_policy_loss_sum / val_batches as f64,
+                    solved_games / val_batches as f64
                 );
             }
         }
@@ -232,14 +237,16 @@ fn log_step<B: AutodiffBackend>(
     iteration: usize,
     chunk_idx: usize,
     result: &TrainOutput<LossOutput<B>>,
+    stats: &BatchStats,
 ) {
     log::info!(target: "train",
-            "[Train - Epoch {} - Iteration {}.{}] Loss {:.5} (Value: {:.5}, Policy: {:.5})",
+            "[Train - Epoch {} - Iteration {}.{}] Loss {:.5} (Value: {:.5}, Policy: {:.5}, Solved: {:.2}%)",
             epoch,
             iteration,
             chunk_idx,
             result.item.loss.clone().into_scalar(),
             result.item.value_loss.clone().into_scalar(),
             result.item.policy_loss.clone().into_scalar(),
+            stats.games_solved as f64 / stats.games_total as f64 * 100.0,
     );
 }

@@ -4,10 +4,10 @@
     "num_res_blocks": 8
   },
   "optimizer": {
-    "weight_decay": null,
+    "weight_decay": 0.01,
     "grad_clipping": null,
     "beta_1": 0.9,
-    "beta_2": 0.999,
+    "beta_2": 0.99,
     "epsilon": 0.00001
   },
   "limit": {
@@ -18,7 +18,7 @@
   },
   "self_play": {
     "concurrency": 256,
-    "stop_after": 4,
+    "allowed_moves": 6,
     "eval_models": 2,
     "eval_batch_size": 512,
     "eval_batch_wait_timeout_ms": 0
@@ -29,9 +29,9 @@
   },
   "epd_dataset_path": "phase0/default.epd",
   "epd_dataset_fens_total": 200000,
-  "num_epochs": 1000,
+  "num_epochs": 20,
   "batch_size": 512,
   "mini_batch_size": 512,
   "seed": 3735928559,
-  "learning_rate": 0.0002
+  "learning_rate": 0.001
 }

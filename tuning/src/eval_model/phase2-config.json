@@ -6,8 +6,8 @@
   "optimizer": {
     "weight_decay": 0.01,
     "grad_clipping": null,
-    "beta_1": 0.8,
-    "beta_2": 0.999,
+    "beta_1": 0.7,
+    "beta_2": 0.9995,
     "epsilon": 0.00001
   },
   "limit": {
@@ -33,5 +33,5 @@
   "batch_size": 256,
   "mini_batch_size": 512,
   "seed": 3735928559,
-  "learning_rate": 0.0005
+  "learning_rate": 0.0003
 }

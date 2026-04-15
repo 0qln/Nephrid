@@ -33,7 +33,7 @@ pub fn resolve_checkpoint(base_dir: &str, target_phase: usize) -> ResumeAction {
     }
 
     // 2. Waterfall backwards to find the highest completed previous phase
-    for p in (1..target_phase).rev() {
+    for p in (0..target_phase).rev() {
         let prev_artifact_dir = format!("{base_dir}/phase{p}/artifacts");
         let (_, _, prev_path) = get_resume_state(&prev_artifact_dir);
 
