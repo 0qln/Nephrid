@@ -19,6 +19,7 @@
   "self_play": {
     "concurrency": 256,
     "allowed_moves": 4,
+    "unfinished_games": "discard",
     "eval_models": 2,
     "eval_batch_size": 512,
     "eval_batch_wait_timeout_ms": 1

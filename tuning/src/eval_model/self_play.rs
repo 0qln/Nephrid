@@ -64,9 +64,27 @@ use crate::data::{BoardInput, FenItemRaw, StateInput};
 pub struct SelfplayConfig {
     pub concurrency: usize,
     pub allowed_moves: Option<u16>,
+    pub unfinished_games: String,
     pub eval_models: usize,
     pub eval_batch_size: usize,
     pub eval_batch_wait_timeout_ms: u64,
+}
+
+pub enum UnfinishedGameHandling {
+    Discard,
+    Draw,
+}
+
+impl TryFrom<&str> for UnfinishedGameHandling {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value.to_lowercase().as_str() {
+            "discard" => Ok(Self::Discard),
+            "draw" => Ok(Self::Draw),
+            _ => Err(format!("Invalid unfinished game handling: {value}")),
+        }
+    }
 }
 
 #[derive(Config, Debug)]
@@ -387,6 +405,10 @@ pub fn self_play<P: PlayoutItem>(
 where
     P::Target: Clone,
 {
+    let unfinished_game_handling =
+        UnfinishedGameHandling::try_from(config.unfinished_games.as_str())
+            .map_err(|e| format!("Invalid config for unfinished games handling: {e}"))?;
+
     let mut game = Game::from_fen(FenImport(&mut Tokenizer::new(fen)))?;
 
     let mut decisions = Vec::<Decision<P::Target>>::new();
@@ -407,11 +429,15 @@ where
                 .allowed_moves
                 .is_some_and(|max_moves| completed_moves >= max_moves)
             {
-                // todo: don't do this in later phases
-                // ignore bad self plays
-                return Ok((game, vec![]));
-            }
-            else {
+                match unfinished_game_handling {
+                    UnfinishedGameHandling::Discard => {
+                        return Ok((game, vec![]));
+                    }
+                    UnfinishedGameHandling::Draw => {
+                        game_result = GameResult::Draw;
+                        break;
+                    }
+                }
             }
 
             let strat = MctsTrainStrategy::new(i, n);
