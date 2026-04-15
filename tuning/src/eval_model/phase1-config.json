@@ -29,7 +29,7 @@
   },
   "epd_dataset_path": "phase1/default.epd",
   "epd_dataset_fens_total": 50000,
-  "num_epochs": 100,
+  "num_epochs": 10,
   "batch_size": 256,
   "mini_batch_size": 512,
   "seed": 3735928559,

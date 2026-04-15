@@ -18,7 +18,7 @@
   },
   "self_play": {
     "concurrency": 256,
-    "allowed_moves": 4,
+    "allowed_moves": 6,
     "eval_models": 2,
     "eval_batch_size": 512,
     "eval_batch_wait_timeout_ms": 1
@@ -27,9 +27,9 @@
     "dirichlet_alpha": 0.3,
     "dirichlet_epsilon": 0.25
   },
-  "epd_dataset_path": "phase1/default.epd",
+  "epd_dataset_path": "phase2/default.epd",
   "epd_dataset_fens_total": 50000,
-  "num_epochs": 100,
+  "num_epochs": 10,
   "batch_size": 256,
   "mini_batch_size": 512,
   "seed": 3735928559,

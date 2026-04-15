@@ -28,7 +28,7 @@
     "dirichlet_epsilon": 0.25
   },
   "epd_dataset_path": "phase0/default.epd",
-  "epd_dataset_fens_total": 200000,
+  "epd_dataset_fens_total": 300000,
   "num_epochs": 20,
   "batch_size": 512,
   "mini_batch_size": 512,
