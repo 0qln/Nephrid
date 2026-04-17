@@ -512,20 +512,6 @@ impl From<Move> for usize {
     }
 }
 
-// todo
-// impl TryFrom<(usize, &Position)> for Move {
-//     type Error = ValueOutOfRangeError<usize>;
-
-//     /// Inverse of the above...
-//     fn try_from(value: (usize, &Position)) -> Result<Self, Self::Error> {
-//         if value > Move::MASK_SQ {
-//             // promo
-//         } else {
-//             // normal
-//         }
-//     }
-// }
-
 /// A list of moves in a single position.
 /// Since the 218 is the maximum number of moves in a single position,
 /// we can use a fixed length array to store the moves and by using a
