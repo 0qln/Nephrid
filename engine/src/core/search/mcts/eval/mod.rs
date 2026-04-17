@@ -18,9 +18,9 @@ use std::ops::ControlFlow;
 #[cfg(test)]
 pub mod test;
 
+pub mod hce;
 pub mod nn;
 pub mod playout;
-pub mod hce;
 
 pub trait Evaluator {
     type TraceData;
@@ -167,8 +167,16 @@ pub struct RawPolicy([f32; POLICY_OUTPUTS]);
 
 impl RawPolicy {
     pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
-        // todo:
-        // assertions that `p` is a probability distribution (non-negative, sums to 1)
+        const EPS: f32 = 1e-6;
+        debug_assert!(
+            p.iter().all(|&x| x >= -EPS),
+            "policy probabilities must be non-negative"
+        );
+        debug_assert!(
+            (p.iter().sum::<f32>() - 1.0).abs() < EPS,
+            "policy probabilities must sum to 1",
+        );
+
         Self(p)
     }
 
@@ -437,6 +445,12 @@ impl Quality {
 impl From<Value> for Quality {
     fn from(v: Value) -> Self {
         Self::new((v.0 - 0.5) * 2.)
+    }
+}
+
+impl fmt::Display for Quality {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
