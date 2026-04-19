@@ -1,9 +1,10 @@
 use crate::{
+    caching::CachingConfig,
     data::build_dataloader,
     io::{load_weights, save_checkpoint, setup_environment},
-    loss::PlayoutBatcher,
+    loss::{LossConfig, PlayoutBatcher, el::WeightedModel},
     self_play::{
-        BatchStats, Decision, LimitConfig, MctsConfig, SelfplayConfig, Target, generate_batch,
+        BatchGenerator, BatchStats, Decision, LimitConfig, MctsConfig, SelfplayConfig, Target,
     },
 };
 use burn::{
@@ -34,6 +35,7 @@ use crate::{
 #[cfg(test)]
 pub mod test;
 
+pub mod caching;
 pub mod data;
 pub mod io;
 pub mod loss;
@@ -73,6 +75,10 @@ struct Args {
 
 #[derive(Config, Debug)]
 pub struct TrainingConfig {
+    pub caching: CachingConfig,
+
+    pub loss: LossConfig,
+
     pub model: ModelConfig,
 
     pub optimizer: AdamConfig,
@@ -128,18 +134,23 @@ pub fn train<B: AutodiffBackend>(
 
     log_mdc::insert("p", phase_name);
 
-    setup_environment::<B>(&artifact_dir, &config, &device);
+    setup_environment::<B>(artifact_dir, config, device);
 
-    let train = build_dataloader::<B>(&config, "train");
-    let test = build_dataloader::<B>(&config, "test");
+    let train = build_dataloader::<B>(config, "train");
+    let test = build_dataloader::<B>(config, "test");
 
     let limit = config.limit.init();
     let self_play = &config.self_play;
     let mcts_cfg = &config.mcts;
+    let value_weight = config.loss.value_loss_weight;
+    let policy_weight = config.loss.policy_loss_weight;
+    let mut model = config.model.init::<B>(device);
     let mut optim = config.optimizer.init();
-    let mut model = config.model.init::<B>(&device);
+    let mut cache = caching::Cache::new(config.caching.clone());
 
-    model = load_weights(model, &device, &current_model_path);
+    model = load_weights(model, device, &current_model_path);
+
+    let batch_generator = BatchGenerator::new(self_play).expect("Failed to create batch generator");
 
     let mut rng = SmallRng::seed_from_u64(config.seed);
     for epoch in start_epoch..=config.num_epochs {
@@ -147,31 +158,34 @@ pub fn train<B: AutodiffBackend>(
 
         for (iteration, fens_batch) in train.iter().enumerate().skip(skip_count) {
             // Generate and shuffle MCTS playouts
-            let (mut playout_items, stats) = generate_batch::<_, ExactLossPlayoutItem>(
-                model.valid(),
-                &fens_batch,
-                &limit,
-                &self_play,
-                &mcts_cfg,
-            )
-            .expect("Failed to generate batch");
+            let (mut playout_items, stats) = batch_generator
+                .generate_batch::<_, ExactLossPlayoutItem>(
+                    model.valid(),
+                    &fens_batch,
+                    &limit,
+                    self_play,
+                    mcts_cfg,
+                    &mut cache,
+                )
+                .expect("Failed to generate batch");
             playout_items.shuffle(&mut rng);
 
             // Process Mini-batches
             let batcher = PlayoutBatcher;
             for (chunk_idx, chunk) in playout_items.chunks(config.mini_batch_size).enumerate() {
                 let playouts_batch = batcher.batch(chunk.to_vec(), device);
-                let result = TrainStep::step(&model, playouts_batch);
+                let weighted_model = WeightedModel::new(model, value_weight, policy_weight);
+                let result = TrainStep::step(&weighted_model, playouts_batch);
 
                 log_step(epoch, iteration, chunk_idx, &result, &stats);
 
-                model = optim.step(config.learning_rate, model, result.grads);
+                model = optim.step(config.learning_rate, weighted_model.model, result.grads);
             }
 
             // Save the new state
             save_checkpoint(
                 &model,
-                &artifact_dir,
+                artifact_dir,
                 epoch,
                 iteration,
                 &mut current_model_path,
@@ -188,25 +202,28 @@ pub fn train<B: AutodiffBackend>(
 
             let model = model.valid();
 
-            for (_val_iteration, fens_batch) in test.iter().enumerate() {
-                // Generate playouts for the validation batch
-                let (playout_items, stats) = generate_batch::<_, ExactLossPlayoutItem>(
-                    model.clone(),
-                    &fens_batch,
-                    &limit,
-                    &self_play,
-                    &mcts_cfg,
-                )
-                .expect("Failed to generate validation batch");
+            for fens_batch in test.iter() {
+                let (playout_items, stats) = batch_generator
+                    .generate_batch::<_, ExactLossPlayoutItem>(
+                        model.clone(),
+                        &fens_batch,
+                        &limit,
+                        self_play,
+                        mcts_cfg,
+                        &mut cache,
+                    )
+                    .expect("Failed to generate validation batch");
 
                 let batcher = PlayoutBatcher;
                 for chunk in playout_items.chunks(config.mini_batch_size) {
                     let playouts_batch = batcher.batch(chunk.to_vec(), device);
 
-                    // Use ValidStep to evaluate without computing gradients
-                    let result = ValidStep::step(&model, playouts_batch);
+                    // also use the weighted model here to ensure the training and validation loss
+                    // are computed the same and are comparable.
+                    let weighted_model_valid =
+                        WeightedModel::new(model.clone(), value_weight, policy_weight);
+                    let result = ValidStep::step(&weighted_model_valid, playouts_batch);
 
-                    // Accumulate losses for averaging
                     val_loss_sum += result.loss.into_scalar().to_f64();
                     val_value_loss_sum += result.value_loss.into_scalar().to_f64();
                     val_policy_loss_sum += result.policy_loss.into_scalar().to_f64();

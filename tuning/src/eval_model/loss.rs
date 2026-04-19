@@ -1,24 +1,33 @@
 use burn::{
     Tensor,
+    config::Config,
     prelude::Backend,
     train::metric::{Adaptor, LossInput},
 };
 use engine::core::{
     search::mcts::{
-        eval::GameResult,
-        nn::{VALUE_DRAW, VALUE_LOSE, VALUE_OUTPUT_TENSOR_DIM, VALUE_WIN},
+        eval::{GameResult, Quality},
+        nn::VALUE_OUTPUT_TENSOR_DIM,
     },
     turn::Turn,
 };
 
+use crate::self_play::Outcome;
+
 pub mod el;
+
+#[derive(Config, Debug)]
+pub struct LossConfig {
+    pub value_loss_weight: f32,
+    pub policy_loss_weight: f32,
+}
 
 // not up to date. e.g. they don't handle setting the policy to a 1-hot when
 // tree root has a mate-in-1 and such.
-#[deprecated]
-pub mod mlc;
-#[deprecated]
-pub mod slc;
+// #[deprecated]
+// pub mod mlc;
+// #[deprecated]
+// pub mod slc;
 
 /// label loss output
 pub struct LossOutput<B: Backend> {
@@ -37,6 +46,21 @@ impl<B: Backend> LossOutput<B> {
             policy_loss,
         }
     }
+
+    pub fn new_weighted(
+        value_loss: Tensor<B, 1>,
+        policy_loss: Tensor<B, 1>,
+        value_weight: f32,
+        policy_weight: f32,
+    ) -> Self {
+        let weighted_loss = value_loss.clone() * value_weight + policy_loss.clone() * policy_weight;
+        Self {
+            loss: weighted_loss,
+            // not applying the weights to the loss segments to keep logging clean.
+            value_loss,
+            policy_loss,
+        }
+    }
 }
 
 impl<B: Backend> Adaptor<LossInput<B>> for LossOutput<B> {
@@ -49,19 +73,27 @@ impl<B: Backend> Adaptor<LossInput<B>> for LossOutput<B> {
 pub struct PlayoutBatcher;
 
 #[derive(Clone, Debug)]
-pub struct ValueTarget(pub f32);
+pub struct ValueTarget(pub Quality);
 
-impl From<(GameResult, Turn)> for ValueTarget {
+impl From<(Outcome, Turn)> for ValueTarget {
     /// value target depending on the game result and the current moving player.
-    fn from((result, moving_color): (GameResult, Turn)) -> Self {
+    fn from((result, moving_color): (Outcome, Turn)) -> Self {
         match result {
-            GameResult::Draw => Self(VALUE_DRAW),
-            GameResult::Win { relative_to } => {
+            Outcome::Discrete(GameResult::Draw) => Self(Quality::draw()),
+            Outcome::Discrete(GameResult::Win { relative_to }) => {
                 if relative_to == moving_color {
-                    Self(VALUE_WIN)
+                    Self(Quality::win())
                 }
                 else {
-                    Self(VALUE_LOSE)
+                    Self(Quality::loss())
+                }
+            }
+            Outcome::Continuous { relative_to, quality } => {
+                if relative_to == moving_color {
+                    Self(quality)
+                }
+                else {
+                    Self(quality.inverse())
                 }
             }
         }

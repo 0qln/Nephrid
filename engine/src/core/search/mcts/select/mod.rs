@@ -24,7 +24,7 @@ pub trait Selector {
     /// cap_n_i: The number of times that the parent node has been visited.
     fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Self::Score;
 
-    fn budget(&self, remaining_budget: usize, ) -> usize {
+    fn budget(&self, remaining_budget: usize) -> usize {
         // todo: maybe make this relative to the branch's puct score.
         max(1, (remaining_budget as f32 * 0.6) as usize)
     }
@@ -65,8 +65,8 @@ impl Ord for Score {
     }
 }
 
-impl Into<f32> for Score {
-    fn into(self) -> f32 {
-        self.0
+impl From<Score> for f32 {
+    fn from(val: Score) -> Self {
+        val.0
     }
 }

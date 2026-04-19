@@ -11,7 +11,7 @@ use engine::core::search::mcts::nn::Model;
 use crate::TrainingConfig;
 
 pub fn get_config(path: &str) -> TrainingConfig {
-    TrainingConfig::load(&path).expect("Couldn't load config.json at {path:?}")
+    TrainingConfig::load(path).expect("Couldn't load config.json at {path:?}")
 }
 
 pub enum ResumeAction {
@@ -56,7 +56,7 @@ pub fn get_resume_state(artifact_dir: &str) -> (usize, usize, Option<String>) {
         .filter_map(|entry| entry.ok())
         .filter_map(|entry| {
             let name = entry.path().file_stem()?.to_str()?.to_owned();
-            let (e_str, i_str) = name.strip_prefix(&format!("model_e-"))?.split_once("_i-")?;
+            let (e_str, i_str) = name.strip_prefix("model_e-")?.split_once("_i-")?;
 
             let e = e_str.parse::<usize>().ok()?;
             let i = i_str.parse::<usize>().ok()?;

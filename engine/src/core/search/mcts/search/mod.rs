@@ -411,7 +411,7 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         let mut line_index = line_index;
         let mut used_budget = 0;
 
-        for (branch_index, curr_budget) in (0..branch_count.v).zip(allocated_budgets.into_iter()) {
+        for (branch_index, curr_budget) in (0..branch_count.v).zip(allocated_budgets) {
             let branch_id = tree
                 .branch_id(parent_node, branch_index.into())
                 .expect("The branch should exist...");

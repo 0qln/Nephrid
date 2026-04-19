@@ -1,33 +1,37 @@
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use engine::core::{
     config::Configuration,
+    r#move::MoveList,
+    move_iter::fold_legal_moves,
     position::PgnResultValue,
     search::mcts::{
         CreateNNPartsError, MctsParts,
         back::MctsSolver,
         eval::{
-            Evaluation, Evaluator, Policy, Quality, RawLogits,
+            self, Evaluation, Evaluator, Policy, Quality, RawLogits, VisitCounts,
             nn::{TraceInfo, get_node_history},
         },
         nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor},
         node::{
-            self, Branch, NodeData,
+            self, Branch, NodeData, WinRate,
             node_state::{Evaluated, HasBranches},
         },
         noise::DirichletNoiser,
         search::{BatchItem, Selection},
         select::{Selector, puct},
     },
+    zobrist,
 };
 use itertools::Itertools;
 use rand::{SeedableRng, rngs::SmallRng};
 use rayon::{
-    ThreadPoolBuilder,
+    ThreadPool, ThreadPoolBuilder,
     iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator},
 };
 use std::{
     cmp::max,
     error::Error,
+    ops::ControlFlow,
     sync::atomic::{AtomicUsize, Ordering},
     thread,
     time::{Duration, Instant},
@@ -58,7 +62,10 @@ use engine::{
     uci::tokens::Tokenizer,
 };
 
-use crate::data::{BoardInput, FenItemRaw, StateInput};
+use crate::{
+    caching::{Cache, CacheEntry},
+    data::{BoardInput, FenItemRaw, StateInput},
+};
 
 #[derive(Config, Debug)]
 pub struct SelfplayConfig {
@@ -71,8 +78,18 @@ pub struct SelfplayConfig {
 }
 
 pub enum UnfinishedGameHandling {
+    /// Discard the game and don't include it in the training data at all.
     Discard,
+
+    /// Declare the game a draw.
     Draw,
+
+    /// UnfinishedGameHandling::Approx, where instead of setting the target
+    /// value to a draw, set the target value to (value/visits) evaluation of
+    /// the last root node or something that way we don't discard it and maybe
+    /// get a estimation of the end value that is more accurate than just
+    /// declaring it a draw
+    Approx,
 }
 
 impl TryFrom<&str> for UnfinishedGameHandling {
@@ -82,6 +99,7 @@ impl TryFrom<&str> for UnfinishedGameHandling {
         match value.to_lowercase().as_str() {
             "discard" => Ok(Self::Discard),
             "draw" => Ok(Self::Draw),
+            "approx" => Ok(Self::Approx),
             _ => Err(format!("Invalid unfinished game handling: {value}")),
         }
     }
@@ -113,7 +131,137 @@ impl LimitConfig {
     }
 }
 
-pub trait PlayoutItem: for<'a> From<(GameResult, &'a [Decision<Self::Target>])> {
+enum WorkerResult<P: PlayoutItem> {
+    CacheHit {
+        playout_items: Vec<P>,
+        solved: bool,
+    },
+    SelfPlay {
+        game: Box<Game>,
+        playout_items: Vec<P>,
+        hash: zobrist::Hash,
+        outcome: Outcome,
+        best_move: Move,
+        solved: bool,
+    },
+    Aborted {},
+}
+
+fn try_cache_hit<P: PlayoutItem>(
+    fen: &str,
+    i: usize,
+    n: usize,
+    cache: &Cache,
+) -> Option<WorkerResult<P>>
+where
+    P::Target: Clone,
+{
+    let pos = match Position::from_fen(fen) {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!(target: "data", "[FEN {i:>3}/{n:<3}] Invalid FEN: {e}");
+            return Some(WorkerResult::CacheHit {
+                playout_items: vec![],
+                solved: false,
+            });
+        }
+    };
+    let hash = pos.get_key();
+    let moving_color = pos.get_turn();
+
+    if let Some(&CacheEntry { outcome, best_move, .. }) = cache.get(hash) {
+        log::debug!(target: "data", "[FEN {i:>3}/{n:<3}] Cache hit for proven game");
+
+        // Build a single decision with one‑hot policy
+        let decision = build_cached_decision(&pos, best_move, moving_color);
+        let playout_item = P::from((outcome, &[decision]));
+        let is_solved = matches!(outcome, Outcome::Discrete(GameResult::Win { .. }));
+        Some(WorkerResult::CacheHit {
+            playout_items: vec![playout_item],
+            solved: is_solved,
+        })
+    }
+    else {
+        None
+    }
+}
+
+fn build_cached_decision<T: Target>(
+    pos: &Position,
+    best_move: Move,
+    moving_color: Color,
+) -> Decision<T> {
+    let mut moves = MoveList::new();
+    _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
+        moves.push(m);
+        ControlFlow::Continue::<(), _>(())
+    });
+
+    let visit_counts = moves
+        .iter()
+        .map(|&mov| (mov, if mov == best_move { 1 } else { 0 }))
+        .collect_vec();
+
+    let target = T::from_visit_counts(VisitCounts(visit_counts));
+
+    Decision {
+        input: Input {
+            board_in: board_input(pos),
+            state_in: state_input(pos),
+        },
+        target,
+        state: State { mov: best_move, moving_color },
+        stats: Stats::default(),
+    }
+}
+
+fn run_self_play_for_fen<P: PlayoutItem + Clone>(
+    fen: &str,
+    i: usize,
+    n: usize,
+    limit: &Limit,
+    config: &SelfplayConfig,
+    parts: &MctsTrainParts,
+) -> Result<WorkerResult<P>, Box<dyn Error>>
+where
+    P::Target: Clone,
+{
+    log::debug!(target: "data", "[FEN {i:>2}/{n:<2}] Starting self-play with fen '{fen}'");
+
+    let game = Game::from_fen(FenImport(&mut Tokenizer::new(fen)))?;
+    let root_hash = game.position().get_key();
+    let SelfPlay { game, results } = self_play::<P>(i, n, game, limit.clone(), config, parts)?;
+    if results.is_empty() {
+        return Ok(WorkerResult::Aborted {});
+    }
+    let playout_items = results.iter().map(|r| r.playout_item.clone()).collect();
+    let final_outcome = game
+        .position()
+        .game_result()
+        .map(Outcome::Discrete)
+        .unwrap_or(Outcome::Discrete(GameResult::Draw));
+    let best_move = results[0].decision.state.mov;
+    let is_solved = matches!(final_outcome, Outcome::Discrete(GameResult::Win { .. }));
+    Ok(WorkerResult::SelfPlay {
+        game: Box::new(game),
+        playout_items,
+        hash: root_hash,
+        outcome: final_outcome,
+        best_move,
+        solved: is_solved,
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Outcome {
+    Discrete(GameResult),
+    Continuous {
+        quality: Quality,
+        relative_to: Color,
+    },
+}
+
+pub trait PlayoutItem: for<'a> From<(Outcome, &'a [Decision<Self::Target>])> {
     type Target: Target;
 }
 
@@ -123,95 +271,134 @@ pub struct BatchStats {
     pub games_solved: usize,
 }
 
-pub fn generate_batch<B: Backend, P: PlayoutItem + Send>(
-    model: Model<B>,
-    fens: &[FenItemRaw],
-    limit: &Limit,
-    config: &SelfplayConfig,
-    mcts: &MctsConfig,
-) -> Result<(Vec<P>, BatchStats), Box<dyn Error>>
-where
-    P: Clone,
-    P::Target: Clone,
-{
-    let pool = ThreadPoolBuilder::new()
-        .num_threads(config.concurrency)
-        .build()?;
+pub struct BatchGenerator {
+    pool: ThreadPool,
+}
 
-    let device = B::Device::default();
+impl BatchGenerator {
+    pub fn new(config: &SelfplayConfig) -> Result<Self, Box<dyn Error>> {
+        let pool = ThreadPoolBuilder::new()
+            .num_threads(config.concurrency)
+            .build()?;
+        Ok(Self { pool })
+    }
 
-    let worker_tx = spawn_inference_workers(
-        model.clone(),
-        device.clone(),
-        config.eval_models,
-        config.eval_batch_size,
-        Duration::from_millis(config.eval_batch_wait_timeout_ms),
-    );
+    pub fn generate_batch<B, P>(
+        &self,
+        model: Model<B>,
+        fens: &[FenItemRaw],
+        limit: &Limit,
+        config: &SelfplayConfig,
+        mcts: &MctsConfig,
+        cache: &mut Cache,
+    ) -> Result<(Vec<P>, BatchStats), Box<dyn Error>>
+    where
+        B: Backend,
+        P: Clone + PlayoutItem + Send,
+        P::Target: Clone,
+    {
+        let device = B::Device::default();
+        let worker_tx = spawn_inference_workers(
+            model.clone(),
+            device,
+            config.eval_models,
+            config.eval_batch_size,
+            Duration::from_millis(config.eval_batch_wait_timeout_ms),
+        );
+        let parts = MctsTrainParts::new(
+            BatchedNNEvaluator::new(worker_tx),
+            mcts.dirichlet_alpha,
+            mcts.dirichlet_epsilon,
+        );
 
-    let num_fens = fens.len();
+        let num_fens = fens.len();
+        let time_start = Instant::now();
+        let games_total = num_fens;
+        let games_completed = AtomicUsize::new(0);
 
-    let games_total = fens.len();
-    let games_completed = AtomicUsize::new(0);
-    let games_solved = AtomicUsize::new(0);
-
-    let time_start = Instant::now();
-
-    let playout_items = pool.install(|| {
-        fens.iter()
+        let worker_results: Vec<WorkerResult<P>> = self.pool.install(|| {
+            fens.iter()
             .enumerate()
             .collect_vec()
             .into_par_iter()
             .with_max_len(1)
-            .flat_map(|(i, fen)| {
-                let i = i + 1; // so it starts at 1
+            .filter_map(|(i, fen)| {
+                let i = i + 1;
                 let n = num_fens;
+                let fen_str = fen.fen.clone();
 
-                let fen = fen.fen.clone();
-
-                let parts = MctsTrainParts::new(
-                    BatchedNNEvaluator::new(worker_tx.clone()),
-                    mcts.dirichlet_alpha,
-                    mcts.dirichlet_epsilon,
-                );
-
-                match self_play::<P>(i, n, &fen, limit.clone(), config, &parts) {
-                    Ok(result) => {
-                        let pgn = result.0.to_pgn();
-                        log::info!(target: "data", "[FEN {i:>3}/{n:<3}] Generated game:\n{pgn}");
-
-                        games_completed.fetch_add(1, Ordering::Relaxed);
-                        let games_completed = games_completed.load(Ordering::Relaxed);
-                        let elapsed = time_start.elapsed().as_secs_f32();
-                        let games_per_sec = games_completed as f32 / elapsed;
-                        let games_per_hour = games_per_sec * 60. * 60.;
-                        let perc_complete = (games_completed as f32 / games_total as f32) * 100.0;
-                        log::info!(target: "data", "[FEN] {perc_complete:>3.2}% complete  {games_per_hour} games/h  ");
-
-                        if !result.1.is_empty() {
-                            games_solved.fetch_add(1, Ordering::Relaxed);
-                        }
-
-                        result.1
-                            .iter()
-                            .map(|x| x.playout_item.clone())
-                            .collect::<Vec<_>>()
-                    }
-                    Err(err) => {
-                        log::error!(target: "data", "[FEN {i:>3}/{n:<3}] Error while playing fen '{fen}':\n{err}");
-                        vec![]
-                    }
+                // 1. try cache
+                if let Some(cached) = try_cache_hit::<P>(&fen_str, i, n, cache) {
+                    return Some(cached);
                 }
+
+                // 2. otherwise run self‑play
+                let ret = match run_self_play_for_fen::<P>(&fen_str, i, n, limit, config, &parts) {
+                    Ok(result) => {
+                        if let WorkerResult::SelfPlay { ref game, .. } = result {
+                            let pgn = game.to_pgn();
+                            log::info!(target: "data", "[FEN {i:>3}/{n:<3}] Generated game:\n{pgn}");
+                        }
+                        Some(result)
+                    },
+                    Err(err) => {
+                        log::error!(target: "data", "[FEN {i:>3}/{n:<3}] Self‑play error: {err}");
+                        None
+                    }
+                };
+
+                let games_completed = games_completed.load(Ordering::Relaxed);
+                let perc_complete = (games_completed as f32 / games_total as f32) * 100.0;
+                log::info!(target: "data", "Batch: {perc_complete:>3.2}% complete");
+
+                ret
             })
-            .collect::<Vec<_>>()
-    });
+            .collect()
+        });
 
-    let stats = BatchStats {
-        games_total,
-        games_completed: games_completed.load(Ordering::Relaxed),
-        games_solved: games_solved.load(Ordering::Relaxed),
-    };
+        let mut all_playout_items = Vec::new();
+        let mut games_completed = 0;
+        let mut games_solved = 0;
 
-    Ok((playout_items, stats))
+        for res in worker_results {
+            match res {
+                WorkerResult::CacheHit { playout_items, solved } => {
+                    all_playout_items.extend(playout_items);
+                    games_completed += 1;
+                    games_solved += solved as usize;
+                }
+                WorkerResult::SelfPlay {
+                    playout_items,
+                    hash,
+                    outcome,
+                    best_move,
+                    solved,
+                    ..
+                } => {
+                    all_playout_items.extend(playout_items);
+                    games_completed += 1;
+                    games_solved += solved as usize;
+                    cache.insert(hash, outcome, best_move);
+                }
+                WorkerResult::Aborted {} => {}
+            }
+        }
+
+        let elapsed = time_start.elapsed().as_secs_f32();
+        let games_per_sec = games_completed as f32 / elapsed;
+        let games_per_hour = games_per_sec * 3600.0;
+        log::info!(target: "data", "Batch generated: {:4>} games ({:.2} games/hour), {:.2}% solved",
+        games_completed, games_per_hour, (games_solved as f64 / games_completed as f64) * 100.0);
+
+        Ok((
+            all_playout_items,
+            BatchStats {
+                games_total: num_fens,
+                games_completed,
+                games_solved,
+            },
+        ))
+    }
 }
 
 #[derive(Default, Debug)]
@@ -311,7 +498,9 @@ pub struct Input {
     pub state_in: StateInputFloats,
 }
 
-pub trait Target: for<'a> From<&'a Tree> {}
+pub trait Target: for<'a> From<&'a Tree> {
+    fn from_visit_counts(visit_counts: VisitCounts) -> Self;
+}
 
 // Some state info at the time of the move.
 // 0: The move that was made
@@ -394,14 +583,19 @@ pub struct SelfPlayResult<P: PlayoutItem> {
     pub decision: Decision<P::Target>,
 }
 
+pub struct SelfPlay<P: PlayoutItem> {
+    game: Game,
+    results: Vec<SelfPlayResult<P>>,
+}
+
 pub fn self_play<P: PlayoutItem>(
     i: usize,
     n: usize,
-    fen: &str,
+    mut game: Game,
     limit: Limit,
     config: &SelfplayConfig,
     parts: &MctsTrainParts,
-) -> Result<(Game, Vec<SelfPlayResult<P>>), Box<dyn Error>>
+) -> Result<SelfPlay<P>, Box<dyn Error>>
 where
     P::Target: Clone,
 {
@@ -409,19 +603,15 @@ where
         UnfinishedGameHandling::try_from(config.unfinished_games.as_str())
             .map_err(|e| format!("Invalid config for unfinished games handling: {e}"))?;
 
-    let mut game = Game::from_fen(FenImport(&mut Tokenizer::new(fen)))?;
-
     let mut decisions = Vec::<Decision<P::Target>>::new();
     let mut mcts_state = SearchState::default();
 
-    log::debug!(target: "data", "[FEN {i:>2}/{n:<2}] Starting self-play with fen '{fen}'");
-
-    let eval: GameResult = {
+    let outcome: Outcome = {
         let game_result;
         let mut completed_moves = 0;
         loop {
             if let Some(result) = game.position().game_result() {
-                game_result = result;
+                game_result = Outcome::Discrete(result);
                 break;
             }
 
@@ -431,10 +621,24 @@ where
             {
                 match unfinished_game_handling {
                     UnfinishedGameHandling::Discard => {
-                        return Ok((game, vec![]));
+                        return Ok(SelfPlay { game, results: vec![] });
                     }
                     UnfinishedGameHandling::Draw => {
-                        game_result = GameResult::Draw;
+                        game_result = Outcome::Discrete(GameResult::Draw);
+                        break;
+                    }
+                    UnfinishedGameHandling::Approx => {
+                        let pos = game.position();
+                        let tree = &mcts_state.tree;
+                        let root_id = tree.root();
+                        let root_evaluated = tree.try_node::<Evaluated>(root_id);
+                        let win_rate = root_evaluated.map(WinRate::from).unwrap_or_default();
+                        let value = eval::Value::from(win_rate);
+                        let quality = eval::Quality::from(value);
+                        game_result = Outcome::Continuous {
+                            quality,
+                            relative_to: pos.get_turn(),
+                        };
                         break;
                     }
                 }
@@ -448,8 +652,8 @@ where
 
             let mov = result.0;
 
-            let b_in = board_input(&pos);
-            let s_in = state_input(&pos);
+            let b_in = board_input(pos);
+            let s_in = state_input(pos);
 
             let mov = mov.expect(
                 "if we don't have a gameresult then the search should've yielded a bestmove.",
@@ -469,23 +673,28 @@ where
         game_result
     };
 
-    log::debug!(target: "data", "[FEN {i:>2}/{n:<2}] Finished self-play with result '{}'", PgnResultValue(Some(eval)));
+    if let Outcome::Discrete(result) = outcome {
+        log::debug!(target: "data", "[FEN {i:>2}/{n:<2}] Finished self-play with result '{}'", PgnResultValue(Some(result)));
+    }
+    else {
+        // log idk?
+    }
 
-    let mut result = Vec::<SelfPlayResult<_>>::new();
+    let mut results = Vec::<SelfPlayResult<_>>::new();
 
     for (index, decision) in decisions.iter().enumerate() {
         let decisions_begin = index.saturating_sub(BOARD_INPUT_HISTORY - 1);
         let decisions_end = index;
         let decisions = &decisions[decisions_begin..=decisions_end];
-        let playout_item = P::from((eval, decisions));
+        let playout_item = P::from((outcome, decisions));
 
-        result.push(SelfPlayResult {
+        results.push(SelfPlayResult {
             playout_item,
             decision: decision.clone(),
         });
     }
 
-    Ok((game, result))
+    Ok(SelfPlay { game, results })
 }
 
 #[derive(Debug)]
@@ -495,7 +704,7 @@ pub struct MctsTrainParts {
     epsilon: f32,
 }
 
-impl<'a> MctsParts for &'a MctsTrainParts {
+impl MctsParts for &MctsTrainParts {
     type Selector = MctsTrainSelector;
     type Backprop = MctsSolver;
     type Evaluator = BatchedNNEvaluator;
@@ -534,8 +743,6 @@ impl MctsTrainParts {
     }
 }
 
-// todo: for training try to use a selector that weighs the actualy game results
-// higher than the value estimations... maybe that will help idk though
 pub struct MctsTrainSelector {
     c: f32,
     policy_weight: f32,
@@ -570,10 +777,19 @@ impl Selector for MctsTrainSelector {
     fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Self::Score {
         let n_i = node.visits() as f32;
         let value = node.value();
+
+        assert!(!value.0.is_nan(), "value WAS NAN");
+        assert!(!branch.policy().is_nan(), "policy WAS NAN");
+        assert!(!n_i.is_nan(), "n_i WAS NAN");
+
         let policy = Self::weighted_policy(branch.policy(), self.policy_weight);
         let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
         let exploration = self.c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);
-        puct::Score::new(exploitation + exploration)
+        let result = exploitation + exploration;
+
+        assert!(!result.is_nan(), "score was NAN");
+
+        puct::Score::new(result)
     }
 
     fn min_score(&self) -> Self::Score {

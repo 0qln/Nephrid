@@ -24,7 +24,7 @@ use engine::core::{
         limit::Limit,
         mcts::{
             NNParts, SearchState,
-            eval::{GameResult, RawPolicy},
+            eval::{GameResult, Quality, RawPolicy},
             mcts,
             nn::ModelConfig,
         },
@@ -41,7 +41,7 @@ fn proj_root() -> String {
 
 fn config_file(test_name: &str) -> String {
     let mut buf = PathBuf::new();
-    buf.push(&proj_root());
+    buf.push(proj_root());
     buf.push("tuning");
     buf.push(SRC_DIR);
     buf.push(format!("{}.json", test_name));
@@ -59,7 +59,7 @@ fn log_config_file() -> String {
 
 fn artifact_dir(test_name: &str) -> String {
     let mut buf = PathBuf::new();
-    buf.push(&proj_root());
+    buf.push(proj_root());
     buf.push("tuning");
     buf.push(OUT_DIR);
     buf.push(test_name);
@@ -103,7 +103,7 @@ pub fn test_network_can_overfit_hardcoded_target() {
     };
     use engine::core::{
         position::Position,
-        search::mcts::nn::{ModelConfig, POLICY_OUTPUTS, VALUE_WIN, board_input, state_input},
+        search::mcts::nn::{ModelConfig, POLICY_OUTPUTS, board_input, state_input},
     };
 
     // Initialize environment
@@ -127,7 +127,7 @@ pub fn test_network_can_overfit_hardcoded_target() {
     target_policy[target_move_index] = 1.0;
 
     // We also want it to learn this is a winning position
-    let target_value = VALUE_WIN;
+    let target_value = Quality::win();
 
     // Create the Playout Item & Batch
     let item = ExactLossPlayoutItem {
@@ -137,7 +137,7 @@ pub fn test_network_can_overfit_hardcoded_target() {
         policy_target: el::PolicyTarget(RawPolicy::new(target_policy)),
     };
 
-    let batcher = PlayoutBatcher::default();
+    let batcher = PlayoutBatcher;
     let batch = batcher.batch(vec![item], &device);
 
     // Initialize Model and Optimizer
@@ -172,7 +172,7 @@ pub fn test_network_can_overfit_hardcoded_target() {
     let pred_v = value_pred.into_scalar();
     println!("Predicted Value: {pred_v:.5} (Target: {target_value})");
     assert!(
-        (pred_v - target_value).abs() < 0.1,
+        (pred_v - target_value.v()).abs() < 0.1,
         "Value head failed to overfit!"
     );
 

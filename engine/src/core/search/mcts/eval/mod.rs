@@ -376,7 +376,7 @@ pub fn normalize_visits<const N: usize>(xs: &[f32; N], temp: f32) -> [f32; N] {
 
     for (i, &v) in xs.iter().enumerate() {
         if v > 0. {
-            let powered = (v as f32).powf(inv_temp);
+            let powered = v.powf(inv_temp);
             probabilities[i] = powered;
             sum += powered;
         }

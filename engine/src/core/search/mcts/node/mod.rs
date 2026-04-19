@@ -428,6 +428,7 @@ impl Tree {
     }
 
     pub fn compute_subtree_terminal_nodes_count(&self, node_id: RtNodeId) -> usize {
+        // todo: benchmark if using the fn below is slower, if not use that.
         let node = self.node(node_id);
         let terminal_node = if node.state() == NodeState::Terminal { 1 } else { 0 };
         terminal_node
@@ -435,6 +436,27 @@ impl Tree {
                 .branches_rt(node_id)
                 .iter()
                 .map(|b| self.compute_subtree_terminal_nodes_count(b.node))
+                .sum::<usize>()
+    }
+
+    /// Counts the wins of the root node player.
+    pub fn count_wins(&self) -> usize {
+        self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, &|_node, _depth| todo!())
+    }
+
+    pub fn count_subtree_nodes(
+        &self,
+        depth: Depth,
+        node_id: RtNodeId,
+        pred: &impl Fn(NodeView<node_state::Unknown>, Depth) -> bool,
+    ) -> usize {
+        let node = self.node(node_id);
+        let count = if pred(node, depth) { 1 } else { 0 };
+        count
+            + self
+                .branches_rt(node_id)
+                .iter()
+                .map(|b| self.count_subtree_nodes(depth + 1, b.node, pred))
                 .sum::<usize>()
     }
 
@@ -1004,7 +1026,8 @@ impl<'a, S: HasBranches> NodeView<'a, S> {
     }
 }
 
-/// The winrate of a node in range [0; 1];
+/// The winrate of a node in range [0; 1].
+/// (Relative to the node itself, not it's parent)
 #[derive(Debug, Clone, Copy)]
 pub struct WinRate(pub f32);
 
@@ -1026,6 +1049,12 @@ impl<'a> From<NodeView<'a, Evaluated>> for WinRate {
         else {
             Self(value.0 / visits as f32)
         }
+    }
+}
+
+impl From<WinRate> for eval::Value {
+    fn from(win_rate: WinRate) -> Self {
+        Self::new(win_rate.0)
     }
 }
 

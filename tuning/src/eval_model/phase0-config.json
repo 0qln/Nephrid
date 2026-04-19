@@ -1,4 +1,8 @@
 {
+  "loss": {
+    "value_loss_weight": 1.0,
+    "policy_loss_weight": 1.0
+  },
   "model": {
     "channels": 128,
     "num_res_blocks": 8
@@ -18,8 +22,11 @@
     "min_nodes": null,
     "max_terminal_nodes": null
   },
+  "caching": {
+    "proven_games": true
+  },
   "self_play": {
-    "concurrency": 256,
+    "concurrency": 1024,
     "allowed_moves": 2,
     "unfinished_games": "discard",
     "eval_models": 2,
@@ -31,9 +38,9 @@
     "dirichlet_epsilon": 0.25
   },
   "epd_dataset_path": "phase0/default.epd",
-  "epd_dataset_fens_total": 300000,
-  "num_epochs": 20,
-  "batch_size": 512,
+  "epd_dataset_fens_total": 500000,
+  "num_epochs": 10,
+  "batch_size": 1024,
   "mini_batch_size": 512,
   "seed": 3735928559,
   "learning_rate": 0.001

@@ -15,18 +15,6 @@ use crate::{
     uci::sync::CancellationToken,
 };
 
-// fn compare_capture_filtering(mut pos: Position, depth: Depth) {
-//     let limit = Limit { depth, ..Default::default() };
-//     let ct = CancellationToken::default();
-//     let debug = DebugMode::default();
-
-//     let filtered = super::perft_filter_captures(&mut pos, &limit, ct.clone(),
-// debug.clone());     let generated = super::perft::<false>(&mut pos, &limit,
-// ct.clone(), debug.clone());
-
-//     assert_eq!(filtered, generated);
-// }
-
 fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
     let limit = Limit { depth, ..Default::default() };
     let ct = CancellationToken::default();
@@ -54,9 +42,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
                     list_filtered.push(m);
                 }
                 ControlFlow::Continue::<(), ()>(())
-            })
-            .continue_value()
-            .unwrap();
+            });
 
             assert_eq!(
                 list_skipped.len(),

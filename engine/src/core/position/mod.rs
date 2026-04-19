@@ -1031,17 +1031,17 @@ impl ReducedPgn {
         }
 
         // Apply the custom FEN if provided
-        if has_setup || fen_string.is_some() {
-            if let Some(fen) = fen_string {
-                return Ok(Position::from_fen(&fen)?);
-            }
+        if let Some(fen) = fen_string
+            && has_setup
+        {
+            return Position::from_fen(fen);
         }
 
         Ok(Position::start_position())
     }
 
     /// Returns the moves in SAN format, without move numbers or annotations.
-    pub fn moves<'a>(&'a self) -> impl Iterator<Item = &'a str> {
+    pub fn moves(&self) -> impl Iterator<Item = &str> {
         self.1.0.iter().filter_map(|move_info| {
             if let PgnMoveInfo::Move(san_str) = move_info {
                 Some(san_str.as_str())
@@ -1409,12 +1409,12 @@ impl TryFrom<&str> for PgnMoveInfo {
     type Error = PgnMoveInfoParseError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
-        if value.ends_with("...") {
-            let fmc = FullMoveCount::try_from(&value[..value.len() - 3])?;
+        if let Some(fmc_str) = value.strip_suffix("...") {
+            let fmc = FullMoveCount::try_from(fmc_str)?;
             Ok(Self::MoveNumberIndication(fmc, colors::BLACK))
         }
-        else if value.ends_with('.') {
-            let fmc = FullMoveCount::try_from(&value[..value.len() - 1])?;
+        else if let Some(fmc_str) = value.strip_suffix('.') {
+            let fmc = FullMoveCount::try_from(fmc_str)?;
             Ok(Self::MoveNumberIndication(fmc, colors::WHITE))
         }
         else if value.starts_with('(') && value.ends_with(')') {

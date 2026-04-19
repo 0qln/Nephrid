@@ -1,4 +1,8 @@
 {
+  "loss": {
+    "value_loss_weight": 1.0,
+    "policy_loss_weight": 1.0
+  },
   "model": {
     "channels": 128,
     "num_res_blocks": 8
@@ -18,10 +22,13 @@
     "min_nodes": null,
     "max_terminal_nodes": null
   },
+  "caching": {
+    "proven_games": true
+  },
   "self_play": {
     "concurrency": 256,
     "allowed_moves": 4,
-    "unfinished_games": "discard",
+    "unfinished_games": "approx",
     "eval_models": 2,
     "eval_batch_size": 512,
     "eval_batch_wait_timeout_ms": 1

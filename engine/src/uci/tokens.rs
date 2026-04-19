@@ -65,7 +65,7 @@ impl<'a> Tokenizer<'a> {
     pub fn take_until(&mut self, delimiter: char) -> Option<&'a str> {
         let start = self.seq.peek()?.0;
 
-        while let Some((idx, c)) = self.seq.next() {
+        for (idx, c) in self.seq.by_ref() {
             if c == delimiter {
                 return Some(&self.src[start..idx]);
             }

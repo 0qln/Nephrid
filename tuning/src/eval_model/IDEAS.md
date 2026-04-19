@@ -2,6 +2,10 @@
 
 ## Training
 
+### Mcts
+
+- [ ] selection: try to use a selector that weighs the actualy game results higher than the value estimations
+
 ### Phases
 
 - larger batchsizes in earlier phases to encourage discovery of more basic rules
@@ -9,6 +13,7 @@
 #### Phase 0 (MateIn1s)
 
 overfitting the value output to a win seems to resolve itself in later phases, because atleast we can easily farm a good policy.
+(but also we could try setting the value loss to 0 so we don't train toward that target)
 
 #### Phase 1
 
@@ -28,11 +33,14 @@ the speedup gained by taking early cuts out if the selfplays are not good seems 
 
 - even in early phases, where we learn mateInX, we allow for deeper than X plies in the selfplay to allow to punish bad moves
 
+- [ ] UnfinishedGameHandling::Stochastic, where we count the ((1\*wins + -1\*losses) / count(wins/losses/draws)) in the subtree
+
 ## Model
 
 ### Board inputs
 
-- attack plane
-- checker plane
-- pinner plane
-- etc.
+- [ ] attack plane
+- [ ] checker plane
+- [ ] pinner plane
+- [ ] pinned plane
+- ...etc...

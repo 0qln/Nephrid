@@ -5,10 +5,10 @@ use burn::{
     data::dataloader::batcher::Batcher,
     nn::loss::{MseLoss, Reduction},
     tensor::{Float, TensorData, activation::log_softmax, backend::AutodiffBackend},
-    train::{RegressionOutput, TrainOutput, TrainStep, ValidStep},
+    train::{TrainOutput, TrainStep, ValidStep},
 };
 use engine::core::search::mcts::{
-    eval::{GameResult, RawPolicy, VisitCounts, normalize_visits},
+    eval::{RawPolicy, VisitCounts, normalize_visits},
     nn::{
         BoardInputTensor, Model, POLICY_OUTPUT_TENSOR_DIM, POLICY_OUTPUTS, STATE_INPUT_TENSOR_DIM,
         StateInputTensor, VALUE_OUTPUT_TENSOR_DIM, board_history_input,
@@ -25,7 +25,7 @@ use crate::{
     Decision, LossOutput, PlayoutBatcher, Target,
     data::{BoardInput, StateInput},
     loss::ValueTargetTensor,
-    self_play::PlayoutItem,
+    self_play::{Outcome, PlayoutItem},
 };
 
 #[derive(Clone, Debug)]
@@ -64,8 +64,8 @@ pub struct ExactLossPlayoutItem {
     pub policy_target: PolicyTarget,
 }
 
-impl<'a> From<(GameResult, &'a [Decision<ExactLossTarget>])> for ExactLossPlayoutItem {
-    fn from((result, decisions): (GameResult, &'a [Decision<ExactLossTarget>])) -> Self {
+impl<'a> From<(Outcome, &'a [Decision<ExactLossTarget>])> for ExactLossPlayoutItem {
+    fn from((result, decisions): (Outcome, &'a [Decision<ExactLossTarget>])) -> Self {
         let decision = &decisions[decisions.len() - 1];
         let player = decision.state.moving_color;
         Self {
@@ -104,7 +104,7 @@ impl From<&Tree> for ExactLossTarget {
                 if root_value.is_proven_loss() {
                     VisitCounts(
                         branches
-                            .into_iter()
+                            .iter()
                             .map(|branch| {
                                 let child_node = tree.node(branch.node());
                                 let is_winning_move = child_node.value().is_proven_win();
@@ -117,7 +117,7 @@ impl From<&Tree> for ExactLossTarget {
                 else {
                     VisitCounts(
                         branches
-                            .into_iter()
+                            .iter()
                             .map(|branch| (branch.mov(), tree.node(branch.node()).visits()))
                             .collect_vec(),
                     )
@@ -127,7 +127,11 @@ impl From<&Tree> for ExactLossTarget {
     }
 }
 
-impl Target for ExactLossTarget {}
+impl Target for ExactLossTarget {
+    fn from_visit_counts(visit_counts: VisitCounts) -> Self {
+        Self { visit_counts }
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct SoftCrossEntropyLoss;
@@ -179,18 +183,24 @@ pub fn forward_with_loss_exact_loss<B: Backend>(
     target_policy: Tensor<B, 2, Float>,
 ) -> LossOutput<B> {
     let (value_output, policy_output) = this.forward(board_input, state_input);
+    let value_loss = MseLoss::new().forward(value_output, target_value, Reduction::Auto);
+    let policy_loss = SoftCrossEntropyLoss::new().forward(policy_output, target_policy);
+    LossOutput::new(value_loss, policy_loss)
+}
 
-    let value_loss =
-        MseLoss::new().forward(value_output.clone(), target_value.clone(), Reduction::Auto);
-
-    let policy_loss =
-        SoftCrossEntropyLoss::new().forward(policy_output.clone(), target_policy.clone());
-
-    LossOutput::new(
-        RegressionOutput::new(value_loss, value_output, target_value).loss,
-        // ExactProbsClassificationOutput::new(policy_loss, policy_output, target_policy).loss,
-        policy_loss,
-    )
+pub fn forward_with_loss_exact_loss_weighted<B: Backend>(
+    model: &Model<B>,
+    board_input: BoardInputTensor<B>,
+    state_input: Tensor<B, STATE_INPUT_TENSOR_DIM>,
+    target_value: Tensor<B, VALUE_OUTPUT_TENSOR_DIM>,
+    target_policy: Tensor<B, 2, Float>,
+    value_weight: f32,
+    policy_weight: f32,
+) -> LossOutput<B> {
+    let (value_output, policy_output) = model.forward(board_input, state_input);
+    let value_loss = MseLoss::new().forward(value_output, target_value, Reduction::Auto);
+    let policy_loss = SoftCrossEntropyLoss::new().forward(policy_output, target_policy);
+    LossOutput::new_weighted(value_loss, policy_loss, value_weight, policy_weight)
 }
 
 impl<B: Backend> ValidStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for Model<B> {
@@ -219,6 +229,51 @@ impl<B: AutodiffBackend> TrainStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for 
     }
 }
 
+pub struct WeightedModel<B: Backend> {
+    pub model: Model<B>,
+    pub value_weight: f32,
+    pub policy_weight: f32,
+}
+
+impl<B: Backend> WeightedModel<B> {
+    pub fn new(model: Model<B>, value_weight: f32, policy_weight: f32) -> Self {
+        Self {
+            model,
+            value_weight,
+            policy_weight,
+        }
+    }
+}
+
+impl<B: Backend> ValidStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for WeightedModel<B> {
+    fn step(&self, batch: ExactLossPlayoutBatch<B>) -> LossOutput<B> {
+        forward_with_loss_exact_loss_weighted(
+            &self.model,
+            batch.board_inputs,
+            batch.state_inputs,
+            batch.value_targets,
+            batch.policy_targets,
+            self.value_weight,
+            self.policy_weight,
+        )
+    }
+}
+
+impl<B: AutodiffBackend> TrainStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for WeightedModel<B> {
+    fn step(&self, batch: ExactLossPlayoutBatch<B>) -> TrainOutput<LossOutput<B>> {
+        let item = forward_with_loss_exact_loss_weighted(
+            &self.model,
+            batch.board_inputs,
+            batch.state_inputs,
+            batch.value_targets,
+            batch.policy_targets,
+            self.value_weight,
+            self.policy_weight,
+        );
+        TrainOutput::new(&self.model, item.loss.backward(), item)
+    }
+}
+
 impl<B: Backend> Batcher<B, ExactLossPlayoutItem, ExactLossPlayoutBatch<B>> for PlayoutBatcher {
     fn batch(
         &self,
@@ -238,7 +293,7 @@ impl<B: Backend> Batcher<B, ExactLossPlayoutItem, ExactLossPlayoutBatch<B>> for 
 
         let values = items
             .iter()
-            .map(|x| TensorData::from([[x.value_target.0]]))
+            .map(|x| TensorData::from([[x.value_target.0.v()]]))
             .map(|x| Tensor::from_data(x, device))
             .collect();
 

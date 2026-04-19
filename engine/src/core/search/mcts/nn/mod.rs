@@ -359,7 +359,7 @@ impl<B: Backend> Model<B> {
         (value_out, policy_out)
     }
 
-    pub fn warmup(&self, batch_size_max: usize, device: &B::Device) -> () {
+    pub fn warmup(&self, batch_size_max: usize, device: &B::Device) {
         // todo:
         // this or just doing one batchsize and then filling with zeroes if not full?
         for batch_size in 1..=batch_size_max {
@@ -380,7 +380,7 @@ impl<B: Backend> Model<B> {
             let _warmup = output.1.sum().into_scalar();
         }
 
-        B::sync(&device);
+        B::sync(device);
     }
 }
 

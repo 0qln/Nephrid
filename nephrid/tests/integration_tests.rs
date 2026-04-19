@@ -422,7 +422,7 @@ fn test_pgn_input_command() {
 
     // output pgn
 
-    write_engine_line(&mut stdin, &format!("pgn"));
+    write_engine_line(&mut stdin, "pgn");
     write_engine_line(&mut stdin, "isready");
 
     let actual_pgn = collect_engine_lines_until(&mut reader, |l| l == "readyok");
