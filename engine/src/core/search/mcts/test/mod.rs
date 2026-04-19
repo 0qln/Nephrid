@@ -1,5 +1,5 @@
 use crate::core::search::mcts::{
-    eval::{Policy, RawPolicy},
+    eval::{Policy, RawLogits},
     node::{NodeId, Tree, node_state::HasBranches},
     search::{BatchItem, Selection},
 };
@@ -69,16 +69,15 @@ impl Evaluator for DummyEvaluator {
 
             let mut policy_arr = [0.01; POLICY_OUTPUTS];
             let spike_index = self.rng.random_range(0..POLICY_OUTPUTS);
-            policy_arr[spike_index] = 1.0;
-
-            let raw_policy = RawPolicy::new(policy_arr);
+            policy_arr[spike_index] = 2.0;
+            let raw_logits = RawLogits::new(policy_arr);
 
             let moves = tree.move_indices(leaf.node);
 
             evaluations.push(Evaluation::Guess(Box::new(Guess {
                 relative_to: trace_data.turn,
                 quality: Quality::new(quality),
-                policy: Policy::from_raw_policy(&raw_policy, moves).expect("a policy"),
+                policy: Policy::from_raw_logits(&raw_logits, moves, 1.0).expect("a policy"),
             })));
         }
 
