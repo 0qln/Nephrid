@@ -159,7 +159,6 @@ pub trait PolicySource {
 }
 
 // todo: this better belongs in `nn/mod.rs`, right?
-// todo: shoudln't be pub
 /// Probability distribution over possible moves, as output by the network
 /// before filtering the moves to the legal ones.
 #[derive(Clone)]
