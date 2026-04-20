@@ -7,7 +7,7 @@ use crate::{
         position::Position,
     },
     misc::DebugMode,
-    uci::sync::{self, CancellationToken},
+    uci::sync::CancellationToken,
 };
 use std::ops::ControlFlow;
 
@@ -20,19 +20,19 @@ pub fn perft<const Q: bool>(
     ct: CancellationToken,
     debug: DebugMode,
 ) -> u64 {
-    perft_inner_collect(
+    let nodes = perft_inner_collect(
         pos,
         limit.depth,
         limit,
         &ct,
         &debug,
-        |mov, count, depth: Depth, debug| {
+        |mov, count, depth, debug| {
             if debug {
                 let indent = itertools::repeat_n(' ', depth.v().into()).collect::<String>();
-                sync::out(&format!("{}{mov:?}: {count}", indent));
+                println!("{}{mov:?}: {count}", indent);
             }
             else {
-                sync::out(&format!("{mov}: {count}"));
+                println!("{mov}: {count}");
             }
         },
         |pos, list| {
@@ -41,7 +41,11 @@ pub fn perft<const Q: bool>(
                 ControlFlow::Continue::<(), _>(())
             });
         },
-    )
+    );
+
+    println!("\nNodes searched: {nodes}\n");
+
+    nodes
 }
 
 pub fn perft_inner_collect(

@@ -14,7 +14,7 @@ use crate::{
     },
     misc::{DebugMode, trim_newline},
     uci::{
-        sync::{self, CancellationToken, UciError},
+        sync::{CancellationToken, UciError},
         tokens::Tokenizer,
     },
 };
@@ -144,14 +144,12 @@ pub fn execute_uci(
     match tokenizer.next_token() {
         Some("d") | Some("print") => {
             let pos = &engine.game.position();
-            let str = if engine.debug.get() {
-                format!("{pos:?}")
+            if engine.debug.get() {
+                println!("{pos:?}")
             }
             else {
-                format!("{pos}")
+                println!("{pos}")
             };
-
-            sync::out(&str);
 
             Ok(())
         }
@@ -161,11 +159,7 @@ pub fn execute_uci(
             None => unimplemented!(),
         },
         Some("pgn") => {
-            let pgn = engine.game.to_pgn();
-            let str = format!("{pgn}");
-
-            sync::out(&str);
-
+            println!("{}", engine.game.to_pgn());
             Ok(())
         }
         Some("quit") => {
@@ -356,12 +350,15 @@ pub fn execute_uci(
         }
         Some("uci") => {
             // Id response
-            sync::out("id name Nephrid");
-            sync::out("id author 0qln");
+            println!("id name Nephrid");
+            println!("id author 0qln");
+
             // Option response
             engine.config.lock().expect("Config dead :(").print_uci();
+
             // Uciok response
-            sync::out("uciok");
+            println!("uciok");
+
             Ok(())
         }
         Some("setoption") => {
@@ -423,7 +420,7 @@ pub fn execute_uci(
             Ok(())
         }
         Some("isready") => {
-            sync::out("readyok");
+            println!("readyok");
             Ok(())
         }
         Some("perf") => {

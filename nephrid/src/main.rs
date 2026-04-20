@@ -1,6 +1,6 @@
 use engine::{
     core::{Engine, execute_uci, move_iter::sliding_piece::magics, zobrist},
-    uci::sync::{self, CancellationToken},
+    uci::sync::CancellationToken,
 };
 use std::io::stdin;
 
@@ -82,10 +82,12 @@ fn main() {
         match input_stream.read_line(&mut input) {
             Ok(_) => {
                 if let Err(e) = execute_uci(&mut engine, input, cmd_cancellation.clone()) {
-                    sync::out(&format!("{e}"));
+                    println!("{e}");
                 }
             }
-            Err(err) => sync::out(&format!("Error: {err}")),
+            Err(err) => {
+                println!("Error: {err}");
+            }
         }
         // Replace the cancellation token if it's burned.
         if cmd_cancellation.is_cancelled() {

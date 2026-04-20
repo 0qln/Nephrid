@@ -18,7 +18,7 @@ use crate::{
         },
     },
     misc::DebugMode,
-    uci::sync::{self, CancellationToken},
+    uci::sync::CancellationToken,
 };
 
 pub trait MctsStrategy {
@@ -285,9 +285,7 @@ impl MctsUci {
         let time = UciArg::from(self.search_time());
         let string = UciArg::<String>::None;
 
-        sync::out(&format!(
-            "info{currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}"
-        ));
+        println!("info{currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}");
     }
 
     /// # uci_bestmove
@@ -298,7 +296,7 @@ impl MctsUci {
         let best_move = UciArg::Some(mov);
         let ponder_move = UciArg::from(pv.0.get(1).map(|b| UciPondermove(b.mov())));
 
-        sync::out(&format!("bestmove{best_move}{ponder_move}"));
+        println!("bestmove{best_move}{ponder_move}");
     }
 
     fn output_frequency(&self) -> Duration {

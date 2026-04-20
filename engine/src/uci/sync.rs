@@ -1,6 +1,5 @@
 use std::{
     fmt::Debug,
-    io::{Write, stdout},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -25,11 +24,6 @@ pub enum UciError {
 
     #[error("Unknown option: {0}")]
     UnknownOption(String),
-}
-
-pub fn out(msg: &str) {
-    let stdout = stdout();
-    let _ = writeln!(&mut stdout.lock(), "{}", msg);
 }
 
 #[derive(Default, Clone, Debug)]

@@ -1,23 +1,20 @@
 use thiserror::Error;
 
-use crate::{
-    core::{
-        Move,
-        config::Configuration,
-        search::{
-            limit::UciLimit,
-            mcts::{
-                MctsConfig, MctsParts,
-                eval::Cp,
-                node::{
-                    Tree, WinRate,
-                    node_state::{Evaluated, Switch},
-                },
-                select::Selector,
+use crate::core::{
+    Move,
+    config::Configuration,
+    search::{
+        limit::UciLimit,
+        mcts::{
+            MctsConfig, MctsParts,
+            eval::Cp,
+            node::{
+                Tree, WinRate,
+                node_state::{Evaluated, Switch},
             },
+            select::Selector,
         },
     },
-    uci::sync,
 };
 use std::{
     sync::{
@@ -224,7 +221,7 @@ pub fn init<W: SearchWorker>() -> SearchThread {
                 let cmd = rx.recv().expect("Should be able to receive data");
                 let result = worker.exec(cmd);
                 if let Err(e) = result {
-                    sync::out(&format!("Error executing command: {e}"));
+                    println!("Error executing command: {e}");
                 }
             }
         })

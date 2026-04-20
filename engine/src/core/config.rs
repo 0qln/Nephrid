@@ -1,7 +1,4 @@
-use crate::{
-    misc::{InvalidValueError, ValueOutOfRangeError},
-    uci::sync,
-};
+use crate::misc::{InvalidValueError, ValueOutOfRangeError};
 use std::{
     fmt,
     ops::{Deref, DerefMut},
@@ -229,8 +226,9 @@ pub struct Configuration {
     /// receiving the go command, and the engine actually starting the
     /// search. (in ms)
     gui_lag: ConfigOption<Spin>,
-    
-    /// Whether to enable ponder mode (i.e., keep searching on the opponent's time until the opponent actually moves).
+
+    /// Whether to enable ponder mode (i.e., keep searching on the opponent's
+    /// time until the opponent actually moves).
     ponder: ConfigOption<Check>,
 }
 
@@ -294,13 +292,13 @@ impl Configuration {
             "clearhash" => {
                 self.clear_hash.trigger();
                 Ok(())
-            },
+            }
             "dirichlet-alpha" => self.dirichlet_alpha.set(value),
             "dirichlet-epsilon" => self.dirichlet_epsilon.set(value),
             "weights-path" => {
                 self.weights_path.set(value);
                 Ok(())
-            },
+            }
             "game-tree-caching" => self.game_tree_caching.set(value),
             "gui-lag" => self.gui_lag.set(value),
             "ponder" => self.ponder.set(value),
@@ -309,15 +307,15 @@ impl Configuration {
     }
 
     pub fn print_uci(&self) {
-        sync::out(&format!("{}", self.hash));
-        sync::out(&format!("{}", self.threads));
-        sync::out(&format!("{}", self.clear_hash));
-        sync::out(&format!("{}", self.dirichlet_alpha));
-        sync::out(&format!("{}", self.dirichlet_epsilon));
-        sync::out(&format!("{}", self.weights_path));
-        sync::out(&format!("{}", self.game_tree_caching));
-        sync::out(&format!("{}", self.gui_lag));
-        sync::out(&format!("{}", self.ponder));
+        println!("{}", self.hash);
+        println!("{}", self.threads);
+        println!("{}", self.clear_hash);
+        println!("{}", self.dirichlet_alpha);
+        println!("{}", self.dirichlet_epsilon);
+        println!("{}", self.weights_path);
+        println!("{}", self.game_tree_caching);
+        println!("{}", self.gui_lag);
+        println!("{}", self.ponder);
     }
 }
 
