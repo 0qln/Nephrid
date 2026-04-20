@@ -14,7 +14,7 @@ pub struct UciLimit {
     pub winc: u64,
     pub binc: u64,
     pub movestogo: u16,
-    pub max_nodes: u64,
+    pub nodes: u64,
     pub movetime: u64,
     pub mate: Depth,
     pub depth: Depth,
@@ -32,7 +32,7 @@ impl UciLimit {
             winc: u64::MAX,
             binc: u64::MAX,
             movestogo: u16::MAX,
-            max_nodes: u64::MAX,
+            nodes: u64::MAX,
             movetime: u64::MAX,
             mate: Depth::MAX,
             depth: Depth::MAX,
@@ -74,7 +74,7 @@ impl UciLimit {
         time_limit: Instant,
         iterations: u64,
     ) -> bool {
-        nodes >= self.max_nodes || curr_time >= time_limit || iterations >= self.iterations
+        nodes >= self.nodes || curr_time >= time_limit || iterations >= self.iterations
     }
 }
 
@@ -87,7 +87,7 @@ impl Default for UciLimit {
             winc: 0,
             binc: 0,
             movestogo: u16::MAX,
-            max_nodes: u64::MAX,
+            nodes: u64::MAX,
             movetime: u64::MAX,
             mate: Depth::MAX,
             depth: Depth::MAX,
