@@ -10,7 +10,7 @@ use crate::{
         depth::Depth,
         r#move::Move,
         position::{FenImport, FenParseError, PgnImport, PgnImportError, Position, ReducedPgn},
-        search::{Command, PonderToken, Thread},
+        search::{Command, PonderToken, SearchThread, SearchWorker},
     },
     misc::{DebugMode, trim_newline},
     uci::{
@@ -106,7 +106,7 @@ pub struct Engine {
     config: Arc<Mutex<Configuration>>,
 
     /// Search thread
-    search_t: Thread,
+    search_t: SearchThread,
 
     /// A token to trigger the transition from pondering to normal search.
     ponder_hit: PonderToken,
@@ -122,22 +122,15 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new() -> Self {
-        let search_t = search::init();
+    pub fn new<Searcher: SearchWorker>() -> Self {
         Self {
             config: Default::default(),
-            search_t,
+            search_t: search::init::<Searcher>(),
             debug: Default::default(),
             game: Default::default(),
             _pos_src: Default::default(),
             ponder_hit: Default::default(),
         }
-    }
-}
-
-impl Default for Engine {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -162,8 +155,8 @@ pub fn execute_uci(
 
             Ok(())
         }
-        Some("mcts") => match tokenizer.next_token() {
-            Some("d") => Ok(engine.search_t.tx.send(Command::MctsDebugTree)?),
+        Some("search") => match tokenizer.next_token() {
+            Some("d") => Ok(engine.search_t.tx.send(Command::Debug)?),
             Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
             None => unimplemented!(),
         },

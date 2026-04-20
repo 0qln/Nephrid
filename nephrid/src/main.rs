@@ -4,12 +4,61 @@ use engine::{
 };
 use std::io::stdin;
 
+mod search {
+    use engine::core::search::{
+        MctsWorker,
+        mcts::{self, MctsConfig},
+    };
+
+    pub struct Config;
+
+    // todo: mcts/id (iterative deepening) feature gate
+    pub type Worker = MctsWorker<MPV, Config>;
+
+    #[cfg(feature = "mcts-hce")]
+    impl MctsConfig for Config {
+        type Parts = mcts::HceParts;
+    }
+
+    // todo: this was supposed to be inside the MctsConfig trait, but we get some
+    // kind of evaluation overflow error :(
+    #[cfg(feature = "mcts-hce")]
+    const MPV: usize = 1; //todo tune
+
+    #[cfg(feature = "mcts-pure")]
+    impl MctsConfig for Config {
+        type Parts = mcts::PureParts;
+    }
+
+    #[cfg(feature = "mcts-pure")]
+    const MPV: usize = 1; //todo tune
+
+    #[cfg(all(feature = "mcts-nn", feature = "nn-backend-cuda"))]
+    impl MctsConfig for Config {
+        const MPV: usize = 64;
+        type Parts = mcts::NNParts<burn_cuda::Cuda<f32>>;
+    }
+
+    #[cfg(all(feature = "mcts-nn", feature = "nn-backend-cuda"))]
+    const MPV: usize = 64; //todo tune
+
+    #[cfg(all(feature = "mcts-nn", feature = "nn-backend-ndarray"))]
+    impl MctsConfig for Config {
+        // todo: what mpv works best for cpu nn?
+        const MPV: usize = 1;
+        type Parts = mcts::NNParts<burn::backend::NdArray>;
+    }
+
+    #[cfg(all(feature = "mcts-nn", feature = "nn-backend-ndarray"))]
+    const MPV: usize = 1; //todo tune
+}
+
 fn main() {
     magics::init();
     zobrist::init();
 
     let input_stream = stdin();
-    let mut engine = Engine::new();
+    let mut engine = Engine::new::<search::Worker>();
     let mut cmd_cancellation = CancellationToken::new();
 
     execute_uci(

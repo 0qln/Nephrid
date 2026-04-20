@@ -5,7 +5,7 @@ use engine::core::{
     move_iter::sliding_piece::magics,
     position::Position,
     search::mcts::{
-        MctsParts, HceParts, limiter::DefaultLimiter, node::Tree, search::TreeSearcher,
+        HceParts, MctsParts, limiter::DefaultLimiter, node::Tree, search::TreeSearcher,
     },
     zobrist,
 };
@@ -60,7 +60,7 @@ pub fn mcts_benches(c: &mut Criterion) {
                         HceParts::default(),
                     )
                 },
-                |(pos, tree, parts)| bench_mcts(pos, tree, &parts),
+                |(pos, tree, parts)| bench_mcts(pos, tree, parts),
                 BatchSize::LargeInput,
             )
         });

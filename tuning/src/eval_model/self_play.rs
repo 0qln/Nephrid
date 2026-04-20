@@ -1,3 +1,4 @@
+use burn_cuda::Cuda;
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use engine::core::{
     config::Configuration,
@@ -5,20 +6,13 @@ use engine::core::{
     move_iter::fold_legal_moves,
     position::PgnResultValue,
     search::mcts::{
-        CreateNNPartsError, MctsParts,
-        back::MctsSolver,
-        eval::{
+        self, CreateNNPartsError, MctsParts, NNParts, back::MctsSolver, eval::{
             self, Evaluation, Evaluator, Policy, Quality, RawLogits, VisitCounts,
             nn::{TraceInfo, get_node_history},
-        },
-        nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor},
-        node::{
+        }, nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor}, node::{
             self, Branch, NodeData, WinRate,
             node_state::{Evaluated, HasBranches},
-        },
-        noise::DirichletNoiser,
-        search::{BatchItem, Selection},
-        select::{Selector, puct},
+        }, noise::DirichletNoiser, search::{BatchItem, Selection}, select::{Score, Selector}
     },
     zobrist,
 };
@@ -645,7 +639,13 @@ where
             }
 
             let strat = MctsTrainStrategy::new(i, n);
-            let result = mcts(game.position_mut(), parts, &mut mcts_state, &limit, strat);
+            let result = mcts::<{ MPV }, _, MctsTrainConfig, _>(
+                game.position_mut(),
+                parts,
+                &mut mcts_state,
+                &limit,
+                strat,
+            );
 
             let pos = game.position();
             let turn = pos.get_turn();
@@ -697,6 +697,18 @@ where
     Ok(SelfPlay { game, results })
 }
 
+pub const MPV: usize = 64;
+
+pub struct MctsTrainConfig;
+impl mcts::MctsConfig for MctsTrainConfig {
+    type Parts = MctsTrainParts;
+}
+
+pub struct MctsTestConfig;
+impl mcts::MctsConfig for MctsTestConfig {
+    type Parts = NNParts<Cuda<f32>>;
+}
+
 #[derive(Debug)]
 pub struct MctsTrainParts {
     pub evaluator: BatchedNNEvaluator,
@@ -704,12 +716,11 @@ pub struct MctsTrainParts {
     epsilon: f32,
 }
 
-impl MctsParts for &MctsTrainParts {
+impl MctsParts for MctsTrainParts {
     type Selector = MctsTrainSelector;
     type Backprop = MctsSolver;
     type Evaluator = BatchedNNEvaluator;
     type Noiser = DirichletNoiser;
-    type Instance = MctsTrainParts;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -772,9 +783,7 @@ impl Default for MctsTrainSelector {
 }
 
 impl Selector for MctsTrainSelector {
-    type Score = puct::Score;
-
-    fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Self::Score {
+    fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Score {
         let n_i = node.visits() as f32;
         let value = node.value();
 
@@ -789,11 +798,11 @@ impl Selector for MctsTrainSelector {
 
         assert!(!result.is_nan(), "score was NAN");
 
-        puct::Score::new(result)
+        Score::new(result)
     }
 
-    fn min_score(&self) -> Self::Score {
-        puct::Score::new(f32::NEG_INFINITY)
+    fn min_score(&self) -> Score {
+        Score::new(f32::NEG_INFINITY)
     }
 }
 

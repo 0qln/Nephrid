@@ -11,9 +11,7 @@ use crate::core::{
 
 use std::{error::Error, thread};
 
-fn fuzz<const X: usize, P: Send + 'static>(pos: &'static str, parts: P, rounds: usize)
-where
-    for<'a> &'a P: MctsParts,
+fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts: P, rounds: usize)
 {
     magics::init();
     zobrist::init();
@@ -93,12 +91,11 @@ pub fn sa_fuzz_bs_64() -> Result<(), Box<dyn Error>> {
 #[derive(Default)]
 struct NoAnalysisParts;
 
-impl MctsParts for &NoAnalysisParts {
+impl MctsParts for NoAnalysisParts {
     type Selector = UcbSelector;
     type Evaluator = DummyEvaluator;
     type Backprop = DefaultBackuper;
     type Noiser = NullNoiser;
-    type Instance = NoAnalysisParts;
 
     fn selector(&self) -> Self::Selector {
         Default::default()

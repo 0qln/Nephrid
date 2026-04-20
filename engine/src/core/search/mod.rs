@@ -5,7 +5,7 @@ use crate::{
         Move,
         config::Configuration,
         search::mcts::{
-            MctsParts,
+            MctsConfig, MctsParts,
             eval::Cp,
             node::{
                 Tree, WinRate,
@@ -17,7 +17,6 @@ use crate::{
     uci::sync,
 };
 use std::{
-    error::Error,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -44,14 +43,8 @@ pub mod mcts;
 pub mod mode;
 pub mod perft;
 
-pub struct Thread {
+pub struct SearchThread {
     pub tx: Sender<Command>,
-}
-
-pub struct Worker {
-    mcts_parts: Option<mcts::config::mcts::Parts>,
-    mcts_state: mcts::SearchState,
-    backup_tree: Option<Tree>,
 }
 
 #[derive(Error, Debug)]
@@ -59,18 +52,32 @@ pub enum ExecError {
     #[error("Uninitialized state")]
     UninitState(),
     #[error("Bad config: {0}")]
-    BadConfig(Box<dyn Error>),
+    BadConfig(String),
     #[error("Runtime error: {0}")]
-    RuntimeError(Box<dyn Error>),
+    RuntimeError(String),
 }
 
-impl Default for Worker {
+pub trait SearchWorker: Default {
+    fn exec(&mut self, cmd: Command) -> Result<(), ExecError>;
+}
+
+/// Iterative deepening worker.
+pub struct IdWorker; // todo
+
+/// Monte Carlo Tree Search worker.
+pub struct MctsWorker<const MPV: usize, C: MctsConfig> {
+    mcts_parts: Option<C::Parts>,
+    mcts_state: mcts::SearchState,
+    backup_tree: Option<Tree>,
+}
+
+impl<const MPV: usize, C: MctsConfig> Default for MctsWorker<MPV, C> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Worker {
+impl<const MPV: usize, C: MctsConfig> MctsWorker<MPV, C> {
     pub fn new() -> Self {
         let mcts_state = mcts::SearchState::default();
         let mcts_parts = None;
@@ -81,8 +88,10 @@ impl Worker {
             backup_tree,
         }
     }
+}
 
-    pub fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
+impl<const MPV: usize, C: MctsConfig> SearchWorker for MctsWorker<MPV, C> {
+    fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
         match cmd {
             Command::Perft(mut pos, limit, ct, debug) => {
                 perft::<true>(&mut pos, &limit, ct, debug);
@@ -93,7 +102,7 @@ impl Worker {
                 let state = &mut self.mcts_state;
                 let strat = MctsUci::new(debug, ct, None);
 
-                let result = mcts(&mut pos, parts, state, &limit, strat);
+                let result = mcts::<MPV, MctsUci, C, _>(&mut pos, parts, state, &limit, strat);
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -106,7 +115,7 @@ impl Worker {
                 let state = &mut self.mcts_state;
                 let strat = MctsUci::new(debug, ct, Some(ponder));
 
-                let result = mcts(&mut pos, parts, state, &limit, strat);
+                let result = mcts::<MPV, _, C, _>(&mut pos, parts, state, &limit, strat);
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -121,9 +130,9 @@ impl Worker {
                     Err(_) => &Configuration::default(),
                 };
 
-                #[allow(clippy::unnecessary_fallible_conversions)]
-                let parts = <&mcts::config::mcts::Parts as MctsParts>::Instance::try_from(cfg)
-                    .map_err(|e| ExecError::BadConfig(Box::new(e)))?;
+                // #[allow(clippy::unnecessary_fallible_conversions)]
+                let parts = <C::Parts as TryFrom<&Configuration>>::try_from(cfg)
+                    .map_err(|e| ExecError::BadConfig(e.to_string()))?;
 
                 self.mcts_parts = Some(parts);
                 Ok(())
@@ -147,7 +156,7 @@ impl Worker {
                 self.mcts_state.tree = Tree::default();
                 Ok(())
             }
-            Command::MctsDebugTree => {
+            Command::Debug => {
                 let tree = &self.mcts_state.tree;
                 let root = tree.node(tree.root());
                 let root_evaluated = tree.try_node::<Evaluated>(tree.root());
@@ -181,9 +190,8 @@ impl Worker {
                             let node = tree.node(branch.node());
                             let mov = branch.mov();
                             let state = node.state();
-                            let parts: &mcts::config::mcts::Parts =
-                                self.mcts_parts.as_ref().unwrap();
-                            let selector = MctsParts::<{ mcts::config::MPV }>::selector(&parts);
+                            let parts = self.mcts_parts.as_ref().unwrap();
+                            let selector = <C as MctsConfig>::Parts::selector(parts);
                             println!(
                                 "{} {: >9} {: <5} v {: >8.2}/{: <8} p {:.3} ~ {}",
                                 if root_best_move == Some(mov) { '*' } else { '-' },
@@ -204,12 +212,12 @@ impl Worker {
     }
 }
 
-pub fn init() -> Thread {
+pub fn init<W: SearchWorker>() -> SearchThread {
     let (tx, rx) = channel::<Command>();
     thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            let mut worker = Worker::new();
+            let mut worker = W::default();
             loop {
                 let cmd = rx.recv().expect("Should be able to receive data");
                 let result = worker.exec(cmd);
@@ -224,7 +232,7 @@ pub fn init() -> Thread {
         Configuration::default(),
     ))));
 
-    Thread { tx }
+    SearchThread { tx }
 }
 
 #[derive(Debug, Clone)]
@@ -236,7 +244,7 @@ pub enum Command {
     RollbackAndAdvance(Move),
     Configure(Arc<Mutex<Configuration>>),
     ResetState,
-    MctsDebugTree,
+    Debug,
 }
 
 #[derive(Debug, Clone)]

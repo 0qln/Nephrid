@@ -1,6 +1,6 @@
 use burn::tensor::{DType, Shape, Tensor, TensorData, backend::Backend};
 use itertools::Itertools;
-use std::ops::ControlFlow;
+use std::{ops::ControlFlow, rc::Rc};
 
 use crate::core::search::mcts::{
     nn::{
@@ -40,12 +40,13 @@ impl TraceInfo {
 }
 
 /// X: batch size
-pub struct NNEvaluator<'a, 'b, B: Backend> {
+#[derive(Debug)]
+pub struct NNEvaluator<B: Backend> {
     /// NN Model
-    model: &'a Model<B>,
+    model: Rc<Model<B>>,
 
     // Device on which the nn will run.
-    device: &'b B::Device,
+    device: Rc<B::Device>,
 }
 
 /// Returns the history of the given selected leaf in following order:
@@ -75,13 +76,13 @@ pub fn get_node_history<const X: usize>(
     vec
 }
 
-impl<'a, 'b, B: Backend> NNEvaluator<'a, 'b, B> {
-    pub fn new(model: &'a Model<B>, device: &'b B::Device) -> Self {
+impl<B: Backend> NNEvaluator<B> {
+    pub fn new(model: Rc<Model<B>>, device: Rc<B::Device>) -> Self {
         Self { model, device }
     }
 
     fn device(&self) -> &B::Device {
-        self.device
+        &self.device
     }
 
     /// batch: The iterator of the selected leaf nodes that should be evaluated
@@ -119,7 +120,7 @@ impl<'a, 'b, B: Backend> NNEvaluator<'a, 'b, B> {
     }
 }
 
-impl<'a, 'b, B: Backend> Evaluator for NNEvaluator<'a, 'b, B> {
+impl<B: Backend> Evaluator for NNEvaluator<B> {
     type TraceData = TraceInfo;
 
     fn trace<S: HasBranches>(

@@ -20,7 +20,9 @@ use crate::core::{
     },
 };
 
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
+
+use std::error::Error as StdError;
 
 pub mod back;
 pub mod eval;
@@ -34,9 +36,9 @@ pub mod strategy;
 
 pub mod test;
 
-pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
+pub fn mcts<const MPV: usize, S: MctsStrategy, C: MctsConfig, M: MctsState>(
     pos: &mut Position,
-    parts: P,
+    parts: &C::Parts,
     state: &mut M,
     limit: &Limit,
     mut strategy: S,
@@ -45,7 +47,7 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
 
     strategy.start(tree, pos, limit);
 
-    let mut searcher = TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new(
+    let mut searcher = TreeSearcher::<{ MPV }, _, _, _, _, _>::new(
         pos,
         parts.selector(),
         parts.limiter(limit),
@@ -64,12 +66,15 @@ pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
     strategy.result(state.tree())
 }
 
-pub trait MctsParts<const X: usize = { config::MPV }> {
+pub trait MctsConfig {
+    type Parts: MctsParts;
+}
+
+pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
     type Selector: Selector;
     type Evaluator: Evaluator;
     type Backprop: Backpropagater;
     type Noiser: Noiser;
-    type Instance: for<'a> TryFrom<&'a Configuration>;
     type Limiter: Limiter = DefaultLimiter;
 
     fn selector(&self) -> Self::Selector;
@@ -109,6 +114,7 @@ pub struct SearchState {
     pub tree: Tree,
     pub back_buffer: Tree,
 }
+
 impl SearchState {
     pub fn advance_to(&mut self, mov: Move) {
         let root = self.tree.root();
@@ -129,30 +135,26 @@ impl MctsState for SearchState {
 /// Mcts parts for mcts with puct + nn analysis.
 #[derive(Debug)]
 pub struct NNParts<B: Backend> {
-    /// NN Model
-    pub nn: Box<Model<B>>,
-
-    /// Hardware abstraction for the nn model
-    pub device: B::Device,
+    model: Rc<Model<B>>,
+    device: Rc<B::Device>,
 
     // Noiser
     alpha: f32,
     epsilon: f32,
 }
 
-impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
+impl<B: Backend> MctsParts for NNParts<B> {
     type Selector = PuctSelector;
-    type Evaluator = NNEvaluator<'a, 'a, B>;
+    type Evaluator = NNEvaluator<B>;
     type Backprop = MctsSolver;
     type Noiser = DirichletNoiser;
-    type Instance = NNParts<B>;
 
     fn selector(&self) -> Self::Selector {
         PuctSelector::default()
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        NNEvaluator::new(&self.nn, &self.device)
+        NNEvaluator::new(self.model.clone(), self.device.clone())
     }
 
     fn backprop(&self) -> Self::Backprop {
@@ -180,7 +182,8 @@ impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
         let weights = PathBuf::from(config.weights_path());
         let device = B::Device::default();
         let nn = Model::try_from((weights, &device))?;
-        nn.warmup(config::MPV, &device);
+        // todo: do this
+        // nn.warmup(config::MPV, &device);
         Ok(Self::new(nn, device, alpha, epsilon))
     }
 }
@@ -188,8 +191,8 @@ impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
 impl<B: Backend> NNParts<B> {
     pub fn new(nn: Model<B>, device: B::Device, alpha: f32, epsilon: f32) -> Self {
         Self {
-            nn: Box::new(nn),
-            device,
+            model: Rc::new(nn),
+            device: Rc::new(device),
             alpha,
             epsilon,
         }
@@ -203,12 +206,11 @@ pub struct HceParts {
     epsilon: f32,
 }
 
-impl<const X: usize> MctsParts<X> for &HceParts {
+impl MctsParts for HceParts {
     type Selector = PuctSelector;
     type Evaluator = HceEvaluator;
     type Backprop = MctsSolver;
     type Noiser = DirichletNoiser;
-    type Instance = HceParts;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -252,12 +254,11 @@ impl HceParts {
 #[derive(Debug, Default)]
 pub struct PureParts;
 
-impl<const X: usize> MctsParts<X> for &PureParts {
+impl MctsParts for PureParts {
     type Selector = UcbSelector;
     type Evaluator = PlayoutEvaluator;
     type Backprop = MctsSolver;
     type Noiser = NullNoiser;
-    type Instance = PureParts;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -280,63 +281,5 @@ impl<const X: usize> MctsParts<X> for &PureParts {
 impl From<&Configuration> for PureParts {
     fn from(_config: &Configuration) -> Self {
         Self {}
-    }
-}
-
-pub mod config {
-    // --- MPV ---
-    #[cfg(feature = "mcts-pure")]
-    pub const MPV: usize = 1;
-
-    #[cfg(all(feature = "nn-backend-cuda", not(feature = "mcts-pure")))]
-    pub const MPV: usize = 64;
-
-    // We must ensure ndarray only triggers if cuda is NOT enabled
-    #[cfg(all(
-        feature = "nn-backend-ndarray",
-        not(feature = "mcts-pure"),
-        not(feature = "nn-backend-cuda")
-    ))]
-    pub const MPV: usize = 1;
-
-    // --- nn_backend ---
-    #[cfg(feature = "nn-backend-cuda")]
-    pub mod nn_backend {
-        pub type Backend = burn_cuda::Cuda<f32>;
-        pub type Device = <self::Backend as burn::prelude::Backend>::Device;
-    }
-
-    // NdArray only wins if Cuda is not requested
-    #[cfg(all(feature = "nn-backend-ndarray", not(feature = "nn-backend-cuda")))]
-    pub mod nn_backend {
-        use burn::backend::NdArray;
-        pub type Backend = NdArray;
-        pub type Device = <self::Backend as burn::prelude::Backend>::Device;
-    }
-
-    // --- mcts ---
-    // Highest priority: Neural Network
-    #[cfg(feature = "mcts-nn")]
-    pub mod mcts {
-        use crate::core::search::mcts::NNParts;
-        pub type Parts = NNParts<super::nn_backend::Backend>;
-    }
-
-    // Secondary priority: HCE Analysis
-    #[cfg(all(feature = "mcts-hce", not(feature = "mcts-nn")))]
-    pub mod mcts {
-        use crate::core::search::mcts::HceParts;
-        pub type Parts = HceParts;
-    }
-
-    // Lowest priority: Pure
-    #[cfg(all(
-        feature = "mcts-pure",
-        not(feature = "mcts-nn"),
-        not(feature = "mcts-hce")
-    ))]
-    pub mod mcts {
-        use crate::core::search::mcts::PureParts;
-        pub type Parts = PureParts;
     }
 }

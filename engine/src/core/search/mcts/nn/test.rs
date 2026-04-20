@@ -1,6 +1,8 @@
+use burn::backend::NdArray;
+
 use super::*;
 
-use crate::core::{move_iter::sliding_piece::magics, search::mcts, zobrist};
+use crate::core::{move_iter::sliding_piece::magics, zobrist};
 
 fn make_input<B: Backend>(
     batch_size: usize,
@@ -26,10 +28,11 @@ fn inference() {
     zobrist::init();
     magics::init();
 
-    let device = mcts::config::nn_backend::Device::default();
+    type Backend = NdArray;
+
+    let device = <Backend as burn::prelude::Backend>::Device::default();
     println!("Device: {:?}", device);
 
-    type Backend = mcts::config::nn_backend::Backend;
     let model = ModelConfig::new().init::<Backend>(&device);
 
     for i in [1, 2, 4, 8, 16, 32, 64] {

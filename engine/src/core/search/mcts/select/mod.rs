@@ -7,7 +7,7 @@ pub mod puct;
 pub mod ucb;
 
 pub trait Selector {
-    type Score: Ord + ops::Neg<Output = Self::Score> + Into<f32>;
+    // type Score: Ord + ops::Neg<Output = Self::Score> + Into<f32>;
 
     // note: we take the policy as an argument, because if we later convert this
     // tree structure to a graph, we have to consider different policies from
@@ -22,14 +22,14 @@ pub trait Selector {
     ///
     /// branch: The branch to be scored.
     /// cap_n_i: The number of times that the parent node has been visited.
-    fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Self::Score;
+    fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Score;
 
     fn budget(&self, remaining_budget: usize) -> usize {
         // todo: maybe make this relative to the branch's puct score.
         max(1, (remaining_budget as f32 * 0.6) as usize)
     }
 
-    fn min_score(&self) -> Self::Score;
+    fn min_score(&self) -> Score;
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Default)]

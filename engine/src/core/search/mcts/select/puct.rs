@@ -1,6 +1,6 @@
 use crate::core::search::mcts::{
     eval,
-    node::{Branch, NodeData},
+    node::{Branch, NodeData}, select::Score,
 };
 
 pub struct PuctSelector {
@@ -21,8 +21,6 @@ impl Default for PuctSelector {
 }
 
 impl super::Selector for PuctSelector {
-    type Score = Score;
-
     fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Score {
         let n_i = node.visits() as f32;
 
@@ -44,9 +42,7 @@ impl super::Selector for PuctSelector {
         Score::new(exploitation + exploration)
     }
 
-    fn min_score(&self) -> Self::Score {
+    fn min_score(&self) -> Score {
         Score::new(f32::NEG_INFINITY)
     }
 }
-
-pub type Score = super::Score;

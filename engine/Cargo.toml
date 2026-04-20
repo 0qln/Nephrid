@@ -19,10 +19,3 @@ approx = "0.5.1"
 
 [features]
 default = []
-
-nn-backend-cuda = []
-nn-backend-ndarray = []
-
-mcts-pure = []
-mcts-nn = []
-mcts-hce = []

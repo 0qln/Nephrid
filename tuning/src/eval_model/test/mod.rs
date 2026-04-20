@@ -4,7 +4,7 @@ use crate::{
     data::{FenDataset, FenItemRaw},
     io::{ResumeAction, get_config},
     loss::ValueTarget,
-    self_play::MctsTrainStrategy,
+    self_play::{MPV, MctsTestConfig, MctsTrainStrategy},
     train,
 };
 use burn::{
@@ -262,7 +262,7 @@ pub fn learn_mate_in_1() {
             ..Default::default()
         };
 
-        let result = mcts(
+        let result = mcts::<{ MPV }, _, MctsTestConfig, _>(
             &mut pos,
             &parts,
             &mut mcts_state,
@@ -353,12 +353,12 @@ pub fn learn_mate_in_2() {
         };
 
         let mut mcts_state = SearchState::default();
-        let nn_state = NNParts::new(model, device, 0.3, 0.);
+        let nn_parts = NNParts::new(model, device, 0.3, 0.);
 
         for _ in 0..3 {
-            let result = mcts(
+            let result = mcts::<{ MPV }, _, MctsTestConfig, _>(
                 &mut pos,
-                &nn_state,
+                &nn_parts,
                 &mut mcts_state,
                 &limit,
                 MctsTrainStrategy::new(1, 1),

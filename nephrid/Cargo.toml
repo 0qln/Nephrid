@@ -4,13 +4,15 @@ version = "26.4.4+1e7b349"
 edition = "2024"
 
 [features]
-cpu = ["engine/nn-backend-ndarray"]
-gpu = ["engine/nn-backend-cuda"]
-mcts-nn = ["engine/mcts-nn"]
-mcts-hce = ["engine/mcts-hce"]
-mcts-pure = ["engine/mcts-pure"]
 
-default = ["cpu", "mcts-hce"]
+nn-backend-cuda = []
+nn-backend-ndarray = []
+
+mcts-pure = []
+mcts-nn = []
+mcts-hce = []
+
+default = ["mcts-hce"]
 
 [dependencies]
 engine = { version = "*", path = "../engine", default-features = false }

@@ -17,8 +17,6 @@ impl Default for UcbSelector {
 }
 
 impl Selector for UcbSelector {
-    type Score = super::Score;
-
     fn score(&self, node: &NodeData, _branch: &Branch, cap_n_i: u32) -> Score {
         match node.visits() {
             0 => Score(f32::INFINITY),
@@ -32,7 +30,7 @@ impl Selector for UcbSelector {
         }
     }
 
-    fn min_score(&self) -> Self::Score {
-        Score(f32::NEG_INFINITY)
+    fn min_score(&self) -> Score {
+        Score::new(f32::NEG_INFINITY)
     }
 }

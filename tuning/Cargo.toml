@@ -3,7 +3,7 @@ name = "tuning"
 edition = "2024"
 
 [dependencies]
-engine = { version = "*", path = "../engine", default-features = false, features = ["nn-backend-cuda", "mcts-nn"]  }
+engine = { version = "*", path = "../engine"}
 itertools = "0.14.0"
 rand = "0.9.0"
 burn = { version = "0.19.1", features = ["ndarray", "train"] }
