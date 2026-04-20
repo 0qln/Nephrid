@@ -433,8 +433,13 @@ impl const ConstFrom<DiagA8H1> for Bitboard {
 }
 
 pub trait BitboardIteratorExt: Iterator<Item = Bitboard> + Sized {
+    #[inline]
     fn aggregate(self) -> Bitboard {
-        self.fold(Bitboard::empty(), |acc, bb| acc | bb)
+        self.fold(
+            Bitboard::empty(),
+            #[inline]
+            |acc, bb| acc | bb,
+        )
     }
 }
 
