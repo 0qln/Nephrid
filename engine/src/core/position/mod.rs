@@ -639,7 +639,6 @@ impl Position {
         }
     }
 
-    // todo: use these in the mcts searh functions instead of make_move(..)
     pub fn make_move_for<P: Perspective>(&mut self, m: Move) {
         let us = P::COLOR;
         debug_assert_eq!(

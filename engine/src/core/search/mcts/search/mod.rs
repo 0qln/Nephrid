@@ -7,6 +7,7 @@ use itertools::Itertools;
 
 use crate::core::{
     Position,
+    color::{Perspective, colors, perspectives},
     depth::Depth,
     search::mcts::{
         back::Backpropagater,
@@ -313,10 +314,33 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
         let eval_data = self.evaluator.trace(root, tree, self.position);
 
         let sel_root_id = self.selection.init_root(root, turn, eval_data);
-        self.pick_branches(MPV, 0, Depth::ROOT, root, tree, sel_root_id);
+
+        match self.position.get_turn() {
+            colors::WHITE => {
+                self.pick_branches::<perspectives::White>(
+                    MPV,
+                    0,
+                    Depth::ROOT,
+                    root,
+                    tree,
+                    sel_root_id,
+                );
+            }
+            colors::BLACK => {
+                self.pick_branches::<perspectives::Black>(
+                    MPV,
+                    0,
+                    Depth::ROOT,
+                    root,
+                    tree,
+                    sel_root_id,
+                );
+            }
+            _ => unsafe { std::hint::unreachable_unchecked() },
+        }
     }
 
-    fn pick_branches(
+    fn pick_branches<P: Perspective>(
         &mut self,
         budget: usize,
         line_index: usize,
@@ -383,7 +407,7 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
                 continue;
             }
 
-            let used = self.select_branch(
+            let used = self.select_branch::<P>(
                 actual_budget,
                 line_index,
                 depth,
@@ -399,7 +423,7 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
         used_budget
     }
 
-    fn select_branch(
+    fn select_branch<P: Perspective>(
         &mut self,
         budget: usize,
         line_index: usize,
@@ -413,7 +437,7 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
             (branch.mov(), branch.node())
         };
 
-        self.position.make_move(mov);
+        self.position.make_move_for::<P>(mov);
         let depth = depth + 1;
         let turn = self.position.get_turn();
 
@@ -438,7 +462,9 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
                     let child_id =
                         self.selection
                             .append_parent(parent_sel_id, node, turn, trace_data);
-                    self.pick_branches(budget, line_index, depth, node, tree, child_id)
+                    self.pick_branches::<P::Opponent>(
+                        budget, line_index, depth, node, tree, child_id,
+                    )
                 }
             }
             Switch::Leaf(node) => {
@@ -457,7 +483,7 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
             }
         };
 
-        self.position.unmake_move(mov);
+        self.position.unmake_move_for::<P>(mov);
         used
     }
 
