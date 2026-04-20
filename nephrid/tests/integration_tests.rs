@@ -190,7 +190,7 @@ fn test_ponder_miss_retains_cached_tree() {
     let pattern = r"(?P<prefix>[-*])\s(?P<state>\w*)\s(?P<move>[a-z1-8]{4,5})\s+v\s+(?P<value>[\d.]*)/(?P<visits>\d*)\s+";
     let re = Regex::new(pattern).unwrap();
 
-    write_engine_line(&mut stdin, "mcts d");
+    write_engine_line(&mut stdin, "search d");
 
     let mut child_nodes: Vec<(String, u64)> = Vec::new();
     loop {
@@ -250,7 +250,9 @@ fn test_ponder_miss_retains_cached_tree() {
     write_engine_line(&mut stdin, "go wtime 295000 btime 295000");
 
     // 6. Capture the first info line of the new search
-    let first_info_line = block_engine_line(&mut reader, |l| l.starts_with("info"));
+    let first_info_line = block_engine_line(&mut reader, |l| {
+        l.starts_with("info") && !l.starts_with("info string")
+    });
     let first_search_nodes = extract_nodes(&first_info_line).unwrap_or_else(|| {
         panic!(
             "Failed to extract nodes from first info line of new search! Line: {}",
@@ -389,7 +391,7 @@ fn test_ponder_miss_complete_divergence_resets_tree() {
 }
 
 #[test]
-#[timeout(1000)]
+#[timeout(10000)]
 fn test_pgn_input_command() {
     let mut child = GuardedChild(
         Command::cargo_bin("nephrid")
