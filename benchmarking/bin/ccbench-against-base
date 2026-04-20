@@ -28,5 +28,5 @@ echo "Executing ccbench..."
 ccbench \
     "ccbench/in/nephrid-${FEAT_HASH}" \
     "ccbench/in/nephrid-${BASE_HASH}" \
-    ~/Downloads/chess/popularpos_lichess_v3.epd \
+    benchmarking/resources/popularpos_lichess_v3.epd \
     ccbench/out/games.pgn
