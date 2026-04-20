@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use crate::{
     core::{
-        bitboard::Bitboard,
+        bitboard::{Bitboard, BitboardIteratorExt},
         castling::{CastlingRights, CastlingSideTokenizationError},
         color::{Color, ColorTokenizationError, Perspective, colors, perspectives},
         coordinates::{
@@ -93,33 +93,16 @@ impl StateInfo {
         let r_n_q = (pos.get_piece_bb(piece_type::ROOK) | queens) & enemies;
         let b_n_q = (pos.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
 
+        let bishop_attacks = |sq| Bishop::lookup_attacks(sq, occupancy);
+        let rook_attacks = |sq| Rook::lookup_attacks(sq, occupancy);
+
         self.nstm_attacks = {
-            let mut nstm_attacks = Bitboard::empty();
-
-            nstm_attacks |= if nstm == colors::WHITE {
-                pawn::compute_attacks::<{ colors::WHITE_C }>(pawns)
-            }
-            else {
-                pawn::compute_attacks::<{ colors::BLACK_C }>(pawns)
-            };
-
-            for sq in knights {
-                nstm_attacks |= knight::lookup_attacks(sq);
-            }
-
-            for sq in b_n_q {
-                nstm_attacks |= Bishop::lookup_attacks(sq, occupancy);
-            }
-
-            for sq in r_n_q {
-                nstm_attacks |= Rook::lookup_attacks(sq, occupancy);
-            }
-
-            if let Some(sq) = (enemies & kings).lsb() {
-                nstm_attacks |= king::lookup_attacks(sq);
-            }
-
-            nstm_attacks
+            let king = enemies & kings;
+            pawn::compute_attacks(pawns, nstm)
+                | knights.into_iter().map(knight::lookup_attacks).aggregate()
+                | b_n_q.into_iter().map(bishop_attacks).aggregate()
+                | r_n_q.into_iter().map(rook_attacks).aggregate()
+                | king.lsb().map(king::lookup_attacks).unwrap_or_default()
         };
 
         if let Some(king_sq) = (allies & kings).lsb() {

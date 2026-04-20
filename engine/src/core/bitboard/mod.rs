@@ -37,7 +37,8 @@ impl Try for Bitboard {
     fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
         if self.is_empty() {
             ControlFlow::Break(self)
-        } else {
+        }
+        else {
             ControlFlow::Continue(self)
         }
     }
@@ -430,3 +431,11 @@ impl const ConstFrom<DiagA8H1> for Bitboard {
         Self { v: A8H1[diag.v() as usize] }
     }
 }
+
+pub trait BitboardIteratorExt: Iterator<Item = Bitboard> + Sized {
+    fn aggregate(self) -> Bitboard {
+        self.fold(Bitboard::empty(), |acc, bb| acc | bb)
+    }
+}
+
+impl<I: Iterator<Item = Bitboard>> BitboardIteratorExt for I {}

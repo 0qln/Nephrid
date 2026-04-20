@@ -397,9 +397,23 @@ impl<const Q: bool, C: NoDoubleCheck> FoldMoves<C, Q> for Pawn {
     }
 }
 
-pub const fn compute_attacks<const C: TColor>(pawns: Bitboard) -> Bitboard {
+pub const fn compute_attacks_<const C: TColor>(pawns: Bitboard) -> Bitboard {
     Color::assert_variant(C); // Safety
     let color = unsafe { Color::from_v(C) };
+    Bitboard {
+        v: {
+            let attacks_west = pawns
+                .and_not_c(Bitboard::from_c(files::A))
+                .shift(capture(color, compass_rose::WEST));
+            let attacks_east = pawns
+                .and_not_c(Bitboard::from_c(files::H))
+                .shift(capture(color, compass_rose::EAST));
+            attacks_west.v | attacks_east.v
+        },
+    }
+}
+
+pub const fn compute_attacks(pawns: Bitboard, color: Color) -> Bitboard {
     Bitboard {
         v: {
             let attacks_west = pawns
@@ -420,7 +434,7 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
-            result[sq.v() as usize] = compute_attacks::<{ colors::WHITE_C }>(pawn);
+            result[sq.v() as usize] = compute_attacks_::<{ colors::WHITE_C }>(pawn);
         });
         result
     };
@@ -429,7 +443,7 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from_c(sq);
-            result[sq.v() as usize] = compute_attacks::<{ colors::BLACK_C }>(pawn);
+            result[sq.v() as usize] = compute_attacks_::<{ colors::BLACK_C }>(pawn);
         });
         result
     };
