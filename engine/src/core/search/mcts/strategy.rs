@@ -194,12 +194,12 @@ pub struct MctsUci {
     search_start: Option<Instant>,
     last_uci_out: Option<Instant>,
 
-    // --- Added fields for search control ---
+    // search control
     ct: CancellationToken,
     pt: Option<PonderToken>,
     debug: DebugMode,
 
-    // --- Runtime tracking ---
+    // runtime tracking
     time_per_move: Duration,
     time_limit: Option<Instant>,
     nodes_begin: u64,
@@ -207,7 +207,7 @@ pub struct MctsUci {
     iterations: u64,
     is_not_pondering: bool,
 
-    // --- Configuration ---
+    // configuration
     limit: UciLimit,
 }
 
