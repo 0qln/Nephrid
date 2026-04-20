@@ -22,6 +22,8 @@ pub trait Selector {
     /// cap_n_i: The number of times that the parent node has been visited.
     fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Score;
 
+    // todo: clean this up, either move the new logic here or remove this function
+    // alltoghther
     fn budget(&self, remaining_budget: usize) -> usize {
         max(1, (remaining_budget as f32 * 0.3) as usize)
     }
