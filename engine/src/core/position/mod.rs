@@ -1088,6 +1088,7 @@ impl ReducedPgn {
         let moves_sec = PgnMoveTextSection(move_tokens);
         let tags_sec = PgnTagPairSection(vec![
             PgnTagPair("FEN", fen),
+            PgnTagPair("SetUp", "1".to_string()),
             PgnTagPair("Result", game_result.to_string()),
         ]);
 
@@ -1140,6 +1141,7 @@ impl ReducedPgn {
         let moves_sec = PgnMoveTextSection(move_tokens);
         let tags_sec = PgnTagPairSection(vec![
             PgnTagPair("FEN", fen),
+            PgnTagPair("SetUp", "1".to_string()),
             PgnTagPair("Result", game_result.to_string()),
         ]);
 
