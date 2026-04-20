@@ -12,11 +12,8 @@ use crate::{
         position::{FenImport, FenParseError, PgnImport, PgnImportError, Position, ReducedPgn},
         search::{Command, PonderToken, SearchThread, SearchWorker, limit::UciLimit},
     },
-    misc::{DebugMode, trim_newline},
-    uci::{
-        sync::{CancellationToken, UciError},
-        tokens::Tokenizer,
-    },
+    misc::{CancellationToken, DebugMode, trim_newline},
+    uci::{UciError, tokens::Tokenizer},
 };
 use std::{error::Error, process};
 

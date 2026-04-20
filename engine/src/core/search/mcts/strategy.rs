@@ -17,8 +17,7 @@ use crate::{
             },
         },
     },
-    misc::DebugMode,
-    uci::sync::CancellationToken,
+    misc::{CancellationToken, DebugMode},
 };
 
 pub trait MctsStrategy {

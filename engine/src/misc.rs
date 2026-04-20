@@ -282,3 +282,24 @@ impl DebugMode {
         self.0.store(val, Ordering::Relaxed);
     }
 }
+
+#[derive(Default, Clone, Debug)]
+pub struct CancellationToken {
+    v: Arc<AtomicBool>,
+}
+
+impl CancellationToken {
+    pub fn new() -> Self {
+        Self {
+            v: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.v.store(true, Ordering::Relaxed)
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.v.load(Ordering::Relaxed)
+    }
+}

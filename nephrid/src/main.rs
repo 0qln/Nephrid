@@ -1,6 +1,6 @@
 use engine::{
     core::{Engine, execute_uci, move_iter::sliding_piece::magics, zobrist},
-    uci::sync::CancellationToken,
+    misc::CancellationToken,
 };
 use std::io::stdin;
 

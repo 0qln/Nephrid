@@ -6,8 +6,7 @@ use crate::{
         move_iter::fold_legals,
         position::Position,
     },
-    misc::DebugMode,
-    uci::sync::CancellationToken,
+    misc::{CancellationToken, DebugMode},
 };
 use std::ops::ControlFlow;
 

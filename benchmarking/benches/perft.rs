@@ -13,8 +13,7 @@ use engine::{
         search::{limit::UciLimit, perft::perft_inner_collect},
         zobrist,
     },
-    misc::DebugMode,
-    uci::sync::CancellationToken,
+    misc::{CancellationToken, DebugMode},
 };
 
 fn bench_perft<const Q: bool>(mut pos: Position, depth: Depth) {

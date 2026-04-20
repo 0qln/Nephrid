@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::core::{
+use crate::{core::{
     Move,
     config::Configuration,
     search::{
@@ -15,7 +15,7 @@ use crate::core::{
             select::Selector,
         },
     },
-};
+}, misc::CancellationToken};
 use std::{
     sync::{
         Arc, Mutex,
@@ -34,7 +34,6 @@ use crate::{
         },
     },
     misc::DebugMode,
-    uci::sync::CancellationToken,
 };
 
 pub mod limit;

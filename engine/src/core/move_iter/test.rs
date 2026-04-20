@@ -6,8 +6,7 @@ use crate::{
         search::{self, limit::UciLimit},
         zobrist,
     },
-    misc::DebugMode,
-    uci::sync::CancellationToken,
+    misc::{CancellationToken, DebugMode},
 };
 
 fn test_pos(fen: &str, depth: Depth, expected: u64) {

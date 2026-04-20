@@ -11,8 +11,7 @@ use crate::{
         search::{limit::UciLimit, perft::perft_inner_collect},
         zobrist,
     },
-    misc::DebugMode,
-    uci::sync::CancellationToken,
+    misc::{CancellationToken, DebugMode},
 };
 
 fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
