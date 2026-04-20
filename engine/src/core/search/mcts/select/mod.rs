@@ -25,8 +25,7 @@ pub trait Selector {
     fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Score;
 
     fn budget(&self, remaining_budget: usize) -> usize {
-        // todo: maybe make this relative to the branch's puct score.
-        max(1, (remaining_budget as f32 * 0.6) as usize)
+        max(1, (remaining_budget as f32 * 0.3) as usize)
     }
 
     fn min_score(&self) -> Score;
