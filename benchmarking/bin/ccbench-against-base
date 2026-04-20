@@ -5,28 +5,57 @@ mkdir -p ccbench/in ccbench/out
 
 FEAT_BRANCH=$(git branch --show-current)
 FEAT_HASH=$(git rev-parse --short HEAD)
+BASE_HASH=$(git rev-parse --short main)  # get main's hash without switching
 
-echo "Starting benchmark for feature branch: $FEAT_BRANCH ($FEAT_HASH)"
+echo "Feature branch: $FEAT_BRANCH ($FEAT_HASH)"
+echo "Base commit (main): $BASE_HASH"
 
-echo "Checking out main branch..."
-git checkout main
-BASE_HASH=$(git rev-parse --short HEAD)
+# Check if both binaries already exist
+FEAT_BIN="ccbench/in/nephrid-${FEAT_HASH}"
+BASE_BIN="ccbench/in/nephrid-${BASE_HASH}"
 
-echo "Building base ($BASE_HASH)..."
-cargo build --release --bin nephrid
-cp target/release/nephrid "ccbench/in/nephrid-${BASE_HASH}"
+need_base=false
+need_feat=false
 
-echo "Returning to feature branch ($FEAT_BRANCH)..."
-git checkout "$FEAT_BRANCH"
+if [[ -f "$BASE_BIN" ]]; then
+    echo "Base binary already exists: $BASE_BIN"
+else
+    echo "Base binary missing, will rebuild"
+    need_base=true
+fi
 
-echo "Building feature ($FEAT_HASH)..."
-cargo build --release --bin nephrid
-cp target/release/nephrid "ccbench/in/nephrid-${FEAT_HASH}"
+if [[ -f "$FEAT_BIN" ]]; then
+    echo "Feature binary already exists: $FEAT_BIN"
+else
+    echo "Feature binary missing, will rebuild"
+    need_feat=true
+fi
+
+# Build base if needed
+if $need_base; then
+    echo "Checking out main branch to build base..."
+    git checkout main
+    echo "Building base ($BASE_HASH)..."
+    cargo build --release --bin nephrid
+    cp target/release/nephrid "$BASE_BIN"
+    echo "Returning to feature branch..."
+    git checkout "$FEAT_BRANCH"
+fi
+
+# Build feature if needed
+if $need_feat; then
+    echo "Building feature ($FEAT_HASH)..."
+    # Ensure we are on feature branch (in case we just returned from main)
+    if [[ $(git branch --show-current) != "$FEAT_BRANCH" ]]; then
+        git checkout "$FEAT_BRANCH"
+    fi
+    cargo build --release --bin nephrid
+    cp target/release/nephrid "$FEAT_BIN"
+fi
 
 echo "Executing ccbench..."
-
 ccbench \
-    "ccbench/in/nephrid-${FEAT_HASH}" \
-    "ccbench/in/nephrid-${BASE_HASH}" \
+    "$FEAT_BIN" \
+    "$BASE_BIN" \
     benchmarking/resources/popularpos_lichess_v3.epd \
     ccbench/out/games.pgn
