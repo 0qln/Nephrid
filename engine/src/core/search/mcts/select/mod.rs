@@ -7,8 +7,6 @@ pub mod puct;
 pub mod ucb;
 
 pub trait Selector {
-    // type Score: Ord + ops::Neg<Output = Self::Score> + Into<f32>;
-
     // note: we take the policy as an argument, because if we later convert this
     // tree structure to a graph, we have to consider different policies from
     // different parents. same reason that we have different struct for node and
