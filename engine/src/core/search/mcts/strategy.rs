@@ -196,7 +196,7 @@ pub struct MctsUci {
 
     // --- Added fields for search control ---
     ct: CancellationToken,
-    ponder_tok: Option<PonderToken>,
+    pt: Option<PonderToken>,
     debug: DebugMode,
 
     // --- Runtime tracking ---
@@ -216,13 +216,13 @@ impl MctsUci {
         limit: UciLimit,
         debug: DebugMode,
         ct: CancellationToken,
-        ponder_tok: Option<PonderToken>,
+        pt: Option<PonderToken>,
     ) -> Self {
         Self {
             limit,
             debug,
             ct,
-            ponder_tok,
+            pt,
             ..Default::default()
         }
     }
@@ -324,7 +324,7 @@ impl MctsStrategy for MctsUci {
 
         self.time_per_move = self.limit.time_per_move(pos);
         self.time_limit = Some(Instant::now() + self.time_per_move);
-        self.is_not_pondering = self.ponder_tok.is_none();
+        self.is_not_pondering = self.pt.is_none();
     }
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
@@ -349,7 +349,7 @@ impl MctsStrategy for MctsUci {
         }
 
         // 2. Ponder Hit transition
-        if let Some(ponder_tok) = &self.ponder_tok
+        if let Some(ponder_tok) = &self.pt
             && !self.is_not_pondering
             && !ponder_tok.should_ponder()
         {

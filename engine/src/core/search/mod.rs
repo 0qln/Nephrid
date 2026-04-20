@@ -1,21 +1,24 @@
 use thiserror::Error;
 
-use crate::{core::{
-    Move,
-    config::Configuration,
-    search::{
-        limit::UciLimit,
-        mcts::{
-            MctsConfig, MctsParts,
-            eval::Cp,
-            node::{
-                Tree, WinRate,
-                node_state::{Evaluated, Switch},
+use crate::{
+    core::{
+        Move,
+        config::Configuration,
+        search::{
+            limit::UciLimit,
+            mcts::{
+                MctsConfig, MctsParts,
+                eval::Cp,
+                node::{
+                    Tree, WinRate,
+                    node_state::{Evaluated, Switch},
+                },
+                select::Selector,
             },
-            select::Selector,
         },
     },
-}, misc::CancellationToken};
+    misc::CancellationToken,
+};
 use std::{
     sync::{
         Arc, Mutex,
@@ -108,10 +111,10 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
 
                 Ok(())
             }
-            Command::Ponder(mut pos, limit, ct, debug, ponder) => {
+            Command::Ponder(mut pos, limit, ct, debug, pt) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
-                let strat = C::Strat::new(limit, debug, ct, Some(ponder));
+                let strat = C::Strat::new(limit, debug, ct, Some(pt));
 
                 let result = mcts::<MPV, C, _>(&mut pos, parts, state, strat);
 

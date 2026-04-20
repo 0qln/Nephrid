@@ -106,7 +106,7 @@ pub struct Engine {
     search_t: SearchThread,
 
     /// A token to trigger the transition from pondering to normal search.
-    ponder_hit: PonderToken,
+    ponder_token: PonderToken,
 
     /// Whether the engine runs in debug mode.
     debug: DebugMode,
@@ -126,7 +126,7 @@ impl Engine {
             debug: Default::default(),
             game: Default::default(),
             _pos_src: Default::default(),
-            ponder_hit: Default::default(),
+            ponder_token: Default::default(),
         }
     }
 }
@@ -223,7 +223,7 @@ pub fn execute_uci(
             let cmd = match mode {
                 Mode::Normal => Command::Normal(position, limit, token, debug),
                 Mode::Ponder => {
-                    let ponder_hit = engine.ponder_hit.clone();
+                    let ponder_hit = engine.ponder_token.clone();
                     ponder_hit.start_ponder();
                     Command::Ponder(position, limit, token, debug, ponder_hit)
                 }
@@ -235,7 +235,7 @@ pub fn execute_uci(
             Ok(())
         }
         Some("ponderhit") => {
-            engine.ponder_hit.stop_ponder();
+            engine.ponder_token.stop_ponder();
             Ok(())
         }
         Some("position") => {
