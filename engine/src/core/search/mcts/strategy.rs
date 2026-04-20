@@ -277,7 +277,7 @@ impl MctsUci {
 
         let currmove = UciArg::Some(UciCurrmove(mov));
         let score = UciArg::from(self.determine_score(tree, pv.len()));
-        let nodes = UciArg::Some(UciNodes(new_nodes));
+        let nodes = UciArg::Some(UciNodes(tree_size));
         let nps = UciArg::from(self.nps(new_nodes));
         let depth = UciArg::Some(UciDepth(tree.compute_minheight().into()));
         let seldepth = UciArg::Some(UciSeldepth(tree.maxheight().into()));
