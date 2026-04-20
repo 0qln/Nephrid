@@ -158,7 +158,6 @@ pub trait PolicySource {
     fn into<I: IntoIterator<Item = usize>>(&self, move_indices: I) -> Policy;
 }
 
-// todo: this better belongs in `nn/mod.rs`, right?
 /// Probability distribution over possible moves, as output by the network
 /// before filtering the moves to the legal ones.
 #[derive(Clone)]

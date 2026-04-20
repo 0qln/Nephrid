@@ -26,6 +26,8 @@ use crate::core::{
 #[cfg(test)]
 pub mod test;
 
+pub const INPUT_CHANNELS: usize = BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY;
+
 pub const BOARD_INPUT_HISTORY: usize = 8;
 
 // +1 for the possible ep capture square.
@@ -88,6 +90,8 @@ pub fn board_input(pos: &Position) -> BoardInputFloats {
     let us = pos.get_turn();
     let flip = us == colors::BLACK;
     let them = !us;
+
+    // todo: more inputs (e.g. pins, checks, attacks)
     [
         pos.get_bitboard(piece_type::PAWN, us).into_floats(flip),
         pos.get_bitboard(piece_type::PAWN, them).into_floats(flip),
@@ -177,19 +181,7 @@ pub fn state_input(pos: &Position) -> StateInputFloats {
     ]
 }
 
-pub fn input_batched<const N: usize, B: Backend>(
-    inputs: [BoardInputFloats; N],
-    device: &B::Device,
-) -> Tensor<B, BOARD_INPUT_TENSOR_DIM> {
-    Tensor::from_floats(inputs, device)
-}
-
 pub const VALUE_OUTPUTS: usize = 1;
-
-// because our value_output_layer is uses tanh
-pub const VALUE_WIN: f32 = 1.0;
-pub const VALUE_DRAW: f32 = 0.0;
-pub const VALUE_LOSE: f32 = -1.0;
 
 pub type ValueOutputTensor<B> = Tensor<B, VALUE_OUTPUT_TENSOR_DIM>;
 
@@ -294,7 +286,6 @@ impl ResidualBlockConfig {
 
 #[derive(Module, Debug)]
 pub struct Model<B: Backend> {
-    // Shared Layers (The Tower)
     initial_conv: ConvBlock<B>,
     res_blocks: Vec<ResidualBlock<B>>,
 
@@ -316,47 +307,37 @@ pub struct Model<B: Backend> {
 impl<B: Backend> Model<B> {
     pub fn forward(
         &self,
-        board_input: Tensor<B, 4>,
-        state_input: Tensor<B, 2>,
-    ) -> (
-        Tensor<B, 2>, // VALUE_OUTPUT_TENSOR_DIM
-        Tensor<B, 2>, // POLICY_OUTPUT_TENSOR_DIM
-    ) {
-        // --- 1. SHARED TOWER ---
+        board_input: BoardInputTensor<B>,
+        state_input: StateInputTensor<B>,
+    ) -> (ValueOutputTensor<B>, PolicyOutputTensor<B>) {
         let mut x = self.initial_conv.forward(board_input);
 
         for block in self.res_blocks.iter() {
             x = block.forward(x);
         }
 
-        // --- 2. VALUE HEAD ---
+        // Value Head
         let v = self.value_conv.forward(x.clone());
         let v = self.value_bn.forward(v);
         let v = self.value_relu.forward(v);
-
-        // Flatten spatial dimensions
         let v = v.flatten(1, 3);
 
-        // Inject state inputs (castling, fifty-move rule)
+        // State Inputs
         let v = Tensor::cat(vec![v, state_input], 1);
-
         let v = self.value_dense1.forward(v);
         let v = self.value_relu.forward(v);
+        let v = self.value_dense2.forward(v);
+        let v = self.value_tanh.forward(v);
 
-        let value_out = self.value_dense2.forward(v);
-        let value_out = self.value_tanh.forward(value_out);
-
-        // --- 3. POLICY HEAD ---
+        // Policy Head
+        // todo: maybe also inject state data here?
         let p = self.policy_conv.forward(x);
         let p = self.policy_bn.forward(p);
         let p = self.policy_relu.forward(p);
-
-        // Flatten spatial dimensions
         let p = p.flatten(1, 3);
+        let p = self.policy_dense.forward(p);
 
-        let policy_out = self.policy_dense.forward(p);
-
-        (value_out, policy_out)
+        (v, p)
     }
 
     pub fn warmup(&self, batch_size_max: usize, device: &B::Device) {
@@ -367,7 +348,7 @@ impl<B: Backend> Model<B> {
             let dummy_board = BoardInputTensor::<B>::zeros(
                 [
                     batch_size,
-                    BOARD_INPUT_HISTORY * BOARD_INPUT_CHANNELS,
+                    INPUT_CHANNELS,
                     ranks::N_VARIANTS,
                     files::N_VARIANTS,
                 ],
@@ -388,45 +369,48 @@ impl<B: Backend> Model<B> {
 pub struct ModelConfig {
     #[config(default = 128)]
     pub channels: usize,
+
     #[config(default = 8)]
     pub num_res_blocks: usize,
+
+    #[config(default = 256)]
+    pub value_dense_hidden: usize,
+
+    #[config(default = 1)]
+    pub value_head_channels: usize,
+
+    #[config(default = 2)]
+    pub policy_head_channels: usize,
 }
 
 impl ModelConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> Model<B> {
-        let input_channels = BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY;
+        let Self {
+            channels,
+            value_dense_hidden,
+            num_res_blocks,
+            value_head_channels,
+            policy_head_channels,
+        } = *self;
 
-        // --- 1. SHARED TOWER INITIALIZATION ---
-        let initial_conv = ConvBlockConfig::new(input_channels, self.channels, [3, 3]).init(device);
+        let initial_conv = ConvBlockConfig::new(INPUT_CHANNELS, channels, [3, 3]).init(device);
 
-        let mut res_blocks = Vec::with_capacity(self.num_res_blocks);
-        for _ in 0..self.num_res_blocks {
-            res_blocks.push(ResidualBlockConfig::new(self.channels).init(device));
+        let mut res_blocks = Vec::with_capacity(num_res_blocks);
+        for _ in 0..num_res_blocks {
+            res_blocks.push(ResidualBlockConfig::new(channels).init(device));
         }
 
-        // --- 2. VALUE HEAD INITIALIZATION ---
-        let value_head_channels = 1;
-        let value_conv =
-            Conv2dConfig::new([self.channels, value_head_channels], [1, 1]).init(device);
+        // Value Head
+        let value_conv = Conv2dConfig::new([channels, value_head_channels], [1, 1]).init(device);
         let value_bn = BatchNormConfig::new(value_head_channels).init(device);
-
-        // 8x8 squares * 1 channel + state info
-        let value_flattened_size =
-            (ranks::N_VARIANTS * files::N_VARIANTS * value_head_channels) + STATE_INPUT_LEN;
-        let value_dense_hidden = 256;
-
+        let value_flattened_size = (squares::N_VARIANTS * value_head_channels) + STATE_INPUT_LEN;
         let value_dense1 = LinearConfig::new(value_flattened_size, value_dense_hidden).init(device);
         let value_dense2 = LinearConfig::new(value_dense_hidden, VALUE_OUTPUTS).init(device);
 
-        // --- 3. POLICY HEAD INITIALIZATION ---
-        let policy_head_channels = 2;
-        let policy_conv =
-            Conv2dConfig::new([self.channels, policy_head_channels], [1, 1]).init(device);
+        // Policy Head
+        let policy_conv = Conv2dConfig::new([channels, policy_head_channels], [1, 1]).init(device);
         let policy_bn = BatchNormConfig::new(policy_head_channels).init(device);
-
-        // 8x8 squares * 2 channels
-        let policy_flattened_size = ranks::N_VARIANTS * files::N_VARIANTS * policy_head_channels;
-
+        let policy_flattened_size = squares::N_VARIANTS * policy_head_channels;
         let policy_dense = LinearConfig::new(policy_flattened_size, POLICY_OUTPUTS).init(device);
 
         Model {
