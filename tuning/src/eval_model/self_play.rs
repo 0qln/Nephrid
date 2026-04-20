@@ -6,13 +6,20 @@ use engine::core::{
     move_iter::fold_legal_moves,
     position::PgnResultValue,
     search::mcts::{
-        self, CreateNNPartsError, MctsParts, NNParts, back::MctsSolver, eval::{
+        self, CreateNNPartsError, MctsParts, NNParts,
+        back::MctsSolver,
+        eval::{
             self, Evaluation, Evaluator, Policy, Quality, RawLogits, VisitCounts,
             nn::{TraceInfo, get_node_history},
-        }, nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor}, node::{
+        },
+        nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor},
+        node::{
             self, Branch, NodeData, WinRate,
             node_state::{Evaluated, HasBranches},
-        }, noise::DirichletNoiser, search::{BatchItem, Selection}, select::{Score, Selector}
+        },
+        noise::DirichletNoiser,
+        search::{BatchItem, Selection},
+        select::{Score, Selector},
     },
     zobrist,
 };
@@ -804,6 +811,57 @@ impl Selector for MctsTrainSelector {
     fn min_score(&self) -> Score {
         Score::new(f32::NEG_INFINITY)
     }
+
+    // // todo: maybe use this in inference (prod) aswell?
+    // fn budget(&self, remaining_budget: usize, parent_vsits: usize) -> usize {
+    //     let mut scores = (0..branch_count.v)
+    //         .map(|branch_index| {
+    //             let branch_id = tree
+    //                 .branch_id(parent_node, branch_index.into())
+    //                 .expect("The branch should exist...");
+
+    //             let branch = tree.branch(branch_id);
+    //             let child = tree.node(branch.node());
+
+    //             Into::<f32>::into(score)
+    //         })
+    //         .collect_vec();
+
+    //     let score = self.selector.score(child.data(), branch, parent_visits);
+
+    //     softmax(scores.as_mut_slice(), 1.);
+
+    //     let float_budgets: Vec<f32> = scores
+    //         .iter()
+    //         .map(|&p| (p * budget as f32).ceil() as usize)
+    //         .collect();
+
+    //     // 2. Assign the guaranteed floor to each branch
+    //     let mut allocated_budgets: Vec<usize> =
+    //         float_budgets.iter().map(|&f| f.floor() as usize).collect();
+
+    //     // 3. Calculate how much budget is left to distribute
+    //     let remaining_budget = budget - allocated_budgets.iter().sum::<usize>();
+
+    //     // 4. Distribute the remainder based on the highest fractional parts
+    //     if remaining_budget > 0 {
+    //         // Pair original index with its remainder
+    //         let mut remainders: Vec<(usize, f32)> = float_budgets
+    //             .iter()
+    //             .enumerate()
+    //             .map(|(i, &f)| (i, f - f.floor()))
+    //             .collect();
+
+    //         // Sort descending by remainder
+    //         remainders.sort_by(|a, b|
+    // b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+
+    //         // Give 1 extra budget to the top branches until we run out
+    //         for (index, _) in remainders.into_iter().take(remaining_budget) {
+    //             allocated_budgets[index] += 1;
+    //         }
+    //     }
+    // }
 }
 
 /// The request sent from an MCTS thread to the Inference Worker.
