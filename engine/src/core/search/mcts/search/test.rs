@@ -3,16 +3,15 @@ use crate::core::{
     move_iter::sliding_piece::magics,
     position::Position,
     search::mcts::{
-        HceParts, MctsParts, NullNoiser, back::DefaultBackuper, limiter::NoopLimiter, node::Tree,
-        search::TreeSearcher, select::ucb::UcbSelector, test::DummyEvaluator,
+        HceParts, MctsParts, NullNoiser, back::DefaultBackuper, node::Tree, search::TreeSearcher,
+        select::ucb::UcbSelector, test::DummyEvaluator,
     },
     zobrist,
 };
 
 use std::{error::Error, thread};
 
-fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts: P, rounds: usize)
-{
+fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts: P, rounds: usize) {
     magics::init();
     zobrist::init();
 
@@ -27,10 +26,9 @@ fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts:
 
             let parts = &parts;
 
-            let mut searcher = TreeSearcher::<X, _, _, _, _, _>::new(
+            let mut searcher = TreeSearcher::<X, _, _, _, _>::new(
                 &mut pos_clone,
                 parts.selector(),
-                NoopLimiter,
                 parts.evaluator(),
                 parts.backprop(),
                 parts.noiser(),

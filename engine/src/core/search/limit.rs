@@ -7,24 +7,14 @@ use crate::core::{color::colors, depth::Depth, r#move::Move, position::Position}
 
 /// A struct to hold all by the UCI defined search limits and targets.
 #[derive(Debug, Clone)]
-pub struct Limit {
+pub struct UciLimit {
     pub is_active: bool,
     pub wtime: u64,
     pub btime: u64,
     pub winc: u64,
     pub binc: u64,
     pub movestogo: u16,
-
-    /// NEVER stop if we haven't found atleast this many nodes.
-    pub min_nodes: u64,
-
-    /// ALWAYS stop if we have found atleast this many terminal nodes.
-    pub terminal_nodes: u64,
-
-    /// ALWAYS stop if we have found atleast this many nodes.
-    /// (equivalent to the UCI nodes limit)
     pub max_nodes: u64,
-
     pub movetime: u64,
     pub mate: Depth,
     pub depth: Depth,
@@ -33,7 +23,7 @@ pub struct Limit {
     pub lag_buf: u16,
 }
 
-impl Limit {
+impl UciLimit {
     pub fn max() -> Self {
         Self {
             is_active: false,
@@ -42,8 +32,6 @@ impl Limit {
             winc: u64::MAX,
             binc: u64::MAX,
             movestogo: u16::MAX,
-            min_nodes: u64::MIN,
-            terminal_nodes: u64::MAX,
             max_nodes: u64::MAX,
             movetime: u64::MAX,
             mate: Depth::MAX,
@@ -82,20 +70,15 @@ impl Limit {
     pub fn is_reached(
         &self,
         nodes: u64,
-        terminal_nodes: u64,
         curr_time: Instant,
         time_limit: Instant,
         iterations: u64,
     ) -> bool {
-        if nodes < self.min_nodes {
-            return false;
-        }
-
-        nodes >= self.max_nodes || terminal_nodes >= self.terminal_nodes || curr_time >= time_limit || iterations >= self.iterations
+        nodes >= self.max_nodes || curr_time >= time_limit || iterations >= self.iterations
     }
 }
 
-impl Default for Limit {
+impl Default for UciLimit {
     fn default() -> Self {
         Self {
             is_active: true,
@@ -104,8 +87,6 @@ impl Default for Limit {
             winc: 0,
             binc: 0,
             movestogo: u16::MAX,
-            min_nodes: u64::MIN,
-            terminal_nodes: u64::MAX,
             max_nodes: u64::MAX,
             movetime: u64::MAX,
             mate: Depth::MAX,

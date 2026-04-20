@@ -1,4 +1,4 @@
-use search::{limit::Limit, mode::Mode};
+use search::mode::Mode;
 use std::{
     sync::{Arc, Mutex},
     thread, time,
@@ -10,7 +10,7 @@ use crate::{
         depth::Depth,
         r#move::Move,
         position::{FenImport, FenParseError, PgnImport, PgnImportError, Position, ReducedPgn},
-        search::{Command, PonderToken, SearchThread, SearchWorker},
+        search::{Command, PonderToken, SearchThread, SearchWorker, limit::UciLimit},
     },
     misc::{DebugMode, trim_newline},
     uci::{
@@ -191,7 +191,7 @@ pub fn execute_uci(
 
             let (mode, limit) = {
                 let mut mode = Mode::default();
-                let mut limit = Limit::default();
+                let mut limit = UciLimit::default();
 
                 let config = engine.config.lock().expect("Config dead :(");
                 limit.lag_buf = config.gui_lag();

@@ -4,7 +4,7 @@ use crate::{
     core::{
         Move,
         config::Configuration,
-        search::mcts::{
+        search::{limit::UciLimit, mcts::{
             MctsConfig, MctsParts,
             eval::Cp,
             node::{
@@ -12,7 +12,7 @@ use crate::{
                 node_state::{Evaluated, Switch},
             },
             select::Selector,
-        },
+        }},
     },
     uci::sync,
 };
@@ -29,7 +29,6 @@ use crate::{
     core::{
         position::Position,
         search::{
-            limit::Limit,
             mcts::{mcts, strategy::MctsUci},
             perft::perft,
         },
@@ -90,7 +89,7 @@ impl<const MPV: usize, C: MctsConfig> MctsWorker<MPV, C> {
     }
 }
 
-impl<const MPV: usize, C: MctsConfig> SearchWorker for MctsWorker<MPV, C> {
+impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWorker<MPV, C> {
     fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
         match cmd {
             Command::Perft(mut pos, limit, ct, debug) => {
@@ -100,9 +99,9 @@ impl<const MPV: usize, C: MctsConfig> SearchWorker for MctsWorker<MPV, C> {
             Command::Normal(mut pos, limit, ct, debug) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
-                let strat = MctsUci::new(debug, ct, None);
+                let strat = C::Strat::new(limit, debug, ct, None);
 
-                let result = mcts::<MPV, MctsUci, C, _>(&mut pos, parts, state, &limit, strat);
+                let result = mcts::<MPV, C, _>(&mut pos, parts, state, strat);
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -113,9 +112,9 @@ impl<const MPV: usize, C: MctsConfig> SearchWorker for MctsWorker<MPV, C> {
             Command::Ponder(mut pos, limit, ct, debug, ponder) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
-                let strat = MctsUci::new(debug, ct, Some(ponder));
+                let strat = C::Strat::new(limit, debug, ct, Some(ponder));
 
-                let result = mcts::<MPV, _, C, _>(&mut pos, parts, state, &limit, strat);
+                let result = mcts::<MPV, C, _>(&mut pos, parts, state, strat);
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -237,9 +236,9 @@ pub fn init<W: SearchWorker>() -> SearchThread {
 
 #[derive(Debug, Clone)]
 pub enum Command {
-    Perft(Position, Limit, CancellationToken, DebugMode),
-    Normal(Position, Limit, CancellationToken, DebugMode),
-    Ponder(Position, Limit, CancellationToken, DebugMode, PonderToken),
+    Perft(Position, UciLimit, CancellationToken, DebugMode),
+    Normal(Position, UciLimit, CancellationToken, DebugMode),
+    Ponder(Position, UciLimit, CancellationToken, DebugMode, PonderToken),
     AdvanceState(Move),
     RollbackAndAdvance(Move),
     Configure(Arc<Mutex<Configuration>>),

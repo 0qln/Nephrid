@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        Depth, Limit, Move,
+        Depth, Move, UciLimit,
         color::{Perspective, colors, perspectives},
         r#move::MoveList,
         move_iter::fold_legals,
@@ -16,7 +16,7 @@ pub mod test;
 
 pub fn perft<const Q: bool>(
     pos: &mut Position,
-    limit: &Limit,
+    limit: &UciLimit,
     ct: CancellationToken,
     debug: DebugMode,
 ) -> u64 {
@@ -47,7 +47,7 @@ pub fn perft<const Q: bool>(
 pub fn perft_inner_collect(
     pos: &mut Position,
     depth: Depth,
-    limit: &Limit,
+    limit: &UciLimit,
     cancellation_token: &CancellationToken,
     debug: &DebugMode,
     f: fn(Move, u64, Depth, bool) -> (),
@@ -79,7 +79,7 @@ pub fn perft_inner_collect(
 pub fn perft_inner_collect_for<P: Perspective>(
     pos: &mut Position,
     depth: Depth,
-    limit: &Limit,
+    limit: &UciLimit,
     cancellation_token: &CancellationToken,
     debug: &DebugMode,
     f: fn(Move, u64, Depth, bool) -> (),

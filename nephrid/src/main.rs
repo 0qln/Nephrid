@@ -7,7 +7,7 @@ use std::io::stdin;
 mod search {
     use engine::core::search::{
         MctsWorker,
-        mcts::{self, MctsConfig},
+        mcts::{self, MctsConfig, strategy::MctsUci},
     };
 
     pub struct Config;
@@ -18,6 +18,7 @@ mod search {
     #[cfg(feature = "mcts-hce")]
     impl MctsConfig for Config {
         type Parts = mcts::HceParts;
+        type Strat = MctsUci;
     }
 
     // todo: this was supposed to be inside the MctsConfig trait, but we get some
@@ -28,6 +29,7 @@ mod search {
     #[cfg(feature = "mcts-pure")]
     impl MctsConfig for Config {
         type Parts = mcts::PureParts;
+        type Strat = MctsUci;
     }
 
     #[cfg(feature = "mcts-pure")]
@@ -37,6 +39,7 @@ mod search {
     impl MctsConfig for Config {
         const MPV: usize = 64;
         type Parts = mcts::NNParts<burn_cuda::Cuda<f32>>;
+        type Strat = MctsUci;
     }
 
     #[cfg(all(feature = "mcts-nn", feature = "nn-backend-cuda"))]
@@ -44,9 +47,8 @@ mod search {
 
     #[cfg(all(feature = "mcts-nn", feature = "nn-backend-ndarray"))]
     impl MctsConfig for Config {
-        // todo: what mpv works best for cpu nn?
-        const MPV: usize = 1;
         type Parts = mcts::NNParts<burn::backend::NdArray>;
+        type Strat = MctsUci;
     }
 
     #[cfg(all(feature = "mcts-nn", feature = "nn-backend-ndarray"))]

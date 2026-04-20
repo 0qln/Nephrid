@@ -8,7 +8,7 @@ use crate::{
         r#move::MoveList,
         move_iter::{fold_legals, sliding_piece::magics},
         position::{FenExport, Position},
-        search::{limit::Limit, perft::perft_inner_collect},
+        search::{limit::UciLimit, perft::perft_inner_collect},
         zobrist,
     },
     misc::DebugMode,
@@ -16,7 +16,7 @@ use crate::{
 };
 
 fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
-    let limit = Limit { depth, ..Default::default() };
+    let limit = UciLimit { depth, ..Default::default() };
     let ct = CancellationToken::default();
     let debug = DebugMode::default();
 

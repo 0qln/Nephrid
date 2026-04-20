@@ -5,16 +5,15 @@ use engine::core::{
     move_iter::sliding_piece::magics,
     position::Position,
     search::mcts::{
-        HceParts, MctsParts, limiter::DefaultLimiter, node::Tree, search::TreeSearcher,
+        HceParts, MctsParts, node::Tree, search::TreeSearcher,
     },
     zobrist,
 };
 
 fn bench_mcts<P: MctsParts>(mut pos: Position, mut tree: Tree, parts: P) {
-    let mut searcher = TreeSearcher::<1, _, _, _, _, _>::new(
+    let mut searcher = TreeSearcher::<1, _, _, _, _>::new(
         &mut pos,
         parts.selector(),
-        DefaultLimiter::default(),
         parts.evaluator(),
         parts.backprop(),
         parts.noiser(),

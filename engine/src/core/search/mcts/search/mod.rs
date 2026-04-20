@@ -11,7 +11,6 @@ use crate::core::{
     search::mcts::{
         back::Backpropagater,
         eval::{Evaluation, Evaluator},
-        limiter::{self, Limiter},
         node::{
             BranchId, NodeId, NodeView, Tree,
             node_state::{self, *},
@@ -200,27 +199,24 @@ pub struct TreeSearcher<
     'pos,
     const MPV: usize,
     E: Evaluator,
-    L: Limiter,
     S: Selector,
     B: Backpropagater,
     N: Noiser,
 > {
     position: &'pos mut Position,
     selector: S,
-    limiter: L,
     evaluator: E,
     backprop: B,
     noiser: N,
     selection: Selection<MPV, E::TraceData>,
 }
 
-impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropagater, N: Noiser>
-    TreeSearcher<'pos, MPV, E, L, S, B, N>
+impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: Noiser>
+    TreeSearcher<'pos, MPV, E, S, B, N>
 {
     pub fn new(
         position: &'pos mut Position,
         selector: S,
-        limiter: L,
         evaluator: E,
         backprop: B,
         noiser: N,
@@ -228,7 +224,6 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
         Self {
             position,
             selector,
-            limiter,
             evaluator,
             backprop,
             noiser,
@@ -569,9 +564,11 @@ impl<'pos, const MPV: usize, E: Evaluator, L: Limiter, S: Selector, B: Backpropa
     ) -> usize {
         let pos = &mut self.position;
 
-        // todo: is this good? not even sure tbh... should be benchmarked
-        let (used_budget, item) = if self.limiter.should_stop(limiter::Params { pos, depth }) {
+        let (used_budget, item) = if depth > Depth::MAX {
             // todo: also add the budget as a weight here?
+            // todo: we should probably just return a used_budget of 0 here, since we just
+            // skip evaluating deeper to prevent any stack overflows.
+            // todo: maybe this check is better somehwere else anyway?
             (budget, PhaseItem::Unused)
         }
         else {

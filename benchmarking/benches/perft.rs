@@ -10,7 +10,7 @@ use engine::{
         depth::Depth,
         move_iter::{fold_legals, sliding_piece::magics},
         position::Position,
-        search::{limit::Limit, perft::perft_inner_collect},
+        search::{limit::UciLimit, perft::perft_inner_collect},
         zobrist,
     },
     misc::DebugMode,
@@ -18,7 +18,7 @@ use engine::{
 };
 
 fn bench_perft<const Q: bool>(mut pos: Position, depth: Depth) {
-    let limit = Limit { depth, ..Default::default() };
+    let limit = UciLimit { depth, ..Default::default() };
     _ = perft_inner_collect(
         &mut pos,
         limit.depth,

@@ -9,7 +9,7 @@ use crate::{
         position::Position,
         search::{
             PonderToken,
-            limit::Limit,
+            limit::UciLimit,
             mcts::{
                 Tree,
                 eval::Cp,
@@ -25,12 +25,10 @@ pub trait MctsStrategy {
     type Result;
     type Step;
 
-    fn start(&mut self, _tree: &mut Tree, _pos: &Position, _limit: &Limit) {}
+    fn start(&mut self, tree: &mut Tree, pos: &Position);
     fn result(&mut self, tree: &mut Tree) -> Self::Result;
     fn step(&mut self, tree: &mut Tree) -> Self::Step;
-    fn should_stop(&mut self, _tree: &Tree, _limit: &Limit) -> bool {
-        false
-    }
+    fn should_stop(&mut self, tree: &Tree) -> bool;
 }
 
 #[derive(Default, Debug)]
@@ -56,6 +54,12 @@ impl MctsStrategy for MctsFindBest {
             return Some(mov);
         }
         None
+    }
+
+    fn start(&mut self, _tree: &mut Tree, _pos: &Position) {}
+
+    fn should_stop(&mut self, _tree: &Tree) -> bool {
+        false
     }
 }
 
@@ -203,11 +207,20 @@ pub struct MctsUci {
     terminal_nodes_begin: u64,
     iterations: u64,
     is_not_pondering: bool,
+
+    // --- Configuration ---
+    limit: UciLimit,
 }
 
 impl MctsUci {
-    pub fn new(debug: DebugMode, ct: CancellationToken, ponder_tok: Option<PonderToken>) -> Self {
+    pub fn new(
+        limit: UciLimit,
+        debug: DebugMode,
+        ct: CancellationToken,
+        ponder_tok: Option<PonderToken>,
+    ) -> Self {
         Self {
+            limit,
             debug,
             ct,
             ponder_tok,
@@ -296,19 +309,23 @@ impl MctsUci {
             Duration::from_millis(500)
         }
     }
+
+    pub fn limit(&self) -> &UciLimit {
+        &self.limit
+    }
 }
 
 impl MctsStrategy for MctsUci {
     type Result = <MctsFindBest as MctsStrategy>::Result;
     type Step = <MctsFindBest as MctsStrategy>::Step;
 
-    fn start(&mut self, tree: &mut Tree, pos: &Position, limit: &Limit) {
+    fn start(&mut self, tree: &mut Tree, pos: &Position) {
         self.search_start = Some(Instant::now());
         self.nodes_begin = tree.size() as u64;
         self.terminal_nodes_begin = tree.terminal_nodes() as u64;
         self.iterations = 0;
 
-        self.time_per_move = limit.time_per_move(pos);
+        self.time_per_move = self.limit.time_per_move(pos);
         self.time_limit = Some(Instant::now() + self.time_per_move);
         self.is_not_pondering = self.ponder_tok.is_none();
     }
@@ -327,7 +344,7 @@ impl MctsStrategy for MctsUci {
         step
     }
 
-    fn should_stop(&mut self, tree: &Tree, limit: &Limit) -> bool {
+    fn should_stop(&mut self, tree: &Tree) -> bool {
         // 1. User typed "stop" (GUI interrupt)
         // We ALWAYS respect this, whether pondering or not.
         if self.ct.is_cancelled() {
@@ -360,10 +377,9 @@ impl MctsStrategy for MctsUci {
         }
 
         // 5. Standard time/node limits
-        if limit.is_active()
-            && limit.is_reached(
+        if self.limit.is_active()
+            && self.limit.is_reached(
                 tree.size() as u64 - self.nodes_begin,
-                tree.terminal_nodes() as u64 - self.terminal_nodes_begin,
                 Instant::now(),
                 self.time_limit.unwrap(),
                 self.iterations,
@@ -404,5 +420,13 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
         let step = (self.inner.step(tree), self.iteration);
         self.iteration += 1;
         step
+    }
+
+    fn start(&mut self, tree: &mut Tree, pos: &Position) {
+        self.inner.start(tree, pos);
+    }
+
+    fn should_stop(&mut self, tree: &Tree) -> bool {
+        self.inner.should_stop(tree)
     }
 }

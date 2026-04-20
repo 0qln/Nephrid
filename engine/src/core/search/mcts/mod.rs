@@ -3,14 +3,12 @@ use rand::{SeedableRng, rngs::SmallRng};
 use thiserror::Error;
 
 use crate::core::{
-    Limit,
     config::Configuration,
     r#move::Move,
     position::Position,
     search::mcts::{
         back::{Backpropagater, MctsSolver},
         eval::{Evaluator, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator},
-        limiter::{DefaultLimiter, Limiter},
         nn::{LoadNNError, Model},
         node::Tree,
         noise::{DirichletNoiser, Noiser, NullNoiser},
@@ -26,7 +24,6 @@ use std::error::Error as StdError;
 
 pub mod back;
 pub mod eval;
-pub mod limiter;
 pub mod nn;
 pub mod node;
 pub mod noise;
@@ -36,21 +33,19 @@ pub mod strategy;
 
 pub mod test;
 
-pub fn mcts<const MPV: usize, S: MctsStrategy, C: MctsConfig, M: MctsState>(
+pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState>(
     pos: &mut Position,
     parts: &C::Parts,
     state: &mut M,
-    limit: &Limit,
-    mut strategy: S,
-) -> S::Result {
+    mut strat: C::Strat,
+) -> <C::Strat as MctsStrategy>::Result {
     let tree = state.tree();
 
-    strategy.start(tree, pos, limit);
+    strat.start(tree, pos);
 
-    let mut searcher = TreeSearcher::<{ MPV }, _, _, _, _, _>::new(
+    let mut searcher = TreeSearcher::<{ MPV }, _, _, _, _>::new(
         pos,
         parts.selector(),
-        parts.limiter(limit),
         parts.evaluator(),
         parts.backprop(),
         parts.noiser(),
@@ -58,16 +53,17 @@ pub fn mcts<const MPV: usize, S: MctsStrategy, C: MctsConfig, M: MctsState>(
 
     searcher.init_root(tree);
 
-    while !strategy.should_stop(tree, limit) {
+    while !strat.should_stop(tree) {
         searcher.grow(tree);
-        strategy.step(tree);
+        strat.step(tree);
     }
 
-    strategy.result(state.tree())
+    strat.result(state.tree())
 }
 
 pub trait MctsConfig {
     type Parts: MctsParts;
+    type Strat: MctsStrategy;
 }
 
 pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
@@ -75,15 +71,11 @@ pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
     type Evaluator: Evaluator;
     type Backprop: Backpropagater;
     type Noiser: Noiser;
-    type Limiter: Limiter = DefaultLimiter;
 
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
     fn backprop(&self) -> Self::Backprop;
     fn noiser(&self) -> Self::Noiser;
-    fn limiter(&self, limit: &Limit) -> Self::Limiter {
-        Self::Limiter::new(limit)
-    }
 }
 
 pub trait MctsState {

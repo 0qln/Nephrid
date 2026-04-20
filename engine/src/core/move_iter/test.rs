@@ -3,7 +3,7 @@ use crate::{
         depth::Depth,
         move_iter::sliding_piece::magics,
         position::Position,
-        search::{self, limit::Limit},
+        search::{self, limit::UciLimit},
         zobrist,
     },
     misc::DebugMode,
@@ -15,7 +15,7 @@ fn test_pos(fen: &str, depth: Depth, expected: u64) {
     zobrist::init();
 
     let mut pos = Position::from_fen(fen).unwrap();
-    let limit = Limit { depth, ..Default::default() };
+    let limit = UciLimit { depth, ..Default::default() };
     let debug = DebugMode::default();
     let ct = CancellationToken::new();
     let result = search::perft::perft::<true>(&mut pos, &limit, ct, debug);

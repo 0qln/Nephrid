@@ -45,19 +45,16 @@ use engine::{
         color::Color,
         r#move::Move,
         position::{FenImport, Position},
-        search::{
-            limit::Limit,
-            mcts::{
-                SearchState,
-                eval::{GameResult, Guess},
-                mcts,
-                nn::{
-                    BOARD_INPUT_HISTORY, BoardInputFloats, Model, StateInputFloats, board_input,
-                    state_input,
-                },
-                node::Tree,
-                strategy::{MctsFindBest, MctsStrategy},
+        search::mcts::{
+            SearchState,
+            eval::{GameResult, Guess},
+            mcts,
+            nn::{
+                BOARD_INPUT_HISTORY, BoardInputFloats, Model, StateInputFloats, board_input,
+                state_input,
             },
+            node::Tree,
+            strategy::{MctsFindBest, MctsStrategy},
         },
     },
     uci::tokens::Tokenizer,
@@ -121,13 +118,12 @@ pub struct LimitConfig {
 }
 
 impl LimitConfig {
-    pub fn init(&self) -> Limit {
-        Limit {
+    pub fn init(&self) -> SelfPlayLimit {
+        SelfPlayLimit {
             iterations: self.max_iterations.unwrap_or(u64::MAX),
             max_nodes: self.max_nodes.unwrap_or(u64::MAX),
             min_nodes: self.min_nodes.unwrap_or(0),
             terminal_nodes: self.max_terminal_nodes.unwrap_or(u64::MAX),
-            ..Default::default()
         }
     }
 }
@@ -220,7 +216,7 @@ fn run_self_play_for_fen<P: PlayoutItem + Clone>(
     fen: &str,
     i: usize,
     n: usize,
-    limit: &Limit,
+    limit: &SelfPlayLimit,
     config: &SelfplayConfig,
     parts: &MctsTrainParts,
 ) -> Result<WorkerResult<P>, Box<dyn Error>>
@@ -288,7 +284,7 @@ impl BatchGenerator {
         &self,
         model: Model<B>,
         fens: &[FenItemRaw],
-        limit: &Limit,
+        limit: &SelfPlayLimit,
         config: &SelfplayConfig,
         mcts: &MctsConfig,
         cache: &mut Cache,
@@ -402,27 +398,32 @@ impl BatchGenerator {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct MctsTrainStrategy {
     infer: MctsFindBest,
 
     nodes_begin: u64,
     terminal_nodes_begin: u64,
     iterations: u64,
-    time_limit: Option<Instant>,
     start_time: Option<Instant>,
 
     i: usize,
     n: usize,
+
+    limit: SelfPlayLimit,
 }
 
 impl MctsTrainStrategy {
-    pub fn new(i: usize, n: usize) -> Self {
+    pub fn new(limit: SelfPlayLimit, i: usize, n: usize) -> Self {
         Self {
+            limit,
             infer: MctsFindBest::default(),
             i,
             n,
-            ..Default::default()
+            nodes_begin: 0,
+            terminal_nodes_begin: 0,
+            iterations: 0,
+            start_time: None,
         }
     }
 }
@@ -431,16 +432,12 @@ impl MctsStrategy for MctsTrainStrategy {
     type Result = (<MctsFindBest as MctsStrategy>::Result,);
     type Step = (<MctsFindBest as MctsStrategy>::Step,);
 
-    fn start(&mut self, tree: &mut Tree, pos: &Position, limit: &Limit) {
-        let time_per_move = limit.time_per_move(pos);
-        let now = Instant::now();
-
-        self.infer.start(tree, pos, limit);
+    fn start(&mut self, tree: &mut Tree, pos: &Position) {
+        self.infer.start(tree, pos);
         self.nodes_begin = tree.size() as u64;
         self.terminal_nodes_begin = tree.terminal_nodes() as u64;
         self.iterations = 0;
-        self.start_time = Some(now);
-        self.time_limit = Some(now + time_per_move);
+        self.start_time = Some(Instant::now());
     }
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
@@ -449,17 +446,13 @@ impl MctsStrategy for MctsTrainStrategy {
         (step,)
     }
 
-    fn should_stop(&mut self, tree: &Tree, limit: &Limit) -> bool {
+    fn should_stop(&mut self, tree: &Tree) -> bool {
         // check limits
-        if limit.is_active()
-            && limit.is_reached(
-                tree.size() as u64 - self.nodes_begin,
-                tree.terminal_nodes() as u64 - self.terminal_nodes_begin,
-                Instant::now(),
-                self.time_limit.unwrap(),
-                self.iterations,
-            )
-        {
+        if self.limit.is_reached(
+            tree.size() as u64 - self.nodes_begin,
+            tree.terminal_nodes() as u64 - self.terminal_nodes_begin,
+            self.iterations,
+        ) {
             return true;
         }
 
@@ -593,7 +586,7 @@ pub fn self_play<P: PlayoutItem>(
     i: usize,
     n: usize,
     mut game: Game,
-    limit: Limit,
+    limit: SelfPlayLimit,
     config: &SelfplayConfig,
     parts: &MctsTrainParts,
 ) -> Result<SelfPlay<P>, Box<dyn Error>>
@@ -645,12 +638,11 @@ where
                 }
             }
 
-            let strat = MctsTrainStrategy::new(i, n);
-            let result = mcts::<{ MPV }, _, MctsTrainConfig, _>(
+            let strat = MctsTrainStrategy::new(limit.clone(), i, n);
+            let result = mcts::<{ MPV }, MctsTrainConfig, _>(
                 game.position_mut(),
                 parts,
                 &mut mcts_state,
-                &limit,
                 strat,
             );
 
@@ -709,11 +701,13 @@ pub const MPV: usize = 64;
 pub struct MctsTrainConfig;
 impl mcts::MctsConfig for MctsTrainConfig {
     type Parts = MctsTrainParts;
+    type Strat = MctsTrainStrategy;
 }
 
 pub struct MctsTestConfig;
 impl mcts::MctsConfig for MctsTestConfig {
     type Parts = NNParts<Cuda<f32>>;
+    type Strat = MctsTrainStrategy;
 }
 
 #[derive(Debug)]
@@ -1038,5 +1032,43 @@ impl Evaluator for BatchedNNEvaluator {
         }
 
         evaluations.into_iter()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct SelfPlayLimit {
+    /// NEVER stop if we haven't found atleast this many nodes.
+    pub min_nodes: u64,
+
+    /// ALWAYS stop if we have found atleast this many terminal nodes.
+    pub terminal_nodes: u64,
+
+    /// ALWAYS stop if we have found atleast this many nodes.
+    /// (equivalent to the UCI nodes limit)
+    pub max_nodes: u64,
+
+    pub iterations: u64,
+}
+
+impl SelfPlayLimit {
+    pub fn is_reached(&self, nodes: u64, terminal_nodes: u64, iterations: u64) -> bool {
+        if nodes < self.min_nodes {
+            return false;
+        }
+
+        nodes >= self.max_nodes
+            || terminal_nodes >= self.terminal_nodes
+            || iterations >= self.iterations
+    }
+}
+
+impl Default for SelfPlayLimit {
+    fn default() -> Self {
+        Self {
+            min_nodes: u64::MIN,
+            terminal_nodes: u64::MAX,
+            max_nodes: u64::MAX,
+            iterations: u64::MAX,
+        }
     }
 }

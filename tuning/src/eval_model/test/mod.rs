@@ -4,7 +4,7 @@ use crate::{
     data::{FenDataset, FenItemRaw},
     io::{ResumeAction, get_config},
     loss::ValueTarget,
-    self_play::{MPV, MctsTestConfig, MctsTrainStrategy},
+    self_play::{MPV, MctsTestConfig, MctsTrainStrategy, SelfPlayLimit},
     train,
 };
 use burn::{
@@ -20,14 +20,11 @@ use engine::core::{
     r#move::{Move, move_flags::QUIET},
     move_iter::sliding_piece::magics,
     position::Position,
-    search::{
-        limit::Limit,
-        mcts::{
-            NNParts, SearchState,
-            eval::{GameResult, Quality, RawPolicy},
-            mcts,
-            nn::ModelConfig,
-        },
+    search::mcts::{
+        NNParts, SearchState,
+        eval::{GameResult, Quality, RawPolicy},
+        mcts,
+        nn::ModelConfig,
     },
     zobrist,
 };
@@ -255,19 +252,17 @@ pub fn learn_mate_in_1() {
         let mut mcts_state = SearchState::default();
         let parts = NNParts::new(model, device, 0.3, 0.);
 
-        let limit = Limit {
-            is_active: true,
+        let limit = SelfPlayLimit {
             // should be enough to find the mate in 1 with a trained policy and batched MCTS.
             iterations: 3,
             ..Default::default()
         };
 
-        let result = mcts::<{ MPV }, _, MctsTestConfig, _>(
+        let result = mcts::<{ MPV }, MctsTestConfig, _>(
             &mut pos,
             &parts,
             &mut mcts_state,
-            &limit,
-            MctsTrainStrategy::new(1, 1),
+            MctsTrainStrategy::new(limit, 1, 1),
         );
 
         for b in mcts_state.tree.branches_rt(mcts_state.tree.root()) {
@@ -346,8 +341,7 @@ pub fn learn_mate_in_2() {
             .init::<Backend>(&device)
             .load_record(record);
 
-        let limit = Limit {
-            is_active: true,
+        let limit = SelfPlayLimit {
             iterations: 25,
             ..Default::default()
         };
@@ -356,12 +350,11 @@ pub fn learn_mate_in_2() {
         let nn_parts = NNParts::new(model, device, 0.3, 0.);
 
         for _ in 0..3 {
-            let result = mcts::<{ MPV }, _, MctsTestConfig, _>(
+            let result = mcts::<{ MPV }, MctsTestConfig, _>(
                 &mut pos,
                 &nn_parts,
                 &mut mcts_state,
-                &limit,
-                MctsTrainStrategy::new(1, 1),
+                MctsTrainStrategy::new(limit.clone(), 1, 1),
             );
 
             for b in mcts_state.tree.branches_rt(mcts_state.tree.root()) {
