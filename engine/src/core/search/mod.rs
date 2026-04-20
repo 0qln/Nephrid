@@ -4,15 +4,18 @@ use crate::{
     core::{
         Move,
         config::Configuration,
-        search::{limit::UciLimit, mcts::{
-            MctsConfig, MctsParts,
-            eval::Cp,
-            node::{
-                Tree, WinRate,
-                node_state::{Evaluated, Switch},
+        search::{
+            limit::UciLimit,
+            mcts::{
+                MctsConfig, MctsParts,
+                eval::Cp,
+                node::{
+                    Tree, WinRate,
+                    node_state::{Evaluated, Switch},
+                },
+                select::Selector,
             },
-            select::Selector,
-        }},
+        },
     },
     uci::sync,
 };
@@ -238,7 +241,13 @@ pub fn init<W: SearchWorker>() -> SearchThread {
 pub enum Command {
     Perft(Position, UciLimit, CancellationToken, DebugMode),
     Normal(Position, UciLimit, CancellationToken, DebugMode),
-    Ponder(Position, UciLimit, CancellationToken, DebugMode, PonderToken),
+    Ponder(
+        Position,
+        UciLimit,
+        CancellationToken,
+        DebugMode,
+        PonderToken,
+    ),
     AdvanceState(Move),
     RollbackAndAdvance(Move),
     Configure(Arc<Mutex<Configuration>>),
