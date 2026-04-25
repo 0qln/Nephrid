@@ -36,6 +36,8 @@ fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts:
 
             searcher.init_root(&mut tree);
 
+            let iterations = rounds / X;
+
             for _i in 0..(rounds / X) {
                 searcher.grow(&mut tree);
             }
@@ -49,6 +51,13 @@ fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts:
             assert_eq!(
                 tree.maxheight(),
                 tree.compute_subtree_maxheight(tree.root())
+            );
+            assert!(
+                tree.size() > iterations,
+                "Tree should have more nodes than iterations, but it has {} nodes and after {} \
+                 iterations",
+                tree.size(),
+                iterations
             );
         })
         .expect("Couldn't spawn thread")
