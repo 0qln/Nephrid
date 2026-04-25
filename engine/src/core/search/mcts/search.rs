@@ -391,6 +391,9 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
         let mut line_index = 0;
         let mut budget = MPV as u32;
         while budget > 0 {
+            // todo: first go down paths along the selection.parents arena, such that we can
+            // just bump up the virtual loss there instead of inserting
+            // duplicate parent nodes.
             budget -= self.pick_branch::<P>(line_index, Depth::ROOT, root, tree, sel_root_id);
             line_index += 1;
         }
