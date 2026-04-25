@@ -1,6 +1,7 @@
 use crate::core::search::mcts::{
     eval,
-    node::{Branch, NodeData}, select::Score,
+    node::{BranchId, Tree},
+    select::Score,
 };
 
 pub struct PuctSelector {
@@ -21,7 +22,10 @@ impl Default for PuctSelector {
 }
 
 impl super::Selector for PuctSelector {
-    fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Score {
+    fn score(&self, tree: &Tree, branch_id: BranchId, cap_n_i: u32) -> Score {
+        let branch = tree.branch(branch_id);
+        let node = tree.node(branch.node());
+
         let n_i = node.visits() as f32;
 
         // The quality is updated incrementally as the tree is explored.

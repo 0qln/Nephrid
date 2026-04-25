@@ -3,7 +3,7 @@ use crate::{
         depth::Depth,
         r#move::MoveIndex,
         search::mcts::node::node_state::{
-            ExpandedSwitch, HasBranches, HasValue, NodeState, Switch,
+            ExpandedSwitch, HasBranches, HasValue, NodeState, Switch, Valid,
         },
     },
     impl_variants,
@@ -226,6 +226,7 @@ pub mod node_state {
 
     pub const trait Valid: Any {
         fn state() -> NodeState;
+        fn has_value() -> bool;
     }
 
     pub const trait HasBranches: Any {}
@@ -241,6 +242,9 @@ pub mod node_state {
         fn state() -> NodeState {
             NodeState::Leaf
         }
+        fn has_value() -> bool {
+            true
+        }
     }
     impl const HasValue for Leaf {}
 
@@ -250,6 +254,9 @@ pub mod node_state {
     impl const Valid for Terminal {
         fn state() -> NodeState {
             NodeState::Terminal
+        }
+        fn has_value() -> bool {
+            true
         }
     }
     impl const HasValue for Terminal {}
@@ -262,6 +269,9 @@ pub mod node_state {
         fn state() -> NodeState {
             NodeState::Branching
         }
+        fn has_value() -> bool {
+            false
+        }
     }
     impl const HasBranches for Branching {}
     impl const Expanded for Branching {}
@@ -272,6 +282,9 @@ pub mod node_state {
     impl const Valid for Evaluated {
         fn state() -> NodeState {
             NodeState::Evaluated
+        }
+        fn has_value() -> bool {
+            true
         }
     }
     impl const HasValue for Evaluated {}
@@ -510,6 +523,15 @@ impl Tree {
     }
 
     #[inline]
+    pub fn branch_ids<S: HasBranches>(&self, node_id: NodeId<S>) -> impl Iterator<Item = BranchId> {
+        let node = self.node(node_id);
+        let data = node.data();
+        let start = data.branch_start as usize;
+        let end = start + data.branch_count.v as usize;
+        (start..end).map(|i| BranchId::new(i as u32))
+    }
+
+    #[inline]
     pub fn branches<S: HasBranches>(&self, node_id: NodeId<S>) -> &[Branch] {
         let node = self.node(node_id);
         let data = node.data();
@@ -703,6 +725,14 @@ impl Tree {
     pub fn set_proven<S: HasValue>(&mut self, node: NodeId<S>, state: Proven, weight: f32) {
         self.arena.nodes[node.index as usize].visits += weight as u32;
         self.arena.nodes[node.index as usize].value = Value::from(state);
+    }
+
+    pub fn apply_virtual_loss<S: Valid>(&mut self, node: NodeId<S>, amount: u32) {
+        self.arena.nodes[node.index as usize].visits += amount;
+    }
+
+    pub fn revert_virtual_loss<S: Valid>(&mut self, node: NodeId<S>, amount: u32) {
+        self.arena.nodes[node.index as usize].visits -= amount;
     }
 
     /// Double-buffering Garbage Collection implementation.
@@ -900,7 +930,7 @@ impl<S: node_state::Any> NodeId<S> {
     /// The caller must ensure that the underlying node at this index is
     /// actually of the target typestate `T`. This is guaranteed by the internal
     /// logic of the Tree, but cannot be enforced by the type system.
-    unsafe fn cast<T: node_state::Any>(self) -> NodeId<T> {
+    pub unsafe fn cast<T: node_state::Any>(self) -> NodeId<T> {
         NodeId::new(self.index)
     }
 
@@ -943,7 +973,6 @@ impl<S: node_state::Any> fmt::Debug for NodeId<S> {
     }
 }
 
-/// A transient "View" binding a typestate integer to a specific Tree instance.
 #[derive(Clone, Copy)]
 pub struct NodeView<'a, S: node_state::Any> {
     pub tree: &'a Tree,
@@ -984,18 +1013,8 @@ impl<'a, S: node_state::Any> NodeView<'a, S> {
     }
 
     #[inline]
-    pub fn data(&self) -> &NodeData {
+    fn data(&self) -> &NodeData {
         &self.tree.arena.nodes[self.id.index as usize]
-    }
-
-    #[inline]
-    pub fn visits(&self) -> u32 {
-        self.data().visits
-    }
-
-    #[inline]
-    pub fn value(&self) -> Value {
-        self.data().value
     }
 
     #[inline]
@@ -1004,8 +1023,13 @@ impl<'a, S: node_state::Any> NodeView<'a, S> {
     }
 
     #[inline]
-    pub fn proven(&self) -> Option<Proven> {
-        self.data().value.try_into().ok()
+    pub fn value(&self) -> Value {
+        self.data().value
+    }
+
+    #[inline]
+    pub fn visits(&self) -> u32 {
+        self.data().visits
     }
 }
 
@@ -1023,6 +1047,13 @@ impl<'a, S: HasBranches> NodeView<'a, S> {
 
     pub fn branch_count(&self) -> MoveIndex {
         self.data().branch_count
+    }
+}
+
+impl<'a, S: HasValue> NodeView<'a, S> {
+    #[inline]
+    pub fn proven(&self) -> Option<Proven> {
+        self.data().value.try_into().ok()
     }
 }
 

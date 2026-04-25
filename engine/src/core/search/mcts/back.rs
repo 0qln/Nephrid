@@ -1,22 +1,20 @@
-use std::ops::ControlFlow;
-
 use crate::core::search::mcts::{
     eval::{self, Evaluation, GameResult},
     node::{
         Tree,
-        node_state::{self, Switch},
+        node_state::{self, Evaluated, Switch},
         proven,
     },
-    search::{SelNode, Selection},
+    search::SelNode,
 };
 
 pub trait Backpropagater {
     /// Backpropagate the [eval].
-    fn backpropagate<const X: usize, T, S: const node_state::Valid>(
+    fn backpropagate<'a, T: 'a, S: const node_state::Valid>(
         &self,
         tree: &mut Tree,
-        selection: &Selection<X, T>,
-        leaf: &SelNode<Evaluation, S>,
+        path: impl Iterator<Item = &'a SelNode<T, Evaluated>>,
+        leaf: SelNode<Evaluation, S>,
     );
 }
 
@@ -24,14 +22,14 @@ pub trait Backpropagater {
 pub struct DefaultBackuper {}
 
 impl Backpropagater for DefaultBackuper {
-    fn backpropagate<const X: usize, T, S: const node_state::Valid>(
+    fn backpropagate<'a, T: 'a, S: const node_state::Valid>(
         &self,
         tree: &mut Tree,
-        selection: &Selection<X, T>,
-        leaf: &SelNode<Evaluation, S>,
+        path: impl Iterator<Item = &'a SelNode<T, Evaluated>>,
+        leaf: SelNode<Evaluation, S>,
     ) {
         let eval = &leaf.data;
-        let weight = leaf.weight;
+        let weight = 1.;
 
         // Update the leaf itself.
         {
@@ -55,13 +53,11 @@ impl Backpropagater for DefaultBackuper {
         }
 
         // Update the parents until root.
-        _ = selection.try_fold_up(leaf.parent, (), |_, item| {
+        for item in path {
             let node = item.node;
             let value = eval.to_value(!item.turn);
             tree.update_node(node, value, weight);
-
-            ControlFlow::Continue::<(), ()>(())
-        });
+        }
     }
 }
 
@@ -69,14 +65,14 @@ impl Backpropagater for DefaultBackuper {
 pub struct MctsSolver {}
 
 impl Backpropagater for MctsSolver {
-    fn backpropagate<const X: usize, T, S: const node_state::Valid>(
+    fn backpropagate<'a, T: 'a, S: const node_state::Valid>(
         &self,
         tree: &mut Tree,
-        selection: &Selection<X, T>,
-        leaf: &SelNode<Evaluation, S>,
+        path: impl Iterator<Item = &'a SelNode<T, Evaluated>>,
+        leaf: SelNode<Evaluation, S>,
     ) {
         let eval = &leaf.data;
-        let weight = leaf.weight;
+        let weight = 1.;
 
         // Update the leaf itself.
         {
@@ -117,7 +113,7 @@ impl Backpropagater for MctsSolver {
         }
 
         // Update the parents until root.
-        _ = selection.try_fold_up(leaf.parent, (), |_, item| {
+        for item in path {
             let node = item.node;
             let turn = item.turn;
 
@@ -148,8 +144,6 @@ impl Backpropagater for MctsSolver {
                 Evaluation::Guess(guess) => tree.update_node(node, guess.to_value(!turn), weight),
                 Evaluation::Nope => tree.update_node(node, eval::Value::draw(), weight),
             }
-
-            ControlFlow::Continue::<(), ()>(())
-        });
+        }
     }
 }

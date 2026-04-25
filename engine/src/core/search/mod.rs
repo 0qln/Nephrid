@@ -183,11 +183,12 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                         }
                     }
                     Switch::Terminal(_node) => {}
-                    Switch::Evaluated(root) => {
-                        let node = tree.node(root);
+                    Switch::Evaluated(node_id) => {
+                        let node = tree.node(node_id);
                         let root_visits = node.visits();
                         let root_best_move = tree.maybe_best_move(tree.root());
-                        for branch in node.branches() {
+                        for branch_id in tree.branch_ids(node_id) {
+                            let branch = tree.branch(branch_id);
                             let node = tree.node(branch.node());
                             let mov = branch.mov();
                             let state = node.state();
@@ -201,7 +202,7 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                                 node.value(),
                                 node.visits(),
                                 branch.policy(),
-                                selector.score(node.data(), branch, root_visits)
+                                selector.score(tree, branch_id, root_visits)
                             );
                         }
                     }

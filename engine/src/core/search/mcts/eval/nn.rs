@@ -1,6 +1,6 @@
 use burn::tensor::{DType, Shape, Tensor, TensorData, backend::Backend};
 use itertools::Itertools;
-use std::{ops::ControlFlow, rc::Rc};
+use std::rc::Rc;
 
 use crate::core::search::mcts::{
     nn::{
@@ -62,16 +62,14 @@ pub fn get_node_history<const X: usize>(
     vec.insert(0, leaf.data.inputs.board);
 
     // 2. Traverse up the tree to gather parent board inputs
-    _ = selection.try_fold_up(leaf.parent, (), |_, node| {
+    for node in selection.iter_path_up(leaf.parent) {
         if vec.len() == BOARD_INPUT_HISTORY {
-            return ControlFlow::Break(());
+            break;
         }
 
         let board_input = node.data.inputs.board;
         vec.insert(0, board_input);
-
-        ControlFlow::Continue::<(), ()>(())
-    });
+    }
 
     vec
 }
