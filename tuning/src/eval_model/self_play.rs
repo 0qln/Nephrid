@@ -326,6 +326,7 @@ impl BatchGenerator {
 
                 // 1. try cache
                 if let Some(cached) = try_cache_hit::<P>(&fen_str, i, n, cache) {
+                    games_completed.fetch_add(1, Ordering::Relaxed);
                     return Some(cached);
                 }
 
@@ -336,6 +337,7 @@ impl BatchGenerator {
                             let pgn = game.to_pgn();
                             log::info!(target: "data", "[FEN {i:>3}/{n:<3}] Generated game:\n{pgn}");
                         }
+                        games_completed.fetch_add(1, Ordering::Relaxed);
                         Some(result)
                     },
                     Err(err) => {
