@@ -1,7 +1,14 @@
 {
+  "loss": {
+    "value_loss_weight": 1.0,
+    "policy_loss_weight": 1.0
+  },
   "model": {
     "channels": 128,
-    "num_res_blocks": 8
+    "num_res_blocks": 8,
+    "value_dense_hidden": 256,
+    "value_head_channels": 1,
+    "policy_head_channels": 2
   },
   "optimizer": {
     "weight_decay": {
@@ -18,10 +25,13 @@
     "min_nodes": null,
     "max_terminal_nodes": null
   },
+  "caching": {
+    "proven_games": true
+  },
   "self_play": {
     "concurrency": 256,
     "allowed_moves": 6,
-    "unfinished_games": "draw",
+    "unfinished_games": "approx",
     "eval_models": 2,
     "eval_batch_size": 512,
     "eval_batch_wait_timeout_ms": 1
