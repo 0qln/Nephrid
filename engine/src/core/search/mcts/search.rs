@@ -44,6 +44,13 @@ pub struct SelNode<T, S: node_state::Any> {
 
     /// The total virtual loss that was applied to this node during selection.
     pub virtual_loss: u32,
+    //
+    // todo:
+    // the weight parameter was removed in the process of implementing virtual loss.
+    // logically the effect remains the same: instead of using the remaining budget at
+    // skip/terminal selections, we instead select that node multiple times when the outer
+    // while loop hits that nodes multiple times. this however causes more backpropagation
+    // passes. mayube the weight concept can be reintroduced somehow?
 }
 
 pub type BatchItem<T> = SelNode<T, Branching>;
