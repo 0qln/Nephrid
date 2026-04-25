@@ -5,7 +5,10 @@
   },
   "model": {
     "channels": 128,
-    "num_res_blocks": 8
+    "num_res_blocks": 8,
+    "value_dense_hidden": 256,
+    "value_head_channels": 1,
+    "policy_head_channels": 2
   },
   "optimizer": {
     "weight_decay": {
