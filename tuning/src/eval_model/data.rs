@@ -29,8 +29,32 @@ use crate::TrainingConfig;
 #[derive(Clone, Debug)]
 pub struct BoardInput(pub Vec<BoardInputFloats>);
 
+impl BoardInput {
+    pub fn assert_health(&self) {
+        for floats in self.0.iter() {
+            for floats in floats {
+                for floats in floats {
+                    for float in floats {
+                        assert!(!float.is_nan(), "NaN found in BoardInput");
+                        assert!(!float.is_infinite(), "Inf found in BoardInput");
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct StateInput(pub StateInputFloats);
+
+impl StateInput {
+    pub fn assert_health(&self) {
+        for float in self.0.iter() {
+            assert!(!float.is_nan(), "NaN found in StateInput");
+            assert!(!float.is_infinite(), "Inf found in StateInput");
+        }
+    }
+}
 
 #[derive(Clone, Default, Debug)]
 pub struct FenItemRaw {
@@ -141,7 +165,8 @@ impl<B: Backend, I: Send + Sync> Batcher<B, I, Vec<I>> for IdentityBatcher<I> {
 }
 
 pub fn build_dataloader<B: AutodiffBackend>(
-    config: &TrainingConfig, split: &str,
+    config: &TrainingConfig,
+    split: &str,
 ) -> Arc<dyn DataLoader<B, Vec<FenItemRaw>>> {
     DataLoaderBuilder::<B, _, _>::new(IdentityBatcher::<FenItemRaw>::default())
         .batch_size(config.batch_size)

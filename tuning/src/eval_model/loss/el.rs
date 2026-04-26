@@ -10,8 +10,7 @@ use burn::{
 use engine::core::search::mcts::{
     eval::{RawPolicy, VisitCounts, normalize_visits},
     nn::{
-        BoardInputTensor, Model, POLICY_OUTPUT_TENSOR_DIM, POLICY_OUTPUTS, STATE_INPUT_TENSOR_DIM,
-        StateInputTensor, VALUE_OUTPUT_TENSOR_DIM, board_history_input,
+        BoardInputTensor, Model, POLICY_OUTPUT_TENSOR_DIM, POLICY_OUTPUTS, STATE_INPUT_TENSOR_DIM, StateInputTensor, VALUE_OUTPUT_TENSOR_DIM, assert_tensor_health, board_history_input
     },
     node::node_state::Evaluated,
 };
@@ -34,6 +33,15 @@ pub struct ExactLossPlayoutBatch<B: Backend> {
     pub state_inputs: StateInputTensor<B>,
     pub value_targets: ValueTargetTensor<B>,
     pub policy_targets: PolicyTargetTensor<B>,
+}
+
+impl<B: Backend> ExactLossPlayoutBatch<B> {
+    pub fn assert_health(&self) {
+        assert_tensor_health(self.board_inputs.clone());
+        assert_tensor_health(self.state_inputs.clone());
+        assert_tensor_health(self.value_targets.clone());
+        assert_tensor_health(self.policy_targets.clone());
+    }
 }
 
 pub type ValueTarget = super::ValueTarget;
@@ -175,7 +183,7 @@ impl SoftCrossEntropyLoss {
 }
 
 /// Foward with loss. (Policy loss: exact probabilities)
-pub fn forward_with_loss_exact_loss<B: Backend>(
+pub fn forward_with_loss<B: Backend>(
     this: &Model<B>,
     board_input: BoardInputTensor<B>,
     state_input: Tensor<B, STATE_INPUT_TENSOR_DIM>,
@@ -188,7 +196,7 @@ pub fn forward_with_loss_exact_loss<B: Backend>(
     LossOutput::new(value_loss, policy_loss)
 }
 
-pub fn forward_with_loss_exact_loss_weighted<B: Backend>(
+pub fn forward_with_loss_weighted<B: Backend>(
     model: &Model<B>,
     board_input: BoardInputTensor<B>,
     state_input: Tensor<B, STATE_INPUT_TENSOR_DIM>,
@@ -205,7 +213,7 @@ pub fn forward_with_loss_exact_loss_weighted<B: Backend>(
 
 impl<B: Backend> ValidStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for Model<B> {
     fn step(&self, batch: ExactLossPlayoutBatch<B>) -> LossOutput<B> {
-        forward_with_loss_exact_loss(
+        forward_with_loss(
             self,
             batch.board_inputs,
             batch.state_inputs,
@@ -217,7 +225,7 @@ impl<B: Backend> ValidStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for Model<B>
 
 impl<B: AutodiffBackend> TrainStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for Model<B> {
     fn step(&self, batch: ExactLossPlayoutBatch<B>) -> TrainOutput<LossOutput<B>> {
-        let item = forward_with_loss_exact_loss(
+        let item = forward_with_loss(
             self,
             batch.board_inputs,
             batch.state_inputs,
@@ -247,7 +255,7 @@ impl<B: Backend> WeightedModel<B> {
 
 impl<B: Backend> ValidStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for WeightedModel<B> {
     fn step(&self, batch: ExactLossPlayoutBatch<B>) -> LossOutput<B> {
-        forward_with_loss_exact_loss_weighted(
+        forward_with_loss_weighted(
             &self.model,
             batch.board_inputs,
             batch.state_inputs,
@@ -261,7 +269,7 @@ impl<B: Backend> ValidStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for Weighted
 
 impl<B: AutodiffBackend> TrainStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for WeightedModel<B> {
     fn step(&self, batch: ExactLossPlayoutBatch<B>) -> TrainOutput<LossOutput<B>> {
-        let item = forward_with_loss_exact_loss_weighted(
+        let item = forward_with_loss_weighted(
             &self.model,
             batch.board_inputs,
             batch.state_inputs,

@@ -7,12 +7,12 @@ use burn::{
 use engine::core::{
     search::mcts::{
         eval::{GameResult, Quality},
-        nn::VALUE_OUTPUT_TENSOR_DIM,
+        nn::{VALUE_OUTPUT_TENSOR_DIM, assert_tensor_health},
     },
     turn::Turn,
 };
 
-use crate::self_play::Outcome;
+use crate::{ self_play::Outcome};
 
 pub mod el;
 
@@ -60,6 +60,12 @@ impl<B: Backend> LossOutput<B> {
             value_loss,
             policy_loss,
         }
+    }
+
+    pub fn assert_health(&self) {
+        assert_tensor_health(self.value_loss.clone());
+        assert_tensor_health(self.policy_loss.clone());
+        assert_tensor_health(self.loss.clone());
     }
 }
 

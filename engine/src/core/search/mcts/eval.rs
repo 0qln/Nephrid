@@ -164,14 +164,15 @@ pub trait PolicySource {
 pub struct RawPolicy([f32; POLICY_OUTPUTS]);
 
 impl RawPolicy {
+    const EPS: f32 = 1e-6;
+
     pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
-        const EPS: f32 = 1e-6;
         debug_assert!(
-            p.iter().all(|&x| x >= -EPS),
+            p.iter().all(|&x| x >= -Self::EPS),
             "policy probabilities must be non-negative"
         );
         debug_assert!(
-            (p.iter().sum::<f32>() - 1.0).abs() < EPS,
+            (p.iter().sum::<f32>() - 1.0).abs() < Self::EPS,
             "policy probabilities must sum to 1",
         );
 
@@ -180,6 +181,25 @@ impl RawPolicy {
 
     pub fn into_inner(self) -> [f32; POLICY_OUTPUTS] {
         self.0
+    }
+
+    pub fn assert_health(&self) {
+        assert!(
+            !self.0.iter().any(|&x| x.is_nan()),
+            "policy probabilities must not be NaN"
+        );
+        assert!(
+            !self.0.iter().any(|&x| x.is_infinite()),
+            "policy probabilities must not be infinite"
+        );
+        assert!(
+            self.0.iter().all(|&x| x >= -Self::EPS),
+            "policy probabilities must be non-negative"
+        );
+        assert!(
+            (self.0.iter().sum::<f32>() - 1.0).abs() < Self::EPS,
+            "policy probabilities must sum to 1",
+        );
     }
 }
 
@@ -300,6 +320,13 @@ impl Policy {
         }
 
         softmax(&mut policy, temp);
+
+        for policy in &policy {
+            if policy.is_nan() || policy.is_infinite() {
+                println!("Raw logits: {:?}", raw_logits.0);
+                panic!("Policy is invalid: {}", policy);
+            }
+        }
 
         Some(Self(policy))
     }
@@ -437,6 +464,18 @@ impl Quality {
 
     pub const fn loss() -> Self {
         Self::min()
+    }
+
+    pub fn assert_health(&self) {
+        assert!(!self.0.is_nan(), "Quality value was NaN");
+        assert!(!self.0.is_infinite(), "Quality value was infinite");
+        assert!(
+            self.0 >= Self::min().v() && self.0 <= Self::max().v(),
+            "Quality value {} was out of range [{}, {}]",
+            self.0,
+            Self::min().v(),
+            Self::max().v()
+        );
     }
 }
 

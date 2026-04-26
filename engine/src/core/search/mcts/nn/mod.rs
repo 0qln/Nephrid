@@ -26,6 +26,21 @@ use crate::core::{
 #[cfg(test)]
 pub mod test;
 
+pub fn assert_tensor_health<const D: usize, B: Backend>(tensor: Tensor<B, D>) -> bool {
+    for value in tensor.clone().into_data().as_slice::<f32>().unwrap() {
+        assert!(!value.is_nan(), "Tensor value is nan: {}", value);
+        assert!(!value.is_infinite(), "Tensor value is infinite: {}", value);
+    }
+    true
+}
+
+pub fn assert_linear_health<B: Backend>(linear: Linear<B>) -> bool {
+    assert_tensor_health(linear.weight.clone().into_value())
+        && linear
+            .bias
+            .is_some_and(|b| assert_tensor_health(b.clone().into_value()))
+}
+
 pub const INPUT_CHANNELS: usize = BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY;
 
 pub const BOARD_INPUT_HISTORY: usize = 8;
@@ -210,6 +225,13 @@ impl<B: Backend> ConvBlock<B> {
         let x = self.b_norm.forward(x);
         self.activation.forward(x)
     }
+
+    pub fn assert_health(&self) {
+        assert_tensor_health(self.conv.weight.clone().into_value());
+
+        assert_tensor_health(self.b_norm.gamma.clone().into_value());
+        assert_tensor_health(self.b_norm.beta.clone().into_value());
+    }
 }
 
 #[derive(Config, Debug)]
@@ -259,6 +281,16 @@ impl<B: Backend> ResidualBlock<B> {
         // Residual skip-connection: add the original input before the final activation
         let out = out + identity;
         self.relu2.forward(out)
+    }
+
+    pub fn assert_health(&self) {
+        assert_tensor_health(self.conv1.weight.clone().into_value());
+        assert_tensor_health(self.bn1.gamma.clone().into_value());
+        assert_tensor_health(self.bn1.beta.clone().into_value());
+
+        assert_tensor_health(self.conv2.weight.clone().into_value());
+        assert_tensor_health(self.bn2.gamma.clone().into_value());
+        assert_tensor_health(self.bn2.beta.clone().into_value());
     }
 }
 
@@ -362,6 +394,23 @@ impl<B: Backend> Model<B> {
         }
 
         B::sync(device);
+    }
+
+    pub fn assert_health(&self) {
+        self.initial_conv.assert_health();
+        for block in self.res_blocks.iter() {
+            block.assert_health();
+        }
+        assert_tensor_health(self.value_conv.weight.clone().into_value());
+        assert_tensor_health(self.value_bn.gamma.clone().into_value());
+        assert_tensor_health(self.value_bn.beta.clone().into_value());
+        assert_linear_health(self.value_dense1.clone());
+        assert_linear_health(self.value_dense2.clone());
+
+        assert_tensor_health(self.policy_conv.weight.clone().into_value());
+        assert_tensor_health(self.policy_bn.gamma.clone().into_value());
+        assert_tensor_health(self.policy_bn.beta.clone().into_value());
+        assert_linear_health(self.policy_dense.clone());
     }
 }
 

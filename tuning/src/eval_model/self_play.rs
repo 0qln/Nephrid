@@ -12,7 +12,7 @@ use engine::core::{
             self, Evaluation, Evaluator, Policy, Quality, RawLogits, VisitCounts,
             nn::{TraceInfo, get_node_history},
         },
-        nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor},
+        nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor, assert_tensor_health},
         node::{
             self, BranchId, WinRate,
             node_state::{Evaluated, HasBranches},
@@ -631,6 +631,7 @@ where
                         let win_rate = root_evaluated.map(WinRate::from).unwrap_or_default();
                         let value = eval::Value::from(win_rate);
                         let quality = eval::Quality::from(value);
+                        quality.assert_health();
                         game_result = Outcome::Continuous {
                             quality,
                             relative_to: pos.get_turn(),
@@ -887,10 +888,16 @@ pub fn spawn_inference_workers<B: Backend>(
                     0,
                 );
 
-                let (values, raw_policies) = model.forward(board_batch, state_batch);
+                assert_tensor_health(board_batch.clone());
+                assert_tensor_health(state_batch.clone().clone());
+
+                let (values, logits) = model.forward(board_batch, state_batch);
+
+                assert_tensor_health(values.clone());
+                assert_tensor_health(logits.clone());
 
                 let values_data = values.into_data().as_slice::<f32>().unwrap().to_vec();
-                let policies_data = raw_policies.into_data().as_slice::<f32>().unwrap().to_vec();
+                let logits_data = logits.into_data().as_slice::<f32>().unwrap().to_vec();
 
                 // --- ROUTE RESPONSES BACK ---
                 for (i, req) in batch.drain(..).enumerate() {
@@ -900,7 +907,7 @@ pub fn spawn_inference_workers<B: Backend>(
                     let start_idx = i * POLICY_OUTPUTS;
                     raw_logits
                         .0
-                        .copy_from_slice(&policies_data[start_idx..start_idx + POLICY_OUTPUTS]);
+                        .copy_from_slice(&logits_data[start_idx..start_idx + POLICY_OUTPUTS]);
 
                     let _ = req.responder.send(NNResponse { value, raw_logits });
                 }

@@ -149,6 +149,7 @@ pub fn train<B: AutodiffBackend>(
     let mut cache = caching::Cache::new(config.caching.clone());
 
     model = load_weights(model, device, &current_model_path);
+    model.assert_health();
 
     let batch_generator = BatchGenerator::new(self_play).expect("Failed to create batch generator");
 
@@ -170,16 +171,30 @@ pub fn train<B: AutodiffBackend>(
                 .expect("Failed to generate batch");
             playout_items.shuffle(&mut rng);
 
+            for playout_item in &playout_items {
+                playout_item.board_input.assert_health();
+                playout_item.state_input.assert_health();
+                playout_item.value_target.0.assert_health();
+                playout_item.policy_target.0.assert_health();
+            }
+
             // Process Mini-batches
             let batcher = PlayoutBatcher;
             for (chunk_idx, chunk) in playout_items.chunks(config.mini_batch_size).enumerate() {
                 let playouts_batch = batcher.batch(chunk.to_vec(), device);
                 let weighted_model = WeightedModel::new(model, value_weight, policy_weight);
+
+                playouts_batch.assert_health();
+
                 let result = TrainStep::step(&weighted_model, playouts_batch);
+
+                result.item.assert_health();
 
                 log_step(epoch, iteration, chunk_idx, &result, &stats);
 
                 model = optim.step(config.learning_rate, weighted_model.model, result.grads);
+
+                model.assert_health();
             }
 
             // Save the new state
