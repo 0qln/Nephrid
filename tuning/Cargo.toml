@@ -15,6 +15,7 @@ crossbeam-channel = "0.5.15"
 log-mdc = "0.1.0"
 clap = { version = "4.5.0", features = ["derive"] }
 clap_derive = { version = "4.5.0" }
+thiserror = "2.0.11"
 
 [[bin]]
 name = "eval-model"

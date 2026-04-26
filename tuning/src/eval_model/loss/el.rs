@@ -7,18 +7,24 @@ use burn::{
     tensor::{Float, TensorData, activation::log_softmax, backend::AutodiffBackend},
     train::{TrainOutput, TrainStep, ValidStep},
 };
-use engine::core::search::mcts::{
-    eval::{RawPolicy, VisitCounts, normalize_visits},
-    nn::{
-        BoardInputTensor, Model, POLICY_OUTPUT_TENSOR_DIM, POLICY_OUTPUTS, STATE_INPUT_TENSOR_DIM, StateInputTensor, VALUE_OUTPUT_TENSOR_DIM, assert_tensor_health, board_history_input
+use engine::{
+    core::search::mcts::{
+        eval::{RawPolicy, VisitCounts, normalize_visits},
+        nn::{
+            BoardInputTensor, CheckTensorHealthError, Model, POLICY_OUTPUT_TENSOR_DIM,
+            POLICY_OUTPUTS, STATE_INPUT_TENSOR_DIM, StateInputTensor, VALUE_OUTPUT_TENSOR_DIM,
+            board_history_input,
+        },
+        node::node_state::Evaluated,
     },
-    node::node_state::Evaluated,
+    misc::{CheckHealth, CheckHealthResult},
 };
 
 use burn::tensor::{Tensor, backend::Backend};
 
 use engine::core::search::mcts::node::Tree;
 use itertools::Itertools;
+use thiserror::Error;
 
 use crate::{
     Decision, LossOutput, PlayoutBatcher, Target,
@@ -35,12 +41,35 @@ pub struct ExactLossPlayoutBatch<B: Backend> {
     pub policy_targets: PolicyTargetTensor<B>,
 }
 
-impl<B: Backend> ExactLossPlayoutBatch<B> {
-    pub fn assert_health(&self) {
-        assert_tensor_health(self.board_inputs.clone());
-        assert_tensor_health(self.state_inputs.clone());
-        assert_tensor_health(self.value_targets.clone());
-        assert_tensor_health(self.policy_targets.clone());
+#[derive(Error, Debug)]
+pub enum CheckExactLossPlayoutBatchHealthError {
+    #[error("Board input health error: {0}")]
+    BoardInputHealth(CheckTensorHealthError),
+    #[error("State input health error: {0}")]
+    StateInputHealth(CheckTensorHealthError),
+    #[error("Value target health error: {0}")]
+    ValueTargetHealth(CheckTensorHealthError),
+    #[error("Policy target health error: {0}")]
+    PolicyTargetHealth(CheckTensorHealthError),
+}
+
+impl<B: Backend> CheckHealth for ExactLossPlayoutBatch<B> {
+    type Error = CheckExactLossPlayoutBatchHealthError;
+
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        self.board_inputs
+            .check_health()
+            .map_err(CheckExactLossPlayoutBatchHealthError::BoardInputHealth)?;
+        self.state_inputs
+            .check_health()
+            .map_err(CheckExactLossPlayoutBatchHealthError::StateInputHealth)?;
+        self.value_targets
+            .check_health()
+            .map_err(CheckExactLossPlayoutBatchHealthError::ValueTargetHealth)?;
+        self.policy_targets
+            .check_health()
+            .map_err(CheckExactLossPlayoutBatchHealthError::PolicyTargetHealth)?;
+        Ok(())
     }
 }
 

@@ -20,6 +20,7 @@ use engine::{
         position::{FenExport, FenImport, Position},
         search::mcts::nn::{BoardInputFloats, StateInputFloats},
     },
+    misc::{CheckHealth, CheckHealthResult},
     uci::tokens::Tokenizer,
 };
 use itertools::Itertools;
@@ -29,30 +30,42 @@ use crate::TrainingConfig;
 #[derive(Clone, Debug)]
 pub struct BoardInput(pub Vec<BoardInputFloats>);
 
-impl BoardInput {
-    pub fn assert_health(&self) {
+impl CheckHealth for BoardInput {
+    type Error = String;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
         for floats in self.0.iter() {
             for floats in floats {
                 for floats in floats {
                     for float in floats {
-                        assert!(!float.is_nan(), "NaN found in BoardInput");
-                        assert!(!float.is_infinite(), "Inf found in BoardInput");
+                        if float.is_nan() {
+                            return Err("NaN found in BoardInput".to_string());
+                        }
+                        if float.is_infinite() {
+                            return Err("Inf found in BoardInput".to_string());
+                        }
                     }
                 }
             }
         }
+        Ok(())
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct StateInput(pub StateInputFloats);
 
-impl StateInput {
-    pub fn assert_health(&self) {
+impl CheckHealth for StateInput {
+    type Error = String;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
         for float in self.0.iter() {
-            assert!(!float.is_nan(), "NaN found in StateInput");
-            assert!(!float.is_infinite(), "Inf found in StateInput");
+            if float.is_nan() {
+                return Err("NaN found in StateInput".to_string());
+            }
+            if float.is_infinite() {
+                return Err("Inf found in StateInput".to_string());
+            }
         }
+        Ok(())
     }
 }
 

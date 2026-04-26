@@ -1,16 +1,19 @@
-use crate::core::{
-    Position,
-    color::Color,
-    depth::Depth,
-    r#move::Move,
-    search::mcts::{
-        nn::POLICY_OUTPUTS,
-        node::{
-            NodeId, Tree, WinRate,
-            node_state::{HasBranches, Terminal, Valid},
+use crate::{
+    core::{
+        Position,
+        color::Color,
+        depth::Depth,
+        r#move::Move,
+        search::mcts::{
+            nn::POLICY_OUTPUTS,
+            node::{
+                NodeId, Tree, WinRate,
+                node_state::{HasBranches, Terminal, Valid},
+            },
+            search::{BatchItem, Selection},
         },
-        search::{BatchItem, Selection},
     },
+    misc::{CheckHealth, CheckHealthResult},
 };
 use core::fmt;
 use std::ops::ControlFlow;
@@ -182,24 +185,30 @@ impl RawPolicy {
     pub fn into_inner(self) -> [f32; POLICY_OUTPUTS] {
         self.0
     }
+}
 
-    pub fn assert_health(&self) {
-        assert!(
-            !self.0.iter().any(|&x| x.is_nan()),
-            "policy probabilities must not be NaN"
-        );
-        assert!(
-            !self.0.iter().any(|&x| x.is_infinite()),
-            "policy probabilities must not be infinite"
-        );
-        assert!(
-            self.0.iter().all(|&x| x >= -Self::EPS),
-            "policy probabilities must be non-negative"
-        );
-        assert!(
-            (self.0.iter().sum::<f32>() - 1.0).abs() < Self::EPS,
-            "policy probabilities must sum to 1",
-        );
+impl CheckHealth for RawPolicy {
+    type Error = String;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        if self.0.iter().any(|&x| x.is_nan()) {
+            return Err("policy probabilities must not be NaN".to_string());
+        }
+
+        if self.0.iter().any(|&x| x.is_infinite()) {
+            return Err("policy probabilities must not be infinite".to_string());
+        }
+
+        if !self.0.iter().all(|&x| x >= -Self::EPS) {
+            return Err("policy probabilities must be non-negative".to_string());
+        }
+
+        let sum = self.0.iter().sum::<f32>();
+        if (sum - 1.0).abs() >= Self::EPS {
+            return Err(format!(
+                "policy probabilities must sum to 1, but was: {sum}",
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -465,17 +474,29 @@ impl Quality {
     pub const fn loss() -> Self {
         Self::min()
     }
+}
 
-    pub fn assert_health(&self) {
-        assert!(!self.0.is_nan(), "Quality value was NaN");
-        assert!(!self.0.is_infinite(), "Quality value was infinite");
-        assert!(
-            self.0 >= Self::min().v() && self.0 <= Self::max().v(),
-            "Quality value {} was out of range [{}, {}]",
-            self.0,
-            Self::min().v(),
-            Self::max().v()
-        );
+impl CheckHealth for Quality {
+    type Error = String;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        if self.0.is_nan() {
+            return Err("Quality value was NaN".to_string());
+        }
+
+        if self.0.is_infinite() {
+            return Err("Quality value was infinite".to_string());
+        }
+
+        if self.0 < Self::min().v() || self.0 > Self::max().v() {
+            return Err(format!(
+                "Quality value {} was out of range [{}, {}]",
+                self.0,
+                Self::min().v(),
+                Self::max().v()
+            ));
+        }
+
+        Ok(())
     }
 }
 

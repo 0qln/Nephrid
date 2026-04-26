@@ -1,27 +1,30 @@
 use burn_cuda::Cuda;
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
-use engine::core::{
-    config::Configuration,
-    r#move::MoveList,
-    move_iter::fold_legal_moves,
-    position::PgnResultValue,
-    search::mcts::{
-        self, CreateNNPartsError, MctsParts, NNParts,
-        back::MctsSolver,
-        eval::{
-            self, Evaluation, Evaluator, Policy, Quality, RawLogits, VisitCounts,
-            nn::{TraceInfo, get_node_history},
+use engine::{
+    core::{
+        config::Configuration,
+        r#move::MoveList,
+        move_iter::fold_legal_moves,
+        position::PgnResultValue,
+        search::mcts::{
+            self, CreateNNPartsError, MctsParts, NNParts,
+            back::MctsSolver,
+            eval::{
+                self, Evaluation, Evaluator, Policy, Quality, RawLogits, VisitCounts,
+                nn::{TraceInfo, get_node_history},
+            },
+            nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor},
+            node::{
+                self, BranchId, WinRate,
+                node_state::{Evaluated, HasBranches},
+            },
+            noise::DirichletNoiser,
+            search::{BatchItem, Selection},
+            select::{Score, Selector},
         },
-        nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor, assert_tensor_health},
-        node::{
-            self, BranchId, WinRate,
-            node_state::{Evaluated, HasBranches},
-        },
-        noise::DirichletNoiser,
-        search::{BatchItem, Selection},
-        select::{Score, Selector},
+        zobrist,
     },
-    zobrist,
+    misc::CheckHealth,
 };
 use itertools::Itertools;
 use rand::{SeedableRng, rngs::SmallRng};
@@ -631,7 +634,7 @@ where
                         let win_rate = root_evaluated.map(WinRate::from).unwrap_or_default();
                         let value = eval::Value::from(win_rate);
                         let quality = eval::Quality::from(value);
-                        quality.assert_health();
+                        quality.check_health().expect("quality should be healthy");
                         game_result = Outcome::Continuous {
                             quality,
                             relative_to: pos.get_turn(),
@@ -891,16 +894,30 @@ pub fn spawn_inference_workers<B: Backend>(
 
                 #[cfg(debug_assertions)]
                 {
-                    assert_tensor_health(board_batch.clone());
-                    assert_tensor_health(state_batch.clone().clone());
+                    use engine::misc::CheckHealth;
+
+                    if let Err(e) = board_batch.check_health() {
+                        panic!("board_batch health check failed: {e}");
+                    }
+
+                    if let Err(e) = state_batch.check_health() {
+                        panic!("state_batch health check failed: {e}");
+                    }
                 }
 
                 let (values, logits) = model.forward(board_batch, state_batch);
 
                 #[cfg(debug_assertions)]
                 {
-                    assert_tensor_health(values.clone());
-                    assert_tensor_health(logits.clone());
+                    use engine::misc::CheckHealth;
+
+                    if let Err(e) = values.check_health() {
+                        panic!("values health check failed: {e}");
+                    }
+
+                    if let Err(e) = logits.check_health() {
+                        panic!("logits health check failed: {e}");
+                    }
                 }
 
                 let values_data = values.into_data().as_slice::<f32>().unwrap().to_vec();

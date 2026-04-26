@@ -4,15 +4,19 @@ use burn::{
     prelude::Backend,
     train::metric::{Adaptor, LossInput},
 };
-use engine::core::{
-    search::mcts::{
-        eval::{GameResult, Quality},
-        nn::{VALUE_OUTPUT_TENSOR_DIM, assert_tensor_health},
+use engine::{
+    core::{
+        search::mcts::{
+            eval::{GameResult, Quality},
+            nn::{CheckTensorHealthError, VALUE_OUTPUT_TENSOR_DIM},
+        },
+        turn::Turn,
     },
-    turn::Turn,
+    misc::{CheckHealth, CheckHealthResult},
 };
+use thiserror::Error;
 
-use crate::{ self_play::Outcome};
+use crate::self_play::Outcome;
 
 pub mod el;
 
@@ -61,11 +65,37 @@ impl<B: Backend> LossOutput<B> {
             policy_loss,
         }
     }
+}
 
-    pub fn assert_health(&self) {
-        assert_tensor_health(self.value_loss.clone());
-        assert_tensor_health(self.policy_loss.clone());
-        assert_tensor_health(self.loss.clone());
+#[derive(Debug, Error)]
+pub enum CheckLossOutputHealthError {
+    #[error("Value loss tensor is unhealthy: {0}")]
+    ValueLoss(CheckTensorHealthError),
+
+    #[error("Policy loss tensor is unhealthy: {0}")]
+    PolicyLoss(CheckTensorHealthError),
+
+    #[error("Total loss tensor is unhealthy: {0}")]
+    Loss(CheckTensorHealthError),
+}
+
+impl<B: Backend> CheckHealth for LossOutput<B> {
+    type Error = CheckLossOutputHealthError;
+
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        self.value_loss
+            .check_health()
+            .map_err(CheckLossOutputHealthError::ValueLoss)?;
+
+        self.policy_loss
+            .check_health()
+            .map_err(CheckLossOutputHealthError::PolicyLoss)?;
+
+        self.loss
+            .check_health()
+            .map_err(CheckLossOutputHealthError::Loss)?;
+
+        Ok(())
     }
 }
 

@@ -24,7 +24,10 @@ use burn::{
     backend::Autodiff, config::Config, data::dataloader::batcher::Batcher, train::TrainStep,
 };
 use burn_cuda::{Cuda, CudaDevice};
-use engine::core::{move_iter::sliding_piece::magics, search::mcts::nn::ModelConfig, zobrist};
+use engine::{
+    core::{move_iter::sliding_piece::magics, search::mcts::nn::ModelConfig, zobrist},
+    misc::CheckHealth,
+};
 use rand::rngs::SmallRng;
 
 use crate::{
@@ -149,7 +152,9 @@ pub fn train<B: AutodiffBackend>(
     let mut cache = caching::Cache::new(config.caching.clone());
 
     model = load_weights(model, device, &current_model_path);
-    model.assert_health();
+    if let Err(e) = model.check_health() {
+        panic!("Loaded model is unhealthy: {e}");
+    }
 
     let batch_generator = BatchGenerator::new(self_play).expect("Failed to create batch generator");
 
@@ -172,10 +177,21 @@ pub fn train<B: AutodiffBackend>(
             playout_items.shuffle(&mut rng);
 
             for playout_item in &playout_items {
-                playout_item.board_input.assert_health();
-                playout_item.state_input.assert_health();
-                playout_item.value_target.0.assert_health();
-                playout_item.policy_target.0.assert_health();
+                if let Err(e) = playout_item.board_input.check_health() {
+                    panic!("Board input tensor is unhealthy: {e}");
+                }
+
+                if let Err(e) = playout_item.state_input.check_health() {
+                    panic!("State input tensor is unhealthy: {e}");
+                }
+
+                if let Err(e) = playout_item.value_target.0.check_health() {
+                    panic!("Value target tensor is unhealthy: {e}");
+                }
+
+                if let Err(e) = playout_item.policy_target.0.check_health() {
+                    panic!("Policy target tensor is unhealthy: {e}");
+                }
             }
 
             // Process Mini-batches
@@ -184,17 +200,23 @@ pub fn train<B: AutodiffBackend>(
                 let playouts_batch = batcher.batch(chunk.to_vec(), device);
                 let weighted_model = WeightedModel::new(model, value_weight, policy_weight);
 
-                playouts_batch.assert_health();
+                if let Err(e) = playouts_batch.check_health() {
+                    panic!("Playouts batch is unhealthy: {e}");
+                }
 
                 let result = TrainStep::step(&weighted_model, playouts_batch);
 
-                result.item.assert_health();
+                if let Err(e) = result.item.check_health() {
+                    panic!("Train step output is unhealthy: {e}");
+                }
 
                 log_step(epoch, iteration, chunk_idx, &result, &stats);
 
                 model = optim.step(config.learning_rate, weighted_model.model, result.grads);
 
-                model.assert_health();
+                if let Err(e) = model.check_health() {
+                    panic!("Model became unhealthy after optimization step: {e}");
+                }
             }
 
             // Save the new state

@@ -14,31 +14,122 @@ use burn::{
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::core::{
-    bitboard,
-    castling::castling_sides,
-    color::colors,
-    coordinates::{files, ranks, squares},
-    piece::{piece_type, promo_piece_type},
-    position::Position,
+use crate::{
+    core::{
+        bitboard,
+        castling::castling_sides,
+        color::colors,
+        coordinates::{files, ranks, squares},
+        piece::{piece_type, promo_piece_type},
+        position::Position,
+    },
+    misc::{CheckHealth, CheckHealthResult},
 };
 
 #[cfg(test)]
 pub mod test;
 
-pub fn assert_tensor_health<const D: usize, B: Backend>(tensor: Tensor<B, D>) -> bool {
-    for value in tensor.clone().into_data().as_slice::<f32>().unwrap() {
-        assert!(!value.is_nan(), "Tensor value is nan: {}", value);
-        assert!(!value.is_infinite(), "Tensor value is infinite: {}", value);
-    }
-    true
+#[derive(Debug, Error)]
+pub enum CheckTensorHealthError {
+    #[error("Tensor value is nan: {0}")]
+    Nan(f32),
+
+    #[error("Tensor value is infinite: {0}")]
+    Infinite(f32),
 }
 
-pub fn assert_linear_health<B: Backend>(linear: Linear<B>) -> bool {
-    assert_tensor_health(linear.weight.clone().into_value())
-        && linear
-            .bias
-            .is_some_and(|b| assert_tensor_health(b.clone().into_value()))
+impl<const D: usize, B: Backend> CheckHealth for Tensor<B, D> {
+    type Error = CheckTensorHealthError;
+
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        for &value in self.clone().into_data().as_slice::<f32>().unwrap() {
+            if value.is_nan() {
+                return Err(CheckTensorHealthError::Nan(value));
+            }
+            if value.is_infinite() {
+                return Err(CheckTensorHealthError::Infinite(value));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum CheckLinearHealthError {
+    #[error("Linear weight tensor is unhealthy: {0}")]
+    Weight(CheckTensorHealthError),
+
+    #[error("Linear bias tensor is unhealthy: {0}")]
+    Bias(CheckTensorHealthError),
+}
+
+impl<B: Backend> CheckHealth for Linear<B> {
+    type Error = CheckLinearHealthError;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        if let Err(e) = self.weight.clone().into_value().check_health() {
+            return Err(CheckLinearHealthError::Weight(e));
+        }
+
+        if let Some(bias) = self.bias.clone()
+            && let Err(e) = bias.into_value().check_health()
+        {
+            return Err(CheckLinearHealthError::Bias(e));
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum CheckConv2dHealthError {
+    #[error("Conv weight tensor is unhealthy: {0}")]
+    Weight(CheckTensorHealthError),
+
+    #[error("Conv bias tensor is unhealthy: {0}")]
+    Bias(CheckTensorHealthError),
+}
+
+impl<B: Backend> CheckHealth for Conv2d<B> {
+    type Error = CheckConv2dHealthError;
+
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        if let Err(e) = self.weight.clone().into_value().check_health() {
+            return Err(CheckConv2dHealthError::Weight(e));
+        }
+
+        if let Some(bias) = self.bias.clone()
+            && let Err(e) = bias.into_value().check_health()
+        {
+            return Err(CheckConv2dHealthError::Bias(e));
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum CheckBatchnormHealthError {
+    #[error("BatchNorm gamma tensor is unhealthy: {0}")]
+    Gamma(CheckTensorHealthError),
+
+    #[error("BatchNorm beta tensor is unhealthy: {0}")]
+    Beta(CheckTensorHealthError),
+}
+
+impl<B: Backend> CheckHealth for BatchNorm<B> {
+    type Error = CheckBatchnormHealthError;
+
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        if let Err(e) = self.gamma.clone().into_value().check_health() {
+            return Err(CheckBatchnormHealthError::Gamma(e));
+        }
+
+        if let Err(e) = self.beta.clone().into_value().check_health() {
+            return Err(CheckBatchnormHealthError::Beta(e));
+        }
+
+        Ok(())
+    }
 }
 
 pub const INPUT_CHANNELS: usize = BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY;
@@ -225,12 +316,23 @@ impl<B: Backend> ConvBlock<B> {
         let x = self.b_norm.forward(x);
         self.activation.forward(x)
     }
+}
 
-    pub fn assert_health(&self) {
-        assert_tensor_health(self.conv.weight.clone().into_value());
+#[derive(Debug, Error)]
+pub enum CheckConvBlockHealthError {
+    #[error("Conv block is unhealthy: {0}")]
+    BadConv(#[from] CheckConv2dHealthError),
 
-        assert_tensor_health(self.b_norm.gamma.clone().into_value());
-        assert_tensor_health(self.b_norm.beta.clone().into_value());
+    #[error("BatchNorm in conv block is unhealthy: {0}")]
+    BadBatchNorm(#[from] CheckBatchnormHealthError),
+}
+
+impl<B: Backend> CheckHealth for ConvBlock<B> {
+    type Error = CheckConvBlockHealthError;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        self.conv.check_health()?;
+        self.b_norm.check_health()?;
+        Ok(())
     }
 }
 
@@ -282,15 +384,25 @@ impl<B: Backend> ResidualBlock<B> {
         let out = out + identity;
         self.relu2.forward(out)
     }
+}
 
-    pub fn assert_health(&self) {
-        assert_tensor_health(self.conv1.weight.clone().into_value());
-        assert_tensor_health(self.bn1.gamma.clone().into_value());
-        assert_tensor_health(self.bn1.beta.clone().into_value());
+#[derive(Debug, Error)]
+pub enum CheckResidualBlockHealthError {
+    #[error("Conv block is unhealthy: {0}")]
+    BadConv(#[from] CheckConv2dHealthError),
 
-        assert_tensor_health(self.conv2.weight.clone().into_value());
-        assert_tensor_health(self.bn2.gamma.clone().into_value());
-        assert_tensor_health(self.bn2.beta.clone().into_value());
+    #[error("BatchNorm in conv block is unhealthy: {0}")]
+    BadBatchNorm(#[from] CheckBatchnormHealthError),
+}
+
+impl<B: Backend> CheckHealth for ResidualBlock<B> {
+    type Error = CheckResidualBlockHealthError;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        self.conv1.check_health()?;
+        self.bn1.check_health()?;
+        self.conv2.check_health()?;
+        self.bn2.check_health()?;
+        Ok(())
     }
 }
 
@@ -322,17 +434,14 @@ pub struct Model<B: Backend> {
     res_blocks: Vec<ResidualBlock<B>>,
 
     // Value Head
-    value_conv: Conv2d<B>,
-    value_bn: BatchNorm<B>,
+    value_conv: ConvBlock<B>,
     value_relu: Relu,
     value_dense1: Linear<B>,
     value_dense2: Linear<B>,
     value_tanh: Tanh,
 
     // Policy Head
-    policy_conv: Conv2d<B>,
-    policy_bn: BatchNorm<B>,
-    policy_relu: Relu,
+    policy_conv: ConvBlock<B>,
     policy_dense: Linear<B>,
 }
 
@@ -350,8 +459,6 @@ impl<B: Backend> Model<B> {
 
         // Value Head
         let v = self.value_conv.forward(x.clone());
-        let v = self.value_bn.forward(v);
-        let v = self.value_relu.forward(v);
         let v = v.flatten(1, 3);
 
         // State Inputs
@@ -364,8 +471,6 @@ impl<B: Backend> Model<B> {
         // Policy Head
         // todo: maybe also inject state data here?
         let p = self.policy_conv.forward(x);
-        let p = self.policy_bn.forward(p);
-        let p = self.policy_relu.forward(p);
         let p = p.flatten(1, 3);
         let p = self.policy_dense.forward(p);
 
@@ -395,22 +500,64 @@ impl<B: Backend> Model<B> {
 
         B::sync(device);
     }
+}
 
-    pub fn assert_health(&self) {
-        self.initial_conv.assert_health();
-        for block in self.res_blocks.iter() {
-            block.assert_health();
+#[derive(Debug, Error)]
+pub enum CheckModelHealthError {
+    #[error("Initial Conv Block is unhealthy: {0}")]
+    InitialConv(CheckConvBlockHealthError),
+
+    #[error("Residual Block {index} is unhealthy: {error}")]
+    ResidualBlock {
+        index: usize,
+        #[source]
+        error: CheckResidualBlockHealthError,
+    },
+
+    #[error("Value Head is unhealthy: {0}")]
+    ValueHeadConv(CheckConvBlockHealthError),
+
+    #[error("Value Head is unhealthy: {0}")]
+    ValueHeadDense(CheckLinearHealthError),
+
+    #[error("Policy Head is unhealthy: {0}")]
+    PolicyHeadConv(CheckConvBlockHealthError),
+
+    #[error("Policy Head is unhealthy: {0}")]
+    PolicyHeadDense(CheckLinearHealthError),
+}
+
+impl<B: Backend> CheckHealth for Model<B> {
+    type Error = CheckModelHealthError;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        self.initial_conv
+            .check_health()
+            .map_err(Self::Error::InitialConv)?;
+
+        for (index, block) in self.res_blocks.iter().enumerate() {
+            block
+                .check_health()
+                .map_err(|e| CheckModelHealthError::ResidualBlock { index, error: e })?;
         }
-        assert_tensor_health(self.value_conv.weight.clone().into_value());
-        assert_tensor_health(self.value_bn.gamma.clone().into_value());
-        assert_tensor_health(self.value_bn.beta.clone().into_value());
-        assert_linear_health(self.value_dense1.clone());
-        assert_linear_health(self.value_dense2.clone());
 
-        assert_tensor_health(self.policy_conv.weight.clone().into_value());
-        assert_tensor_health(self.policy_bn.gamma.clone().into_value());
-        assert_tensor_health(self.policy_bn.beta.clone().into_value());
-        assert_linear_health(self.policy_dense.clone());
+        self.value_conv
+            .check_health()
+            .map_err(Self::Error::ValueHeadConv)?;
+        self.value_dense1
+            .check_health()
+            .map_err(Self::Error::ValueHeadDense)?;
+        self.value_dense2
+            .check_health()
+            .map_err(Self::Error::ValueHeadDense)?;
+
+        self.policy_conv
+            .check_health()
+            .map_err(CheckModelHealthError::PolicyHeadConv)?;
+        self.policy_dense
+            .check_health()
+            .map_err(Self::Error::PolicyHeadDense)?;
+
+        Ok(())
     }
 }
 
@@ -450,15 +597,13 @@ impl ModelConfig {
         }
 
         // Value Head
-        let value_conv = Conv2dConfig::new([channels, value_head_channels], [1, 1]).init(device);
-        let value_bn = BatchNormConfig::new(value_head_channels).init(device);
+        let value_conv = ConvBlockConfig::new(channels, value_head_channels, [1, 1]).init(device);
         let value_flattened_size = (squares::N_VARIANTS * value_head_channels) + STATE_INPUT_LEN;
         let value_dense1 = LinearConfig::new(value_flattened_size, value_dense_hidden).init(device);
         let value_dense2 = LinearConfig::new(value_dense_hidden, VALUE_OUTPUTS).init(device);
 
         // Policy Head
-        let policy_conv = Conv2dConfig::new([channels, policy_head_channels], [1, 1]).init(device);
-        let policy_bn = BatchNormConfig::new(policy_head_channels).init(device);
+        let policy_conv = ConvBlockConfig::new(channels, policy_head_channels, [1, 1]).init(device);
         let policy_flattened_size = squares::N_VARIANTS * policy_head_channels;
         let policy_dense = LinearConfig::new(policy_flattened_size, POLICY_OUTPUTS).init(device);
 
@@ -467,15 +612,12 @@ impl ModelConfig {
             res_blocks,
 
             value_conv,
-            value_bn,
             value_relu: Relu::new(),
             value_dense1,
             value_dense2,
             value_tanh: Tanh::new(),
 
             policy_conv,
-            policy_bn,
-            policy_relu: Relu::new(),
             policy_dense,
         }
     }

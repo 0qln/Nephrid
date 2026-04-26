@@ -303,3 +303,12 @@ impl CancellationToken {
         self.v.load(Ordering::Relaxed)
     }
 }
+
+pub type CheckHealthResult<E> = Result<(), E>;
+
+pub trait CheckHealth {
+    type Error;
+
+    #[must_use]
+    fn check_health(&self) -> CheckHealthResult<Self::Error>;
+}
