@@ -794,16 +794,17 @@ impl Selector for MctsTrainSelector {
         let n_i = node.visits() as f32;
         let value = node.value();
 
-        assert!(!value.0.is_nan(), "value WAS NAN");
-        assert!(!branch.policy().is_nan(), "policy WAS NAN");
-        assert!(!n_i.is_nan(), "n_i WAS NAN");
+        #[cfg(debug_assertions)]
+        {
+            assert!(!value.0.is_nan(), "value WAS NAN");
+            assert!(!branch.policy().is_nan(), "policy WAS NAN");
+            assert!(!n_i.is_nan(), "n_i WAS NAN");
+        }
 
         let policy = Self::weighted_policy(branch.policy(), self.policy_weight);
         let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
         let exploration = self.c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);
         let result = exploitation + exploration;
-
-        assert!(!result.is_nan(), "score was NAN");
 
         Score::new(result)
     }
@@ -888,13 +889,19 @@ pub fn spawn_inference_workers<B: Backend>(
                     0,
                 );
 
-                assert_tensor_health(board_batch.clone());
-                assert_tensor_health(state_batch.clone().clone());
+                #[cfg(debug_assertions)]
+                {
+                    assert_tensor_health(board_batch.clone());
+                    assert_tensor_health(state_batch.clone().clone());
+                }
 
                 let (values, logits) = model.forward(board_batch, state_batch);
 
-                assert_tensor_health(values.clone());
-                assert_tensor_health(logits.clone());
+                #[cfg(debug_assertions)]
+                {
+                    assert_tensor_health(values.clone());
+                    assert_tensor_health(logits.clone());
+                }
 
                 let values_data = values.into_data().as_slice::<f32>().unwrap().to_vec();
                 let logits_data = logits.into_data().as_slice::<f32>().unwrap().to_vec();
