@@ -1062,6 +1062,16 @@ impl<'a, S: HasValue> NodeView<'a, S> {
 #[derive(Debug, Clone, Copy)]
 pub struct WinRate(pub f32);
 
+impl WinRate {
+    pub const fn win() -> Self {
+        Self(1.)
+    }
+
+    pub const fn loss() -> Self {
+        Self(0.)
+    }
+}
+
 impl_op!(-|x: WinRate| -> WinRate { WinRate(1. - x.0) });
 
 impl Default for WinRate {
@@ -1074,6 +1084,15 @@ impl<'a> From<NodeView<'a, Evaluated>> for WinRate {
     fn from(node: NodeView<'a, Evaluated>) -> Self {
         let visits = node.visits();
         let value = node.value();
+
+        if value.is_proven_win() {
+            return Self::win();
+        }
+
+        if value.is_proven_loss() {
+            return Self::loss();
+        }
+
         if visits == 0 {
             Self::default()
         }
