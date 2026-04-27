@@ -1,6 +1,6 @@
 {
   "loss": {
-    "value_loss_weight": 1.0,
+    "value_loss_weight": 0.001,
     "policy_loss_weight": 1.0
   },
   "model": {
@@ -20,7 +20,7 @@
     "epsilon": 0.00001
   },
   "limit": {
-    "max_iterations": 50,
+    "max_iterations": 10,
     "max_nodes": null,
     "min_nodes": null,
     "max_terminal_nodes": null
@@ -42,7 +42,7 @@
   },
   "epd_dataset_path": "phase0/default.epd",
   "epd_dataset_fens_total": 500000,
-  "num_epochs": 5,
+  "num_epochs": 8,
   "batch_size": 1024,
   "mini_batch_size": 512,
   "seed": 3735928559,
