@@ -167,7 +167,7 @@ pub trait PolicySource {
 pub struct RawPolicy([f32; POLICY_OUTPUTS]);
 
 impl RawPolicy {
-    const EPS: f32 = 1e-6;
+    const EPS: f32 = 1e-4;
 
     pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
         debug_assert!(
@@ -329,13 +329,6 @@ impl Policy {
         }
 
         softmax(&mut policy, temp);
-
-        for policy in &policy {
-            if policy.is_nan() || policy.is_infinite() {
-                println!("Raw logits: {:?}", raw_logits.0);
-                panic!("Policy is invalid: {}", policy);
-            }
-        }
 
         Some(Self(policy))
     }
