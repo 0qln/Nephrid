@@ -457,6 +457,13 @@ impl Tree {
         self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, &|_node, _depth| todo!())
     }
 
+    pub fn count_nodes(
+        &self,
+        pred: &impl Fn(NodeView<node_state::Unknown>, Depth) -> bool,
+    ) -> usize {
+        self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, pred)
+    }
+
     pub fn count_subtree_nodes(
         &self,
         depth: Depth,
@@ -471,6 +478,39 @@ impl Tree {
                 .iter()
                 .map(|b| self.count_subtree_nodes(depth + 1, b.node, pred))
                 .sum::<usize>()
+    }
+
+    /// Iterates the nodes in the tree under `root` in some order.
+    pub fn iter_nodes(
+        &self,
+        stack: &mut Vec<RtNodeId>,
+    ) -> impl Iterator<Item = NodeView<'_, node_state::Unknown>> {
+        // todo: for the implementation, we could just iterate the arena, which would
+        // speed things up by a lot, however that might be unexpected by the
+        // caller in some contexts.
+
+        struct TreeIter<'a, 'b> {
+            tree: &'a Tree,
+            stack: &'b mut Vec<RtNodeId>,
+        }
+
+        impl<'a, 'b> Iterator for TreeIter<'a, 'b> {
+            type Item = NodeView<'a, node_state::Unknown>;
+
+            fn next(&mut self) -> Option<Self::Item> {
+                let node_id = self.stack.pop()?;
+                let branches = self.tree.branches_rt(node_id);
+                for branch in branches.iter().rev() {
+                    self.stack.push(branch.node());
+                }
+
+                Some(self.tree.node(node_id))
+            }
+        }
+
+        stack.clear();
+        stack.push(self.root());
+        TreeIter { tree: self, stack }
     }
 
     pub fn maxheight(&self) -> Height {
