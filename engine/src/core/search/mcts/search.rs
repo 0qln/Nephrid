@@ -406,6 +406,12 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
         let mut line_index = 0;
         let mut budget = MPV as u32;
         while budget > 0 {
+        // todo:
+        // instead of picking going each line down, while searching for the max puct
+        // score each time, we could calculate how much virtual loss the second-to-best
+        // puct score would need to surpass the best puct score. then we could use the
+        // prior budgeting technique. that would solve the problem of duplicate parents
+        // and duplicate evaluations.
             // todo: first go down paths along the selection.parents arena, such that we can
             // just bump up the virtual loss there instead of inserting
             // duplicate parent nodes.
