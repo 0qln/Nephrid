@@ -51,6 +51,10 @@ pub struct SelNode<T, S: node_state::Any> {
     // skip/terminal selections, we instead select that node multiple times when the outer
     // while loop hits that nodes multiple times. this however causes more backpropagation
     // passes. mayube the weight concept can be reintroduced somehow?
+    //
+    // todo:
+    // also, i believe this currently evaluates the same node multiple times on low dephts instead
+    // of overflowing remaining budget to other branches. this should be investigated.
 }
 
 pub type BatchItem<T> = SelNode<T, Branching>;
