@@ -364,6 +364,10 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
 
     pub fn grow(&mut self, tree: &mut Tree) {
         self.selection.clear();
+        // todo:
+        // this pipeline model was optimized for gpu infrerence...
+        // maybe it's better to have a work-stealing pipeline for cpu inrference (e.g.
+        // hce-eval) ?
 
         match self.position.get_turn() {
             colors::WHITE => self.select_lines::<perspectives::White>(tree),
