@@ -16,7 +16,7 @@ fn bench_mcts<const B: usize, P: MctsParts>(mut pos: Position, mut tree: Tree, p
         parts.noiser(),
     );
     searcher.init_root(&mut tree);
-    for _ in 0..20_000 {
+    for _ in 0..(20_000 / B) {
         searcher.grow(&mut tree);
     }
 }
