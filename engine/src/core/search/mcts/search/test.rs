@@ -3,7 +3,7 @@ use crate::core::{
     move_iter::sliding_piece::magics,
     position::Position,
     search::mcts::{
-        HceParts, MctsParts, NullNoiser, back::DefaultBackuper, node::Tree, search::TreeSearcher,
+        HceParts, MctsParts, NullNoiser, node::Tree, search::TreeSearcher,
         select::ucb::UcbSelector, test::DummyEvaluator,
     },
     zobrist,
@@ -26,11 +26,10 @@ fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts:
 
             let parts = &parts;
 
-            let mut searcher = TreeSearcher::<X, _, _, _, _>::new(
+            let mut searcher = TreeSearcher::<X, _, _, _>::new(
                 &mut pos_clone,
                 parts.selector(),
                 parts.evaluator(),
-                parts.backprop(),
                 parts.noiser(),
             );
 
@@ -101,7 +100,6 @@ struct NoAnalysisParts;
 impl MctsParts for NoAnalysisParts {
     type Selector = UcbSelector;
     type Evaluator = DummyEvaluator;
-    type Backprop = DefaultBackuper;
     type Noiser = NullNoiser;
 
     fn selector(&self) -> Self::Selector {
@@ -109,10 +107,6 @@ impl MctsParts for NoAnalysisParts {
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        Default::default()
-    }
-
-    fn backprop(&self) -> Self::Backprop {
         Default::default()
     }
 

@@ -5,12 +5,11 @@ use crate::core::{
     move_iter::sliding_piece::magics,
     position::Position,
     search::mcts::{
-        eval::{Evaluation, Evaluator, GameResult},
+        eval::{self, GameResult},
         node::{
             Tree,
             node_state::{Leaf, Terminal},
         },
-        test::DummyEvaluator,
     },
     zobrist,
 };
@@ -36,8 +35,8 @@ fn test(pos: Position, expected_result: Option<GameResult>) {
             .node_switch(tree.root())
             .get::<Terminal>()
             .expect("if we have a result, the node should be terminal");
-        let result = DummyEvaluator::eval_terminal(node, &tree, pos.ply().into(), &pos);
-        assert_eq!(result, Evaluation::Terminal(expected_result));
+        let result = eval::eval_terminal(node, &tree, pos.ply().into(), &pos);
+        assert_eq!(result, expected_result);
     }
 }
 

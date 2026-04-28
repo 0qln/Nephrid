@@ -7,7 +7,6 @@ use crate::core::{
     r#move::Move,
     position::Position,
     search::mcts::{
-        back::{Backpropagater, MctsSolver},
         eval::{Evaluator, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator},
         nn::{LoadNNError, Model},
         node::Tree,
@@ -43,11 +42,10 @@ pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState>(
 
     strat.start(tree, pos);
 
-    let mut searcher = TreeSearcher::<{ MPV }, _, _, _, _>::new(
+    let mut searcher = TreeSearcher::<{ MPV }, _, _, _>::new(
         pos,
         parts.selector(),
         parts.evaluator(),
-        parts.backprop(),
         parts.noiser(),
     );
 
@@ -69,12 +67,10 @@ pub trait MctsConfig {
 pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
     type Selector: Selector;
     type Evaluator: Evaluator;
-    type Backprop: Backpropagater;
     type Noiser: Noiser;
 
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
-    fn backprop(&self) -> Self::Backprop;
     fn noiser(&self) -> Self::Noiser;
 }
 
@@ -138,7 +134,6 @@ pub struct NNParts<B: Backend> {
 impl<B: Backend> MctsParts for NNParts<B> {
     type Selector = PuctSelector;
     type Evaluator = NNEvaluator<B>;
-    type Backprop = MctsSolver;
     type Noiser = DirichletNoiser;
 
     fn selector(&self) -> Self::Selector {
@@ -147,10 +142,6 @@ impl<B: Backend> MctsParts for NNParts<B> {
 
     fn evaluator(&self) -> Self::Evaluator {
         NNEvaluator::new(self.model.clone(), self.device.clone())
-    }
-
-    fn backprop(&self) -> Self::Backprop {
-        Default::default()
     }
 
     fn noiser(&self) -> Self::Noiser {
@@ -201,7 +192,6 @@ pub struct HceParts {
 impl MctsParts for HceParts {
     type Selector = PuctSelector;
     type Evaluator = HceEvaluator;
-    type Backprop = MctsSolver;
     type Noiser = DirichletNoiser;
 
     fn selector(&self) -> Self::Selector {
@@ -209,10 +199,6 @@ impl MctsParts for HceParts {
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        Default::default()
-    }
-
-    fn backprop(&self) -> Self::Backprop {
         Default::default()
     }
 
@@ -249,7 +235,6 @@ pub struct PureParts;
 impl MctsParts for PureParts {
     type Selector = UcbSelector;
     type Evaluator = PlayoutEvaluator;
-    type Backprop = MctsSolver;
     type Noiser = NullNoiser;
 
     fn selector(&self) -> Self::Selector {
@@ -259,10 +244,6 @@ impl MctsParts for PureParts {
     fn evaluator(&self) -> Self::Evaluator {
         let rng = SmallRng::seed_from_u64(0x_dead_beef_u64);
         PlayoutEvaluator::new(rng)
-    }
-
-    fn backprop(&self) -> Self::Backprop {
-        Default::default()
     }
 
     fn noiser(&self) -> Self::Noiser {

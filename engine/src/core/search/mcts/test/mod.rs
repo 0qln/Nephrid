@@ -8,7 +8,7 @@ use rand::{Rng, SeedableRng, rngs::SmallRng};
 use crate::core::{
     position::Position,
     search::mcts::{
-        eval::{Evaluation, Evaluator, Guess, Quality},
+        eval::{Evaluator, Guess, Quality},
         nn::POLICY_OUTPUTS,
     },
     turn::Turn,
@@ -54,16 +54,16 @@ impl Evaluator for DummyEvaluator {
         DummyTraceData { turn: pos.get_turn() }
     }
 
-    fn eval_batch<const X: usize>(
+    fn eval_batch(
         &mut self,
         tree: &Tree,
-        _selection: &Selection<X, Self::TraceData>,
+        _selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
-    ) -> impl Iterator<Item = Evaluation> {
+    ) -> impl Iterator<Item = Guess> {
         let mut evaluations = Vec::with_capacity(leafs.len());
 
         for leaf in leafs {
-            let trace_data = &leaf.data;
+            let trace_data = &leaf.trace;
 
             let quality = self.rng.random_range(-1.0..=1.0);
 
@@ -74,11 +74,11 @@ impl Evaluator for DummyEvaluator {
 
             let moves = tree.move_indices(leaf.node);
 
-            evaluations.push(Evaluation::Guess(Box::new(Guess {
+            evaluations.push(Guess {
                 relative_to: trace_data.turn,
                 quality: Quality::new(quality),
                 policy: Policy::from_raw_logits(&raw_logits, moves, 1.0).expect("a policy"),
-            })));
+            });
         }
 
         evaluations.into_iter()

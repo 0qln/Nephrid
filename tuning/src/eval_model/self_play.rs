@@ -8,9 +8,8 @@ use engine::{
         position::PgnResultValue,
         search::mcts::{
             self, CreateNNPartsError, MctsParts, NNParts,
-            back::MctsSolver,
             eval::{
-                self, Evaluation, Evaluator, Policy, Quality, RawLogits, VisitCounts,
+                self, Evaluator, Policy, Quality, RawLogits, VisitCounts,
                 nn::{TraceInfo, get_node_history},
             },
             nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor},
@@ -725,7 +724,6 @@ pub struct MctsTrainParts {
 
 impl MctsParts for MctsTrainParts {
     type Selector = MctsTrainSelector;
-    type Backprop = MctsSolver;
     type Evaluator = BatchedNNEvaluator;
     type Noiser = DirichletNoiser;
 
@@ -735,10 +733,6 @@ impl MctsParts for MctsTrainParts {
 
     fn evaluator(&self) -> Self::Evaluator {
         self.evaluator.clone()
-    }
-
-    fn backprop(&self) -> Self::Backprop {
-        Default::default()
     }
 
     fn noiser(&self) -> Self::Noiser {
@@ -966,12 +960,12 @@ impl Evaluator for BatchedNNEvaluator {
         TraceInfo::new(pos)
     }
 
-    fn eval_batch<const X: usize>(
+    fn eval_batch(
         &mut self,
         tree: &Tree,
-        selection: &Selection<X, Self::TraceData>,
+        selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
-    ) -> impl Iterator<Item = Evaluation> {
+    ) -> impl Iterator<Item = Guess> {
         let batch_size = leafs.len();
         if batch_size == 0 {
             return vec![].into_iter();
@@ -983,7 +977,7 @@ impl Evaluator for BatchedNNEvaluator {
         // 1. Submit all leaves to the inference worker
         for &leaf in leafs {
             let history = get_node_history(selection, leaf);
-            let state = leaf.data.inputs.state;
+            let state = leaf.trace.inputs.state;
 
             let _ = self.worker_tx.send(NNRequest {
                 board_history: history,
@@ -1003,7 +997,7 @@ impl Evaluator for BatchedNNEvaluator {
                 .recv()
                 .expect("Inference worker died or disconnected");
 
-            let turn = leaf.turn;
+            let turn = leaf.sel_data.turn;
             let moves = tree.move_indices(leaf.node);
 
             let raw_logits = response.raw_logits;
@@ -1013,7 +1007,7 @@ impl Evaluator for BatchedNNEvaluator {
                 policy: Policy::from_raw_logits(&raw_logits, moves, 1.0).expect("a policy"),
             };
 
-            evaluations.push(Evaluation::Guess(Box::new(guess)));
+            evaluations.push(guess);
         }
 
         evaluations.into_iter()

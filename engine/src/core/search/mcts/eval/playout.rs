@@ -2,6 +2,7 @@ use itertools::Itertools;
 use rand::prelude::*;
 
 use crate::core::{
+    color::colors,
     depth::Depth,
     move_iter::fold_legal_moves,
     search::mcts::node::node_state::{Branching, Valid},
@@ -79,18 +80,31 @@ impl Evaluator for PlayoutEvaluator {
     }
 
     /// Runs playouts for all collected leaves in the batch.
-    fn eval_batch<const X: usize>(
+    fn eval_batch(
         &mut self,
         _tree: &Tree,
-        _selection: &Selection<X, Self::TraceData>,
+        _selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
-    ) -> impl Iterator<Item = Evaluation> {
+    ) -> impl Iterator<Item = Guess> {
         leafs
             .iter()
-            .filter_map(|leaf| leaf.data.as_ref())
+            .filter_map(|leaf| leaf.trace.as_ref())
             .map(|eval_info| {
                 let result = self.playout(eval_info.start_pos.clone());
-                Evaluation::Terminal(result)
+                // todo: make policy optional or smth
+                let policy = Policy::new_even(0);
+                match result {
+                    GameResult::Draw => Guess {
+                        policy,
+                        relative_to: colors::WHITE,
+                        quality: Quality::draw(),
+                    },
+                    GameResult::Win { relative_to } => Guess {
+                        policy,
+                        relative_to,
+                        quality: Quality::win(),
+                    },
+                }
             })
             .collect_vec()
             .into_iter()

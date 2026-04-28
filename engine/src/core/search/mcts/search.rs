@@ -1,5 +1,3 @@
-use std::mem;
-
 use itertools::Itertools;
 
 use crate::core::{
@@ -7,12 +5,9 @@ use crate::core::{
     color::{Perspective, colors, perspectives},
     depth::Depth,
     search::mcts::{
-        back::Backpropagater,
-        eval::{Evaluation, Evaluator},
-        node::{
-            BranchId, NodeId, NodeView, Tree,
-            node_state::{self, *},
-        },
+        back::{self},
+        eval::{Evaluation, Evaluator, Guess, eval_terminal},
+        node::{BranchId, NodeId, NodeView, RtNodeId, Tree, node_state::*},
         noise::Noiser,
         select::Selector,
     },
@@ -24,189 +19,145 @@ use super::eval::GameResult;
 #[cfg(test)]
 pub mod test;
 
+// todo:
+// the weight parameter was removed in the process of implementing virtual loss.
+// logically the effect remains the same: instead of using the remaining budget
+// at skip/terminal selections, we instead select that node multiple times when
+// the outer while loop hits that nodes multiple times. this however causes more
+// backpropagation passes. mayube the weight concept can be reintroduced
+// somehow?
+//
+// todo:
+// also, i believe this currently evaluates the same node multiple times on low
+// dephts instead of overflowing remaining budget to other branches. this should
+// be investigated.
+//
+// todo:
+// this pipeline model was optimized for gpu infrerence...
+// maybe it's better to have a work-stealing pipeline for cpu inrference (e.g.
+// hce-eval) ?
+//
+// todo:
+// instead of picking going each line down, while searching for the max puct
+// score each time, we could calculate how much virtual loss the second-to-best
+// puct score would need to surpass the best puct score. then we could use the
+// prior budgeting technique. that would solve the problem of duplicate parents
+// and duplicate evaluations.
+//
+// todo:
+// first go down paths along the selection.parents arena, such that we can
+// just bump up the virtual loss there instead of inserting
+// duplicate parent nodes.
+//
+// todo: the HashMap can probably be replaced by some custom stack info clever
+// indexing scheme...
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct SelNodeId(pub usize);
+pub struct ParentNodeId(pub usize);
 
-/// Info about a selected node or its ascendant in the tree.
-#[derive(Debug)]
-pub struct SelNode<T, S: node_state::Any> {
-    /// The node index wrapper
-    pub node: NodeId<S>,
+pub struct ParentItem<T> {
+    parent: Option<ParentNodeId>,
+    pub trace: T,
+    sel_data: SelData,
+    node: NodeId<Evaluated>,
+}
 
-    /// Current player's turn
+#[derive(Clone, Copy)]
+pub struct SelData {
     pub turn: Turn,
-
-    /// The sel parent node.
-    pub parent: Option<SelNodeId>,
-
-    /// Payload `T`
-    pub data: T,
-
-    /// The total virtual loss that was applied to this node during selection.
-    pub virtual_loss: u32,
-    //
-    // todo:
-    // the weight parameter was removed in the process of implementing virtual loss.
-    // logically the effect remains the same: instead of using the remaining budget at
-    // skip/terminal selections, we instead select that node multiple times when the outer
-    // while loop hits that nodes multiple times. this however causes more backpropagation
-    // passes. mayube the weight concept can be reintroduced somehow?
-    //
-    // todo:
-    // also, i believe this currently evaluates the same node multiple times on low dephts instead
-    // of overflowing remaining budget to other branches. this should be investigated.
 }
 
-pub type BatchItem<T> = SelNode<T, Branching>;
-
-pub type EvalItem = SelNode<Evaluation, Branching>;
-
-pub type TerminalItem = SelNode<Evaluation, Terminal>;
-
-pub type ShortcutItem = SelNode<Evaluation, Leaf>;
-
-pub type SkipItem = SelNode<Evaluation, Evaluated>;
-
-#[derive(Debug)]
-pub enum PhaseItem<T> {
-    Unused,
-    Batched(BatchItem<T>),
-    Evaluated(EvalItem),
-    Terminal(TerminalItem),
-    Shortcut(ShortcutItem),
-    Skip(SkipItem),
+pub struct BatchItem<T> {
+    pub parent: ParentNodeId,
+    pub trace: T,
+    pub node: NodeId<Branching>,
+    pub sel_data: SelData,
 }
 
-impl<T> PhaseItem<T> {
-    pub fn batch_item(&self) -> Option<&BatchItem<T>> {
-        match self {
-            PhaseItem::Batched(x) => Some(x),
-            _ => None,
-        }
-    }
-
-    fn parent(&self) -> Option<SelNodeId> {
-        match self {
-            PhaseItem::Unused => None,
-            PhaseItem::Batched(sel_node) => sel_node.parent,
-            PhaseItem::Evaluated(sel_node) => sel_node.parent,
-            PhaseItem::Terminal(sel_node) => sel_node.parent,
-            PhaseItem::Shortcut(sel_node) => sel_node.parent,
-            PhaseItem::Skip(sel_node) => sel_node.parent,
-        }
-    }
+pub struct EvalItem {
+    parent: ParentNodeId,
+    eval: Guess,
+    node: NodeId<Branching>,
+    sel_data: SelData,
 }
 
-pub struct Selection<const X: usize, T> {
-    pub arena: Vec<SelNode<T, Evaluated>>,
-    pub root: Option<SelNodeId>,
-    pub leafs: [PhaseItem<T>; X],
+pub struct TerminalItem {
+    parent: ParentNodeId,
+    pub eval: GameResult,
+    pub node: NodeId<Terminal>,
+    pub sel_data: SelData,
 }
 
-const fn empty_leaf<T>() -> PhaseItem<T> {
-    PhaseItem::<T>::Unused
+pub struct ShortcutItem {
+    parent: ParentNodeId,
+    node: NodeId<Leaf>,
 }
 
-impl<const X: usize, T> Default for Selection<X, T> {
+pub struct SkipItem {
+    parent: ParentNodeId,
+    eval: Evaluation,
+    node: NodeId<Evaluated>,
+    sel_data: SelData,
+}
+
+pub struct Selection<T> {
+    pub terminals: Vec<TerminalItem>,
+    pub evaluations: Vec<EvalItem>,
+    pub shortcuts: Vec<ShortcutItem>,
+    pub skips: Vec<SkipItem>,
+    pub batched: Vec<BatchItem<T>>,
+    pub parents: Vec<ParentItem<T>>,
+    pub virtual_loss: Vec<(RtNodeId, u32)>,
+    // todo: use hashmaps + weight
+}
+
+impl<T> Default for Selection<T> {
     fn default() -> Self {
         Self {
-            arena: Vec::new(),
-            root: None,
-            leafs: [const { empty_leaf::<T>() }; X],
+            terminals: Default::default(),
+            evaluations: Default::default(),
+            shortcuts: Default::default(),
+            skips: Default::default(),
+            batched: Default::default(),
+            parents: Default::default(),
+            virtual_loss: Default::default(),
         }
     }
 }
 
-impl<const X: usize, T> Selection<X, T> {
+impl<T> Selection<T> {
     /// Clear the arena and selection.
     pub fn clear(&mut self) {
-        self.arena.clear();
-        self.leafs = [const { empty_leaf::<T>() }; X];
-        self.root = None;
+        self.terminals.clear();
+        self.evaluations.clear();
+        self.shortcuts.clear();
+        self.skips.clear();
+        self.batched.clear();
+        self.parents.clear();
+        self.virtual_loss.clear();
     }
 
-    /// Initializes a new root node.
-    pub fn init_root(
-        &mut self,
-        _tree: &mut Tree,
-        root_node: NodeId<Evaluated>,
-        turn: Turn,
-        trace_data: T,
-    ) -> SelNodeId {
-        let id = SelNodeId(self.arena.len());
-
-        self.arena.push(SelNode {
-            node: root_node,
-            turn,
-            parent: None,
-            data: trace_data,
-            virtual_loss: 0,
-        });
-
-        self.root = Some(id);
-
+    /// Allocates a new ParentItem in the arena and attaches it to the parent.
+    pub fn push_parent(&mut self, item: ParentItem<T>) -> ParentNodeId {
+        let id = ParentNodeId(self.parents.len());
+        self.parents.push(item);
         id
     }
 
-    /// Allocates a new Parent node in the arena and attaches it to the parent.
-    pub fn append_parent(
-        &mut self,
-        tree: &mut Tree,
-        parent_id: SelNodeId,
-        node: NodeId<Evaluated>,
-        turn: Turn,
-        virtual_loss: u32,
-        trace_data: T,
-    ) -> SelNodeId {
-        tree.apply_virtual_loss(node, virtual_loss);
-
-        let id = SelNodeId(self.arena.len());
-
-        self.arena.push(SelNode {
-            node,
-            turn,
-            parent: Some(parent_id),
-            data: trace_data,
-            virtual_loss,
-        });
-
-        id
-    }
-
-    pub fn append_leaf<S: Valid>(
-        &mut self,
-        tree: &mut Tree,
-        node: NodeId<S>,
-        index: usize,
-        virtual_loss: u32,
-        item: PhaseItem<T>,
-    ) {
-        tree.apply_virtual_loss(node, virtual_loss);
-
-        self.leafs[index] = item;
-    }
-
-    pub fn update_leaf(&mut self, index: usize, item: PhaseItem<T>) {
-        self.leafs[index] = item;
-    }
-
-    pub fn iter_path_up(
-        &self,
-        leaf: Option<SelNodeId>,
-    ) -> impl Iterator<Item = &SelNode<T, Evaluated>> {
-        Self::iter_up(leaf, &self.arena)
+    pub fn iter_path_up(&self, leaf: ParentNodeId) -> impl Iterator<Item = &ParentItem<T>> {
+        Self::iter_up(leaf, &self.parents)
     }
 
     fn iter_up(
-        current: Option<SelNodeId>,
-        arena: &[SelNode<T, Evaluated>],
-    ) -> impl Iterator<Item = &SelNode<T, Evaluated>> {
+        current: ParentNodeId,
+        arena: &[ParentItem<T>],
+    ) -> impl Iterator<Item = &ParentItem<T>> {
         pub struct IterUp<'a, T> {
-            arena: &'a [SelNode<T, Evaluated>],
-            current: Option<SelNodeId>,
+            arena: &'a [ParentItem<T>],
+            current: Option<ParentNodeId>,
         }
 
-        pub struct IterItem<'a, T>(&'a SelNode<T, Evaluated>);
+        pub struct IterItem<'a, T>(&'a ParentItem<T>);
 
         impl<'a, T> Iterator for IterUp<'a, T> {
             type Item = IterItem<'a, T>;
@@ -219,166 +170,130 @@ impl<const X: usize, T> Selection<X, T> {
             }
         }
 
-        IterUp { arena, current }.map(|item| item.0)
-    }
-
-    /// Returns an iterator over all leafs, and the selection path for each
-    /// leaf.
-    pub fn drain_leafs(
-        &mut self,
-    ) -> impl Iterator<Item = (PhaseItem<T>, impl Iterator<Item = &SelNode<T, Evaluated>>)> {
-        self.leafs.iter_mut().filter_map(|leaf| {
-            let leaf = mem::replace(leaf, const { empty_leaf::<T>() });
-            let parent = leaf.parent();
-            Some((leaf, Self::iter_up(parent, &self.arena)))
-        })
+        IterUp { arena, current: Some(current) }.map(|item| item.0)
     }
 
     fn revert_virtual_loss(&self, tree: &mut Tree) {
-        for leaf in self.leafs.iter() {
-            match leaf {
-                PhaseItem::Unused => continue,
-                PhaseItem::Batched(sel_node) => {
-                    tree.revert_virtual_loss(sel_node.node, sel_node.virtual_loss)
-                }
-                PhaseItem::Evaluated(sel_node) => {
-                    tree.revert_virtual_loss(sel_node.node, sel_node.virtual_loss)
-                }
-                PhaseItem::Terminal(sel_node) => {
-                    tree.revert_virtual_loss(sel_node.node, sel_node.virtual_loss)
-                }
-                PhaseItem::Shortcut(sel_node) => {
-                    tree.revert_virtual_loss(sel_node.node, sel_node.virtual_loss)
-                }
-                PhaseItem::Skip(sel_node) => {
-                    tree.revert_virtual_loss(sel_node.node, sel_node.virtual_loss)
-                }
-            };
+        for &(node, loss) in self.virtual_loss.iter() {
+            tree.revert_virtual_loss(node, loss);
         }
+    }
 
-        for parent in self.arena.iter() {
-            let virtual_loss = parent.virtual_loss;
-            let node = parent.node;
-            tree.revert_virtual_loss(node, virtual_loss);
+    fn apply_virtual_loss(&mut self, tree: &mut Tree, node: RtNodeId, loss: u32) {
+        tree.apply_virtual_loss(node, loss);
+        self.virtual_loss.push((node, loss));
+    }
+
+    /// Returns an iterator over terminal items along with their ancestor chain.
+    pub fn iter_terminals(
+        &self,
+    ) -> impl Iterator<Item = (&TerminalItem, impl Iterator<Item = &ParentItem<T>>)> {
+        self.terminals
+            .iter()
+            .map(|item| (item, Self::iter_up(item.parent, &self.parents)))
+    }
+
+    /// Returns an iterator over evaluated (batched) items with ancestors.
+    pub fn iter_evaluations(
+        &self,
+    ) -> impl Iterator<Item = (&EvalItem, impl Iterator<Item = &ParentItem<T>>)> {
+        self.evaluations
+            .iter()
+            .map(|item| (item, Self::iter_up(item.parent, &self.parents)))
+    }
+
+    /// Returns an iterator over shortcuts with ancestors.
+    pub fn iter_shortcuts(
+        &self,
+    ) -> impl Iterator<Item = (&ShortcutItem, impl Iterator<Item = &ParentItem<T>>)> {
+        self.shortcuts
+            .iter()
+            .map(|item| (item, Self::iter_up(item.parent, &self.parents)))
+    }
+
+    /// Returns an iterator over skips with ancestors.
+    pub fn iter_skips(
+        &self,
+    ) -> impl Iterator<Item = (&SkipItem, impl Iterator<Item = &ParentItem<T>>)> {
+        self.skips
+            .iter()
+            .map(|item| (item, Self::iter_up(item.parent, &self.parents)))
+    }
+
+    /// Returns the root parent id (the first parent in the arena, if any).
+    pub fn root_id(&self) -> Option<ParentNodeId> {
+        if self.parents.is_empty() {
+            None
+        }
+        else {
+            Some(ParentNodeId(0))
         }
     }
 }
 
 /// # Tree searcher
-pub struct TreeSearcher<
-    'pos,
-    const MPV: usize,
-    E: Evaluator,
-    S: Selector,
-    B: Backpropagater,
-    N: Noiser,
-> {
+pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector, N: Noiser> {
     position: &'pos mut Position,
     selector: S,
     evaluator: E,
-    backprop: B,
     noiser: N,
-    selection: Selection<MPV, E::TraceData>,
+    selection: Selection<E::TraceData>,
 }
 
-impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: Noiser>
-    TreeSearcher<'pos, MPV, E, S, B, N>
+impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
+    TreeSearcher<'pos, BATCH, E, S, N>
 {
-    pub fn new(
-        position: &'pos mut Position,
-        selector: S,
-        evaluator: E,
-        backprop: B,
-        noiser: N,
-    ) -> Self {
+    pub fn new(position: &'pos mut Position, selector: S, evaluator: E, noiser: N) -> Self {
         Self {
             position,
             selector,
             evaluator,
-            backprop,
             noiser,
             selection: Default::default(),
         }
     }
 
-    /// Expands, evaluates, and applies noise to the root node, Such that the
-    /// tree is prepared to be grown.
+    /// Prepares the root node for search (expand, evaluate, apply noise).
     pub fn init_root(&mut self, tree: &mut Tree) {
         loop {
             match tree.node_switch(tree.root()) {
-                // If the root is a leaf, expand and transition to next phase.
                 Switch::Leaf(node) => {
                     let _ = tree.expand_node(node, self.position, Depth::ROOT);
                 }
-                // If the root is branching, evaluate and transition to next phase.
                 Switch::Branching(node) => {
-                    // init selection
+                    // Evaluate the root as a batch of size 1
                     let turn = self.position.get_turn();
                     let trace_data = self.evaluator.trace(node, tree, self.position);
-                    self.selection.clear();
-                    self.selection.append_leaf(
-                        tree,
+                    let batch_item = BatchItem {
+                        parent: ParentNodeId(0), // dummy; will be replaced
+                        trace: trace_data,
                         node,
-                        0,
-                        0,
-                        PhaseItem::Batched(SelNode {
-                            node,
-                            turn,
-                            parent: None,
-                            data: trace_data,
-                            virtual_loss: 0,
-                        }),
-                    );
-
-                    // eval selection
-                    let eval = {
-                        let leaf = self.selection.leafs[0].batch_item().unwrap();
-                        self.evaluator
-                            .eval_batch(tree, &self.selection, &[leaf])
-                            .next()
-                            .unwrap()
+                        sel_data: SelData { turn },
                     };
-
-                    // backpropagation for root
-                    let _evaluated = match eval {
-                        Evaluation::Guess(guess) => tree.set_policy(node, &guess.policy),
-                        _ => tree.skip_policy(node),
-                    };
-
+                    let evals: Vec<Guess> = self
+                        .evaluator
+                        .eval_batch(tree, &self.selection, &[&batch_item])
+                        .collect();
+                    let guess = &evals[0];
+                    tree.set_policy(node, &guess.policy);
                     self.selection.clear();
                 }
-                // If the node is evaluated, apply noise and we're done.
                 Switch::Evaluated(node) => {
                     if let Err(err) = self.noiser.apply_noise(node, tree) {
-                        println!("Failed to apply noise to root node: {err}");
+                        eprintln!("Failed to apply noise to root node: {err}");
                     }
                     break;
                 }
-                // If the root node is terminal, we cannot grow it... just break here.
-                Switch::Terminal(_node) => {
-                    break;
-                }
+                Switch::Terminal(_) => break,
             }
         }
     }
 
     pub fn grow(&mut self, tree: &mut Tree) {
         self.selection.clear();
-        // todo:
-        // this pipeline model was optimized for gpu infrerence...
-        // maybe it's better to have a work-stealing pipeline for cpu inrference (e.g.
-        // hce-eval) ?
-
-        match self.position.get_turn() {
-            colors::WHITE => self.select_lines::<perspectives::White>(tree),
-            colors::BLACK => self.select_lines::<perspectives::Black>(tree),
-            _ => unsafe { std::hint::unreachable_unchecked() },
-        }
-
+        self.select_lines(tree);
         self.eval_batched(tree);
-
         self.revert_virtual_loss(tree);
-
         self.backup_evals(tree);
     }
 
@@ -386,49 +301,93 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
         self.selection.revert_virtual_loss(tree)
     }
 
-    fn select_lines<P: Perspective>(&mut self, tree: &mut Tree) {
-        let root_id = tree.root();
-
-        let root = match tree.node_switch(root_id) {
-            Switch::Evaluated(n) => n,
-            Switch::Terminal(_) => {
-                panic!("Root must not be terminal! Did you forget to abandon the search?")
-            }
-            Switch::Leaf(_) | Switch::Branching(_) => {
-                panic!("Root must be evaluated before selecting lines! Did you call init_root?")
-            }
-        };
-
-        let eval_data = self.evaluator.trace(root, tree, self.position);
-
-        let sel_root_id = self.selection.init_root(tree, root, P::COLOR, eval_data);
-
-        let mut line_index = 0;
-        let mut budget = MPV as u32;
-        while budget > 0 {
-        // todo:
-        // instead of picking going each line down, while searching for the max puct
-        // score each time, we could calculate how much virtual loss the second-to-best
-        // puct score would need to surpass the best puct score. then we could use the
-        // prior budgeting technique. that would solve the problem of duplicate parents
-        // and duplicate evaluations.
-            // todo: first go down paths along the selection.parents arena, such that we can
-            // just bump up the virtual loss there instead of inserting
-            // duplicate parent nodes.
-            budget -= self.pick_branch::<P>(line_index, Depth::ROOT, root, tree, sel_root_id);
-            line_index += 1;
+    fn select_lines(&mut self, tree: &mut Tree) {
+        match self.position.get_turn() {
+            colors::WHITE => self.select_lines_for::<perspectives::White>(tree),
+            colors::BLACK => self.select_lines_for::<perspectives::Black>(tree),
+            _ => unsafe { std::hint::unreachable_unchecked() },
         }
     }
 
-    // returns virtual loss
+    fn select_lines_for<P: Perspective>(&mut self, tree: &mut Tree) {
+        let root_id = tree.root();
+        let root = match tree.node_switch(root_id) {
+            Switch::Evaluated(n) => n,
+            Switch::Terminal(_) => panic!("Root is terminal – search abandoned?"),
+            _ => panic!("Root must be evaluated before selection"),
+        };
+
+        // Create root parent item
+        let trace_data = self.evaluator.trace(root, tree, self.position);
+        let root_sel_id = self.selection.push_parent(ParentItem {
+            parent: None,
+            trace: trace_data,
+            sel_data: SelData { turn: P::COLOR },
+            node: root,
+        });
+
+        // todo
+        for _ in 0..BATCH {
+            self.pick_branch::<P>(Depth::ROOT, root, tree, root_sel_id);
+        }
+
+        // // We'll keep a worklist of nodes to expand (evaluated nodes that are
+        // not // terminal) let mut frontier = vec![root_sel_id];
+
+        // while self.selection.batched.len() < BATCH && !frontier.is_empty() {
+        //     let mut next_frontier = Vec::new();
+        //     for &parent_id in &frontier {
+        //         self.expand_parent::<P>(tree, parent_id, &mut next_frontier);
+        // // Batch became full – we can         if
+        // self.selection.batched.len() >= BATCH {             // stop
+        // early             break;
+        //         }
+        //     }
+        //     frontier = next_frontier;
+        // }
+    }
+
+    // fn expand_parent<P: Perspective>(
+    //     &mut self,
+    //     tree: &mut Tree,
+    //     parent_sel_id: ParentNodeId,
+    // ) -> bool {
+    //     match tree.node_switch(child_node) {
+    //         Switch::Evaluated(node) => {
+    //             if value.is_proven_win() {
+    //                 // ...
+    //             }
+    //             else if value.is_proven_loss() {
+    //                 // ...
+    //             }
+    //             else {
+    //                 // Continue deeper
+    //                 let child_parent = self.selection.push_parent(ParentItem {
+    //                     // ...
+    //                 });
+    //                 next_frontier.push(child_parent);
+    //             }
+    //         }
+    //         Switch::Branching(node) => {
+    //             // ...
+    //         }
+    //         Switch::Leaf(node) => {
+    //             // Expand leaf
+    //             // ...
+    //         }
+    //         Switch::Terminal(node) => {
+    //             // ...
+    //         }
+    //     }
+    // }
+
     fn pick_branch<P: Perspective>(
         &mut self,
-        line_index: usize,
         depth: Depth,
         parent_node_id: NodeId<Evaluated>,
         tree: &mut Tree,
-        sel_node_id: SelNodeId,
-    ) -> u32 {
+        sel_node_id: ParentNodeId,
+    ) {
         let parent_node = tree.node(parent_node_id);
         let parent_visits = parent_node.visits();
         let visit_threshold = 4; // todo: fine-tune
@@ -446,268 +405,212 @@ impl<'pos, const MPV: usize, E: Evaluator, S: Selector, B: Backpropagater, N: No
             })
             .expect("There has to be a branch on an evaluated node");
 
-        self.select_branch::<P>(line_index, depth, best_branch_id, tree, sel_node_id)
+        // todo: just return the branch id instead of recursing
+        self.select_branch::<P>(depth, best_branch_id, tree, sel_node_id)
     }
 
     fn select_branch<P: Perspective>(
         &mut self,
-        line_index: usize,
         depth: Depth,
         branch: BranchId,
         tree: &mut Tree,
-        parent_sel_id: SelNodeId,
-    ) -> u32 {
+        parent_sel_id: ParentNodeId,
+    ) {
         let (mov, node) = {
             let branch = tree.branch(branch);
             (branch.mov(), branch.node())
         };
 
+        // todo: make this a debug assertion
+        // let depth = Depth::new(self.selection.iter_path_up(parent_sel_id).count() as
+        // u8);
+
         self.position.make_move_for::<P>(mov);
         let depth = depth + 1;
         let turn = self.position.get_turn();
 
-        let used = match tree.node_switch(node) {
-            Switch::Branching(node) => {
-                self.select_branching(tree, line_index, parent_sel_id, node, depth)
-            }
+        match tree.node_switch(node) {
+            Switch::Branching(node) => self.select_branching(tree, parent_sel_id, node, depth),
             Switch::Evaluated(node) => {
                 let val = NodeView::new(tree, node).value();
                 // skip further selection of proven_win/loss nodes.
                 if val.is_proven_win() {
                     let eval = Evaluation::Terminal(GameResult::Win { relative_to: !turn });
-                    self.select_skip(tree, line_index, parent_sel_id, node, eval, depth)
+                    self.select_skip(tree, parent_sel_id, node, eval, depth)
                 }
                 else if val.is_proven_loss() {
                     let eval = Evaluation::Terminal(GameResult::Win { relative_to: turn });
-                    self.select_skip(tree, line_index, parent_sel_id, node, eval, depth)
+                    self.select_skip(tree, parent_sel_id, node, eval, depth)
                 }
                 // otherwise continue down the tree
                 else {
-                    let trace_data = self.evaluator.trace(node, tree, self.position);
-                    let child_id = self.selection.append_parent(
-                        tree,
-                        parent_sel_id,
+                    self.selection.apply_virtual_loss(tree, node.down_cast(), 1);
+                    let new_parent_id = self.selection.push_parent(ParentItem {
+                        parent: Some(parent_sel_id),
+                        trace: self.evaluator.trace(node, tree, self.position),
+                        sel_data: SelData { turn },
                         node,
-                        turn,
-                        1,
-                        trace_data,
-                    );
-                    self.pick_branch::<P::Opponent>(line_index, depth, node, tree, child_id)
+                    });
+
+                    self.pick_branch::<P::Opponent>(depth, node, tree, new_parent_id)
                 }
             }
             Switch::Leaf(node) => {
                 // shortcut leaf selection using twofold repetition
                 if depth > Depth::ROOT && self.position.has_twofold_repetition() {
-                    let eval = Evaluation::Terminal(GameResult::Draw);
-                    self.select_shortcut(tree, line_index, parent_sel_id, node, eval, depth)
+                    self.select_shortcut(tree, parent_sel_id, node)
                 }
                 // otherwise select this leaf for evaluation in the next phase
                 else {
-                    self.select_leaf(tree, line_index, parent_sel_id, node, depth)
+                    self.select_leaf(tree, parent_sel_id, node, depth)
                 }
             }
-            Switch::Terminal(node) => {
-                self.select_terminal(tree, line_index, parent_sel_id, node, depth)
-            }
+            Switch::Terminal(node) => self.select_terminal(tree, parent_sel_id, node, depth),
         };
 
         self.position.unmake_move_for::<P>(mov);
-        used
     }
 
     #[inline]
     fn select_skip(
         &mut self,
         tree: &mut Tree,
-        line_index: usize,
-        parent_id: SelNodeId,
+        parent_id: ParentNodeId,
         node: NodeId<Evaluated>,
         eval: Evaluation,
         _depth: Depth,
-    ) -> u32 {
-        let virtual_loss = 1;
-        self.selection.append_leaf(
-            tree,
+    ) {
+        self.selection.apply_virtual_loss(tree, node.down_cast(), 1);
+        self.selection.skips.push(SkipItem {
             node,
-            line_index,
-            virtual_loss,
-            PhaseItem::Skip(SelNode {
-                node,
-                turn: self.position.get_turn(),
-                parent: Some(parent_id),
-                data: eval,
-                virtual_loss,
-            }),
-        );
-        virtual_loss
+            sel_data: SelData { turn: self.position.get_turn() },
+            parent: parent_id,
+            eval,
+        });
     }
 
     #[inline]
     fn select_leaf(
         &mut self,
         tree: &mut Tree,
-        line_index: usize,
-        parent_sel_id: SelNodeId,
+        parent_sel_id: ParentNodeId,
         node: NodeId<Leaf>,
         depth: Depth,
-    ) -> u32 {
+    ) {
         let expanded = tree.expand_node(node, self.position, depth);
 
         match expanded {
             ExpandedSwitch::Terminal(node) => {
-                self.select_terminal(tree, line_index, parent_sel_id, node, depth)
+                self.select_terminal(tree, parent_sel_id, node, depth)
             }
             ExpandedSwitch::Branching(node) => {
-                self.select_branching(tree, line_index, parent_sel_id, node, depth)
+                self.select_branching(tree, parent_sel_id, node, depth)
             }
         }
     }
 
     /// Select a shortcut to a node that can be considered terminal.
     #[inline]
-    fn select_shortcut(
-        &mut self,
-        tree: &mut Tree,
-        line_index: usize,
-        parent_id: SelNodeId,
-        node: NodeId<Leaf>,
-        eval: Evaluation,
-        _depth: Depth,
-    ) -> u32 {
-        let virtual_loss = 1;
-        self.selection.append_leaf(
-            tree,
-            node,
-            line_index,
-            virtual_loss,
-            PhaseItem::Shortcut(SelNode {
-                node,
-                turn: self.position.get_turn(),
-                parent: Some(parent_id),
-                data: eval,
-                virtual_loss,
-            }),
-        );
-        virtual_loss
+    fn select_shortcut(&mut self, tree: &mut Tree, parent: ParentNodeId, node: NodeId<Leaf>) {
+        self.selection.apply_virtual_loss(tree, node.down_cast(), 1);
+        self.selection.shortcuts.push(ShortcutItem { parent, node })
     }
 
     #[inline]
     fn select_terminal(
         &mut self,
         tree: &mut Tree,
-        line_index: usize,
-        parent_id: SelNodeId,
+        parent: ParentNodeId,
         node: NodeId<Terminal>,
         depth: Depth,
-    ) -> u32 {
-        let virtual_loss = 1;
-        let eval = E::eval_terminal(node, tree, depth, self.position);
-        self.selection.append_leaf(
-            tree,
+    ) {
+        self.selection.apply_virtual_loss(tree, node.down_cast(), 1);
+        self.selection.terminals.push(TerminalItem {
+            parent,
+            eval: eval_terminal(node, tree, depth, self.position),
             node,
-            line_index,
-            virtual_loss,
-            PhaseItem::Terminal(SelNode {
-                node,
-                turn: self.position.get_turn(),
-                parent: Some(parent_id),
-                data: eval,
-                virtual_loss,
-            }),
-        );
-        virtual_loss
+            sel_data: SelData { turn: self.position.get_turn() },
+        })
     }
 
     #[inline]
     fn select_branching(
         &mut self,
         tree: &mut Tree,
-        line_index: usize,
-        parent_id: SelNodeId,
+        parent: ParentNodeId,
         node: NodeId<Branching>,
         depth: Depth,
-    ) -> u32 {
+    ) {
+        self.selection.apply_virtual_loss(tree, node.down_cast(), 1);
+
         if depth > Depth::MAX {
-            // return a loss of 0, such that the top-level while loop will try again and
-            // because we applied virtual loss to the parents of this node, it
-            // should try a different path next time.
-            return 0;
+            // return, such that the top-level while loop will try again and
+            // because we applied virtual loss, it should try a different path next time.
+            return;
         }
 
-        let trace_data = self.evaluator.trace(node, tree, &mut self.position);
-        let virtual_loss = 1;
-
-        self.selection.append_leaf(
-            tree,
+        self.selection.batched.push(BatchItem {
+            parent,
             node,
-            line_index,
-            virtual_loss,
-            PhaseItem::Batched(SelNode {
-                node,
-                turn: self.position.get_turn(),
-                parent: Some(parent_id),
-                data: trace_data,
-                virtual_loss,
-            }),
-        );
-
-        virtual_loss
+            trace: self.evaluator.trace(node, tree, &mut self.position),
+            sel_data: SelData { turn: self.position.get_turn() },
+        });
     }
 
     fn eval_batched(&mut self, tree: &Tree) {
-        let batched_indices = self
-            .selection
-            .leafs
-            .iter()
-            .enumerate()
-            .filter(|(_, l)| matches!(l, PhaseItem::Batched(_)))
-            .map(|(i, _)| i)
-            .collect_vec();
+        // todo: clean this up
+        let batch = self.selection.batched.iter().collect_vec();
 
-        let evals: Vec<Evaluation> = {
-            let leafs: Vec<&BatchItem<E::TraceData>> = batched_indices
-                .iter()
-                .filter_map(|&i| self.selection.leafs[i].batch_item())
-                .collect_vec();
+        let evals: Vec<Guess> = self
+            .evaluator
+            .eval_batch(tree, &self.selection, &batch)
+            .collect();
 
-            self.evaluator
-                .eval_batch(tree, &self.selection, &leafs)
-                .collect()
-        };
-
-        for (i, eval) in batched_indices.into_iter().zip(evals) {
-            let batch_item = self.selection.leafs[i].batch_item().unwrap();
-            self.selection.update_leaf(
-                i,
-                PhaseItem::Evaluated(SelNode {
-                    node: batch_item.node,
-                    turn: batch_item.turn,
-                    parent: batch_item.parent,
-                    data: eval,
-                    virtual_loss: batch_item.virtual_loss,
-                }),
-            )
+        for (item, eval) in batch.iter().zip(evals) {
+            self.selection.evaluations.push(EvalItem {
+                parent: item.parent,
+                node: item.node,
+                sel_data: item.sel_data,
+                eval,
+            })
         }
     }
 
     fn backup_evals(&mut self, tree: &mut Tree) {
-        for (leaf, path) in self.selection.drain_leafs() {
-            match leaf {
-                // ignore unused slots.
-                PhaseItem::Unused => {}
+        for &TerminalItem { parent, eval, node, sel_data } in &self.selection.terminals {
+            back::update_terminal(tree, node, sel_data.turn, eval, 1.0);
+            let path = self
+                .selection
+                .iter_path_up(parent)
+                .map(|p| (p.node, p.sel_data.turn));
+            back::backpropagate_up(tree, path, &eval, 1.0);
+        }
 
-                // the evaluator is bad.
-                PhaseItem::Batched(_) => panic!(
-                    "the evaluator forgot the eval a batched item. this shouldn't happen, log an \
-                     error or something"
-                ),
+        for &EvalItem { parent, ref eval, node, sel_data } in &self.selection.evaluations {
+            back::update_branching(tree, node, sel_data.turn, eval, 1.0);
+            let path = self
+                .selection
+                .iter_path_up(parent)
+                .map(|p| (p.node, p.sel_data.turn));
+            back::backpropagate_up(tree, path, eval, 1.0);
+        }
 
-                // backup terminals, guesses, etc.
-                PhaseItem::Evaluated(x) => self.backprop.backpropagate(tree, path, x),
-                PhaseItem::Terminal(x) => self.backprop.backpropagate(tree, path, x),
-                PhaseItem::Shortcut(x) => self.backprop.backpropagate(tree, path, x),
-                PhaseItem::Skip(x) => self.backprop.backpropagate(tree, path, x),
-            }
+        for &ShortcutItem { parent, node, .. } in &self.selection.shortcuts {
+            let eval = back::update_shortcut(tree, node, 1.0);
+            let path = self
+                .selection
+                .iter_path_up(parent)
+                .map(|p| (p.node, p.sel_data.turn));
+            back::backpropagate_up(tree, path, &eval, 1.0);
+        }
+
+        for &SkipItem { parent, ref eval, node, sel_data } in &self.selection.skips {
+            back::update_skip(tree, node, sel_data.turn, &eval, 1.0);
+            let path = self
+                .selection
+                .iter_path_up(parent)
+                .map(|p| (p.node, p.sel_data.turn));
+            back::backpropagate_up(tree, path, eval, 1.0);
         }
     }
 }

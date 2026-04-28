@@ -52,14 +52,14 @@ pub struct NNEvaluator<B: Backend> {
 /// Returns the history of the given selected leaf in following order:
 /// - the oldest board state is the first index
 /// - the youngest board state is the last index
-pub fn get_node_history<const X: usize>(
-    selection: &Selection<X, TraceInfo>,
+pub fn get_node_history(
+    selection: &Selection<TraceInfo>,
     leaf: &BatchItem<TraceInfo>,
 ) -> Vec<BoardInputFloats> {
     let mut vec: Vec<BoardInputFloats> = vec![];
 
     // 1. Insert the leaf's own board input first
-    vec.insert(0, leaf.data.inputs.board);
+    vec.insert(0, leaf.trace.inputs.board);
 
     // 2. Traverse up the tree to gather parent board inputs
     for node in selection.iter_path_up(leaf.parent) {
@@ -67,7 +67,7 @@ pub fn get_node_history<const X: usize>(
             break;
         }
 
-        let board_input = node.data.inputs.board;
+        let board_input = node.trace.inputs.board;
         vec.insert(0, board_input);
     }
 
@@ -85,9 +85,9 @@ impl<B: Backend> NNEvaluator<B> {
 
     /// batch: The iterator of the selected leaf nodes that should be evaluated
     /// in this batch.
-    fn build_board_batch<'c, const X: usize>(
+    fn build_board_batch<'c>(
         &self,
-        selection: &Selection<X, TraceInfo>,
+        selection: &Selection<TraceInfo>,
         batch: impl Iterator<Item = &'c BatchItem<TraceInfo>>,
     ) -> Tensor<B, 4> {
         // concatenate the board inputs along the batch dimension.
@@ -109,7 +109,7 @@ impl<B: Backend> NNEvaluator<B> {
         Tensor::cat(
             batch
                 .map(|leaf| {
-                    let state_input = leaf.data.inputs.state;
+                    let state_input = leaf.trace.inputs.state;
                     Tensor::from_floats([state_input], self.device())
                 })
                 .collect_vec(),
@@ -130,12 +130,12 @@ impl<B: Backend> Evaluator for NNEvaluator<B> {
         TraceInfo::new(pos)
     }
 
-    fn eval_batch<const X: usize>(
+    fn eval_batch(
         &mut self,
         tree: &Tree,
-        selection: &Selection<X, Self::TraceData>,
+        selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
-    ) -> impl Iterator<Item = Evaluation> {
+    ) -> impl Iterator<Item = Guess> {
         let batch_size = leafs.len();
 
         let values_shape = Shape::new([batch_size, VALUE_OUTPUTS]);
@@ -180,14 +180,14 @@ impl<B: Backend> Evaluator for NNEvaluator<B> {
             .zip(values)
             .zip(raw_logits)
             .map(|((&leaf, value), raw_logits)| {
-                let turn = leaf.turn;
+                let turn = leaf.sel_data.turn;
                 let moves = tree.move_indices(leaf.node);
 
-                Evaluation::Guess(Box::new(Guess {
+                Guess {
                     relative_to: turn,
                     quality: Quality::new(value[0]),
                     policy: Policy::from_raw_logits(&raw_logits, moves, 1.).expect("a policy"),
-                }))
+                }
             })
             .collect_vec()
             .into_iter()

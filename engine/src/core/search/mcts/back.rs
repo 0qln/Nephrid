@@ -1,149 +1,141 @@
-use crate::core::search::mcts::{
-    eval::{self, Evaluation, GameResult},
-    node::{
-        Tree,
-        node_state::{self, Evaluated, Switch},
-        proven,
+use std::hint::{self};
+
+use crate::core::{
+    color::Color,
+    search::mcts::{
+        eval::{self, Evaluation, GameResult, Guess},
+        node::{NodeId, Tree, node_state::*, proven},
     },
-    search::SelNode,
+    turn::Turn,
 };
 
-pub trait Backpropagater {
-    /// Backpropagate the [eval].
-    fn backpropagate<'a, T: 'a, S: const node_state::Valid>(
-        &self,
-        tree: &mut Tree,
-        path: impl Iterator<Item = &'a SelNode<T, Evaluated>>,
-        leaf: SelNode<Evaluation, S>,
-    );
+pub trait RelativeValue {
+    fn relative_to(&self, relative_to: Color) -> eval::Value;
 }
 
-#[derive(Default)]
-pub struct DefaultBackuper {}
-
-impl Backpropagater for DefaultBackuper {
-    fn backpropagate<'a, T: 'a, S: const node_state::Valid>(
-        &self,
-        tree: &mut Tree,
-        path: impl Iterator<Item = &'a SelNode<T, Evaluated>>,
-        leaf: SelNode<Evaluation, S>,
-    ) {
-        let eval = &leaf.data;
-        let weight = 1.;
-
-        // Update the leaf itself.
-        {
-            let node = &leaf.node;
-            let value = eval.to_value(!leaf.turn);
-
-            match node.into_ct() {
-                Switch::Branching(node) => {
-                    let evaluated = if let Evaluation::Guess(guess) = eval {
-                        tree.set_policy(node, &guess.policy)
-                    }
-                    else {
-                        tree.skip_policy(node)
-                    };
-                    tree.update_node(evaluated, value, weight);
-                }
-                Switch::Evaluated(node) => tree.update_node(node, value, weight),
-                Switch::Terminal(node) => tree.update_node(node, value, weight),
-                Switch::Leaf(node) => tree.update_node(node, value, weight),
-            }
-        }
-
-        // Update the parents until root.
-        for item in path {
-            let node = item.node;
-            let value = eval.to_value(!item.turn);
-            tree.update_node(node, value, weight);
+impl RelativeValue for GameResult {
+    fn relative_to(&self, relative_to: Color) -> eval::Value {
+        match *self {
+            GameResult::Win { relative_to: winner } if winner == relative_to => eval::Value::win(),
+            GameResult::Win { relative_to: winner } if winner != relative_to => eval::Value::loss(),
+            GameResult::Draw => eval::Value::draw(),
+            _ => unreachable!(),
         }
     }
 }
 
-#[derive(Default)]
-pub struct MctsSolver {}
+impl RelativeValue for Evaluation {
+    fn relative_to(&self, relative_to: Color) -> eval::Value {
+        self.to_value(relative_to)
+    }
+}
 
-impl Backpropagater for MctsSolver {
-    fn backpropagate<'a, T: 'a, S: const node_state::Valid>(
-        &self,
-        tree: &mut Tree,
-        path: impl Iterator<Item = &'a SelNode<T, Evaluated>>,
-        leaf: SelNode<Evaluation, S>,
-    ) {
-        let eval = &leaf.data;
-        let weight = 1.;
+impl RelativeValue for Guess {
+    fn relative_to(&self, relative_to: Color) -> eval::Value {
+        self.to_value(relative_to)
+    }
+}
 
-        // Update the leaf itself.
-        {
-            let node = &leaf.node;
-            let turn = leaf.turn;
-            let value = eval.to_value(!turn);
+pub fn update_branching(
+    tree: &mut Tree,
+    node: NodeId<Branching>,
+    turn: Turn,
+    guess: &Guess,
+    weight: f32,
+) {
+    let value = guess.to_value(!turn);
+    let evaluated = tree.set_policy(node, &guess.policy);
+    tree.update_node(evaluated, value, weight);
+}
 
-            match node.into_ct() {
-                Switch::Branching(node) => {
-                    let evaluated = if let Evaluation::Guess(guess) = eval {
-                        tree.set_policy(node, &guess.policy)
-                    }
-                    else {
-                        tree.skip_policy(node)
-                    };
-                    tree.update_node(evaluated, value, weight);
-                }
-                Switch::Evaluated(node) => tree.update_node(node, value, weight),
-                Switch::Terminal(node) => match eval {
-                    Evaluation::Terminal(game_result) => match *game_result {
-                        GameResult::Win { relative_to } if relative_to == turn => {
-                            tree.set_proven(node, proven::LOSS, weight)
-                        }
-                        GameResult::Win { relative_to } if relative_to != turn => {
-                            tree.set_proven(node, proven::WIN, weight)
-                        }
-                        _ => tree.update_node(node, value, weight),
-                    },
-                    _ => tree.update_node(node, value, weight),
-                },
-
-                // There could be a leaf node here (e.g. in the case of a 2fold-shortcut.) Make sure
-                // that we also update leaf node values. Otherwise the exploration score of such a
-                // node will be overinflated and the searcher will get stuck picking
-                // this leaf node.
-                Switch::Leaf(node) => tree.update_node(node, value, weight),
-            }
+pub fn update_terminal(
+    tree: &mut Tree,
+    node: NodeId<Terminal>,
+    turn: Turn,
+    game_result: GameResult,
+    weight: f32,
+) {
+    match game_result {
+        GameResult::Win { relative_to } if relative_to == turn => {
+            tree.set_proven(node, proven::LOSS, weight);
         }
-
-        // Update the parents until root.
-        for item in path {
-            let node = item.node;
-            let turn = item.turn;
-
-            match eval {
-                Evaluation::Terminal(game_result) => {
-                    match *game_result {
-                        GameResult::Win { .. }
-                            if tree
-                                .branches(node)
-                                .iter()
-                                .any(|b| tree.node(b.node()).value().is_proven_win()) =>
-                        {
-                            tree.set_proven(node, proven::LOSS, weight)
-                        }
-
-                        GameResult::Win { .. }
-                            if tree
-                                .branches(node)
-                                .iter()
-                                .all(|b| tree.node(b.node()).value().is_proven_loss()) =>
-                        {
-                            tree.set_proven(node, proven::WIN, weight)
-                        }
-
-                        x => tree.update_node(node, x.to_value(!turn), weight),
-                    };
-                }
-                Evaluation::Guess(guess) => tree.update_node(node, guess.to_value(!turn), weight),
-                Evaluation::Nope => tree.update_node(node, eval::Value::draw(), weight),
-            }
+        GameResult::Win { relative_to } if relative_to != turn => {
+            tree.set_proven(node, proven::WIN, weight);
         }
+        GameResult::Draw => {
+            // todo: implement proven draws
+            let value = eval::Value::draw();
+            tree.update_node(node, value, weight);
+        }
+        _ => unsafe { hint::unreachable_unchecked() },
+    }
+}
+
+pub fn update_shortcut(
+    tree: &mut Tree,
+    node: NodeId<Leaf>,
+    weight: f32,
+) -> impl RelativeValue + Copy + use<> {
+    #[derive(Copy, Clone)]
+    struct Draw;
+    impl RelativeValue for Draw {
+        fn relative_to(&self, _relative_to: Color) -> eval::Value {
+            eval::Value::draw()
+        }
+    }
+    let value = eval::Value::draw();
+    tree.update_node(node, value, weight);
+    Draw
+}
+
+pub fn update_skip(
+    tree: &mut Tree,
+    node: NodeId<Evaluated>,
+    turn: Turn,
+    eval: &Evaluation,
+    weight: f32,
+) {
+    // (e.g. in the case of a 2fold.) Make sure that we also update leaf
+    // node values. Otherwise the exploration score of such a node will be
+    // overinflated and the searcher will get stuck picking this leaf node.
+    let value = eval.to_value(!turn);
+    tree.update_node(node, value, weight);
+}
+
+pub fn update_parent(
+    tree: &mut Tree,
+    node: NodeId<Evaluated>,
+    turn: Turn,
+    child_value: &impl RelativeValue,
+    weight: f32,
+) {
+    tree.update_node(node, child_value.relative_to(!turn), weight);
+}
+
+pub fn try_prove_parent(tree: &mut Tree, node: NodeId<Evaluated>, weight: f32) {
+    let branches = tree.branches(node);
+    if branches
+        .iter()
+        .all(|b| tree.node(b.node()).value().is_proven_loss())
+    {
+        tree.set_proven(node, proven::WIN, weight);
+    }
+    else if branches
+        .iter()
+        .any(|b| tree.node(b.node()).value().is_proven_win())
+    {
+        tree.set_proven(node, proven::LOSS, weight);
+    }
+}
+
+pub fn backpropagate_up(
+    tree: &mut Tree,
+    path: impl IntoIterator<Item = (NodeId<Evaluated>, Turn)>,
+    leaf_value: &impl RelativeValue,
+    weight: f32,
+) {
+    for (node, turn) in path {
+        update_parent(tree, node, turn, leaf_value, weight);
+        try_prove_parent(tree, node, weight);
     }
 }

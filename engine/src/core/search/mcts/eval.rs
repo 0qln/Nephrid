@@ -25,6 +25,18 @@ pub mod hce;
 pub mod nn;
 pub mod playout;
 
+/// Evaluate a node's terminal state. If the node is terminal, return the
+/// evaluation, else return None.
+pub fn eval_terminal(
+    _node: NodeId<Terminal>,
+    _tree: &Tree,
+    depth: Depth,
+    pos: &Position,
+) -> GameResult {
+    let game_result = pos.search_result(depth);
+    game_result.expect("Input is a terminal node and thus there has to be a search result.")
+}
+
 pub trait Evaluator {
     type TraceData;
 
@@ -38,25 +50,12 @@ pub trait Evaluator {
         pos: &mut Position,
     ) -> Self::TraceData;
 
-    /// Evaluate a node's terminal state. If the node is terminal, return the
-    /// evaluation, else return None.
-    fn eval_terminal(
-        _node: NodeId<Terminal>,
-        _tree: &Tree,
-        depth: Depth,
-        pos: &Position,
-    ) -> Evaluation {
-        let game_result = pos.search_result(depth);
-        let game_result = game_result.expect("Input requires a terminal node.");
-        Evaluation::Terminal(game_result)
-    }
-
-    fn eval_batch<const X: usize>(
+    fn eval_batch(
         &mut self,
         tree: &Tree,
-        selection: &Selection<X, Self::TraceData>,
+        selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
-    ) -> impl Iterator<Item = Evaluation>;
+    ) -> impl Iterator<Item = Guess>;
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -101,11 +100,9 @@ impl Guess {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Evaluation {
     /// we will go further and have a guess about this game.
-    Guess(Box<Guess>),
+    Guess(Guess),
     /// we cannot go any further.
     Terminal(GameResult),
-    /// we don't feel like going any further.
-    Nope,
 }
 
 impl fmt::Display for Evaluation {
@@ -114,7 +111,6 @@ impl fmt::Display for Evaluation {
         match self {
             Self::Guess(x) => write!(f, "Evaluation::Guess({x:?})"),
             Self::Terminal(x) => write!(f, "Evaluation::Terminal({x:?})"),
-            Self::Nope => write!(f, "Evaluation::Nope"),
         }
     }
 }
@@ -135,7 +131,6 @@ impl Evaluation {
     pub fn to_value(&self, relative_to: Color) -> Value {
         match self {
             Self::Terminal(result) => result.to_value(relative_to),
-            Self::Nope => Value::draw(),
             Self::Guess(guess) => guess.to_value(relative_to),
         }
     }

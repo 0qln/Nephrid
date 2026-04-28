@@ -3,7 +3,7 @@ use crate::{
         depth::Depth,
         r#move::MoveIndex,
         search::mcts::node::node_state::{
-            ExpandedSwitch, HasBranches, HasValue, NodeState, Switch, Valid,
+            ExpandedSwitch, HasBranches, HasValue, NodeState, Switch,
         },
     },
     impl_variants,
@@ -767,11 +767,11 @@ impl Tree {
         self.arena.nodes[node.index as usize].value = Value::from(state);
     }
 
-    pub fn apply_virtual_loss<S: Valid>(&mut self, node: NodeId<S>, amount: u32) {
+    pub fn apply_virtual_loss(&mut self, node: RtNodeId, amount: u32) {
         self.arena.nodes[node.index as usize].visits += amount;
     }
 
-    pub fn revert_virtual_loss<S: Valid>(&mut self, node: NodeId<S>, amount: u32) {
+    pub fn revert_virtual_loss(&mut self, node: RtNodeId, amount: u32) {
         self.arena.nodes[node.index as usize].visits -= amount;
     }
 

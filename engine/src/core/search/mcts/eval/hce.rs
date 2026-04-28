@@ -543,19 +543,19 @@ impl Evaluator for HceEvaluator {
             .map(|node| EvalInfo::new(node, tree, pos))
     }
 
-    fn eval_batch<const X: usize>(
+    fn eval_batch(
         &mut self,
         _tree: &Tree,
-        _selection: &Selection<X, Self::TraceData>,
+        _selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
-    ) -> impl Iterator<Item = Evaluation> {
+    ) -> impl Iterator<Item = Guess> {
         leafs.iter().filter_map(|&leaf| {
-            let eval_info = leaf.data.as_ref()?;
-            Some(Evaluation::Guess(Box::new(Guess {
+            let eval_info = leaf.trace.as_ref()?;
+            Some(Guess {
                 relative_to: colors::WHITE,
                 quality: eval_info.quality(),
                 policy: eval_info.policy(),
-            })))
+            })
         })
     }
 }

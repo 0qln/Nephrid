@@ -11,11 +11,10 @@ use engine::core::{
 };
 
 fn bench_mcts<P: MctsParts>(mut pos: Position, mut tree: Tree, parts: P) {
-    let mut searcher = TreeSearcher::<1, _, _, _, _>::new(
+    let mut searcher = TreeSearcher::<1, _, _, _>::new(
         &mut pos,
         parts.selector(),
         parts.evaluator(),
-        parts.backprop(),
         parts.noiser(),
     );
     searcher.init_root(&mut tree);
