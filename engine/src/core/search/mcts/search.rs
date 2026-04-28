@@ -1,6 +1,7 @@
 use std::collections::{HashMap, hash_map::Entry};
 
 use itertools::Itertools;
+use rustc_hash::FxBuildHasher;
 
 use crate::core::{
     Position,
@@ -110,7 +111,7 @@ pub struct Selection<T> {
     pub shortcuts: Vec<ShortcutItem>,
     pub skips: Vec<SkipItem>,
     pub batched: Vec<BatchItem<T>>,
-    pub batched_map: HashMap<NodeId<Branching>, usize>,
+    pub batched_map: HashMap<NodeId<Branching>, usize, FxBuildHasher>,
     pub parents: Vec<ParentItem<T>>,
     pub virtual_loss: Vec<(RtNodeId, u32)>,
 }
