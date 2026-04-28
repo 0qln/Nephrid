@@ -222,7 +222,7 @@ pub mod node_state {
         }
     }
 
-    pub const trait Any: Clone + Copy + PartialEq {}
+    pub const trait Any: Clone + Copy + PartialEq + Eq + std::hash::Hash {}
 
     pub const trait Valid: Any {
         fn state() -> NodeState;
@@ -235,7 +235,7 @@ pub mod node_state {
 
     pub const trait Expanded: Any + Valid {}
 
-    #[derive(Clone, Copy, Default, Debug, PartialEq)]
+    #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
     pub struct Leaf;
     impl Any for Leaf {}
     impl const Valid for Leaf {
@@ -248,7 +248,7 @@ pub mod node_state {
     }
     impl const HasValue for Leaf {}
 
-    #[derive(Clone, Copy, Default, Debug, PartialEq)]
+    #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
     pub struct Terminal;
     impl Any for Terminal {}
     impl const Valid for Terminal {
@@ -262,7 +262,7 @@ pub mod node_state {
     impl const HasValue for Terminal {}
     impl const Expanded for Terminal {}
 
-    #[derive(Clone, Copy, Default, Debug, PartialEq)]
+    #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
     pub struct Branching;
     impl const Any for Branching {}
     impl const Valid for Branching {
@@ -276,7 +276,7 @@ pub mod node_state {
     impl const HasBranches for Branching {}
     impl const Expanded for Branching {}
 
-    #[derive(Clone, Copy, Default, Debug, PartialEq)]
+    #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
     pub struct Evaluated;
     impl Any for Evaluated {}
     impl const Valid for Evaluated {
@@ -290,7 +290,7 @@ pub mod node_state {
     impl const HasValue for Evaluated {}
     impl const HasBranches for Evaluated {}
 
-    #[derive(Clone, Copy, Default, Debug, PartialEq)]
+    #[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
     pub struct Unknown;
     impl Any for Unknown {}
 }
@@ -949,7 +949,7 @@ impl BranchId {
 pub type RtNodeId = NodeId<node_state::Unknown>;
 
 /// The Typestate ID is just a zero-cost wrapper around a `u32` index.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NodeId<S: node_state::Any> {
     pub index: u32,
     _marker: PhantomData<S>,

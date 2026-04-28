@@ -1,3 +1,5 @@
+use std::collections::{HashMap, hash_map::Entry};
+
 use itertools::Itertools;
 
 use crate::core::{
@@ -72,6 +74,7 @@ pub struct BatchItem<T> {
     pub trace: T,
     pub node: NodeId<Branching>,
     pub sel_data: SelData,
+    pub weight: f32,
 }
 
 pub struct EvalItem {
@@ -79,6 +82,7 @@ pub struct EvalItem {
     eval: Guess,
     node: NodeId<Branching>,
     sel_data: SelData,
+    weight: f32,
 }
 
 pub struct TerminalItem {
@@ -106,9 +110,9 @@ pub struct Selection<T> {
     pub shortcuts: Vec<ShortcutItem>,
     pub skips: Vec<SkipItem>,
     pub batched: Vec<BatchItem<T>>,
+    pub batched_map: HashMap<NodeId<Branching>, usize>,
     pub parents: Vec<ParentItem<T>>,
     pub virtual_loss: Vec<(RtNodeId, u32)>,
-    // todo: use hashmaps + weight
 }
 
 impl<T> Default for Selection<T> {
@@ -119,6 +123,7 @@ impl<T> Default for Selection<T> {
             shortcuts: Default::default(),
             skips: Default::default(),
             batched: Default::default(),
+            batched_map: Default::default(),
             parents: Default::default(),
             virtual_loss: Default::default(),
         }
@@ -184,42 +189,6 @@ impl<T> Selection<T> {
         self.virtual_loss.push((node, loss));
     }
 
-    /// Returns an iterator over terminal items along with their ancestor chain.
-    pub fn iter_terminals(
-        &self,
-    ) -> impl Iterator<Item = (&TerminalItem, impl Iterator<Item = &ParentItem<T>>)> {
-        self.terminals
-            .iter()
-            .map(|item| (item, Self::iter_up(item.parent, &self.parents)))
-    }
-
-    /// Returns an iterator over evaluated (batched) items with ancestors.
-    pub fn iter_evaluations(
-        &self,
-    ) -> impl Iterator<Item = (&EvalItem, impl Iterator<Item = &ParentItem<T>>)> {
-        self.evaluations
-            .iter()
-            .map(|item| (item, Self::iter_up(item.parent, &self.parents)))
-    }
-
-    /// Returns an iterator over shortcuts with ancestors.
-    pub fn iter_shortcuts(
-        &self,
-    ) -> impl Iterator<Item = (&ShortcutItem, impl Iterator<Item = &ParentItem<T>>)> {
-        self.shortcuts
-            .iter()
-            .map(|item| (item, Self::iter_up(item.parent, &self.parents)))
-    }
-
-    /// Returns an iterator over skips with ancestors.
-    pub fn iter_skips(
-        &self,
-    ) -> impl Iterator<Item = (&SkipItem, impl Iterator<Item = &ParentItem<T>>)> {
-        self.skips
-            .iter()
-            .map(|item| (item, Self::iter_up(item.parent, &self.parents)))
-    }
-
     /// Returns the root parent id (the first parent in the arena, if any).
     pub fn root_id(&self) -> Option<ParentNodeId> {
         if self.parents.is_empty() {
@@ -269,13 +238,13 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                         trace: trace_data,
                         node,
                         sel_data: SelData { turn },
+                        weight: 1.,
                     };
                     let evals: Vec<Guess> = self
                         .evaluator
                         .eval_batch(tree, &self.selection, &[&batch_item])
                         .collect();
-                    let guess = &evals[0];
-                    tree.set_policy(node, &guess.policy);
+                    back::update_branching(tree, node, turn, &evals[0], 1.);
                     self.selection.clear();
                 }
                 Switch::Evaluated(node) => {
@@ -549,12 +518,20 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             return;
         }
 
-        self.selection.batched.push(BatchItem {
-            parent,
-            node,
-            trace: self.evaluator.trace(node, tree, &mut self.position),
-            sel_data: SelData { turn: self.position.get_turn() },
-        });
+        match self.selection.batched_map.entry(node) {
+            Entry::Occupied(entry) => self.selection.batched[*entry.get()].weight += 1.,
+            Entry::Vacant(vacant_entry) => {
+                let idx = self.selection.batched.len();
+                self.selection.batched.push(BatchItem {
+                    parent,
+                    node,
+                    trace: self.evaluator.trace(node, tree, &mut self.position),
+                    sel_data: SelData { turn: self.position.get_turn() },
+                    weight: 1.,
+                });
+                vacant_entry.insert(idx);
+            }
+        };
     }
 
     fn eval_batched(&mut self, tree: &Tree) {
@@ -572,6 +549,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                 node: item.node,
                 sel_data: item.sel_data,
                 eval,
+                weight: item.weight,
             })
         }
     }
@@ -586,8 +564,15 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             back::backpropagate_up(tree, path, &eval, 1.0);
         }
 
-        for &EvalItem { parent, ref eval, node, sel_data } in &self.selection.evaluations {
-            back::update_branching(tree, node, sel_data.turn, eval, 1.0);
+        for &EvalItem {
+            parent,
+            ref eval,
+            weight,
+            node,
+            sel_data,
+        } in &self.selection.evaluations
+        {
+            back::update_branching(tree, node, sel_data.turn, eval, weight);
             let path = self
                 .selection
                 .iter_path_up(parent)
