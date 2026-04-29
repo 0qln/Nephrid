@@ -67,8 +67,7 @@ pub fn get_node_history(
             break;
         }
 
-        let board_input = node.trace.inputs.board;
-        vec.insert(0, board_input);
+        vec.insert(0, node.trace.inputs.board);
     }
 
     vec
