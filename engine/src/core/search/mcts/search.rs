@@ -71,7 +71,7 @@ pub struct SelData {
 }
 
 pub struct BatchItem<T> {
-    pub parent: ParentNodeId,
+    pub parent: Option<ParentNodeId>,
     pub trace: T,
     pub node: NodeId<Branching>,
     pub sel_data: SelData,
@@ -111,6 +111,7 @@ pub struct Selection<T> {
     pub shortcuts: Vec<ShortcutItem>,
     pub skips: Vec<SkipItem>,
     pub batched: Vec<BatchItem<T>>,
+    // todo: isntead of hashing, just do index=(id % BATCH_SIZE) and skip to the next free gap?
     pub batched_map: HashMap<NodeId<Branching>, usize, FxBuildHasher>,
     pub parents: Vec<ParentItem<T>>,
     pub virtual_loss: Vec<(RtNodeId, u32)>,
@@ -139,6 +140,7 @@ impl<T> Selection<T> {
         self.shortcuts.clear();
         self.skips.clear();
         self.batched.clear();
+        self.batched_map.clear();
         self.parents.clear();
         self.virtual_loss.clear();
     }
@@ -150,12 +152,12 @@ impl<T> Selection<T> {
         id
     }
 
-    pub fn iter_path_up(&self, leaf: ParentNodeId) -> impl Iterator<Item = &ParentItem<T>> {
+    pub fn iter_path_up(&self, leaf: Option<ParentNodeId>) -> impl Iterator<Item = &ParentItem<T>> {
         Self::iter_up(leaf, &self.parents)
     }
 
     fn iter_up(
-        current: ParentNodeId,
+        current: Option<ParentNodeId>,
         arena: &[ParentItem<T>],
     ) -> impl Iterator<Item = &ParentItem<T>> {
         pub struct IterUp<'a, T> {
@@ -176,7 +178,7 @@ impl<T> Selection<T> {
             }
         }
 
-        IterUp { arena, current: Some(current) }.map(|item| item.0)
+        IterUp { arena, current }.map(|item| item.0)
     }
 
     fn revert_virtual_loss(&self, tree: &mut Tree) {
@@ -233,10 +235,9 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                 Switch::Branching(node) => {
                     // Evaluate the root as a batch of size 1
                     let turn = self.position.get_turn();
-                    let trace_data = self.evaluator.trace(node, tree, self.position);
                     let batch_item = BatchItem {
-                        parent: ParentNodeId(0), // dummy; will be replaced
-                        trace: trace_data,
+                        parent: None, // dummy; will be replaced
+                        trace: self.evaluator.trace(node, tree, self.position),
                         node,
                         sel_data: SelData { turn },
                         weight: 1.,
@@ -246,7 +247,6 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                         .eval_batch(tree, &self.selection, &[&batch_item])
                         .collect();
                     back::update_branching(tree, node, turn, &evals[0], 1.);
-                    self.selection.clear();
                 }
                 Switch::Evaluated(node) => {
                     if let Err(err) = self.noiser.apply_noise(node, tree) {
@@ -524,7 +524,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             Entry::Vacant(vacant_entry) => {
                 let idx = self.selection.batched.len();
                 self.selection.batched.push(BatchItem {
-                    parent,
+                    parent: Some(parent),
                     node,
                     trace: self.evaluator.trace(node, tree, &mut self.position),
                     sel_data: SelData { turn: self.position.get_turn() },
@@ -546,7 +546,11 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
 
         for (item, eval) in batch.iter().zip(evals) {
             self.selection.evaluations.push(EvalItem {
-                parent: item.parent,
+                parent: item.parent.expect(
+                    "Only the root has not parent and we don't grow if there the root is not \
+                     initialized. So this shouldn't ever be None. todo: this is a bad solution. \
+                     Refactor such that this case is impossible to hit.",
+                ),
                 node: item.node,
                 sel_data: item.sel_data,
                 eval,
@@ -560,7 +564,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             back::update_terminal(tree, node, sel_data.turn, eval, 1.0);
             let path = self
                 .selection
-                .iter_path_up(parent)
+                .iter_path_up(Some(parent))
                 .map(|p| (p.node, p.sel_data.turn));
             back::backpropagate_up(tree, path, &eval, 1.0);
         }
@@ -576,7 +580,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             back::update_branching(tree, node, sel_data.turn, eval, weight);
             let path = self
                 .selection
-                .iter_path_up(parent)
+                .iter_path_up(Some(parent))
                 .map(|p| (p.node, p.sel_data.turn));
             back::backpropagate_up(tree, path, eval, 1.0);
         }
@@ -585,7 +589,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             let eval = back::update_shortcut(tree, node, 1.0);
             let path = self
                 .selection
-                .iter_path_up(parent)
+                .iter_path_up(Some(parent))
                 .map(|p| (p.node, p.sel_data.turn));
             back::backpropagate_up(tree, path, &eval, 1.0);
         }
@@ -594,7 +598,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             back::update_skip(tree, node, sel_data.turn, &eval, 1.0);
             let path = self
                 .selection
-                .iter_path_up(parent)
+                .iter_path_up(Some(parent))
                 .map(|p| (p.node, p.sel_data.turn));
             back::backpropagate_up(tree, path, eval, 1.0);
         }
