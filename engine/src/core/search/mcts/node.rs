@@ -1103,7 +1103,6 @@ impl<'a, S: HasValue> NodeView<'a, S> {
 }
 
 /// The winrate of a node in range [0; 1].
-/// (Relative to the node itself, not it's parent)
 #[derive(Debug, Clone, Copy)]
 pub struct WinRate(pub f32);
 

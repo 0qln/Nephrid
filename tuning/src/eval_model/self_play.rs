@@ -661,11 +661,13 @@ where
         game_result
     };
 
-    if let Outcome::Discrete(result) = outcome {
-        log::debug!(target: "data", "[FEN {i:>2}/{n:<2}] Finished self-play with result '{}'", PgnResultValue(Some(result)));
-    }
-    else {
-        // log idk?
+    match outcome {
+        Outcome::Discrete(result) => {
+            log::debug!(target: "data", "[FEN {i:>4}/{n:<4}] Finished self-play with result '{}'", PgnResultValue(Some(result)));
+        }
+        Outcome::Continuous { quality, relative_to } => {
+            log::debug!(target: "data", "[FEN {i:>4}/{n:<4}] Finished self-play with continuous outcome '{quality}' relative to {relative_to}");
+        }
     }
 
     let mut results = Vec::<SelfPlayResult<_>>::new();
