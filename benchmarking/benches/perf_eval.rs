@@ -187,9 +187,9 @@ impl PerfRunner for MctsHceRunner {
 fn run_perf_eval<Runner: PerfRunner>(test: Test, runner: Runner) -> TestResult<Runner::Diagnostic> {
     let limit = UciLimit {
         wtime: 0,
-        winc: 1000,
+        winc: 10000,
         btime: 0,
-        binc: 1000,
+        binc: 10000,
         lag_buf: 0,
         ..Default::default()
     };
