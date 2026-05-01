@@ -95,7 +95,7 @@ def main():
 
                 if target_themes.intersection(themes):
                     first_move = moves_str.split(' ')[0]
-                    collected_lines.append(f"{fen} fm {first_move}")
+                    collected_lines.append(f"{fen} sm {first_move};")
 
                 if total_processed % 500_000 == 0:
                     print(f"Processed {total_processed:,} puzzles... (Collected {len(collected_lines):,} matches)")
