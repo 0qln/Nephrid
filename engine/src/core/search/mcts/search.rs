@@ -52,8 +52,15 @@ pub mod test;
 // just bump up the virtual loss there instead of inserting
 // duplicate parent nodes.
 //
-// todo: the HashMap can probably be replaced by some custom stack info clever
+// todo:
+// the HashMap can probably be replaced by some custom stack info clever
 // indexing scheme...
+//
+// todo:
+// make softmax policy spread relative to depth.
+// e.i. policy = softmax(&mut logits, temperature = 5 / depth)
+// to get higher exploration at the top of the tree and more exploitation at the
+// bottom.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParentNodeId(pub usize);
