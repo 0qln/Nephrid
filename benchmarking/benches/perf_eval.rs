@@ -185,13 +185,27 @@ impl PerfRunner for MctsHceRunner {
 }
 
 fn run_perf_eval<Runner: PerfRunner>(test: Test, runner: Runner) -> TestResult<Runner::Diagnostic> {
-    let limit = UciLimit {
-        wtime: 0,
-        winc: 10000,
-        btime: 0,
-        binc: 10000,
-        lag_buf: 0,
-        ..Default::default()
+    let limit = {
+        #[cfg(test)]
+        {
+            UciLimit {
+                nodes: 100_000,
+                lag_buf: 0,
+                ..Default::default()
+            }
+        }
+
+        #[cfg(not(test))]
+        {
+            UciLimit {
+                wtime: 0,
+                winc: 10000,
+                btime: 0,
+                binc: 10000,
+                lag_buf: 0,
+                ..Default::default()
+            }
+        }
     };
 
     let Test { pos, id, find, avoid } = test;
