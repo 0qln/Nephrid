@@ -559,6 +559,10 @@ pub type TCp = i16;
 
 impl Cp {
     const SCALE: f32 = 350.;
+
+    pub fn v(&self) -> TCp {
+        self.v
+    }
 }
 
 impl fmt::Display for Cp {

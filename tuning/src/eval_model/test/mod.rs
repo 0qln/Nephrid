@@ -262,7 +262,7 @@ pub fn learn_mate_in_1() {
             &mut pos,
             &parts,
             &mut mcts_state,
-            MctsTrainStrategy::new(limit, 1, 1),
+            &mut MctsTrainStrategy::new(limit, 1, 1),
         );
 
         for b in mcts_state.tree.branches_rt(mcts_state.tree.root()) {
@@ -354,7 +354,7 @@ pub fn learn_mate_in_2() {
                 &mut pos,
                 &nn_parts,
                 &mut mcts_state,
-                MctsTrainStrategy::new(limit.clone(), 1, 1),
+                &mut MctsTrainStrategy::new(limit.clone(), 1, 1),
             );
 
             for b in mcts_state.tree.branches_rt(mcts_state.tree.root()) {

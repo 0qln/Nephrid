@@ -23,6 +23,7 @@ use engine::{
         },
         zobrist,
     },
+    math::{avg, entropy, stddev},
     misc::CheckHealth,
 };
 use itertools::Itertools;
@@ -517,23 +518,6 @@ pub struct Stats {
     pub policy_entropy: f32,
 }
 
-fn entropy(xs: impl Iterator<Item = f32>) -> f32 {
-    -xs.filter(|&x| x > 0.).map(|x| x * x.log2()).sum::<f32>()
-}
-
-fn avg(xs: &[f32]) -> f32 {
-    xs.iter().sum::<f32>() / xs.len() as f32
-}
-
-fn variance(xs: &[f32]) -> f32 {
-    let avg = avg(xs);
-    xs.iter().map(|x| (x - avg).powi(2)).sum::<f32>() / xs.len() as f32
-}
-
-fn stddev(xs: &[f32]) -> f32 {
-    variance(xs).sqrt()
-}
-
 impl Stats {
     pub fn new(guess: Guess) -> Self {
         let policy_values = guess.policy();
@@ -643,7 +627,7 @@ where
                 }
             }
 
-            let strat = MctsTrainStrategy::new(limit.clone(), i, n);
+            let strat = &mut MctsTrainStrategy::new(limit.clone(), i, n);
             let result = mcts::<{ MPV }, MctsTrainConfig, _>(
                 game.position_mut(),
                 parts,

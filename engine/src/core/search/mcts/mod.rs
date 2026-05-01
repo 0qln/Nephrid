@@ -36,7 +36,7 @@ pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState>(
     pos: &mut Position,
     parts: &C::Parts,
     state: &mut M,
-    mut strat: C::Strat,
+    strat: &mut C::Strat,
 ) -> <C::Strat as MctsStrategy>::Result {
     let tree = state.tree();
 

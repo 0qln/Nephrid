@@ -25,5 +25,6 @@
 extern crate impl_ops;
 
 pub mod core;
+pub mod math;
 pub mod misc;
 pub mod uci;

@@ -63,7 +63,7 @@ impl MctsStrategy for MctsFindBest {
 }
 
 #[derive(Debug)]
-pub struct UciCp(Cp);
+pub struct UciCp(pub Cp);
 
 impl fmt::Display for UciCp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -239,7 +239,9 @@ impl MctsUci {
             .map(UciNps)
     }
 
-    fn determine_score(&self, tree: &Tree, pv_len: usize) -> Option<UciScore> {
+    /// Determine score in centipawns / mate-in-x, etc.
+    /// Returns `None` if the root node is not evaluated or unproven.
+    pub fn determine_score(&self, tree: &Tree, pv_len: usize) -> Option<UciScore> {
         let root = tree.node(tree.root());
         let root_value = root.value();
 

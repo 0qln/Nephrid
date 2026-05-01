@@ -274,6 +274,14 @@ pub fn trim_newline(s: &mut String) {
 pub struct DebugMode(Arc<AtomicBool>);
 
 impl DebugMode {
+    pub fn off() -> Self {
+        Self(Arc::new(AtomicBool::new(false)))
+    }
+
+    pub fn on() -> Self {
+        Self(Arc::new(AtomicBool::new(true)))
+    }
+
     pub fn get(&self) -> bool {
         self.0.load(Ordering::Relaxed)
     }

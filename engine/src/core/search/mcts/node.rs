@@ -1053,6 +1053,11 @@ impl<'a, S: node_state::Any> NodeView<'a, S> {
     }
 
     #[inline]
+    pub fn id(&self) -> NodeId<S> {
+        self.id
+    }
+
+    #[inline]
     fn data(&self) -> &NodeData {
         &self.tree.arena.nodes[self.id.index as usize]
     }

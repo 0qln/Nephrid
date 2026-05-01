@@ -7,6 +7,7 @@ edition = "2024"
 engine = { version = "*", path = "../engine" }
 itertools = "0.14.0"
 rand = { version = "0.9.0", features = ["small_rng"] }
+tabled = "0.20.0"
 
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }
@@ -49,4 +50,8 @@ harness = false
 
 [[bench]]
 name = "mcts"
+harness = false
+
+[[bench]]
+name = "perf_eval"
 harness = false

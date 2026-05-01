@@ -101,7 +101,7 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
             Command::Normal(mut pos, limit, ct, debug) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
-                let strat = C::Strat::new(limit, debug, ct, None);
+                let strat = &mut C::Strat::new(limit, debug, ct, None);
 
                 let result = mcts::<MPV, C, _>(&mut pos, parts, state, strat);
 
@@ -114,7 +114,7 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
             Command::Ponder(mut pos, limit, ct, debug, pt) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
-                let strat = C::Strat::new(limit, debug, ct, Some(pt));
+                let strat = &mut C::Strat::new(limit, debug, ct, Some(pt));
 
                 let result = mcts::<MPV, C, _>(&mut pos, parts, state, strat);
 
