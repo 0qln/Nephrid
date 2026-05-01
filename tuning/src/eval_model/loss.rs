@@ -26,13 +26,6 @@ pub struct LossConfig {
     pub policy_loss_weight: f32,
 }
 
-// not up to date. e.g. they don't handle setting the policy to a 1-hot when
-// tree root has a mate-in-1 and such.
-// #[deprecated]
-// pub mod mlc;
-// #[deprecated]
-// pub mod slc;
-
 /// label loss output
 pub struct LossOutput<B: Backend> {
     pub loss: Tensor<B, 1>,
