@@ -1,0 +1,50 @@
+{
+  "loss": {
+    "value_loss_weight": 1.0,
+    "policy_loss_weight": 1.0
+  },
+  "model": {
+    "channels": 128,
+    "num_res_blocks": 8,
+    "value_dense_hidden": 256,
+    "value_head_channels": 1,
+    "policy_head_channels": 2
+  },
+  "optimizer": {
+    "weight_decay": {
+      "penalty": 0.005
+    },
+    "grad_clipping": null,
+    "beta_1": 0.7,
+    "beta_2": 0.9995,
+    "epsilon": 0.00001
+  },
+  "limit": {
+    "max_iterations": 300,
+    "max_nodes": null,
+    "min_nodes": null,
+    "max_terminal_nodes": null
+  },
+  "caching": {
+    "proven_games": true
+  },
+  "self_play": {
+    "concurrency": 256,
+    "allowed_moves": 10,
+    "unfinished_games": "draw",
+    "eval_models": 2,
+    "eval_batch_size": 512,
+    "eval_batch_wait_timeout_ms": 1
+  },
+  "mcts": {
+    "dirichlet_alpha": 0.3,
+    "dirichlet_epsilon": 0.25
+  },
+  "epd_dataset_path": "phase5/default.epd",
+  "epd_dataset_fens_total": 10000,
+  "num_epochs": 10,
+  "batch_size": 256,
+  "mini_batch_size": 512,
+  "seed": 3735928559,
+  "learning_rate": 0.0003
+}
