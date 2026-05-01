@@ -11,8 +11,8 @@ use crate::{
         depth::Depth,
         r#move::{Move, SanParseError},
         position::{
-            EpdLineImport, EpdLineParseError, EpdOp, FenImport, FenParseError, PgnImport,
-            PgnImportError, Position, ReducedPgn,
+            EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError,
+            PgnImport, PgnImportError, Position, ReducedPgn,
         },
         search::{Command, PonderToken, SearchThread, SearchWorker, limit::UciLimit},
     },
@@ -77,13 +77,16 @@ impl Game {
     }
 
     pub fn from_epd(epd: EpdLineImport<'_, '_>) -> Result<Self, EpdImportError> {
-        let (mut pos, ops) = epd.try_into()?;
+        let (pos, ops) = epd.try_into()?;
+        let mut game = Self::from_position(pos);
+
         if let Some(op) = ops.iter().find(|op| matches!(op.0.as_ref(), "sm")) {
             let EpdOp(_, mov) = op;
-            let mov = Move::from_san(mov, &pos)?;
-            pos.make_move(mov);
+            let mov = Move::from_san(mov, &game.position)?;
+            game.push_move(mov);
         }
-        Ok(Self::from_position(pos))
+
+        Ok(game)
     }
 
     pub fn from_pgn(pgn: PgnImport<'_, '_>) -> Result<Self, PgnImportError> {
@@ -180,6 +183,10 @@ pub fn execute_uci(
         },
         Some("pgn") => {
             println!("{}", engine.game.to_pgn());
+            Ok(())
+        }
+        Some("fen") => {
+            println!("{}", FenExport(&engine.game.position));
             Ok(())
         }
         Some("quit") => {
