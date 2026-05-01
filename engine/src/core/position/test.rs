@@ -4,7 +4,6 @@ use crate::{
         bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics,
         piece::piece_type, ply::Ply, zobrist,
     },
-    misc::ConstFrom,
 };
 
 #[test]
@@ -34,7 +33,7 @@ fn fen_decoding() {
     assert_eq!(pos.ply(), Ply { v: 2 });
     assert_eq!(
         pos.get_bitboard(piece_type::PAWN, colors::WHITE),
-        Bitboard::from_c(ranks::_2)
+        Bitboard::from(ranks::_2)
     );
 }
 

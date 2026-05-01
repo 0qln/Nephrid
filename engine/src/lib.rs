@@ -17,9 +17,8 @@
 #![feature(generic_const_exprs)]
 #![feature(range_into_bounds)]
 #![feature(control_flow_into_value)]
-// todo when feature (https://github.com/rust-lang/rust/issues/67792) is complete:
-// - remove the ConstFrom trait and use the core::From trait instead.
 #![feature(strip_circumfix)]
+#![feature(const_convert)]
 
 #[macro_use]
 extern crate impl_ops;

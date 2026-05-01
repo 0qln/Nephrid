@@ -29,7 +29,7 @@ use crate::{
         position::{CheckState, Position},
     },
     impl_variants_with_assertion,
-    misc::{ConstFrom, ValueOutOfRangeError},
+    misc::ValueOutOfRangeError,
     uci::tokens::Tokenizer,
 };
 
@@ -150,8 +150,8 @@ impl TryFrom<TMoveFlag> for MoveFlag {
     }
 }
 
-impl const ConstFrom<CastlingSide> for MoveFlag {
-    fn from_c(value: CastlingSide) -> Self {
+impl const From<CastlingSide> for MoveFlag {
+    fn from(value: CastlingSide) -> Self {
         match value {
             castling_sides::KING_SIDE => f::KING_CASTLE,
             castling_sides::QUEEN_SIDE => f::QUEEN_CASTLE,
@@ -295,9 +295,9 @@ impl<'a> fmt::Display for SAN<'a> {
         };
 
         let from = self.mov.get_from();
-        let from_bb = Bitboard::from_c(from);
-        let from_file = File::from_c(from);
-        let from_rank = Rank::from_c(from);
+        let from_bb = Bitboard::from(from);
+        let from_file = File::from(from);
+        let from_rank = Rank::from(from);
         let to = self.mov.get_to();
         let piece = self.context.get_piece(from);
         let piece_type = piece.piece_type();
@@ -305,7 +305,7 @@ impl<'a> fmt::Display for SAN<'a> {
 
         if piece_type != piece_type::PAWN {
             // Convert to a white piece such that we print as uppercase
-            let piece = Piece::from_c((colors::WHITE, piece_type));
+            let piece = Piece::from((colors::WHITE, piece_type));
             write!(f, "{piece}")?;
         }
 
@@ -333,7 +333,7 @@ impl<'a> fmt::Display for SAN<'a> {
                         // Accumilate all from-squares, where there exists a legal move that
                         // has our to-square as destination.
                         if mov.get_to() == to {
-                            acc |= Bitboard::from_c(mov.get_from())
+                            acc |= Bitboard::from(mov.get_from())
                         }
                         ControlFlow::Continue::<(), _>(acc)
                     })
@@ -346,13 +346,13 @@ impl<'a> fmt::Display for SAN<'a> {
                     // First, if the moving pieces can be distinguished by their originating files,
                     // the originating file letter of the moving piece is inserted immediately after
                     // the moving piece letter.
-                    if candidates & Bitboard::from_c(from_file) == from_bb {
+                    if candidates & Bitboard::from(from_file) == from_bb {
                         write!(f, "{from_file}")?;
                     }
                     // Second (when the first step fails), if the moving pieces can be distinguished
                     // by their originating ranks, the originating rank digit of the moving piece is
                     // inserted immediately after the moving piece letter.
-                    else if candidates & Bitboard::from_c(from_rank) == from_bb {
+                    else if candidates & Bitboard::from(from_rank) == from_bb {
                         write!(f, "{from_rank}")?;
                     }
                     // Third (when both the first and the second steps fail), the two character
@@ -382,7 +382,7 @@ impl<'a> fmt::Display for SAN<'a> {
             // Convert to a white piece such that we print as uppercase
             let promo = PromoPieceType::try_from(flag);
             let promo = promo.expect("We only go here if it actually is a promo");
-            let promo = Piece::from_c((colors::WHITE, promo));
+            let promo = Piece::from((colors::WHITE, promo));
             write!(f, "={promo}")?;
         }
 
@@ -445,16 +445,16 @@ impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
         match san {
             "O-O" | "0-0" => {
                 return Ok(Move::new(
-                    Square::from_c((files::E, rank0)),
-                    Square::from_c((files::G, rank0)),
-                    MoveFlag::from_c(castling_sides::KING_SIDE),
+                    Square::from((files::E, rank0)),
+                    Square::from((files::G, rank0)),
+                    MoveFlag::from(castling_sides::KING_SIDE),
                 ));
             }
             "O-O-O" | "0-0-0" => {
                 return Ok(Move::new(
-                    Square::from_c((files::E, rank0)),
-                    Square::from_c((files::C, rank0)),
-                    MoveFlag::from_c(castling_sides::QUEEN_SIDE),
+                    Square::from((files::E, rank0)),
+                    Square::from((files::C, rank0)),
+                    MoveFlag::from(castling_sides::QUEEN_SIDE),
                 ));
             }
             _ => {}
@@ -531,10 +531,10 @@ impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
         let (from_file, from_rank, to) = {
             match (file_1, rank_1, file_2, rank_2) {
                 // If the only square information contains both file and rank, it's the to-square
-                (Some(f), Some(r), None, None) => (None, None, Square::from_c((f, r))),
+                (Some(f), Some(r), None, None) => (None, None, Square::from((f, r))),
 
                 // If the second square information contains both file and rank, it's the to-square
-                (f_1, r_1, Some(f), Some(r)) => (f_1, r_1, Square::from_c((f, r))),
+                (f_1, r_1, Some(f), Some(r)) => (f_1, r_1, Square::from((f, r))),
 
                 // Otherwise, we are missing information for the to-square.
                 _ => return Err(E::MissingToSquare),
@@ -571,8 +571,8 @@ impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
             let to_matches = m.get_to() == to;
 
             let piece_matches = m_piece.piece_type() == moving_type;
-            let rank_matches = from_rank.is_none_or(|r| r == Rank::from_c(m_from));
-            let file_matches = from_file.is_none_or(|f| f == File::from_c(m_from));
+            let rank_matches = from_rank.is_none_or(|r| r == Rank::from(m_from));
+            let file_matches = from_file.is_none_or(|f| f == File::from(m_from));
             let promo_matches = promo.is_none_or(|p| Ok(p) == PromoPieceType::try_from(m_flag));
 
             if piece_matches && rank_matches && file_matches && to_matches && promo_matches {
@@ -633,9 +633,9 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                 }
             }
             piece_type::KING if abs_dist == 2 => {
-                let file = File::from_c(to);
+                let file = File::from(to);
                 let side = CastlingSide::try_from(file).map_err(Self::Error::IllegalCastling)?;
-                flag = MoveFlag::from_c(side);
+                flag = MoveFlag::from(side);
             }
             _ => {}
         };
@@ -660,7 +660,7 @@ impl From<Move> for usize {
             let min_index = Move::MASK_SQ + 1;
             let min_promo_flag = move_flags::PROMOTION_KNIGHT.v() as u16;
             let flag_off = flag.v() as u16 - min_promo_flag;
-            let file_off = File::from_c(mov.get_from()).v() as u16;
+            let file_off = File::from(mov.get_from()).v() as u16;
             min_index + flag_off + file_off
         }
         else {

@@ -5,7 +5,6 @@ use crate::{
         move_iter::rook,
         piece::{IPieceType, PieceType, piece_type},
     },
-    misc::ConstFrom,
 };
 use const_for::const_for;
 
@@ -23,23 +22,23 @@ impl IPieceType for Rook {
 impl Rook {
     #[inline]
     const fn relevant_file(file: File) -> Bitboard {
-        Bitboard::from_c(file)
-            .and_not_c(Bitboard::from_c(ranks::_1))
-            .and_not_c(Bitboard::from_c(ranks::_8))
+        Bitboard::from(file)
+            .and_not_c(Bitboard::from(ranks::_1))
+            .and_not_c(Bitboard::from(ranks::_8))
     }
 
     #[inline]
     const fn relevant_rank(rank: Rank) -> Bitboard {
-        Bitboard::from_c(rank)
-            .and_not_c(Bitboard::from_c(files::A))
-            .and_not_c(Bitboard::from_c(files::H))
+        Bitboard::from(rank)
+            .and_not_c(Bitboard::from(files::A))
+            .and_not_c(Bitboard::from(files::H))
     }
 }
 
 impl MagicGen for Rook {
     fn relevant_occupancy(sq: Square) -> Bitboard {
-        !Bitboard::from_c(sq)
-            & (Self::relevant_file(File::from_c(sq)) | Self::relevant_rank(Rank::from_c(sq)))
+        !Bitboard::from(sq)
+            & (Self::relevant_file(File::from(sq)) | Self::relevant_rank(Rank::from(sq)))
     }
 
     #[inline]
@@ -69,10 +68,10 @@ impl SlidingPieceType for Rook {}
 
 /// Computes the attacks of the rook on the square `sq`.
 pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
-    let file_bb = Bitboard::from_c(File::from_c(sq));
-    let rank_bb = Bitboard::from_c(Rank::from_c(sq));
+    let file_bb = Bitboard::from(File::from(sq));
+    let rank_bb = Bitboard::from(Rank::from(sq));
     Bitboard {
-        v: (file_bb.v | rank_bb.v) ^ Bitboard::from_c(sq).v,
+        v: (file_bb.v | rank_bb.v) ^ Bitboard::from(sq).v,
     }
 }
 
@@ -92,10 +91,10 @@ pub fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
 /// Computes the attacks of the rook on the square `sq` with the given
 /// `occupancy`.
 fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
-    let file = File::from_c(sq);
-    let rank = Rank::from_c(sq);
-    let file_bb = Bitboard::from_c(file);
-    let rank_bb = Bitboard::from_c(rank);
+    let file = File::from(sq);
+    let rank = Rank::from(sq);
+    let file_bb = Bitboard::from(file);
+    let rank_bb = Bitboard::from(rank);
     let nort_bb = Bitboard::split_north(sq);
     let sout_bb = Bitboard::split_south(sq);
     let mut result = Bitboard::empty();

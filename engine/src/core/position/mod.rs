@@ -34,7 +34,7 @@ use crate::{
         turn::Turn,
         zobrist,
     },
-    misc::{ConstFrom, ValueOutOfSetError},
+    misc::ValueOutOfSetError,
     uci::tokens::Tokenizer,
 };
 
@@ -329,7 +329,7 @@ impl PieceInfo {
     }
 
     fn remove_piece(&mut self, sq: Square) {
-        let target = Bitboard::from_c(sq);
+        let target = Bitboard::from(sq);
         let piece = self.get_piece(sq);
         debug_assert_ne!(piece, Piece::default(), "No piece at {sq}");
         *self.get_piece_bb_mut(piece.piece_type()) ^= target;
@@ -339,7 +339,7 @@ impl PieceInfo {
     }
 
     fn put_piece(&mut self, sq: Square, piece: Piece) {
-        let target = Bitboard::from_c(sq);
+        let target = Bitboard::from(sq);
         debug_assert_eq!(
             self.get_piece(sq),
             Piece::default(),
@@ -363,7 +363,7 @@ impl PieceInfo {
             self.get_piece(to)
         );
         let piece = self.get_piece(from);
-        let from_to = Bitboard::from_c(from) | Bitboard::from_c(to);
+        let from_to = Bitboard::from(from) | Bitboard::from(to);
         *self.get_color_bb_mut(piece.color()) ^= from_to;
         *self.get_piece_bb_mut(piece.piece_type()) ^= from_to;
         *self.get_piece_mut(from) = Piece::default();
@@ -420,7 +420,7 @@ impl Position {
         if let Some(sq) = self.get_ep_capture_square().v()
             && self.get_turn() == c
         {
-            Bitboard::from_c(sq)
+            Bitboard::from(sq)
         }
         else {
             Default::default()
@@ -701,7 +701,7 @@ impl Position {
         // captures
         if flag.is_capture() {
             let captured_piece = match flag {
-                move_flags::EN_PASSANT => Piece::from_c((!us, piece_type::PAWN)),
+                move_flags::EN_PASSANT => Piece::from((!us, piece_type::PAWN)),
                 _ => target_piece,
             };
 
@@ -734,17 +734,17 @@ impl Position {
             // castling
             piece_type::KING => match flag {
                 move_flags::KING_CASTLE => {
-                    let rank = Rank::from_c(to);
-                    let rook_from = Square::from_c((files::H, rank));
-                    let rook_to = Square::from_c((files::F, rank));
+                    let rank = Rank::from(to);
+                    let rook_from = Square::from((files::H, rank));
+                    let rook_to = Square::from((files::F, rank));
                     let rook = self.get_piece(rook_from);
                     self.piece_info.move_piece(rook_from, rook_to);
                     next_state.key.move_piece_sq(rook_from, rook_to, rook);
                 }
                 move_flags::QUEEN_CASTLE => {
-                    let rank = Rank::from_c(to);
-                    let rook_from = Square::from_c((files::A, rank));
-                    let rook_to = Square::from_c((files::D, rank));
+                    let rank = Rank::from(to);
+                    let rook_from = Square::from((files::A, rank));
+                    let rook_to = Square::from((files::D, rank));
                     let rook = self.get_piece(rook_from);
                     self.piece_info.move_piece(rook_from, rook_to);
                     next_state.key.move_piece_sq(rook_from, rook_to, rook);
@@ -766,7 +766,7 @@ impl Position {
                     move_flags::PROMOTION_KNIGHT_C..=move_flags::CAPTURE_PROMOTION_QUEEN_C => {
                         // Safety: We just checked, that the flag is in a valid range.
                         let promo_t = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
-                        let promo = Piece::from_c((us, promo_t));
+                        let promo = Piece::from((us, promo_t));
                         self.piece_info.remove_piece(to);
                         next_state.key.toggle_piece_sq(to, moving_piece);
                         self.piece_info.put_piece(to, promo);
@@ -819,20 +819,20 @@ impl Position {
         match flag.v() {
             // castling
             move_flags::KING_CASTLE_C => {
-                let rank = Rank::from_c(to);
-                let rook_from = Square::from_c((files::H, rank));
-                let rook_to = Square::from_c((files::F, rank));
+                let rank = Rank::from(to);
+                let rook_from = Square::from((files::H, rank));
+                let rook_to = Square::from((files::F, rank));
                 self.piece_info.move_piece(rook_to, rook_from);
             }
             move_flags::QUEEN_CASTLE_C => {
-                let rank = Rank::from_c(to);
-                let rook_from = Square::from_c((files::A, rank));
-                let rook_to = Square::from_c((files::D, rank));
+                let rank = Rank::from(to);
+                let rook_from = Square::from((files::A, rank));
+                let rook_to = Square::from((files::D, rank));
                 self.piece_info.move_piece(rook_to, rook_from);
             }
             // promotions
             move_flags::PROMOTION_KNIGHT_C..=move_flags::CAPTURE_PROMOTION_QUEEN_C => {
-                let pawn = Piece::from_c((us, piece_type::PAWN));
+                let pawn = Piece::from((us, piece_type::PAWN));
                 self.piece_info.remove_piece(to);
                 self.piece_info.put_piece(to, pawn);
             }
@@ -931,7 +931,7 @@ impl<'a> fmt::Display for PiecePlacementInfo<'a> {
             let mut nones = 0;
             for file in files::A_C..=files::H_C {
                 let file = unsafe { File::from_v(file) };
-                let square = Square::from_c((file, rank));
+                let square = Square::from((file, rank));
                 let piece = pos.get_piece(square);
 
                 if piece.piece_type() == piece_type::NONE {
@@ -1488,7 +1488,7 @@ impl From<&Position> for String {
             result.push(' ');
             for file in 0..=7 {
                 let sq =
-                    Square::from_c((File::try_from(file).unwrap(), Rank::try_from(rank).unwrap()));
+                    Square::from((File::try_from(file).unwrap(), Rank::try_from(rank).unwrap()));
                 let piece = val.get_piece(sq);
                 let c: char = piece.into();
                 result.push(c);

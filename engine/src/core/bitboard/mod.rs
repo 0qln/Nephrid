@@ -3,7 +3,6 @@ use crate::{
         coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks, squares},
         move_iter::{bishop, rook},
     },
-    misc::ConstFrom,
 };
 use std::{
     fmt::Debug,
@@ -63,7 +62,7 @@ impl Debug for Bitboard {
                     for file in 0..8 {
                         let file = File::try_from(file as u8).unwrap();
                         let rank = Rank::try_from(rank as u8).unwrap();
-                        let sq = Square::from_c((file, rank));
+                        let sq = Square::from((file, rank));
                         let bit = if self.is_bit_set(sq) { "x " } else { ". " };
                         f.write_str(bit)?;
                     }
@@ -154,12 +153,12 @@ impl Bitboard {
 
     #[inline]
     pub const fn get_bit(&self, sq: Square) -> u64 {
-        (self.v & Self::from_c(sq).v) >> sq.v() as u32
+        (self.v & Self::from(sq).v) >> sq.v() as u32
     }
 
     #[inline]
     pub const fn is_bit_set(&self, sq: Square) -> bool {
-        self.v & Self::from_c(sq).v != 0
+        self.v & Self::from(sq).v != 0
     }
 
     #[inline]
@@ -203,16 +202,16 @@ impl Bitboard {
                     let sq2 = unsafe { Square::from_v(sq2) };
 
                     if let Some((sq1_bb, sq2_bb)) = {
-                        if  Rank::from_c(sq1).v() == Rank::from_c(sq2).v() ||
-                            File::from_c(sq1).v() == File::from_c(sq2).v() {
+                        if  Rank::from(sq1).v() == Rank::from(sq2).v() ||
+                            File::from(sq1).v() == File::from(sq2).v() {
                             Some((
                                 rook::compute_attacks_0_occ(sq1),
                                 rook::compute_attacks_0_occ(sq2)
                             ))
                         }
                         else if
-                            DiagA1H8::from_c(sq1).v() == DiagA1H8::from_c(sq2).v() ||
-                            DiagA8H1::from_c(sq1).v() == DiagA8H1::from_c(sq2).v() {
+                            DiagA1H8::from(sq1).v() == DiagA1H8::from(sq2).v() ||
+                            DiagA8H1::from(sq1).v() == DiagA8H1::from(sq2).v() {
                             Some((
                                 bishop::compute_attacks_0_occ(sq1),
                                 bishop::compute_attacks_0_occ(sq2)
@@ -224,8 +223,8 @@ impl Bitboard {
                     } {
                         rays[sq1.v() as usize][sq2.v() as usize] = Bitboard {
                             v: (
-                                Bitboard::from_c(sq1).v |
-                                Bitboard::from_c(sq2).v |
+                                Bitboard::from(sq1).v |
+                                Bitboard::from(sq2).v |
                                 (sq1_bb.v & sq2_bb.v)
                             )
                         };
@@ -310,83 +309,83 @@ impl Bitboard {
         for sq in squares::A1_C..squares::H8_C {
             let sq = unsafe { Square::from_v(sq) };
             let bit = self.get_bit(if upside_down { sq.flip_v() } else { sq });
-            let rank = Rank::from_c(sq).v() as usize;
-            let file = File::from_c(sq).v() as usize;
+            let rank = Rank::from(sq).v() as usize;
+            let file = File::from(sq).v() as usize;
             data[file][rank] = bit as f32;
         }
         data
     }
 }
 
-impl const ConstFrom<Square> for Bitboard {
+impl const From<Square> for Bitboard {
     #[inline]
-    fn from_c(sq: Square) -> Self {
+    fn from(sq: Square) -> Self {
         Self { v: 1u64 << sq.v() }
     }
 }
 
-impl const ConstFrom<Option<Square>> for Bitboard {
+impl const From<Option<Square>> for Bitboard {
     #[inline]
-    fn from_c(sq: Option<Square>) -> Self {
+    fn from(sq: Option<Square>) -> Self {
         match sq {
-            Some(sq) => Self::from_c(sq),
+            Some(sq) => Self::from(sq),
             None => Self::empty(),
         }
     }
 }
 
-impl const ConstFrom<File> for Bitboard {
+impl const From<File> for Bitboard {
     #[inline]
-    fn from_c(file: File) -> Self {
+    fn from(file: File) -> Self {
         Self {
             v: 0x0101010101010101u64 << file.v(),
         }
     }
 }
 
-impl const ConstFrom<Rank> for Bitboard {
+impl const From<Rank> for Bitboard {
     #[inline]
-    fn from_c(rank: Rank) -> Self {
+    fn from(rank: Rank) -> Self {
         Self { v: 0xFFu64 << (rank.v() * 8) }
     }
 }
 
-impl const ConstFrom<CompassRose> for Bitboard {
+impl const From<CompassRose> for Bitboard {
     #[inline]
-    fn from_c(dir: CompassRose) -> Self {
+    fn from(dir: CompassRose) -> Self {
         match dir {
-            NORT => Self::full().and_not_c(Self::from_c(ranks::_1)),
-            EAST => Self::full().and_not_c(Self::from_c(files::A)),
-            SOUT => Self::full().and_not_c(Self::from_c(ranks::_8)),
-            WEST => Self::full().and_not_c(Self::from_c(files::H)),
+            NORT => Self::full().and_not_c(Self::from(ranks::_1)),
+            EAST => Self::full().and_not_c(Self::from(files::A)),
+            SOUT => Self::full().and_not_c(Self::from(ranks::_8)),
+            WEST => Self::full().and_not_c(Self::from(files::H)),
 
-            NONO => Self::from_c(NORT).and_not_c(Self::from_c(ranks::_2)),
-            EAEA => Self::from_c(EAST).and_not_c(Self::from_c(files::B)),
-            SOSO => Self::from_c(SOUT).and_not_c(Self::from_c(ranks::_7)),
-            WEWE => Self::from_c(WEST).and_not_c(Self::from_c(files::G)),
+            NONO => Self::from(NORT).and_not_c(Self::from(ranks::_2)),
+            EAEA => Self::from(EAST).and_not_c(Self::from(files::B)),
+            SOSO => Self::from(SOUT).and_not_c(Self::from(ranks::_7)),
+            WEWE => Self::from(WEST).and_not_c(Self::from(files::G)),
 
-            SOWE => Self::from_c(SOUT).and_c(Self::from_c(WEST)),
-            NOWE => Self::from_c(NORT).and_c(Self::from_c(WEST)),
-            SOEA => Self::from_c(SOUT).and_c(Self::from_c(EAST)),
-            NOEA => Self::from_c(NORT).and_c(Self::from_c(EAST)),
+            SOWE => Self::from(SOUT).and_c(Self::from(WEST)),
+            NOWE => Self::from(NORT).and_c(Self::from(WEST)),
+            SOEA => Self::from(SOUT).and_c(Self::from(EAST)),
+            NOEA => Self::from(NORT).and_c(Self::from(EAST)),
 
-            NONOWE => Self::from_c(NONO).and_c(Self::from_c(WEST)),
-            NONOEA => Self::from_c(NONO).and_c(Self::from_c(EAST)),
-            NOWEWE => Self::from_c(NORT).and_c(Self::from_c(WEWE)),
-            NOEAEA => Self::from_c(NORT).and_c(Self::from_c(EAEA)),
-            SOSOWE => Self::from_c(SOSO).and_c(Self::from_c(WEST)),
-            SOSOEA => Self::from_c(SOSO).and_c(Self::from_c(EAST)),
-            SOWEWE => Self::from_c(SOUT).and_c(Self::from_c(WEWE)),
-            SOEAEA => Self::from_c(SOUT).and_c(Self::from_c(EAEA)),
+            NONOWE => Self::from(NONO).and_c(Self::from(WEST)),
+            NONOEA => Self::from(NONO).and_c(Self::from(EAST)),
+            NOWEWE => Self::from(NORT).and_c(Self::from(WEWE)),
+            NOEAEA => Self::from(NORT).and_c(Self::from(EAEA)),
+            SOSOWE => Self::from(SOSO).and_c(Self::from(WEST)),
+            SOSOEA => Self::from(SOSO).and_c(Self::from(EAST)),
+            SOWEWE => Self::from(SOUT).and_c(Self::from(WEWE)),
+            SOEAEA => Self::from(SOUT).and_c(Self::from(EAEA)),
 
             _ => panic!("Invalid compass rose"),
         }
     }
 }
 
-impl const ConstFrom<DiagA1H8> for Bitboard {
+impl const From<DiagA1H8> for Bitboard {
     #[inline]
-    fn from_c(diag: DiagA1H8) -> Self {
+    fn from(diag: DiagA1H8) -> Self {
         const A1H8: [u64; 15] = [
             0x0100000000000000u64,
             0x0201000000000000u64,
@@ -408,9 +407,9 @@ impl const ConstFrom<DiagA1H8> for Bitboard {
     }
 }
 
-impl const ConstFrom<DiagA8H1> for Bitboard {
+impl const From<DiagA8H1> for Bitboard {
     #[inline]
-    fn from_c(diag: DiagA8H1) -> Self {
+    fn from(diag: DiagA8H1) -> Self {
         const A8H1: [u64; 15] = [
             0x0000000000000001u64,
             0x0000000000000102u64,

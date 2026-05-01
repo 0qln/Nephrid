@@ -9,7 +9,6 @@ use crate::{
         piece::{IPieceType, PieceType, piece_type},
         position::Position,
     },
-    misc::ConstFrom,
 };
 
 use const_for::const_for;
@@ -108,7 +107,7 @@ where
     let color = pos.get_turn();
     let color_v = color.v() as usize;
     let rank = color * ranks::_8;
-    let from = Square::from_c((files::E, rank));
+    let from = Square::from((files::E, rank));
     let castling = pos.get_castling();
     let nstm_attacks = pos.get_nstm_attacks();
 
@@ -158,34 +157,34 @@ pub fn lookup_attacks(sq: Square) -> Bitboard {
 }
 
 pub const fn compute_attacks(sq: Square) -> Bitboard {
-    let file = File::from_c(sq);
-    let rank = Rank::from_c(sq);
-    let king = Bitboard::from_c(sq);
+    let file = File::from(sq);
+    let rank = Rank::from(sq);
+    let king = Bitboard::from(sq);
 
-    let mut files = Bitboard::from_c(file);
+    let mut files = Bitboard::from(file);
     if file.v() > files::A_C {
         // Safety: file is in range 1.., so file - 1 is still a valid file.
         let west = unsafe { File::from_v(file.v() - 1) };
-        files.v |= Bitboard::from_c(west).v;
+        files.v |= Bitboard::from(west).v;
     }
 
     if file.v() < files::H_C {
         // Safety: file is in range 0..7, so file + 1 is still a valid file.
         let east = unsafe { File::from_v(file.v() + 1) };
-        files.v |= Bitboard::from_c(east).v;
+        files.v |= Bitboard::from(east).v;
     }
 
-    let mut ranks = Bitboard::from_c(rank);
+    let mut ranks = Bitboard::from(rank);
     if rank.v() > ranks::_1_C {
         // Safety: rank is in range 1.., so rank - 1 is still a valid rank.
         let south = unsafe { Rank::from_v(rank.v() - 1) };
-        ranks.v |= Bitboard::from_c(south).v;
+        ranks.v |= Bitboard::from(south).v;
     }
 
     if rank.v() < ranks::_8_C {
         // Safety: rank is in range 0..7, so rank + 1 is still a valid rank.
         let north = unsafe { Rank::from_v(rank.v() + 1) };
-        ranks.v |= Bitboard::from_c(north).v;
+        ranks.v |= Bitboard::from(north).v;
     }
 
     files.and_c(ranks).and_not_c(king)

@@ -1,10 +1,8 @@
-use std::sync::Once;
-use std::{fmt, mem, ops};
+use std::{fmt, mem, ops, sync::Once};
 
 use rand::{RngCore, SeedableRng, rngs::SmallRng};
 
-use crate::core::color::colors;
-use crate::misc::ConstFrom;
+use crate::{core::color::colors};
 
 use super::{
     bitboard::Bitboard,
@@ -68,7 +66,7 @@ impl Hash {
     #[inline]
     pub fn toggle_ep_square(&mut self, ep_sq: EpCaptureSquare) -> Self {
         if let Some(sq) = ep_sq.v() {
-            self.v ^= hasher().en_passant[File::from_c(sq).v() as usize];
+            self.v ^= hasher().en_passant[File::from(sq).v() as usize];
         }
         *self
     }

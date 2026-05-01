@@ -9,7 +9,6 @@ use crate::{
         piece::piece_type,
         position::Position,
     },
-    misc::ConstFrom,
 };
 
 use const_for::const_for;
@@ -59,7 +58,7 @@ pub fn lookup_attacks(sq: Square) -> Bitboard {
 
 #[inline]
 pub const fn compute_attacks(sq: Square) -> Bitboard {
-    let knight = Bitboard::from_c(sq);
+    let knight = Bitboard::from(sq);
     compute_attacks_multiple(knight)
 }
 
@@ -78,6 +77,6 @@ const fn compute_attacks_multiple(knights: Bitboard) -> Bitboard {
 
 #[inline]
 const fn compute_atttack<const DIR: TCompassRose>(knight: Bitboard, attacks: &mut Bitboard) {
-    let attack_sqrs = Bitboard::from_c(CompassRose::new(-DIR));
+    let attack_sqrs = Bitboard::from(CompassRose::new(-DIR));
     attacks.v |= knight.and_c(attack_sqrs).shift(CompassRose::new(DIR)).v;
 }

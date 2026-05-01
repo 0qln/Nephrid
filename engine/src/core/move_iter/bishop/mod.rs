@@ -5,7 +5,6 @@ use crate::{
         move_iter::bishop,
         piece::{IPieceType, PieceType, piece_type},
     },
-    misc::ConstFrom,
 };
 use const_for::const_for;
 
@@ -56,10 +55,10 @@ impl SlidingPieceType for Bishop {}
 
 /// Computes the attacks of the bishop on the square `sq`.
 pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
-    let a1h8 = Bitboard::from_c(DiagA1H8::from_c(sq));
-    let a8h1 = Bitboard::from_c(DiagA8H1::from_c(sq));
+    let a1h8 = Bitboard::from(DiagA1H8::from(sq));
+    let a8h1 = Bitboard::from(DiagA8H1::from(sq));
     Bitboard {
-        v: (a1h8.v | a8h1.v) ^ Bitboard::from_c(sq).v,
+        v: (a1h8.v | a8h1.v) ^ Bitboard::from(sq).v,
     }
 }
 
@@ -79,8 +78,8 @@ pub fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
 /// Computes the attacks of the bishop on the square `sq` with the given
 /// `occupancy`.
 fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
-    let a1h8 = Bitboard::from_c(DiagA1H8::from_c(sq));
-    let a8h1 = Bitboard::from_c(DiagA8H1::from_c(sq));
+    let a1h8 = Bitboard::from(DiagA1H8::from(sq));
+    let a8h1 = Bitboard::from(DiagA8H1::from(sq));
     let nort = Bitboard::split_north(sq);
     let sout = Bitboard::split_south(sq);
 

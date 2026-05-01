@@ -11,10 +11,6 @@ use std::{
 
 use thiserror::Error;
 
-pub const trait ConstFrom<T> {
-    fn from_c(value: T) -> Self;
-}
-
 #[derive(Debug)]
 pub struct Bounds<T, D>(Bound<T>, Bound<T>, PhantomData<D>);
 

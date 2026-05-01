@@ -1,6 +1,6 @@
 use crate::{
     impl_variants,
-    misc::{ConstFrom, ValueOutOfRangeError, ValueOutOfSetError},
+    misc::{ValueOutOfRangeError, ValueOutOfSetError},
     uci::tokens::Tokenizer,
 };
 use core::{fmt, panic};
@@ -117,13 +117,13 @@ impl Square {
 
 impl fmt::Display for Square {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", File::from_c(*self), Rank::from_c(*self))
+        write!(f, "{}{}", File::from(*self), Rank::from(*self))
     }
 }
 
 impl fmt::Debug for Square {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}{:?}", File::from_c(*self), Rank::from_c(*self))
+        write!(f, "{:?}{:?}", File::from(*self), Rank::from(*self))
     }
 }
 
@@ -143,9 +143,9 @@ impl TryFrom<TSquare> for Square {
     }
 }
 
-impl const ConstFrom<(File, Rank)> for Square {
+impl const From<(File, Rank)> for Square {
     #[inline]
-    fn from_c(value: (File, Rank)) -> Self {
+    fn from(value: (File, Rank)) -> Self {
         Square { v: value.0.v + value.1.v * 8u8 }
     }
 }
@@ -175,7 +175,7 @@ impl TryFrom<&mut Tokenizer<'_>> for Square {
             Some(c) => Rank::try_from(c).map_err(Self::Error::InvalidRank)?,
             None => return Err(Self::Error::MissingRank),
         };
-        Ok(Square::from_c((file, rank)))
+        Ok(Square::from((file, rank)))
     }
 }
 
@@ -214,7 +214,7 @@ impl TryFrom<Square> for EpTargetSquare {
     #[inline]
     fn try_from(sq: Square) -> Result<Self, Self::Error> {
         use ranks::*;
-        let rank = Rank::from_c(sq);
+        let rank = Rank::from(sq);
         match rank {
             _3 | _6 => Ok(Self { v: Some(sq) }),
             x => Err(Self::Error::new(x, &[_3, _6])),
@@ -297,7 +297,7 @@ impl TryFrom<Square> for EpCaptureSquare {
     #[inline]
     fn try_from(sq: Square) -> Result<Self, Self::Error> {
         use ranks::*;
-        let rank = Rank::from_c(sq);
+        let rank = Rank::from(sq);
         match rank {
             _4 | _5 => Ok(Self { v: Some(sq) }),
             x => Err(Self::Error::new(x, &[_4, _5])),
@@ -310,14 +310,14 @@ impl From<EpTargetSquare> for EpCaptureSquare {
     fn from(sq: EpTargetSquare) -> Self {
         Self {
             v: sq.v.map(|sq| {
-                let rank = match Rank::from_c(sq) {
+                let rank = match Rank::from(sq) {
                     ranks::_3 => ranks::_4,
                     ranks::_6 => ranks::_5,
                     // SAFETY: Input is a valid EpTargetSquare.
                     _ => unsafe { unreachable_unchecked() },
                 };
-                let file = File::from_c(sq);
-                Square::from_c((file, rank))
+                let file = File::from(sq);
+                Square::from((file, rank))
             }),
         }
     }
@@ -369,9 +369,9 @@ impl fmt::Debug for Rank {
     }
 }
 
-impl const ConstFrom<Square> for Rank {
+impl const From<Square> for Rank {
     #[inline]
-    fn from_c(sq: Square) -> Self {
+    fn from(sq: Square) -> Self {
         Rank { v: sq.v / 8 }
     }
 }
@@ -449,9 +449,9 @@ impl fmt::Debug for File {
     }
 }
 
-impl const ConstFrom<Square> for File {
+impl const From<Square> for File {
     #[inline]
-    fn from_c(sq: Square) -> Self {
+    fn from(sq: Square) -> Self {
         File { v: sq.v % 8 }
     }
 }
@@ -517,11 +517,11 @@ impl DiagA1H8 {
     }
 }
 
-impl const ConstFrom<Square> for DiagA1H8 {
+impl const From<Square> for DiagA1H8 {
     #[inline]
-    fn from_c(sq: Square) -> Self {
+    fn from(sq: Square) -> Self {
         DiagA1H8 {
-            v: 7 - Rank::from_c(sq).v + File::from_c(sq).v,
+            v: 7 - Rank::from(sq).v + File::from(sq).v,
         }
     }
 }
@@ -537,11 +537,11 @@ impl DiagA8H1 {
     }
 }
 
-impl const ConstFrom<Square> for DiagA8H1 {
+impl const From<Square> for DiagA8H1 {
     #[inline]
-    fn from_c(sq: Square) -> Self {
+    fn from(sq: Square) -> Self {
         DiagA8H1 {
-            v: Rank::from_c(sq).v + File::from_c(sq).v,
+            v: Rank::from(sq).v + File::from(sq).v,
         }
     }
 }

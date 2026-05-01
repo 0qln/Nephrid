@@ -7,7 +7,7 @@ use pawn::Pawn;
 use queen::Queen;
 use rook::Rook;
 
-use crate::{core::r#move::move_flags, misc::ConstFrom};
+use crate::{core::r#move::move_flags};
 
 use super::{
     bitboard::Bitboard,
@@ -182,7 +182,7 @@ where
 
 #[inline]
 pub fn is_blocker(pos: &Position, piece: Square) -> bool {
-    let piece_bb = Bitboard::from_c(piece);
+    let piece_bb = Bitboard::from(piece);
     let blockers = pos.get_blockers();
     !(blockers & piece_bb).is_empty()
 }

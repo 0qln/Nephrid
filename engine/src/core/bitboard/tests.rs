@@ -5,7 +5,7 @@ fn msb() {
     assert_eq!(Bitboard::empty().msb(), None);
     for lo in Bitboard::full() {
         for hi in Bitboard::split_north(lo) {
-            let bb = Bitboard::from_c(lo) | Bitboard::from_c(hi);
+            let bb = Bitboard::from(lo) | Bitboard::from(hi);
             assert_eq!(bb.msb(), Some(hi));
         }
     }
@@ -16,7 +16,7 @@ fn lsb() {
     assert_eq!(Bitboard::empty().lsb(), None);
     for lo in Bitboard::full() {
         for hi in Bitboard::split_north(lo) {
-            let bb = Bitboard::from_c(lo) | Bitboard::from_c(hi);
+            let bb = Bitboard::from(lo) | Bitboard::from(hi);
             assert_eq!(bb.lsb(), Some(lo));
         }
     }
