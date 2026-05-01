@@ -8,6 +8,8 @@
 
 ### Phases
 
+- [ ] regression checks. (e.g. test that the model is not *much* worse on phase1 data after being trained on phase2 and 3)
+
 - larger batchsizes in earlier phases to encourage discovery of more basic rules
 
 #### Phase 0 (MateIn1s)
