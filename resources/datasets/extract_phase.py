@@ -25,7 +25,9 @@ def parse_arguments():
         '--themes',
         type=str,
         required=True,
-        help="Comma-separated list of target themes (e.g., 'mateIn1' or 'mateIn1,master')."
+        help=("Theme filter. Use '|' for logical OR (any of the themes), "
+              "e.g., 'endgame|short'. Use '&' for logical AND (all themes), "
+              "e.g., 'endgame&short'. Do not mix '|' and '&' in one string.")
     )
     parser.add_argument(
         '--input',
@@ -47,6 +49,39 @@ def parse_arguments():
     )
     return parser.parse_args()
 
+def parse_theme_expression(expr: str):
+    """
+    Parse a theme expression like 'endgame|short' (OR) or 'endgame&short' (AND).
+    Returns (operator, list_of_themes).
+    operator is either 'or' or 'and'.
+    Raises ValueError if both '|' and '&' appear.
+    """
+    expr = expr.strip()
+    if not expr:
+        raise ValueError("Empty theme expression")
+
+    has_pipe = '|' in expr
+    has_amp = '&' in expr
+
+    if has_pipe and has_amp:
+        raise ValueError("Cannot mix '|' and '&' in the same theme expression. Use only one operator.")
+
+    if has_pipe:
+        operator = 'or'
+        themes = [t.strip() for t in expr.split('|') if t.strip()]
+    elif has_amp:
+        operator = 'and'
+        themes = [t.strip() for t in expr.split('&') if t.strip()]
+    else:
+        # Single theme – treat as OR (any)
+        operator = 'or'
+        themes = [expr]
+
+    if not themes:
+        raise ValueError("No valid theme names found after splitting.")
+
+    return operator, themes
+
 def main():
     args = parse_arguments()
 
@@ -61,15 +96,19 @@ def main():
     # Ensure output directory exists
     os.makedirs(path.dirname(output_file), exist_ok=True)
 
-    # Parse target themes into a set
-    target_themes = set(theme.strip() for theme in themes_raw.split(',') if theme.strip())
+    # Parse the theme expression
+    try:
+        operator, theme_list = parse_theme_expression(themes_raw)
+    except ValueError as e:
+        print(f"Error parsing --themes: {e}")
+        sys.exit(1)
 
     if args.seed is not None:
         random.seed(args.seed)
 
     print(f"Starting extraction from '{input_file}'...")
     print(f"Phase: {phase}")
-    print(f"Target themes: {target_themes}")
+    print(f"Theme expression: '{themes_raw}' -> operator='{operator}', themes={theme_list}")
     print(f"Output: {output_file}")
 
     total_processed = 0
@@ -91,11 +130,18 @@ def main():
 
                 fen = row[1]
                 moves_str = row[2]
-                themes = set(row[7].split(' '))
+                puzzle_themes = set(row[7].split(' '))
 
-                if target_themes.intersection(themes):
-                    first_move = moves_str.split(' ')[0]
-                    collected_lines.append(f"{fen} sm {first_move};")
+                if operator == 'or':
+                    # Any of the listed themes suffices
+                    if any(t in puzzle_themes for t in theme_list):
+                        first_move = moves_str.split(' ')[0]
+                        collected_lines.append(f"{fen} sm {first_move};")
+                else:  # operator == 'and'
+                    # All listed themes must be present
+                    if all(t in puzzle_themes for t in theme_list):
+                        first_move = moves_str.split(' ')[0]
+                        collected_lines.append(f"{fen} sm {first_move};")
 
                 if total_processed % 500_000 == 0:
                     print(f"Processed {total_processed:,} puzzles... (Collected {len(collected_lines):,} matches)")
