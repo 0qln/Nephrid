@@ -46,5 +46,5 @@
   "batch_size": 256,
   "mini_batch_size": 512,
   "seed": 3735928559,
-  "learning_rate": 0.0003
+  "learning_rate": 0.0001
 }
