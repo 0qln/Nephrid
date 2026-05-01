@@ -254,3 +254,155 @@ fn twofold_heuristic_applies_only_beyond_root() {
         "2-fold repetition should be scored as draw only for search_depth > ROOT"
     );
 }
+
+/// Helper to parse an EPD line and return (Position, Vec<EpdOp>)
+fn parse_epd_line(line: &str) -> Result<(Position, Vec<EpdOp>), EpdLineParseError> {
+    let mut tok = Tokenizer::new(line);
+    EpdLineImport(&mut tok).try_into()
+}
+
+#[test]
+fn epd_import_fen_only() {
+    zobrist::init();
+    magics::init();
+
+    let fen_only = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+    let (pos, ops) = parse_epd_line(fen_only).expect("Should parse FEN-only EPD line");
+    assert_eq!(ops.len(), 0);
+    assert_eq!(format!("{}", FenExport(&pos)), fen_only);
+}
+
+#[test]
+fn epd_import_single_op() {
+    zobrist::init();
+    magics::init();
+
+    let line = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - bm e2e4;";
+    let (pos, ops) = parse_epd_line(line).expect("Should parse EPD with one operation");
+    assert_eq!(ops.len(), 1);
+    assert_eq!(ops[0].0, "bm");
+    assert_eq!(ops[0].1, "e2e4");
+    // Verify FEN part is still correct
+    assert_eq!(pos.get_turn(), colors::WHITE);
+}
+
+#[test]
+fn epd_import_multiple_ops() {
+    zobrist::init();
+    magics::init();
+
+    let line = "r1bqk2r/p1pp1ppp/2p2n2/8/1b2P3/2N5/PPP2PPP/R1BQKB1R w KQkq - bm Bd3; id \"Crafty \
+                Test Pos.28\"; c0 \"DB/GK Philadelphia 1996, Game 5, move 7W (Bd3)\";";
+    let (pos, ops) = parse_epd_line(line).expect("Should parse EPD with multiple operations");
+    assert_eq!(ops.len(), 3);
+    assert_eq!(ops[0].0, "bm");
+    assert_eq!(ops[0].1, "Bd3");
+    assert_eq!(ops[1].0, "id");
+    assert_eq!(ops[1].1, "Crafty Test Pos.28");
+    assert_eq!(ops[2].0, "c0");
+    assert_eq!(ops[2].1, "DB/GK Philadelphia 1996, Game 5, move 7W (Bd3)");
+    // Quick sanity on the position
+    assert_eq!(pos.get_turn(), colors::WHITE);
+    assert!(
+        pos.get_piece(crate::core::coordinates::squares::E4)
+            .piece_type()
+            == piece_type::PAWN
+    );
+}
+
+#[test]
+fn epd_import_argument_with_spaces() {
+    zobrist::init();
+    magics::init();
+
+    let line = "8/3r4/pr1Pk1p1/8/7P/6P1/3R3K/5R2 w - - bm Re2+; id \"arasan21.16\"; c0 \"Aldiga \
+                (Brainfish 091016)-Knight-king (Komodo 10 64-bit), playchess.com 2016\";";
+    let (_pos, ops) =
+        parse_epd_line(line).expect("Should parse EPD with argument containing spaces");
+    assert_eq!(ops.len(), 3);
+    assert_eq!(ops[0].0, "bm");
+    assert_eq!(ops[0].1, "Re2+");
+    assert_eq!(ops[1].0, "id");
+    assert_eq!(ops[1].1, "arasan21.16");
+    assert_eq!(ops[2].0, "c0");
+    assert!(ops[2].1.contains("Brainfish"));
+}
+
+#[test]
+fn epd_import_no_whitespace_between_ops() {
+    zobrist::init();
+    magics::init();
+
+    // Operations can be adjacent without spaces (though usually there are spaces)
+    let line = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - bm e2e4;id test;";
+    let (_pos, ops) = parse_epd_line(line).expect("Should parse EPD with adjacent ops");
+    assert_eq!(ops.len(), 2);
+    assert_eq!(ops[0].0, "bm");
+    assert_eq!(ops[0].1, "e2e4");
+    assert_eq!(ops[1].0, "id");
+    assert_eq!(ops[1].1, "test");
+}
+
+#[test]
+fn epd_import_missing_semicolon() {
+    let line = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - bm e2e4";
+    let result = parse_epd_line(line);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        EpdLineParseError::EpdOperationsError(EpdOpParseError::MissingArgumentOrSemicolon) => (),
+        e => panic!("Expected MissingArgumentOrSemicolon, got {e}"),
+    }
+}
+
+#[test]
+fn epd_import_missing_opcode() {
+    let line = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -  e2e4;";
+    let result = parse_epd_line(line);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        EpdLineParseError::EpdOperationsError(_) => (),
+        e => panic!("Expected MissingCode, got {e}"),
+    }
+}
+
+#[test]
+fn epd_import_invalid_fen() {
+    let line = "invalid fen part - bm e2e4;";
+    let result = parse_epd_line(line);
+    assert!(result.is_err());
+    match result.unwrap_err() {
+        EpdLineParseError::FenError(_) => (),
+        e => panic!("Expected FenError, got {e}"),
+    }
+}
+
+#[test]
+fn epd_import_real_world_example() {
+    zobrist::init();
+    magics::init();
+
+    // Example from Crafty test suite
+    let line = "3r1rk1/1p3pnp/p3pBp1/1qPpP3/1P1P2R1/P2Q3R/6PP/6K1 w - - bm Rxh7; c0 \"Mate in 7 \
+                moves\"; id \"BT2630-14\";";
+    let (pos, ops) = parse_epd_line(line).expect("Should parse real-world EPD");
+    assert_eq!(ops.len(), 3);
+    assert_eq!(ops[0].0, "bm");
+    assert_eq!(ops[0].1, "Rxh7");
+    assert_eq!(ops[1].0, "c0");
+    assert_eq!(ops[1].1, "Mate in 7 moves");
+    assert_eq!(ops[2].0, "id");
+    assert_eq!(ops[2].1, "BT2630-14");
+
+    // Verify a few details of the position
+    assert_eq!(pos.get_turn(), colors::WHITE);
+    assert_eq!(
+        pos.get_piece(crate::core::coordinates::squares::H3)
+            .piece_type(),
+        piece_type::ROOK
+    );
+    assert_eq!(
+        pos.get_piece(crate::core::coordinates::squares::F6)
+            .piece_type(),
+        piece_type::BISHOP
+    );
+}

@@ -17,7 +17,7 @@ use burn::{
 use engine::{
     core::{
         r#move::Move,
-        position::{FenExport, FenImport, Position},
+        position::{EpdLineImport, EpdOp, FenExport},
         search::mcts::nn::{BoardInputFloats, StateInputFloats},
     },
     misc::{CheckHealth, CheckHealthResult},
@@ -131,18 +131,19 @@ impl FenDataset {
             .lines()
             .filter_map(|l| {
                 let mut tok = Tokenizer::new(l);
-                let mut pos = Position::try_from(FenImport(&mut tok))
+                let (mut pos, ops) = EpdLineImport(&mut tok)
+                    .try_into()
                     .map_err(|err| {
-                        log::error!(target: "data", "Error while parsing FEN from EPD line {l}: {err}");
+                        log::error!(target: "data", "Error while parsing EPD line {l}: {err}");
                         err
                     })
                     .ok()?;
 
                 // if its a epd it could have some op codes with moves that lead to the actual
                 // position.
-                if let Some("fm" | "sm") = tok.next_token() {
-                    let tok = tok.next_token().unwrap();
-                    let mov = Move::from_lan(tok, &pos)
+                if let Some(op) = ops.iter().find(|op| matches!(op.0.as_ref(), "fm" | "sm")) {
+                    let EpdOp(_, mov) = op;
+                    let mov = Move::from_lan(mov, &pos)
                         .map_err(|err| {
                             log::error!(target: "data", "Error while parsing LAN from EPD line {l}: {err}");
                             err

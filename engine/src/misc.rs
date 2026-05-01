@@ -91,7 +91,7 @@ impl<T: Debug + 'static> ValueOutOfSetError<T> {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 #[error("The specified value {value} was not a valid value.")]
 pub struct InvalidValueError<T: Debug> {
     pub value: T,

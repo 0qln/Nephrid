@@ -162,11 +162,14 @@ impl TryFrom<char> for PromoPieceType {
     fn try_from(value: char) -> Result<Self, Self::Error> {
         use promo_piece_type::*;
         match value {
-            'n' => Ok(KNIGHT),
-            'b' => Ok(BISHOP),
-            'r' => Ok(ROOK),
-            'q' => Ok(QUEEN),
-            x => Err(Self::Error::new(x, &['n', 'b', 'r', 'q'])),
+            'n' | 'N' => Ok(KNIGHT),
+            'b' | 'B' => Ok(BISHOP),
+            'r' | 'R' => Ok(ROOK),
+            'q' | 'Q' => Ok(QUEEN),
+            x => Err(Self::Error::new(
+                x,
+                &['n', 'b', 'r', 'q', 'N', 'B', 'R', 'Q'],
+            )),
         }
     }
 }

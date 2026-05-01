@@ -58,7 +58,7 @@ impl TryFrom<&mut Tokenizer<'_>> for CastlingRights {
 
     fn try_from(value: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
         let mut result = CastlingRights::empty();
-        for c in value.skip_ws().chars() {
+        for c in value.chars() {
             match c {
                 'K' => result.set_true(KING_SIDE, WHITE),
                 'Q' => result.set_true(QUEEN_SIDE, WHITE),

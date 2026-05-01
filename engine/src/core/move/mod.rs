@@ -14,17 +14,18 @@ use crate::{
         castling::{CastlingSideParseError, castling_sides},
         color::colors,
         coordinates::{
-            EpCaptureSquare, EpTargetSquare, File, Rank, Square, SquareTokenizationError,
+            EpCaptureSquare, EpTargetSquare, File, Rank, Square, SquareTokenizationError, files,
+            ranks,
         },
         move_iter::{
             bishop::Bishop,
-            fold_legal_moves,
+            fold_legal_moves, fold_legals,
             king::{self},
             knight,
             rook::Rook,
             sliding_piece::SlidingAttacks,
         },
-        piece::{Piece, PromoPieceTokenizationError, piece_type},
+        piece::{Piece, PieceType, PromoPieceTokenizationError, piece_type},
         position::{CheckState, Position},
     },
     impl_variants_with_assertion,
@@ -61,30 +62,6 @@ pub struct StandardAlgebraicNotationParser<'a, 'b> {
 impl<'a, 'b> StandardAlgebraicNotationParser<'a, 'b> {
     pub const fn new(san: &'a str, context: &'b Position) -> Self {
         Self { san, context }
-    }
-}
-
-impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
-    type Error = MoveParseError;
-
-    fn try_from(parser: StandardAlgebraicNotationParser<'a, 'b>) -> Result<Self, Self::Error> {
-        let context = parser.context;
-        let target_san = parser.san.trim();
-
-        // kind of hacky but idc if this part slow so dklfjdlkfj
-        let matched_move = fold_legal_moves(context, Option::<Move>::None, |_, mov| {
-            if (SAN { context, mov }).to_string() == target_san {
-                ControlFlow::Break(Some(mov))
-            }
-            else {
-                ControlFlow::Continue(None)
-            }
-        });
-
-        match matched_move {
-            ControlFlow::Break(Some(m)) => Ok(m),
-            _ => Err(MoveParseError::InvalidSan(target_san.to_string())),
-        }
     }
 }
 
@@ -257,7 +234,7 @@ impl Move {
 
     /// Convenience wrapper.
     #[inline]
-    pub fn from_lan(lan: &str, context: &Position) -> Result<Move, MoveParseError> {
+    pub fn from_lan(lan: &str, context: &Position) -> Result<Move, LanParseError> {
         let tok = &mut Tokenizer::new(lan);
         let mov = LongAlgebraicUciNotation::new(tok, context);
         Move::try_from(mov)
@@ -265,7 +242,7 @@ impl Move {
 
     /// Convenience wrapper.
     #[inline]
-    pub fn from_san(san: &str, context: &Position) -> Result<Move, MoveParseError> {
+    pub fn from_san(san: &str, context: &Position) -> Result<Move, SanParseError> {
         let mov = StandardAlgebraicNotationParser::new(san, context);
         Move::try_from(mov)
     }
@@ -427,7 +404,193 @@ impl<'a> fmt::Display for SAN<'a> {
 }
 
 #[derive(Error, Debug)]
-pub enum MoveParseError {
+pub enum SanParseError {
+    #[error("SAN string is too short to be valid.")]
+    TooShort,
+
+    #[error("Invalid to-square: {0}")]
+    InvalidToSquare(SquareTokenizationError),
+
+    #[error("Missing to-square")]
+    MissingToSquare,
+
+    #[error("Invalid promotion piece type: {0}")]
+    InvalidPromoPieceType(PromoPieceTokenizationError),
+
+    #[error(
+        "The SAN string does not contain enough disambiguation information. Candidate moves: {0}"
+    )]
+    NotEnoughDisambiguation(MoveList),
+
+    #[error("The SAN string does not correspond to a legal move in the given position.")]
+    IllegalMove,
+}
+
+impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
+    type Error = SanParseError;
+
+    fn try_from(parser: StandardAlgebraicNotationParser<'a, 'b>) -> Result<Self, Self::Error> {
+        type E = SanParseError;
+
+        let san = parser.san;
+        let pos = parser.context;
+        let tok = &mut Tokenizer::new(san);
+        let us = parser.context.get_turn();
+        let rank0 = if us == colors::WHITE { ranks::_1 } else { ranks::_8 };
+
+        // Castling is indicated by the special notations, "O-O" for kingside castling
+        // and "O-O-O" for queenside castling. While the FIDE handbook uses the
+        // digit zero, the SAN PGN-Standard requires the capital letter 'O' for its
+        // export format.
+        match san {
+            "O-O" | "0-0" => {
+                return Ok(Move::new(
+                    Square::from_c((files::E, rank0)),
+                    Square::from_c((files::G, rank0)),
+                    MoveFlag::from_c(castling_sides::KING_SIDE),
+                ));
+            }
+            "O-O-O" | "0-0-0" => {
+                return Ok(Move::new(
+                    Square::from_c((files::E, rank0)),
+                    Square::from_c((files::C, rank0)),
+                    MoveFlag::from_c(castling_sides::QUEEN_SIDE),
+                ));
+            }
+            _ => {}
+        }
+
+        // Moving piece
+        let moving_type = {
+            let char = tok.peek_next_char().ok_or(E::TooShort)?;
+            if char.is_ascii_uppercase()
+                && let Ok(pt) = PieceType::try_from(char.to_ascii_lowercase())
+            {
+                tok.next_char(); // consume
+                pt
+            }
+            else {
+                // If the first character is not uppercase, we assume
+                // it's a pawn move and the first character is actually
+                // the from-square file.
+                piece_type::PAWN
+            }
+        };
+
+        // First Square information
+        let (file_1, rank_1) = {
+            (
+                File::try_from(tok.peek_next_char().ok_or(E::TooShort)?)
+                    .map(|f| {
+                        tok.next_char(); // consume
+                        f
+                    })
+                    .ok(),
+                Rank::try_from(tok.peek_next_char().ok_or(E::TooShort)?)
+                    .map(|r| {
+                        tok.next_char(); // consume
+                        r
+                    })
+                    .ok(),
+            )
+        };
+
+        // Captures are denoted by the lower case letter "x" immediately prior to the
+        // destination square. Pawn captures with the omitted piece symbol, include the
+        // file letter of the originating square of the capturing pawn prior to the "x"
+        // character, even if not required for unambiguousness. Some SAN variations in
+        // printed media even omit the target rank if unambiguous, like dxe, which might
+        // not be accepted as input format.
+        let _is_capture = {
+            if tok.peek_next_char() == Some('x') {
+                tok.next_char(); // consume
+                true
+            }
+            else {
+                false
+            }
+        };
+
+        // Second Square information
+        let (file_2, rank_2) = {
+            (
+                tok.peek_next_char().and_then(|c| {
+                    File::try_from(c).ok().inspect(|_| {
+                        tok.next_char(); // consume
+                    })
+                }),
+                tok.peek_next_char().and_then(|c| {
+                    Rank::try_from(c).ok().inspect(|_| {
+                        tok.next_char(); // consume
+                    })
+                }),
+            )
+        };
+
+        // Coordinate square data
+        let (from_file, from_rank, to) = {
+            match (file_1, rank_1, file_2, rank_2) {
+                // If the only square information contains both file and rank, it's the to-square
+                (Some(f), Some(r), None, None) => (None, None, Square::from_c((f, r))),
+
+                // If the second square information contains both file and rank, it's the to-square
+                (f_1, r_1, Some(f), Some(r)) => (f_1, r_1, Square::from_c((f, r))),
+
+                // Otherwise, we are missing information for the to-square.
+                _ => return Err(E::MissingToSquare),
+            }
+        };
+
+        // A pawn promotion requires the information about the chosen piece, appended as
+        // trailing Piece letter behind the target square. The SAN PGN-Standard requires
+        // an equal sign ('=') immediately following the destination square.
+        let promo = {
+            let token = tok.peek_next_char();
+            if token == Some('=') {
+                tok.next_char(); // consume
+                Some(PromoPieceType::try_from(tok).map_err(E::InvalidPromoPieceType)?)
+            }
+            // Although some poorly formatted SAN data, like the ERET datum,
+            // `... bm e8N; id "ERET 089 - Underpromotion";`
+            // can contain bad data (`e8=N` would've been correct), and we should try to handle
+            // those cases aswell.
+            else if let Ok(pt) = PromoPieceType::try_from(tok) {
+                Some(pt)
+            }
+            else {
+                None
+            }
+        };
+
+        // Disambiguation
+        let mut moves = MoveList::new();
+        _ = fold_legals::<true, _, _, _>(pos, (), |_, m| {
+            let m_flag = m.get_flag();
+            let m_from = m.get_from();
+            let m_piece = pos.get_piece(m.get_from());
+            let to_matches = m.get_to() == to;
+
+            let piece_matches = m_piece.piece_type() == moving_type;
+            let rank_matches = from_rank.is_none_or(|r| r == Rank::from_c(m_from));
+            let file_matches = from_file.is_none_or(|f| f == File::from_c(m_from));
+            let promo_matches = promo.is_none_or(|p| Ok(p) == PromoPieceType::try_from(m_flag));
+
+            if piece_matches && rank_matches && file_matches && to_matches && promo_matches {
+                moves.push(m);
+            }
+            return ControlFlow::Continue::<(), _>(());
+        });
+
+        match moves.len() {
+            0 => Err(E::IllegalMove),
+            1 => Ok(moves.as_slice()[0]),
+            2.. => Err(E::NotEnoughDisambiguation(moves)),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum LanParseError {
     #[error("Invalid to-square: {0}")]
     InvalidToSquare(SquareTokenizationError),
 
@@ -439,20 +602,17 @@ pub enum MoveParseError {
 
     #[error("Expected a legal castling move, but destination file was unexpected: {0}")]
     IllegalCastling(CastlingSideParseError),
-
-    #[error("Invalid SAN string: {0}")]
-    InvalidSan(String),
 }
 
 impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
-    type Error = MoveParseError;
+    type Error = LanParseError;
 
     fn try_from(move_notation: LongAlgebraicUciNotation<'_, '_, '_>) -> Result<Self, Self::Error> {
         let from = Square::try_from(&mut *move_notation.tokens)
-            .map_err(MoveParseError::InvalidFromSquare)?;
+            .map_err(LanParseError::InvalidFromSquare)?;
 
-        let to = Square::try_from(&mut *move_notation.tokens)
-            .map_err(MoveParseError::InvalidToSquare)?;
+        let to =
+            Square::try_from(&mut *move_notation.tokens).map_err(LanParseError::InvalidToSquare)?;
 
         let moving_p = move_notation.context.get_piece(from);
         let captured_p = move_notation.context.get_piece(to);
@@ -468,7 +628,7 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                     _ => match PromoPieceType::try_from(move_notation.tokens) {
                         Ok(promo_piece) => MoveFlag::from((promo_piece, captures)),
                         Err(PromoPieceTokenizationError::MissingToken) => flag,
-                        Err(error) => return Err(MoveParseError::InvalidPromoPieceType(error)),
+                        Err(error) => return Err(LanParseError::InvalidPromoPieceType(error)),
                     },
                 }
             }
@@ -516,10 +676,15 @@ impl From<Move> for usize {
 /// Since the 218 is the maximum number of moves in a single position,
 /// we can use a fixed length array to store the moves and by using a
 /// size of 256 we can safely index into the array with a u8.
-#[derive(Debug)]
 pub struct MoveList {
     moves: [MaybeUninit<Move>; 256],
     len: u8,
+}
+
+impl std::fmt::Debug for MoveList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.as_slice()).finish()
+    }
 }
 
 impl MoveList {
