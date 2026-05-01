@@ -365,8 +365,6 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         tree: &mut Tree,
         sel_node_id: ParentNodeId,
     ) {
-        let parent_node = tree.node(parent_node_id);
-        let parent_visits = parent_node.visits();
         let visit_threshold = 4; // todo: fine-tune
         let branches = tree.branch_ids(parent_node_id);
         let best_branch_id = branches
@@ -377,7 +375,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                     self.selector.min_score()
                 }
                 else {
-                    self.selector.score(tree, branch_id, parent_visits)
+                    self.selector.score(tree, branch_id, parent_node_id)
                 }
             })
             .expect("There has to be a branch on an evaluated node");

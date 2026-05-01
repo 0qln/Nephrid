@@ -1,7 +1,7 @@
 use core::fmt;
 use std::ops;
 
-use crate::core::search::mcts::node::{BranchId, Tree};
+use crate::core::search::mcts::node::{BranchId, NodeId, Tree, node_state::Evaluated};
 
 pub mod puct;
 pub mod ucb;
@@ -20,7 +20,7 @@ pub trait Selector {
     ///
     /// branch: The branch to be scored.
     /// cap_n_i: The number of times that the parent node has been visited.
-    fn score(&self, tree: &Tree, branch_id: BranchId, cap_n_i: u32) -> Score;
+    fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
 
     fn min_score(&self) -> Score;
 }

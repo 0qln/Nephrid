@@ -19,7 +19,9 @@ impl Default for UcbSelector {
 }
 
 impl Selector for UcbSelector {
-    fn score(&self, tree: &Tree, branch_id: BranchId, cap_n_i: u32) -> Score {
+    fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+        let cap_n_i = tree.node(parent_id).visits();
+
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
 

@@ -14,7 +14,7 @@ use engine::{
             },
             nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor},
             node::{
-                self, BranchId, WinRate,
+                self, BranchId, NodeId, WinRate,
                 node_state::{Evaluated, HasBranches},
             },
             noise::DirichletNoiser,
@@ -770,12 +770,15 @@ impl Default for MctsTrainSelector {
 }
 
 impl Selector for MctsTrainSelector {
-    fn score(&self, tree: &Tree, branch_id: BranchId, cap_n_i: u32) -> Score {
+    fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
+        let parent = tree.node(parent_id);
 
+        let cap_n_i = parent.visits() as f32;
         let n_i = node.visits() as f32;
         let value = node.value();
+        let policy = Self::weighted_policy(branch.policy(), self.policy_weight);
 
         #[cfg(debug_assertions)]
         {
@@ -784,9 +787,17 @@ impl Selector for MctsTrainSelector {
             assert!(!n_i.is_nan(), "n_i WAS NAN");
         }
 
-        let policy = Self::weighted_policy(branch.policy(), self.policy_weight);
-        let exploitation = if n_i == 0.0 { 0.0 } else { value / n_i };
-        let exploration = self.c * policy * (cap_n_i as f32).sqrt() / (1f32 + n_i);
+        let exploitation = if n_i == 0. {
+            // fallback to parent q-value for unvisited nodes. note that the parent node
+            // cannot be 0 because we only expand a node after visiting it at
+            // least once.
+            parent.value() / cap_n_i
+        }
+        else {
+            value / n_i
+        };
+        let exploration = self.c * policy * cap_n_i.sqrt() / (1f32 + n_i);
+
         let result = exploitation + exploration;
 
         Score::new(result)
