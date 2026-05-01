@@ -3,13 +3,17 @@ use std::{
     sync::{Arc, Mutex},
     thread, time,
 };
+use thiserror::Error;
 
 use crate::{
     core::{
         config::Configuration,
         depth::Depth,
-        r#move::Move,
-        position::{FenImport, FenParseError, PgnImport, PgnImportError, Position, ReducedPgn},
+        r#move::{Move, SanParseError},
+        position::{
+            EpdLineImport, EpdLineParseError, EpdOp, FenImport, FenParseError, PgnImport,
+            PgnImportError, Position, ReducedPgn,
+        },
         search::{Command, PonderToken, SearchThread, SearchWorker, limit::UciLimit},
     },
     misc::{CancellationToken, DebugMode, trim_newline},
@@ -42,6 +46,15 @@ pub struct Game {
     position: Position,
 }
 
+#[derive(Debug, Error)]
+pub enum EpdImportError {
+    #[error("EPD line parsing failed: {0}")]
+    ParseEpd(#[from] EpdLineParseError),
+
+    #[error("SAN move parsing failed: {0}")]
+    ParseSan(#[from] SanParseError),
+}
+
 impl Game {
     pub fn from_moves(position: Position, moves: impl Iterator<Item = Move>) -> Self {
         let mut game = Self::from_position(position);
@@ -61,6 +74,16 @@ impl Game {
 
     pub fn from_fen(fen: FenImport<'_, '_>) -> Result<Self, FenParseError> {
         Ok(Self::from_position(Position::try_from(fen)?))
+    }
+
+    pub fn from_epd(epd: EpdLineImport<'_, '_>) -> Result<Self, EpdImportError> {
+        let (mut pos, ops) = epd.try_into()?;
+        if let Some(op) = ops.iter().find(|op| matches!(op.0.as_ref(), "sm")) {
+            let EpdOp(_, mov) = op;
+            let mov = Move::from_san(mov, &pos)?;
+            pos.make_move(mov);
+        }
+        Ok(Self::from_position(pos))
     }
 
     pub fn from_pgn(pgn: PgnImport<'_, '_>) -> Result<Self, PgnImportError> {
@@ -280,6 +303,7 @@ pub fn execute_uci(
                 // 1. Parse the new base position into a temporary game state
                 let mut new_game = match tokenizer.next_token() {
                     Some("pgn") => Game::from_pgn(PgnImport(&mut tokenizer))?,
+                    Some("epd") => Game::from_epd(EpdLineImport(&mut tokenizer))?,
                     Some("fen") => Game::from_fen(FenImport(&mut tokenizer))?,
                     Some("startpos") => Game::from_position(Position::start_position()),
                     None => return Err(UciError::MissingArgument("value").into()),
