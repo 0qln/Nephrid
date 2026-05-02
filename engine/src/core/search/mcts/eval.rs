@@ -308,15 +308,14 @@ impl Policy {
 pub fn softmax<const N: usize>(
     mut xs: List<N, f32>,
     temperature: f32,
-    exps_buf: &mut List<N, f32>,
+    exps: &mut List<N, f32>,
 ) -> List<N, Probability> {
     let max = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
 
-    exps_buf.clear();
-    let exps = xs
-        .iter()
-        .map(|x| ((x - max) / temperature).exp())
-        .collect_into(exps_buf);
+    exps.clear();
+    for x in xs.iter().map(|x| ((x - max) / temperature).exp()) {
+        exps.push(x);
+    }
 
     let sum: f32 = exps.iter().sum();
 

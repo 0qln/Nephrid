@@ -474,23 +474,6 @@ impl<const N: usize, T> Extend<T> for List<N, T> {
             self.push(item);
         }
     }
-
-    fn extend_one(&mut self, item: T) {
-        self.extend(Some(item));
-    }
-
-    fn extend_reserve(&mut self, additional: usize) {
-        self.len += additional;
-    }
-
-    unsafe fn extend_one_unchecked(&mut self, item: T)
-    where
-        Self: Sized,
-    {
-        unsafe {
-            self.items.get_unchecked_mut(self.len).write(item);
-        }
-    }
 }
 
 impl<const N: usize, T> FromIterator<T> for List<N, T> {

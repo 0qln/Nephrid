@@ -187,7 +187,7 @@ impl<B: Backend> Evaluator for NNEvaluator<B> {
                     quality: Quality::new(value[0]),
                     // todo: might wanna instanciate the list further up (but this is just a stack
                     // allocation anyways so does that even matter?)
-                    policy: Policy::from_raw_logits(&raw_logits, p_idxs, 1., &mut List::new()),
+                    policy: Policy::from_raw_logits(&raw_logits, p_idxs, 1., &mut Box::new(List::new())),
                 }
             })
             .collect_vec()

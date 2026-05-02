@@ -75,7 +75,7 @@ impl Evaluator for DummyEvaluator {
             evaluations.push(Guess {
                 relative_to: trace_data.turn,
                 quality: Quality::new(quality),
-                policy: Policy::from_raw_logits(&raw_logits, moves, 1.0, &mut List::new()),
+                policy: Policy::from_raw_logits(&raw_logits, moves, 1.0, &mut Box::new(List::new())),
             });
         }
 

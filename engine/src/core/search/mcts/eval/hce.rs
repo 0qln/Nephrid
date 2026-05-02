@@ -496,7 +496,7 @@ impl EvalInfo {
         Quality::from(self.quality)
     }
 
-    fn policy(&self) -> Policy {
+    pub fn policy(&self, buf: &mut List<{ MAX_LEGAL_MOVES }, f32>) -> Policy {
         let pos = &self.pos;
         let phase = self.phase;
         let state = &self.state;
@@ -517,16 +517,20 @@ impl EvalInfo {
             logits.push(score as f32);
         }
 
-        Policy::from_logits(Logits(logits), 10., &mut List::new())
+        Policy::from_logits(Logits(logits), 10., buf)
     }
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct HceEvaluator;
+pub struct HceEvaluator {
+    policy_buf: Box<List<{ MAX_LEGAL_MOVES }, f32>>,
+}
 
 impl HceEvaluator {
     pub fn new() -> Self {
-        Self
+        Self {
+            policy_buf: Box::new(List::new()),
+        }
     }
 }
 
@@ -554,7 +558,7 @@ impl Evaluator for HceEvaluator {
             Some(Guess {
                 relative_to: colors::WHITE,
                 quality: eval_info.quality(),
-                policy: eval_info.policy(),
+                policy: eval_info.policy(&mut self.policy_buf),
             })
         })
     }
