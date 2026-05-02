@@ -167,10 +167,10 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                     root.value(),
                     root.visits(),
                     root_evaluated
-                        .map(|x| (-WinRate::from(x)).to_string())
+                        .map(|x| (WinRate::from(x).inv()).to_string())
                         .unwrap_or("/".to_string()),
                     root_evaluated
-                        .map(|x| Cp::from(-WinRate::from(x)).to_string())
+                        .map(|x| Cp::from(WinRate::from(x).inv()).to_string())
                         .unwrap_or("/".to_string())
                 );
                 match tree.node_switch(tree.root()) {

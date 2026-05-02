@@ -9,13 +9,12 @@ use engine::{
         search::mcts::{
             self, CreateNNPartsError, MctsParts, NNParts,
             eval::{
-                self, Evaluator, Policy, Quality, RawLogits, VisitCounts,
+                self, Evaluator, Policy, Quality,
                 nn::{TraceInfo, get_node_history},
             },
-            nn::{self, BoardInputTensor, POLICY_OUTPUTS, StateInputTensor},
+            nn::{self, BoardInputTensor, POLICY_OUTPUTS, RawLogits, StateInputTensor},
             node::{
-                self, BranchId, NodeId, WinRate,
-                node_state::{Evaluated, HasBranches},
+                self, BranchId, NodeId, VisitCount, WinRate, node_state::{Evaluated, HasBranches}
             },
             noise::DirichletNoiser,
             search::{BatchItem, Selection},
@@ -23,8 +22,8 @@ use engine::{
         },
         zobrist,
     },
-    math::{avg, entropy, stddev},
-    misc::CheckHealth,
+    math::entropy,
+    misc::{CheckHealth, List},
 };
 use itertools::Itertools;
 use rand::{SeedableRng, rngs::SmallRng};
@@ -66,6 +65,7 @@ use engine::{
 use crate::{
     caching::{Cache, CacheEntry},
     data::{BoardInput, FenItemRaw, StateInput},
+    loss::VisitCounts,
 };
 
 #[derive(Config, Debug)]
@@ -200,7 +200,7 @@ fn build_cached_decision<T: Target>(
 
     let visit_counts = moves
         .iter()
-        .map(|&mov| (mov, if mov == best_move { 1 } else { 0 }))
+        .map(|&mov| (mov, VisitCount(if mov == best_move { 1 } else { 0 })))
         .collect_vec();
 
     let target = T::from_visit_counts(VisitCounts(visit_counts));
@@ -212,7 +212,6 @@ fn build_cached_decision<T: Target>(
         },
         target,
         state: State { mov: best_move, moving_color },
-        stats: Stats::default(),
     }
 }
 
@@ -512,36 +511,11 @@ pub struct State {
     pub moving_color: Color,
 }
 
-// Some interesting stats about the decision.
-#[derive(Debug, Default, Clone)]
-pub struct Stats {
-    pub policy_avg: f32,
-    pub policy_stddev: f32,
-    pub policy_entropy: f32,
-}
-
-impl Stats {
-    pub fn new(guess: Guess) -> Self {
-        let policy_values = guess.policy();
-
-        let policy_avg = avg(policy_values.as_slice());
-        let policy_stddev = stddev(policy_values.as_slice());
-        let policy_entropy = entropy(policy_values.iter());
-
-        Self {
-            policy_avg,
-            policy_stddev,
-            policy_entropy,
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Decision<T: Target> {
     pub input: Input,
     pub target: T,
     pub state: State,
-    pub stats: Stats,
 }
 
 impl<'a, T: Target> From<&'a Decision<T>> for StateInput {
@@ -652,9 +626,7 @@ where
             let state = State { mov, moving_color: turn };
             let input = Input { board_in: b_in, state_in: s_in };
             let target = P::Target::from(&mcts_state.tree);
-            // let stats = Stats::new(guess.clone());
-            let stats = Stats::default();
-            decisions.push(Decision { input, target, state, stats });
+            decisions.push(Decision { input, target, state });
 
             game.push_move(mov);
             mcts_state.advance_to(mov);
@@ -783,14 +755,14 @@ impl Selector for MctsTrainSelector {
         let node = tree.node(branch.node());
         let parent = tree.node(parent_id);
 
-        let cap_n_i = parent.visits() as f32;
-        let n_i = node.visits() as f32;
+        let cap_n_i = parent.visits().0 as f32;
+        let n_i = node.visits().0 as f32;
         let value = node.value();
-        let policy = Self::weighted_policy(branch.policy(), self.policy_weight);
+        let policy = Self::weighted_policy(branch.policy().v(), self.policy_weight);
 
         #[cfg(debug_assertions)]
         {
-            assert!(!value.0.is_nan(), "value WAS NAN");
+            assert!(!value.is_nan(), "value WAS NAN");
             assert!(!branch.policy().is_nan(), "policy WAS NAN");
             assert!(!n_i.is_nan(), "n_i WAS NAN");
         }
@@ -1003,13 +975,13 @@ impl Evaluator for BatchedNNEvaluator {
                 .expect("Inference worker died or disconnected");
 
             let turn = leaf.sel_data.turn;
-            let moves = tree.move_indices(leaf.node);
+            let moves = tree.policy_indeces(leaf.node);
 
             let raw_logits = response.raw_logits;
             let guess = Guess {
                 relative_to: turn,
                 quality: Quality::new(response.value),
-                policy: Policy::from_raw_logits(&raw_logits, moves, 1.0).expect("a policy"),
+                policy: Policy::from_raw_logits(&raw_logits, moves, 1.0, &mut List::new()),
             };
 
             evaluations.push(guess);

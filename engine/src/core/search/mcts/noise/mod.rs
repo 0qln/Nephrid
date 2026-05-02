@@ -1,10 +1,18 @@
-use itertools::Itertools;
 use rand::rngs::SmallRng;
 use rand_distr::{Distribution, Gamma, num_traits::Zero};
 use std::convert::Infallible;
 use thiserror::Error;
 
-use crate::core::search::mcts::node::{NodeId, Tree, node_state::Evaluated};
+use crate::{
+    core::{
+        r#move::MAX_LEGAL_MOVES,
+        search::mcts::{
+            eval::{Policy, Probability},
+            node::{NodeId, Tree, node_state::Evaluated},
+        },
+    },
+    misc::List,
+};
 
 #[cfg(test)]
 pub mod test;
@@ -53,14 +61,21 @@ impl Noiser for DirichletNoiser {
             let branches = node.branches();
             let gamma = self.gamma()?;
             let distr = gamma.sample_iter(&mut self.rng);
-            let noise = distr.take(branches.len()).collect_vec();
+            let noise = distr
+                .take(branches.len())
+                .collect::<List<{ MAX_LEGAL_MOVES }, _>>();
             let total = noise.iter().sum::<f32>();
 
             if total.is_zero() {
                 return Err(DirichletNoiseError::LowNoise);
             }
 
-            noise
+            let normalized_noise = noise
+                .iter()
+                .map(|noise_val| Probability::new(noise_val.algebraic_div(total)))
+                .collect::<List<{ MAX_LEGAL_MOVES }, _>>();
+
+            Policy::new(normalized_noise)
         };
 
         // Apply noise

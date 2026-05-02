@@ -2,7 +2,6 @@ use core::fmt;
 use move_flags as f;
 use std::{
     fmt::Write,
-    mem::MaybeUninit,
     ops::{self, ControlFlow},
     slice,
 };
@@ -29,7 +28,7 @@ use crate::{
         position::{CheckState, Position},
     },
     impl_variants_with_assertion,
-    misc::ValueOutOfRangeError,
+    misc::{List, ValueOutOfRangeError},
     uci::tokens::Tokenizer,
 };
 
@@ -166,18 +165,23 @@ pub struct Move {
 }
 
 impl Move {
-    const SHIFT_FROM: u16 = 0;
-    const SHIFT_TO: u16 = 6;
-    const SHIFT_FLAG: u16 = 12;
+    pub const SHIFT_FROM: u16 = 0;
+    pub const SHIFT_TO: u16 = 6;
+    pub const SHIFT_FLAG: u16 = 12;
 
-    const MASK_FROM: u16 = 0b111111 << Move::SHIFT_FROM;
-    const MASK_TO: u16 = 0b111111 << Move::SHIFT_TO;
-    const MASK_FLAG: u16 = 0b1111 << Move::SHIFT_FLAG;
-    const MASK_SQ: u16 = Move::MASK_FROM | Move::MASK_TO;
+    pub const MASK_FROM: u16 = 0b111111 << Move::SHIFT_FROM;
+    pub const MASK_TO: u16 = 0b111111 << Move::SHIFT_TO;
+    pub const MASK_FLAG: u16 = 0b1111 << Move::SHIFT_FLAG;
+    pub const MASK_SQ: u16 = Move::MASK_FROM | Move::MASK_TO;
 
     #[inline]
     pub const fn null() -> Self {
         Move { v: 0 }
+    }
+
+    #[inline]
+    pub const fn v(&self) -> u16 {
+        self.v
     }
 
     #[inline]
@@ -644,96 +648,58 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
     }
 }
 
-impl From<Move> for usize {
-    /// Converts a move to a index, such that in any given position, no two
-    /// moves will have the same index and there are few gaps.
-    fn from(mov: Move) -> Self {
-        let flag = mov.get_flag();
-        let result = if flag.is_promo() {
-            // Promotions are special cases:
-            // 1. Since promotions have multiple moves for the same from-to combination, we
-            //    add a variance for different promotions.
-            // 2. We need to bias, such that we don't collide with valid from-to indeces.
-            //    (SQ_MASK)
-            // 3. We also need to bias by the file of the from square, such that we don't
-            //    collide with other promotions.
-            let min_index = Move::MASK_SQ + 1;
-            let min_promo_flag = move_flags::PROMOTION_KNIGHT.v() as u16;
-            let flag_off = flag.v() as u16 - min_promo_flag;
-            let file_off = File::from(mov.get_from()).v() as u16;
-            min_index + flag_off + file_off
-        }
-        else {
-            // For most moves, we can just use the from and to squares to get a unique index
-            // for any set of moves of any position.
-            mov.v & Move::MASK_SQ
-        };
-        result as usize
-    }
-}
-
 /// A list of moves in a single position.
 /// Since the 218 is the maximum number of moves in a single position,
 /// we can use a fixed length array to store the moves and by using a
 /// size of 256 we can safely index into the array with a u8.
 pub struct MoveList {
-    moves: [MaybeUninit<Move>; 256],
-    len: u8,
+    inner: List<{ Self::CAPACITY }, Move>,
 }
 
-impl std::fmt::Debug for MoveList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_list().entries(self.as_slice()).finish()
+impl fmt::Debug for MoveList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.inner, f)
     }
 }
+
+pub const MAX_LEGAL_MOVES: usize = 218;
 
 impl MoveList {
-    /// Creates a new, empty move list without initializing the underlying
-    /// array.
+    pub const CAPACITY: usize = 256;
+
+    /// Creates a new, empty move list.
+    #[inline]
     pub fn new() -> Self {
-        Self {
-            moves: [MaybeUninit::uninit(); 256],
-            len: 0,
-        }
+        Self { inner: List::new() }
     }
 
+    #[inline]
     pub fn len(&self) -> u8 {
-        self.len
+        self.inner.len() as u8
     }
 
     /// Pushes a move to the list.
     #[inline]
     pub fn push(&mut self, m: Move) {
-        // SAFETY: The maximum number of legal chess moves is 218.
-        // A standard u8 maxes at 255, so we will never exceed 256.
-        unsafe {
-            self.moves.get_unchecked_mut(self.len as usize).write(m);
-        }
-        self.len += 1;
+        self.inner.push(m);
     }
 
     /// Returns a mutable slice of the initialized moves up to `len`.
     #[inline]
     pub fn as_mut_slice(&mut self) -> &mut [Move] {
-        // SAFETY: We only cast the slice up to `self.len`, which we
-        // guarantee has been initialized via the `push` method.
-        unsafe { slice::from_raw_parts_mut(self.moves.as_mut_ptr().cast(), self.len as usize) }
+        self.inner.as_mut_slice()
     }
 
     /// Returns a slice of the initialized moves.
     #[inline]
     pub fn as_slice(&self) -> &[Move] {
-        // SAFETY: We only cast the slice up to `self.len`, which we
-        // guarantee has been initialized via the `push` method.
-        unsafe { slice::from_raw_parts(self.moves.as_ptr().cast(), self.len as usize) }
+        self.inner.as_slice()
     }
 
     /// Returns an iterator over the initialized moves.
     #[inline]
     pub fn iter(&self) -> slice::Iter<'_, Move> {
-        // SAFETY: We only cast the slice up to `self.len`, which we
-        // guarantee has been initialized via the `push` method.
-        unsafe { slice::from_raw_parts(self.moves.as_ptr().cast(), self.len as usize) }.iter()
+        self.inner.iter()
     }
 }
 
@@ -745,8 +711,7 @@ impl Default for MoveList {
 
 impl fmt::Display for MoveList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let moves = self.iter().map(|mov| mov.to_string());
-        write!(f, "[{}]", moves.collect::<Vec<_>>().join(", "))
+        f.debug_list().entries(self.as_slice()).finish()
     }
 }
 
@@ -761,11 +726,11 @@ impl_op!(+|a: MoveIndex, b: u8| -> MoveIndex { Self { v: a.v + b } });
 impl TryFrom<usize> for MoveIndex {
     type Error = ValueOutOfRangeError<usize>;
     fn try_from(value: usize) -> Result<Self, Self::Error> {
-        if value <= 255 {
+        if value < MoveList::CAPACITY {
             Ok(Self { v: value as u8 })
         }
         else {
-            Err(ValueOutOfRangeError::new(value, 0..=255))
+            Err(ValueOutOfRangeError::new(value, 0..MoveList::CAPACITY))
         }
     }
 }

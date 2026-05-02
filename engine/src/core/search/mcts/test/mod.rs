@@ -1,8 +1,6 @@
-use crate::core::search::mcts::{
-    eval::{Policy, RawLogits},
-    node::{NodeId, Tree, node_state::HasBranches},
-    search::{BatchItem, Selection},
-};
+use crate::{core::search::mcts::{
+    eval::Policy, nn::RawLogits, node::{NodeId, Tree, node_state::HasBranches}, search::{BatchItem, Selection}
+}, misc::List};
 use rand::{Rng, SeedableRng, rngs::SmallRng};
 
 use crate::core::{
@@ -72,12 +70,12 @@ impl Evaluator for DummyEvaluator {
             policy_arr[spike_index] = 2.0;
             let raw_logits = RawLogits::new(policy_arr);
 
-            let moves = tree.move_indices(leaf.node);
+            let moves = tree.policy_indeces(leaf.node);
 
             evaluations.push(Guess {
                 relative_to: trace_data.turn,
                 quality: Quality::new(quality),
-                policy: Policy::from_raw_logits(&raw_logits, moves, 1.0).expect("a policy"),
+                policy: Policy::from_raw_logits(&raw_logits, moves, 1.0, &mut List::new()),
             });
         }
 

@@ -180,12 +180,14 @@ impl<B: Backend> Evaluator for NNEvaluator<B> {
             .zip(raw_logits)
             .map(|((&leaf, value), raw_logits)| {
                 let turn = leaf.sel_data.turn;
-                let moves = tree.move_indices(leaf.node);
+                let p_idxs = tree.policy_indeces(leaf.node);
 
                 Guess {
                     relative_to: turn,
                     quality: Quality::new(value[0]),
-                    policy: Policy::from_raw_logits(&raw_logits, moves, 1.).expect("a policy"),
+                    // todo: might wanna instanciate the list further up (but this is just a stack
+                    // allocation anyways so does that even matter?)
+                    policy: Policy::from_raw_logits(&raw_logits, p_idxs, 1., &mut List::new()),
                 }
             })
             .collect_vec()

@@ -22,9 +22,9 @@ use engine::core::{
     position::Position,
     search::mcts::{
         NNParts, SearchState,
-        eval::{GameResult, Quality, RawPolicy},
+        eval::{GameResult, Probability, Quality, RawPolicy},
         mcts,
-        nn::ModelConfig,
+        nn::{ModelConfig, PolicyHeadIndex},
     },
     zobrist,
 };
@@ -119,9 +119,9 @@ pub fn test_network_can_overfit_hardcoded_target() {
     let board_history = vec![b_in];
 
     // Define our hardcoded targets
-    let target_move_index = usize::from(Move::new(G1, F3, QUIET));
-    let mut target_policy = [0.; POLICY_OUTPUTS];
-    target_policy[target_move_index] = 1.0;
+    let target_move_index = PolicyHeadIndex::from(Move::new(G1, F3, QUIET));
+    let mut target_policy = [Probability::zero(); POLICY_OUTPUTS];
+    target_policy[target_move_index.v() as usize] = Probability::one();
 
     // We also want it to learn this is a winning position
     let target_value = Quality::win();
@@ -190,11 +190,11 @@ pub fn test_network_can_overfit_hardcoded_target() {
 
     println!(
         "Predicted Best Move Index: {best_idx} with probability {max_prob:.5} (Target Index: \
-         {target_move_index})"
+         {target_move_index:?})"
     );
 
     assert_eq!(
-        best_idx, target_move_index,
+        best_idx, target_move_index.v() as usize,
         "Policy head failed to predict the hardcoded move index!"
     );
     assert!(

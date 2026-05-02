@@ -259,7 +259,9 @@ impl MctsUci {
         }
         else if let Some(evaluated) = tree.try_node::<Evaluated>(tree.root()) {
             // (invert bc it's relative to parent node)
-            let win_rate = -WinRate::from(evaluated);
+            // todo: i think it would be more accurate to take the winrate of the best move
+            // that we can make...
+            let win_rate = WinRate::from(evaluated).inv();
             let cp = UciCp(Cp::from(win_rate));
             Some(UciScore::Centipawns(cp))
         }

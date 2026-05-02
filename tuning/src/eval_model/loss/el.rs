@@ -9,13 +9,11 @@ use burn::{
 };
 use engine::{
     core::search::mcts::{
-        eval::{RawPolicy, VisitCounts, normalize_visits},
+        eval::{RawPolicy, normalize_visits},
         nn::{
-            BoardInputTensor, CheckTensorHealthError, Model, POLICY_OUTPUT_TENSOR_DIM,
-            POLICY_OUTPUTS, STATE_INPUT_TENSOR_DIM, StateInputTensor, VALUE_OUTPUT_TENSOR_DIM,
-            board_history_input,
+            BoardInputTensor, CheckTensorHealthError, Model, POLICY_OUTPUT_TENSOR_DIM, POLICY_OUTPUTS, PolicyHeadIndex, STATE_INPUT_TENSOR_DIM, StateInputTensor, VALUE_OUTPUT_TENSOR_DIM, board_history_input
         },
-        node::node_state::Evaluated,
+        node::{VisitCount, node_state::Evaluated},
     },
     misc::{CheckHealth, CheckHealthResult},
 };
@@ -29,7 +27,7 @@ use thiserror::Error;
 use crate::{
     Decision, LossOutput, PlayoutBatcher, Target,
     data::{BoardInput, StateInput},
-    loss::ValueTargetTensor,
+    loss::{ValueTargetTensor, VisitCounts},
     self_play::{Outcome, PlayoutItem},
 };
 
@@ -80,9 +78,9 @@ pub struct PolicyTarget(pub RawPolicy);
 
 impl From<&ExactLossTarget> for PolicyTarget {
     fn from(target: &ExactLossTarget) -> Self {
-        let mut visit_counts = [0.; POLICY_OUTPUTS];
+        let mut visit_counts = [VisitCount(0); POLICY_OUTPUTS];
         for &(mov, visits) in &target.visit_counts.0 {
-            visit_counts[usize::from(mov)] = visits as f32;
+            visit_counts[PolicyHeadIndex::from(mov).v() as usize] = visits;
         }
 
         let raw_policy = normalize_visits(&visit_counts, 1.);
@@ -145,7 +143,7 @@ impl From<&Tree> for ExactLossTarget {
                             .map(|branch| {
                                 let child_node = tree.node(branch.node());
                                 let is_winning_move = child_node.value().is_proven_win();
-                                (branch.mov(), if is_winning_move { 1 } else { 0 })
+                                (branch.mov(), VisitCount(if is_winning_move { 1 } else { 0 }))
                             })
                             .collect_vec(),
                     )
@@ -336,7 +334,7 @@ impl<B: Backend> Batcher<B, ExactLossPlayoutItem, ExactLossPlayoutBatch<B>> for 
 
         let policies = items
             .into_iter()
-            .map(|x| TensorData::from([x.policy_target.0.into_inner()]))
+            .map(|x| TensorData::from([x.policy_target.0.into_floats()]))
             .map(|x| Tensor::from_data(x, device))
             .collect();
 

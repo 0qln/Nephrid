@@ -19,7 +19,8 @@ use crate::{
         bitboard,
         castling::castling_sides,
         color::colors,
-        coordinates::{files, ranks, squares},
+        coordinates::{File, files, ranks, squares},
+        r#move::{Move, move_flags},
         piece::{piece_type, promo_piece_type},
         position::Position,
     },
@@ -297,6 +298,114 @@ pub const POLICY_OUTPUTS: usize = {
     // Possible promotions
     promo_piece_type::N_VARIANTS * files::N_VARIANTS
 };
+
+/// An index that is guaruanteed to be valid when indexing into a policy head
+/// output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PolicyHeadIndex(u16);
+
+impl PolicyHeadIndex {
+    pub const MAX: u16 = (POLICY_OUTPUTS - 1) as u16;
+
+    pub fn new(i: u16) -> Self {
+        debug_assert!(
+            i <= Self::MAX,
+            "PolicyHeadIndex must be between 0 and {}",
+            Self::MAX
+        );
+
+        Self(i)
+    }
+
+    pub fn v(&self) -> u16 {
+        self.0
+    }
+}
+
+impl From<Move> for PolicyHeadIndex {
+    /// Converts a move to a index, such that in any given position, no two
+    /// moves will have the same index and there are few gaps.
+    fn from(mov: Move) -> Self {
+        let flag = mov.get_flag();
+        let result = if flag.is_promo() {
+            // Promotions are special cases:
+            // 1. Since promotions have multiple moves for the same from-to combination, we
+            //    add a variance for different promotions.
+            // 2. We need to bias, such that we don't collide with valid from-to indeces.
+            //    (SQ_MASK)
+            // 3. We also need to bias by the file of the from square, such that we don't
+            //    collide with other promotions.
+            let min_index = Move::MASK_SQ + 1;
+            let min_promo_flag = move_flags::PROMOTION_KNIGHT.v() as u16;
+            let flag_off = flag.v() as u16 - min_promo_flag;
+            let file_off = File::from(mov.get_from()).v() as u16;
+            min_index + flag_off + file_off
+        }
+        else {
+            // For most moves, we can just use the from and to squares to get a unique index
+            // for any set of moves of any position.
+            mov.v() & Move::MASK_SQ
+        };
+        Self::new(result)
+    }
+}
+
+// todo: this better belongs in `nn/mod.rs`, right?
+/// Raw logits outputs of the network.
+#[derive(PartialEq, Clone)]
+pub struct RawLogits(pub [f32; POLICY_OUTPUTS]);
+
+impl std::fmt::Debug for RawLogits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RawLogits").field(&"...").finish()
+    }
+}
+
+impl Default for RawLogits {
+    fn default() -> Self {
+        Self::null()
+    }
+}
+
+impl RawLogits {
+    pub fn get(&self, i: PolicyHeadIndex) -> f32 {
+        unsafe { *self.0.get_unchecked(i.0 as usize) }
+    }
+
+    pub fn set(&mut self, i: usize, val: f32) {
+        self.0[i] = val;
+    }
+
+    pub fn null() -> Self {
+        Self::new([0.0; POLICY_OUTPUTS])
+    }
+
+    pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
+        Self(p)
+    }
+
+    /// Returns an immutable view of the underlying policy values.
+    pub fn as_slice(&self) -> &[f32] {
+        &self.0
+    }
+
+    pub fn sum(&self) -> f32 {
+        self.0.iter().sum::<f32>()
+    }
+
+    pub fn len(&self) -> usize {
+        debug_assert_eq!(POLICY_OUTPUTS, self.0.len());
+        POLICY_OUTPUTS
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = f32> {
+        self.0.iter().cloned()
+    }
+
+    pub fn inner_mut(&mut self) -> &mut [f32] {
+        &mut self.0
+    }
+}
 
 pub type PolicyOutputTensor<B> = Tensor<B, POLICY_OUTPUT_TENSOR_DIM>;
 

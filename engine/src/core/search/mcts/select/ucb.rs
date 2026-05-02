@@ -1,4 +1,4 @@
-use crate::core::search::mcts::node::{BranchId, Tree};
+use crate::core::search::mcts::node::{BranchId, Tree, VisitCount};
 
 use super::*;
 
@@ -20,14 +20,14 @@ impl Default for UcbSelector {
 
 impl Selector for UcbSelector {
     fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
-        let cap_n_i = tree.node(parent_id).visits();
+        let VisitCount(cap_n_i) = tree.node(parent_id).visits();
 
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
 
         match node.visits() {
-            0 => Score(f32::INFINITY),
-            n_i => {
+            VisitCount(0) => Score(f32::INFINITY),
+            VisitCount(n_i) => {
                 let w_i = node.value();
                 let n_i = n_i as f32;
                 let exploitation = w_i / n_i;

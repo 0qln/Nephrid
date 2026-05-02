@@ -2,14 +2,16 @@ use crate::{
     core::{
         depth::Depth,
         r#move::MoveIndex,
-        search::mcts::node::node_state::{
-            ExpandedSwitch, HasBranches, HasValue, NodeState, Switch,
+        search::mcts::{
+            eval::Probability,
+            nn::PolicyHeadIndex,
+            node::node_state::{ExpandedSwitch, HasBranches, HasValue, NodeState, Switch},
         },
     },
     impl_variants,
 };
 use itertools::Itertools;
-use std::{cmp::Ordering, collections::VecDeque, fmt, marker::PhantomData, ops, ptr};
+use std::{cmp::Ordering, collections::VecDeque, fmt, marker::PhantomData, ops::{self, Deref}, ptr};
 
 use crate::core::{
     Move, Position,
@@ -60,7 +62,7 @@ impl_op!(+|a: Height, b: u16| -> Height { Height(a.0 + b) });
 /// - +inf ~> Proven win for the parent node.
 /// - -inf ~> Proven loss for the parent node.
 #[derive(PartialEq, Clone, Copy, Debug, Default)]
-pub struct Value(pub f32);
+pub struct Value(f32);
 
 impl Value {
     pub const fn proven_win() -> Self {
@@ -78,6 +80,17 @@ impl Value {
     pub fn is_proven_loss(&self) -> bool {
         *self == Self::proven_loss()
     }
+
+    pub fn v(&self) -> f32 {
+        self.0
+    }
+}
+
+impl Deref for Value {
+    type Target = f32;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl fmt::Display for Value {
@@ -92,15 +105,43 @@ impl PartialOrd for Value {
     }
 }
 
-impl_op!(/ |l: Value, r: f32| -> f32 { l.0 / r });
-impl_op!(+= |l: &mut Value, r: eval::Value| { l.0 += r.v() } );
-impl_op!(+= |l: &mut Value, r: f32| { l.0 += r } );
+impl_op!(/ |l: Value, r: f32| -> f32 { l.0.algebraic_div(r) });
+impl_op!(+= |l: &mut Value, r: eval::Value| { l.0 = l.0.algebraic_add(r.v()) } );
+impl_op!(+= |l: &mut Value, r: f32| { l.0 = l.0.algebraic_add(r) } );
 
 impl Eq for Value {}
 
 impl Ord for Value {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         f32::partial_cmp(&self.0, &other.0).unwrap_or(Ordering::Equal)
+    }
+}
+
+#[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub struct VisitCount(pub TVisitCount);
+
+impl_op!(+= |l: &mut VisitCount, r: u32| { l.0 += r } );
+impl_op!(-= |l: &mut VisitCount, r: u32| { l.0 -= r } );
+
+type TVisitCount = u32;
+
+impl ops::DerefMut for VisitCount {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl ops::Deref for VisitCount {
+    type Target = TVisitCount;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl fmt::Display for VisitCount {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -346,7 +387,7 @@ pub struct NodeData {
     branch_start: u32,
     branch_count: MoveIndex,
 
-    visits: u32,
+    visits: VisitCount,
     value: Value,
     state: NodeState,
 }
@@ -363,7 +404,7 @@ impl NodeData {
         self.value
     }
 
-    pub fn visits(&self) -> u32 {
+    pub fn visits(&self) -> VisitCount {
         self.visits
     }
 }
@@ -373,7 +414,7 @@ impl NodeData {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Branch {
     node: RtNodeId,
-    policy: f32,
+    policy: Probability,
     mov: Move,
 }
 
@@ -384,7 +425,7 @@ impl Branch {
     }
 
     #[inline]
-    pub fn policy(&self) -> f32 {
+    pub fn policy(&self) -> Probability {
         self.policy
     }
 
@@ -637,8 +678,13 @@ impl Tree {
         });
     }
 
-    pub fn move_indices<S: HasBranches>(&self, node: NodeId<S>) -> impl Iterator<Item = usize> {
-        self.branches(node).iter().map(|b| usize::from(b.mov()))
+    pub fn policy_indeces<S: HasBranches>(
+        &self,
+        node: NodeId<S>,
+    ) -> impl Iterator<Item = PolicyHeadIndex> {
+        self.branches(node)
+            .iter()
+            .map(|b| PolicyHeadIndex::from(b.mov()))
     }
 
     /// Backpropagation exclusively mutates the tree sequentially using a
@@ -646,7 +692,7 @@ impl Tree {
     pub fn backpropagate(&mut self, path: &[u32], final_value: eval::Value) {
         for &idx in path {
             let node = &mut self.arena.nodes[idx as usize];
-            node.visits += 1;
+            node.visits.0 += 1;
             node.value += final_value;
         }
     }
@@ -686,9 +732,11 @@ impl Tree {
             let child = RtNodeId::from(self.arena.nodes.len());
             self.arena.nodes.push(NodeData::new_leaf());
 
-            self.arena
-                .branches
-                .push(Branch { node: child, policy: 0.0, mov: m });
+            self.arena.branches.push(Branch {
+                node: child,
+                policy: Probability::zero(),
+                mov: m,
+            });
         }
 
         // Link parent to branches
@@ -709,7 +757,7 @@ impl Tree {
         let start = data.branch_start as usize;
         let count = data.branch_count.v as usize;
 
-        let even_prob = 1.0 / count as f32;
+        let even_prob = Probability::new((count as f32).recip());
         for branch in &mut self.arena.branches[start..start + count] {
             branch.policy = even_prob;
         }
@@ -723,17 +771,16 @@ impl Tree {
         let start = data.branch_start as usize;
         let count = data.branch_count.v as usize;
 
-        assert_eq!(
+        debug_assert_eq!(
             count,
             policy.len(),
             "There has to be exactly one policy for each branch."
         );
 
-        for (i, branch) in self.arena.branches[start..start + count]
+        for (branch, p) in self.arena.branches[start..start + count]
             .iter_mut()
-            .enumerate()
+            .zip(policy.iter())
         {
-            let p = policy.get(i).expect("Policy should contain this move.");
             branch.policy = p;
         }
 
@@ -741,20 +788,22 @@ impl Tree {
         unsafe { node.cast() }
     }
 
-    pub fn apply_policy_noise(&mut self, node: NodeId<Evaluated>, noise: &[f32], eps: f32) {
+    // todo: `noise` is just a policy?
+    pub fn apply_policy_noise(&mut self, node: NodeId<Evaluated>, noise: &Policy, eps: f32) {
         let data = &self.arena.nodes[node.index as usize];
         let start = data.branch_start as usize;
         let count = data.branch_count.v as usize;
 
-        let total = noise.iter().sum::<f32>();
-        for (branch, &noise_val) in self.arena.branches[start..start + count]
+        for (branch, noise) in self.arena.branches[start..start + count]
             .iter_mut()
-            .zip(noise)
+            .zip(noise.iter())
         {
-            let norm_noise = noise_val / total;
-            let current_policy = branch.policy;
-            branch.policy = current_policy * (1. - eps) + eps * norm_noise;
+            branch.policy.mix(noise, eps);
         }
+
+        // todo: it is not guaranteed by the Policy type or something, that the
+        // branch policies still sum to 1. it is implied by the math
+        // here, but i would like this to be explicit.
     }
 
     pub fn update_node<S: HasValue>(&mut self, node: NodeId<S>, value: eval::Value, weight: f32) {
@@ -1073,7 +1122,7 @@ impl<'a, S: node_state::Any> NodeView<'a, S> {
     }
 
     #[inline]
-    pub fn visits(&self) -> u32 {
+    pub fn visits(&self) -> VisitCount {
         self.data().visits
     }
 }
@@ -1104,23 +1153,41 @@ impl<'a, S: HasValue> NodeView<'a, S> {
 
 /// The winrate of a node in range [0; 1].
 #[derive(Debug, Clone, Copy)]
-pub struct WinRate(pub f32);
+pub struct WinRate(pub Probability);
 
-impl WinRate {
-    pub const fn win() -> Self {
-        Self(1.)
-    }
+impl ops::Deref for WinRate {
+    type Target = Probability;
 
-    pub const fn loss() -> Self {
-        Self(0.)
+    fn deref(&self) -> &Self::Target {
+        &self.0
     }
 }
 
-impl_op!(-|x: WinRate| -> WinRate { WinRate(1. - x.0) });
+impl WinRate {
+    #[inline(always)]
+    pub const fn win() -> Self {
+        Self(Probability::one())
+    }
+
+    #[inline(always)]
+    pub const fn loss() -> Self {
+        Self(Probability::zero())
+    }
+
+    #[inline(always)]
+    pub const fn draw() -> Self {
+        Self(Probability::even())
+    }
+
+    #[inline(always)]
+    pub const fn inv(&self) -> Self {
+        Self(self.0.inv())
+    }
+}
 
 impl Default for WinRate {
     fn default() -> Self {
-        Self(0.5)
+        Self::draw()
     }
 }
 
@@ -1137,23 +1204,24 @@ impl<'a> From<NodeView<'a, Evaluated>> for WinRate {
             return Self::loss();
         }
 
-        if visits == 0 {
+        if visits == VisitCount(0) {
             Self::default()
         }
         else {
-            Self(value.0 / visits as f32)
+            let prob = Probability::new(value.0.algebraic_div(visits.0 as f32));
+            Self(prob)
         }
     }
 }
 
 impl From<WinRate> for eval::Value {
     fn from(win_rate: WinRate) -> Self {
-        Self::new(win_rate.0)
+        Self::new(win_rate.0.v())
     }
 }
 
 impl fmt::Display for WinRate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.2}%", self.0 * 100.)
+        write!(f, "{:.2}%", self.0.v() * 100.)
     }
 }

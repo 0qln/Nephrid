@@ -6,11 +6,10 @@ use burn::{
 };
 use engine::{
     core::{
-        search::mcts::{
+        r#move::Move, search::mcts::{
             eval::{GameResult, Quality},
-            nn::{CheckTensorHealthError, VALUE_OUTPUT_TENSOR_DIM},
-        },
-        turn::Turn,
+            nn::{CheckTensorHealthError, VALUE_OUTPUT_TENSOR_DIM}, node::VisitCount,
+        }, turn::Turn
     },
     misc::{CheckHealth, CheckHealthResult},
 };
@@ -19,6 +18,10 @@ use thiserror::Error;
 use crate::self_play::Outcome;
 
 pub mod el;
+
+/// Visit counts for each legal move in a position.
+#[derive(Debug, PartialEq, Clone)]
+pub struct VisitCounts(pub Vec<(Move, VisitCount)>);
 
 #[derive(Config, Debug)]
 pub struct LossConfig {

@@ -19,6 +19,10 @@
 #![feature(control_flow_into_value)]
 #![feature(strip_circumfix)]
 #![feature(const_convert)]
+#![feature(float_algebraic)]
+#![feature(iter_collect_into)]
+#![feature(extend_one)]
+#![feature(extend_one_unchecked)]
 
 #[macro_use]
 extern crate impl_ops;

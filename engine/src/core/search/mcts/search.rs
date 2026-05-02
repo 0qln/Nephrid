@@ -10,7 +10,7 @@ use crate::core::{
     search::mcts::{
         back::{self},
         eval::{Evaluation, Evaluator, Guess, eval_terminal},
-        node::{BranchId, NodeId, NodeView, RtNodeId, Tree, node_state::*},
+        node::{BranchId, NodeId, NodeView, RtNodeId, Tree, VisitCount, node_state::*},
         noise::Noiser,
         select::Selector,
     },
@@ -359,7 +359,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         tree: &mut Tree,
         sel_node_id: ParentNodeId,
     ) {
-        let visit_threshold = 4; // todo: fine-tune
+        let visit_threshold = VisitCount(4); // todo: fine-tune
         let branches = tree.branch_ids(parent_node_id);
         let best_branch_id = branches
             .max_by_key(|&branch_id| {

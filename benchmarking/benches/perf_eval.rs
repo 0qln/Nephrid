@@ -9,7 +9,7 @@ use engine::{
             limit::UciLimit,
             mcts::{
                 self, HceParts, MctsConfig, mcts,
-                node::{self, Branch, node_state},
+                node::{self, Branch, VisitCount, node_state},
                 strategy::{MctsUci, UciCp, UciScore},
             },
         },
@@ -109,7 +109,7 @@ struct Solution<Diagnostic> {
 }
 
 struct MctsDiagnostic {
-    visits: u32,
+    visits: VisitCount,
     value: node::Value,
     root_entropy: f32,
 }

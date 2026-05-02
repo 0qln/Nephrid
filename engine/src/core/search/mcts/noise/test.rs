@@ -1,13 +1,18 @@
 use approx::assert_relative_eq;
+use itertools::Itertools;
 use rand::{RngCore, SeedableRng};
 
-use crate::core::{
-    depth::Depth,
-    position::Position,
-    search::mcts::{
-        eval::{Logits, Policy},
-        node::node_state::{Branching, Leaf},
+use crate::{
+    core::{
+        depth::Depth,
+        r#move::MAX_LEGAL_MOVES,
+        position::Position,
+        search::mcts::{
+            eval::{Logits, Policy},
+            node::node_state::{Branching, Leaf},
+        },
     },
+    misc::List,
 };
 
 use super::*;
@@ -28,8 +33,13 @@ fn test_dirichlet_noise_basic() {
 
     let policy = {
         let branches = tree.branches(node);
-        let logits = Logits(branches.iter().map(|_| rng.next_u32() as f32).collect_vec());
-        Policy::from_logits(logits, 1.)
+        let logits = Logits(
+            branches
+                .iter()
+                .map(|_| rng.next_u32() as f32)
+                .collect::<List<{ MAX_LEGAL_MOVES }, f32>>(),
+        );
+        Policy::from_logits(logits, 1., &mut List::new())
     };
     let node = tree.set_policy(node, &policy);
 
@@ -43,9 +53,9 @@ fn test_dirichlet_noise_basic() {
     assert_ne!(new_policy, policy.iter().collect_vec());
 
     // Policies should still sum to approximately 1
-    let sum: f32 = new_policy.iter().sum();
+    let sum: f32 = new_policy.iter().map(|p| p.v()).sum();
     assert_relative_eq!(sum, 1.0, epsilon = 1e-5);
 
     // All policies should be non-negative
-    assert!(new_policy.iter().all(|&p| (0. ..1.).contains(&p)));
+    assert!(new_policy.iter().all(|&p| (0. ..1.).contains(&p.v())));
 }

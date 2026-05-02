@@ -502,7 +502,7 @@ impl EvalInfo {
         let state = &self.state;
         let color = self.turn;
 
-        let mut logits = Vec::new();
+        let mut logits = List::new();
         for &mov in self.moves.iter() {
             // policy for each move in the position is the difference of the psqt score from
             // the previous position and the psqt score of the next position that is
@@ -517,7 +517,7 @@ impl EvalInfo {
             logits.push(score as f32);
         }
 
-        Policy::from_logits(Logits(logits), 10.)
+        Policy::from_logits(Logits(logits), 10., &mut List::new())
     }
 }
 

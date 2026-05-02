@@ -26,23 +26,27 @@ impl super::Selector for PuctSelector {
         let node = tree.node(branch.node());
         let parent = tree.node(parent_id);
 
-        let cap_n_i = parent.visits() as f32;
-        let n_i = node.visits() as f32;
+        let cap_n_i = parent.visits().0 as f32;
+        let n_i = node.visits().0 as f32;
 
         let value = node.value();
         let exploitation = if n_i == 0. {
             // fallback to parent q-value for unvisited nodes. note that the parent node
             // cannot be 0 because we only expand a node after visiting it at
             // least once.
-            parent.value() / cap_n_i
+            parent.value().algebraic_div(cap_n_i)
         }
         else {
-            value / n_i
+            value.algebraic_div(n_i)
         };
 
-        let exploration = self.c * branch.policy() * cap_n_i.sqrt() / (1. + n_i);
+        let policy = branch.policy().v();
+        let exploration = self
+            .c
+            .algebraic_mul(policy)
+            .algebraic_mul(cap_n_i.sqrt().algebraic_div(1_f32.algebraic_add(n_i)));
 
-        Score::new(exploitation + exploration)
+        Score::new(exploitation.algebraic_add(exploration))
     }
 
     fn min_score(&self) -> Score {
