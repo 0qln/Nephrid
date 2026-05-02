@@ -34,19 +34,16 @@ impl super::Selector for PuctSelector {
             // fallback to parent q-value for unvisited nodes. note that the parent node
             // cannot be 0 because we only expand a node after visiting it at
             // least once.
-            parent.value().algebraic_div(cap_n_i)
+            parent.value() / (cap_n_i)
         }
         else {
-            value.algebraic_div(n_i)
+            value / (n_i)
         };
 
         let policy = branch.policy().v();
-        let exploration = self
-            .c
-            .algebraic_mul(policy)
-            .algebraic_mul(cap_n_i.sqrt().algebraic_div(1_f32.algebraic_add(n_i)));
+        let exploration = self.c * (policy) * cap_n_i.sqrt() / (1_f32 + (n_i));
 
-        Score::new(exploitation.algebraic_add(exploration))
+        Score::new(exploitation + exploration)
     }
 
     fn min_score(&self) -> Score {
