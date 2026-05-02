@@ -110,6 +110,7 @@ impl TryFrom<&str> for UnfinishedGameHandling {
 pub struct MctsConfig {
     pub dirichlet_alpha: f32,
     pub dirichlet_epsilon: f32,
+    pub c_puct: f32,
 }
 
 #[derive(Config, Debug)]
@@ -309,6 +310,7 @@ impl BatchGenerator {
             BatchedNNEvaluator::new(worker_tx),
             mcts.dirichlet_alpha,
             mcts.dirichlet_epsilon,
+            mcts.c_puct,
         );
 
         let num_fens = fens.len();
@@ -706,6 +708,7 @@ pub struct MctsTrainParts {
     pub evaluator: BatchedNNEvaluator,
     alpha: f32,
     epsilon: f32,
+    c_puct: f32,
 }
 
 impl MctsParts for MctsTrainParts {
@@ -714,7 +717,7 @@ impl MctsParts for MctsTrainParts {
     type Noiser = DirichletNoiser;
 
     fn selector(&self) -> Self::Selector {
-        Default::default()
+        MctsTrainSelector::new(self.c_puct, 1.)
     }
 
     fn evaluator(&self) -> Self::Evaluator {
@@ -736,8 +739,13 @@ impl TryFrom<&Configuration> for MctsTrainParts {
 }
 
 impl MctsTrainParts {
-    pub fn new(evaluator: BatchedNNEvaluator, alpha: f32, epsilon: f32) -> Self {
-        Self { evaluator, alpha, epsilon }
+    pub fn new(evaluator: BatchedNNEvaluator, alpha: f32, epsilon: f32, c_puct: f32) -> Self {
+        Self {
+            evaluator,
+            alpha,
+            epsilon,
+            c_puct,
+        }
     }
 }
 
