@@ -223,6 +223,27 @@ pub struct Logits(pub List<{ MAX_LEGAL_MOVES }, f32>);
 #[derive(Debug, PartialEq, Clone)]
 pub struct Policy(List<{ MAX_LEGAL_MOVES }, Probability>);
 
+// todo: use typestate for easy internal type conversion by reference?
+// pub struct Policy<State: PolicyState>(List<{ MAX_LEGAL_MOVES }, State::Value>);
+
+// pub mod policy_state {
+//     use super::*;
+
+//     pub trait PolicyState {
+//         type Value;
+//     }
+
+//     pub struct Probabilities;
+//     impl PolicyState for Probabilities {
+//         type Value = Probability;
+//     }
+
+//     pub struct Logits;
+//     impl PolicyState for Logits {
+//         type Value = f32;
+//     }
+// }
+
 impl Policy {
     const EPS: f32 = 1e-4;
 

@@ -502,7 +502,14 @@ impl EvalInfo {
         let state = &self.state;
         let color = self.turn;
 
+        // let mut logits = unsafe {
+        //     let pointer = &mut policy.0 as *mut List<{ MAX_LEGAL_MOVES },
+        // Probability>;     let logits = ptr::read(pointer.cast::<List<_,
+        // f32>>());     ManuallyDrop::new(logits)
+        // };
+
         let mut logits = List::new();
+
         for &mov in self.moves.iter() {
             // policy for each move in the position is the difference of the psqt score from
             // the previous position and the psqt score of the next position that is
