@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -e
+
+# Show usage if --help or -h is provided
+if [[ "$1" == "-h" || "$1" == "--help" ]]; then
+    echo "Usage: $0 [base-commit]"
+    echo "Benchmark the current branch/commit against the specified base commit."
+    echo "If no base commit is given, 'main' is used as the default."
+    exit 0
+fi
+
+mkdir -p ccbench/in ccbench/out
+
+# Determine the base commit reference (branch, tag, or hash)
+BASE_REF="${1:-main}"
+
+# Save current state (branch or commit hash) to return to later
+if CURRENT_BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null); then
+    CURRENT_STATE="$CURRENT_BRANCH"
+    echo "Current branch: $CURRENT_BRANCH"
+else
+    CURRENT_STATE=$(git rev-parse HEAD)
+    echo "Current detached HEAD at: $(git rev-parse --short HEAD)"
+fi
+
+# Get short hashes for naming binaries
+FEAT_HASH=$(git rev-parse --short HEAD)
+BASE_HASH=$(git rev-parse --short "$BASE_REF")
+
+echo "Feature commit: $FEAT_HASH"
+echo "Base commit ($BASE_REF): $BASE_HASH"
+
+# Binary paths
+FEAT_BIN="ccbench/in/nephrid-${FEAT_HASH}"
+BASE_BIN="ccbench/in/nephrid-${BASE_HASH}"
+
+need_base=false
+need_feat=false
+
+if [[ -f "$BASE_BIN" ]]; then
+    echo "Base binary already exists: $BASE_BIN"
+else
+    echo "Base binary missing, will rebuild"
+    need_base=true
+fi
+
+if [[ -f "$FEAT_BIN" ]]; then
+    echo "Feature binary already exists: $FEAT_BIN"
+else
+    echo "Feature binary missing, will rebuild"
+    need_feat=true
+fi
+
+# Build base if needed
+if $need_base; then
+    echo "Checking out $BASE_REF to build base..."
+    git checkout "$BASE_REF"
+    echo "Building base ($BASE_HASH)..."
+    cargo build --release --bin nephrid
+    cp target/release/nephrid "$BASE_BIN"
+    echo "Returning to $CURRENT_STATE..."
+    git checkout "$CURRENT_STATE"
+fi
+
+# Build feature if needed
+if $need_feat; then
+    echo "Building feature ($FEAT_HASH)..."
+    # Ensure we are on the correct state (in case we just returned)
+    if [[ $(git rev-parse HEAD) != $(git rev-parse "$CURRENT_STATE") ]]; then
+        git checkout "$CURRENT_STATE"
+    fi
+    cargo build --release --bin nephrid
+    cp target/release/nephrid "$FEAT_BIN"
+fi
+
+echo "Executing ccbench..."
+ccbench \
+    "$FEAT_BIN" \
+    "$BASE_BIN" \
+    benchmarking/resources/popularpos_lichess_v3.epd \
+    ccbench/out/games.pgn
