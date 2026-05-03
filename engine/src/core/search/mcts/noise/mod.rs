@@ -72,7 +72,7 @@ impl Noiser for DirichletNoiser {
 
             let normalized_noise = noise
                 .iter()
-                .map(|noise_val| Probability::new(noise_val.algebraic_div(total)))
+                .map(|noise_val| Probability::new(noise_val / total))
                 .collect::<List<{ MAX_LEGAL_MOVES }, _>>();
 
             Policy::new(normalized_noise)

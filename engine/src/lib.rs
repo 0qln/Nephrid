@@ -19,7 +19,6 @@
 #![feature(control_flow_into_value)]
 #![feature(strip_circumfix)]
 #![feature(const_convert)]
-#![feature(float_algebraic)]
 #![feature(iter_collect_into)]
 
 #[macro_use]
