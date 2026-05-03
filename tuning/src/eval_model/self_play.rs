@@ -583,10 +583,21 @@ where
                 break;
             }
 
-            if config
-                .allowed_moves
-                .is_some_and(|max_moves| completed_moves >= max_moves)
-            {
+            if {
+                let is_proven = mcts_state
+                    .tree
+                    .node(mcts_state.tree.root())
+                    .value()
+                    .is_proven();
+
+                let is_too_long = config
+                    .allowed_moves
+                    .is_some_and(|max_moves| completed_moves >= max_moves);
+
+                // if we've reached the allowed move limit and we don't have a proven result, we
+                // consider the game unfinished and handle it according to the config.
+                is_too_long && !is_proven
+            } {
                 match unfinished_game_handling {
                     UnfinishedGameHandling::Discard => {
                         return Ok(SelfPlay { game, results: vec![] });

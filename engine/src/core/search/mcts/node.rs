@@ -88,6 +88,10 @@ impl Value {
         *self == Self::proven_loss()
     }
 
+    pub fn is_proven(&self) -> bool {
+        self.is_proven_win() || self.is_proven_loss()
+    }
+
     pub fn v(&self) -> f32 {
         self.0
     }
