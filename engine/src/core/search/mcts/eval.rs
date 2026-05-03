@@ -351,7 +351,6 @@ pub fn softmax<const N: usize>(
 
 /// Construct a policy from visit counts by applying the AlphaZero
 /// temperature formula.
-// todo: make this output a RawPolicy
 pub fn normalize_visits<const N: usize>(xs: &[VisitCount; N], temp: f32) -> [Probability; N] {
     debug_assert!(!xs.is_empty(), "Should have at least one visit count");
 
