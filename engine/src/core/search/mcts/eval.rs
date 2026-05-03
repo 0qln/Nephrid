@@ -107,10 +107,9 @@ pub enum Evaluation {
 
 impl fmt::Display for Evaluation {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // todo: this is the same as debug impl?
         match self {
-            Self::Guess(x) => write!(f, "Evaluation::Guess({x:?})"),
-            Self::Terminal(x) => write!(f, "Evaluation::Terminal({x:?})"),
+            Self::Guess(x) => write!(f, "Eval::Guess({x:?})"),
+            Self::Terminal(x) => write!(f, "Eval::Terminal({x:?})"),
         }
     }
 }
