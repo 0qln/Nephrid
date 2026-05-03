@@ -316,7 +316,7 @@ pub type CheckHealthResult<E> = Result<(), E>;
 pub trait CheckHealth {
     type Error;
 
-    #[must_use]
+    #[must_use = "The result of a health check should be checked."]
     fn check_health(&self) -> CheckHealthResult<Self::Error>;
 }
 

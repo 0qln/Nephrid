@@ -424,7 +424,7 @@ pub enum SanParseError {
     #[error(
         "The SAN string does not contain enough disambiguation information. Candidate moves: {0}"
     )]
-    NotEnoughDisambiguation(MoveList),
+    NotEnoughDisambiguation(Box<MoveList>),
 
     #[error("The SAN string does not correspond to a legal move in the given position.")]
     IllegalMove,
@@ -485,16 +485,10 @@ impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
         let (file_1, rank_1) = {
             (
                 File::try_from(tok.peek_next_char().ok_or(E::TooShort)?)
-                    .map(|f| {
-                        tok.next_char(); // consume
-                        f
-                    })
+                    .inspect(|_| tok.consume_next_char())
                     .ok(),
                 Rank::try_from(tok.peek_next_char().ok_or(E::TooShort)?)
-                    .map(|r| {
-                        tok.next_char(); // consume
-                        r
-                    })
+                    .inspect(|_| tok.consume_next_char())
                     .ok(),
             )
         };
@@ -554,15 +548,12 @@ impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
                 tok.next_char(); // consume
                 Some(PromoPieceType::try_from(tok).map_err(E::InvalidPromoPieceType)?)
             }
-            // Although some poorly formatted SAN data, like the ERET datum,
-            // `... bm e8N; id "ERET 089 - Underpromotion";`
-            // can contain bad data (`e8=N` would've been correct), and we should try to handle
-            // those cases aswell.
-            else if let Ok(pt) = PromoPieceType::try_from(tok) {
-                Some(pt)
-            }
             else {
-                None
+                // some poorly formatted SAN data, like the ERET datum
+                // `... bm e8N; id "ERET 089 - Underpromotion";`
+                // can contain bad data (`e8=N` would've been correct),
+                // so we should try to handle those cases aswell.
+                PromoPieceType::try_from(tok).ok()
             }
         };
 
@@ -582,13 +573,14 @@ impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
             if piece_matches && rank_matches && file_matches && to_matches && promo_matches {
                 moves.push(m);
             }
-            return ControlFlow::Continue::<(), _>(());
+
+            ControlFlow::Continue::<(), _>(())
         });
 
         match moves.len() {
             0 => Err(E::IllegalMove),
             1 => Ok(moves.as_slice()[0]),
-            2.. => Err(E::NotEnoughDisambiguation(moves)),
+            2.. => Err(E::NotEnoughDisambiguation(Box::new(moves))),
         }
     }
 }

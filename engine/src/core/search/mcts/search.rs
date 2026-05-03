@@ -525,7 +525,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                 self.selection.batched.push(BatchItem {
                     parent: Some(parent),
                     node,
-                    trace: self.evaluator.trace(node, tree, &mut self.position),
+                    trace: self.evaluator.trace(node, tree, self.position),
                     sel_data: SelData { turn: self.position.get_turn() },
                     weight: 1.,
                 });
@@ -594,7 +594,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         }
 
         for &SkipItem { parent, ref eval, node, sel_data } in &self.selection.skips {
-            back::update_skip(tree, node, sel_data.turn, &eval, 1.0);
+            back::update_skip(tree, node, sel_data.turn, eval, 1.0);
             let path = self
                 .selection
                 .iter_path_up(Some(parent))

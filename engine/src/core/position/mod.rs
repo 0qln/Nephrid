@@ -1707,12 +1707,12 @@ impl TryFrom<&'_ mut Tokenizer<'_>> for EpdOp {
     type Error = EpdOpParseError;
 
     fn try_from(tok: &mut Tokenizer) -> Result<Self, Self::Error> {
-        let code = tok.next_token().ok_or_else(|| Self::Error::MissingCode)?;
+        let code = tok.next_token().ok_or(Self::Error::MissingCode)?;
 
         let mut arg = tok
             .skip_ws()
             .take_until(';')
-            .ok_or_else(|| Self::Error::MissingArgumentOrSemicolon)?;
+            .ok_or(Self::Error::MissingArgumentOrSemicolon)?;
 
         if let Some(stripped_arg) = arg.strip_circumfix('"', '"') {
             arg = stripped_arg;
@@ -1742,8 +1742,8 @@ impl<'a, 'b, T: for<'c, 'd> TryFrom<&'c mut Tokenizer<'d>, Error: std::error::Er
         }
 
         match T::try_from(&mut *tok) {
-            Ok(t) => return Ok(Self(Some(t))),
-            Err(e) => return Err(e.into()),
+            Ok(t) => Ok(Self(Some(t))),
+            Err(e) => Err(e.into()),
         }
     }
 }

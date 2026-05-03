@@ -233,8 +233,7 @@ fn main() {
         .map(|line| {
             let tok = &mut Tokenizer::new(line);
             let epd = EpdLineImport(tok);
-            let test = Test::try_from(epd).expect("Parse EPD line into Test");
-            test
+            Test::try_from(epd).expect("Parse EPD line into Test")
         })
         .collect_vec();
 

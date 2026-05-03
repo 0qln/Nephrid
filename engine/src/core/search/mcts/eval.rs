@@ -103,7 +103,7 @@ impl Guess {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Evaluation {
     /// we will go further and have a guess about this game.
-    Guess(Guess),
+    Guess(Box<Guess>),
     /// we cannot go any further.
     Terminal(GameResult),
 }

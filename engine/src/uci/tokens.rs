@@ -67,6 +67,10 @@ impl<'a> Tokenizer<'a> {
         self.next_char_with_index().map(|c| c.1)
     }
 
+    pub fn consume_next_char(&mut self) {
+        self.next_char_with_index();
+    }
+
     pub fn has_next_char(&mut self) -> bool {
         self.peek_next_char().is_some()
     }
