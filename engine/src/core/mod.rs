@@ -283,6 +283,12 @@ pub fn execute_uci(
                     .map(|c| c.game_tree_caching())
                     .unwrap_or(false);
 
+                // todo: the gui usually does not start our clock until it has sent the `go`
+                // command. which means, instead of having the search-thread block until it can
+                // prozess the go command (since we return here early and the engine will send
+                // the go as soon as we answer (or does it do that immediatly? todo research)),
+                // we can block here until the search thread has completed the
+                // mcts tree advances etc.
                 engine.search_t.tx.send(match game_tree_caching {
                     true => Command::AdvanceState(mov),
                     false => Command::ResetState,
