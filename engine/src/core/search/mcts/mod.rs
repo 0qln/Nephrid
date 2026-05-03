@@ -2,19 +2,24 @@ use burn::prelude::Backend;
 use rand::{SeedableRng, rngs::SmallRng};
 use thiserror::Error;
 
-use crate::core::{
-    config::Configuration,
-    r#move::Move,
-    position::Position,
-    search::mcts::{
-        eval::{Evaluator, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator},
-        nn::{LoadNNError, Model},
-        node::Tree,
-        noise::{DirichletNoiser, Noiser, NullNoiser},
-        search::TreeSearcher,
-        select::{Selector, puct::PuctSelector, ucb::UcbSelector},
-        strategy::MctsStrategy,
+use crate::{
+    core::{
+        config::Configuration,
+        r#move::Move,
+        position::Position,
+        search::mcts::{
+            eval::{
+                Evaluator, Ratio, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator,
+            },
+            nn::{CheckModelHealthError, LoadNNError, Model},
+            node::Tree,
+            noise::{DirichletNoiser, Noiser, NullNoiser},
+            search::TreeSearcher,
+            select::{Selector, puct::PuctSelector, ucb::UcbSelector},
+            strategy::MctsStrategy,
+        },
     },
+    misc::CheckHealth,
 };
 
 use std::{path::PathBuf, rc::Rc};
@@ -72,6 +77,9 @@ pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
     fn noiser(&self) -> Self::Noiser;
+    fn warmup(&mut self, _batch_size: usize) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 pub trait MctsState {
@@ -128,7 +136,7 @@ pub struct NNParts<B: Backend> {
 
     // Noiser
     alpha: f32,
-    epsilon: f32,
+    epsilon: Ratio,
 }
 
 impl<B: Backend> MctsParts for NNParts<B> {
@@ -148,12 +156,23 @@ impl<B: Backend> MctsParts for NNParts<B> {
         let rng = SmallRng::from_os_rng();
         DirichletNoiser::new(self.alpha, self.epsilon, rng)
     }
+
+    fn warmup(&mut self, batch_size: usize) -> Result<(), String> {
+        self.model.warmup(batch_size, &self.device);
+        Ok(())
+    }
 }
 
 #[derive(Error, Debug)]
 pub enum CreateNNPartsError {
     #[error("Error while creating nn-parts: {0}")]
     LoadNNError(#[from] LoadNNError),
+
+    #[error("Unhealthy epsilon: {0}")]
+    BadEpsilon(String),
+
+    #[error("Unhealthy nn: {0}")]
+    BadNN(CheckModelHealthError),
 }
 
 impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
@@ -161,18 +180,23 @@ impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
 
     fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
         let alpha = config.dirichlet_alpha();
-        let epsilon = config.dirichlet_epsilon();
+
+        let epsilon = Ratio::new(config.dirichlet_epsilon());
+        epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
+
         let weights = PathBuf::from(config.weights_path());
+
         let device = B::Device::default();
+
         let nn = Model::try_from((weights, &device))?;
-        // todo: do this
-        // nn.warmup(config::MPV, &device);
+        nn.check_health().map_err(Self::Error::BadNN)?;
+
         Ok(Self::new(nn, device, alpha, epsilon))
     }
 }
 
 impl<B: Backend> NNParts<B> {
-    pub fn new(nn: Model<B>, device: B::Device, alpha: f32, epsilon: f32) -> Self {
+    pub fn new(nn: Model<B>, device: B::Device, alpha: f32, epsilon: Ratio) -> Self {
         Self {
             model: Rc::new(nn),
             device: Rc::new(device),
@@ -186,7 +210,7 @@ impl<B: Backend> NNParts<B> {
 #[derive(Debug)]
 pub struct HceParts {
     alpha: f32,
-    epsilon: f32,
+    epsilon: Ratio,
 }
 
 impl MctsParts for HceParts {
@@ -208,22 +232,33 @@ impl MctsParts for HceParts {
     }
 }
 
-impl From<&Configuration> for HceParts {
-    fn from(config: &Configuration) -> Self {
+#[derive(Error, Debug)]
+pub enum CreateHcePartsError {
+    #[error("Unhealthy epsilon: {0}")]
+    BadEpsilon(String),
+}
+
+impl TryFrom<&Configuration> for HceParts {
+    type Error = CreateHcePartsError;
+
+    fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
         let alpha = config.dirichlet_alpha();
-        let epsilon = config.dirichlet_epsilon();
-        Self::new(alpha, epsilon)
+
+        let epsilon = Ratio::new(config.dirichlet_epsilon());
+        epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
+
+        Ok(Self::new(alpha, epsilon))
     }
 }
 
 impl Default for HceParts {
     fn default() -> Self {
-        Self::new(0.3, 0.25)
+        Self::new(0.3, Ratio::new(0.25))
     }
 }
 
 impl HceParts {
-    pub fn new(alpha: f32, epsilon: f32) -> Self {
+    pub fn new(alpha: f32, epsilon: Ratio) -> Self {
         Self { alpha, epsilon }
     }
 }

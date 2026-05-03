@@ -9,12 +9,13 @@ use engine::{
         search::mcts::{
             self, CreateNNPartsError, MctsParts, NNParts,
             eval::{
-                self, Evaluator, Policy, Quality,
+                self, Evaluator, Policy, Quality, Ratio,
                 nn::{TraceInfo, get_node_history},
             },
             nn::{self, BoardInputTensor, POLICY_OUTPUTS, RawLogits, StateInputTensor},
             node::{
-                self, BranchId, NodeId, VisitCount, WinRate, node_state::{Evaluated, HasBranches}
+                self, BranchId, NodeId, VisitCount, WinRate,
+                node_state::{Evaluated, HasBranches},
             },
             noise::DirichletNoiser,
             search::{BatchItem, Selection},
@@ -111,6 +112,14 @@ pub struct MctsConfig {
     pub dirichlet_alpha: f32,
     pub dirichlet_epsilon: f32,
     pub c_puct: f32,
+}
+
+impl MctsConfig {
+    pub fn eps(&self) -> Result<Ratio, String> {
+        let eps = Ratio::new(self.dirichlet_epsilon);
+        eps.check_health()?;
+        Ok(eps)
+    }
 }
 
 #[derive(Config, Debug)]
@@ -305,10 +314,11 @@ impl BatchGenerator {
             config.eval_batch_size,
             Duration::from_millis(config.eval_batch_wait_timeout_ms),
         );
+
         let parts = MctsTrainParts::new(
             BatchedNNEvaluator::new(worker_tx),
             mcts.dirichlet_alpha,
-            mcts.dirichlet_epsilon,
+            mcts.eps()?,
             mcts.c_puct,
         );
 
@@ -679,7 +689,7 @@ impl mcts::MctsConfig for MctsTestConfig {
 pub struct MctsTrainParts {
     pub evaluator: BatchedNNEvaluator,
     alpha: f32,
-    epsilon: f32,
+    epsilon: Ratio,
     c_puct: f32,
 }
 
@@ -711,7 +721,7 @@ impl TryFrom<&Configuration> for MctsTrainParts {
 }
 
 impl MctsTrainParts {
-    pub fn new(evaluator: BatchedNNEvaluator, alpha: f32, epsilon: f32, c_puct: f32) -> Self {
+    pub fn new(evaluator: BatchedNNEvaluator, alpha: f32, epsilon: Ratio, c_puct: f32) -> Self {
         Self {
             evaluator,
             alpha,

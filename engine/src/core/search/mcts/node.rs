@@ -3,7 +3,7 @@ use crate::{
         depth::Depth,
         r#move::MoveIndex,
         search::mcts::{
-            eval::Probability,
+            eval::{Probability, Ratio},
             nn::PolicyHeadIndex,
             node::node_state::{ExpandedSwitch, HasBranches, HasValue, NodeState, Switch},
         },
@@ -795,7 +795,7 @@ impl Tree {
         unsafe { node.cast() }
     }
 
-    pub fn apply_policy_noise(&mut self, node: NodeId<Evaluated>, noise: &Policy, eps: f32) {
+    pub fn apply_policy_noise(&mut self, node: NodeId<Evaluated>, noise: &Policy, eps: Ratio) {
         let data = &self.arena.nodes[node.index as usize];
         let start = data.branch_start as usize;
         let count = data.branch_count.v as usize;

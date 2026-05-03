@@ -22,7 +22,7 @@ use engine::core::{
     position::Position,
     search::mcts::{
         NNParts, SearchState,
-        eval::{GameResult, Probability, Quality, RawPolicy},
+        eval::{GameResult, Probability, Quality, Ratio, RawPolicy},
         mcts,
         nn::{ModelConfig, PolicyHeadIndex},
     },
@@ -194,7 +194,8 @@ pub fn test_network_can_overfit_hardcoded_target() {
     );
 
     assert_eq!(
-        best_idx, target_move_index.v() as usize,
+        best_idx,
+        target_move_index.v() as usize,
         "Policy head failed to predict the hardcoded move index!"
     );
     assert!(
@@ -250,7 +251,7 @@ pub fn learn_mate_in_1() {
             .load_record(record);
 
         let mut mcts_state = SearchState::default();
-        let parts = NNParts::new(model, device, 0.3, 0.);
+        let parts = NNParts::new(model, device, 0.3, Ratio::zero());
 
         let limit = SelfPlayLimit {
             // should be enough to find the mate in 1 with a trained policy and batched MCTS.
@@ -347,7 +348,7 @@ pub fn learn_mate_in_2() {
         };
 
         let mut mcts_state = SearchState::default();
-        let nn_parts = NNParts::new(model, device, 0.3, 0.);
+        let nn_parts = NNParts::new(model, device, 0.3, Ratio::zero());
 
         for _ in 0..3 {
             let result = mcts::<{ MPV }, MctsTestConfig, _>(

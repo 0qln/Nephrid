@@ -43,7 +43,7 @@ fn test_dirichlet_noise_basic() {
     };
     let node = tree.set_policy(node, &policy);
 
-    let mut noiser = DirichletNoiser::new(0.03, 0.25, rng);
+    let mut noiser = DirichletNoiser::new(0.03, Ratio::new(0.25), rng);
     let result = noiser.apply_noise(node, &mut tree);
 
     assert!(result.is_ok());

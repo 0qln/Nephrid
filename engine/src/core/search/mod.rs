@@ -131,11 +131,13 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                     Err(_) => &Configuration::default(),
                 };
 
-                // #[allow(clippy::unnecessary_fallible_conversions)]
-                let parts = <C::Parts as TryFrom<&Configuration>>::try_from(cfg)
+                let mut parts = <C::Parts as TryFrom<&Configuration>>::try_from(cfg)
                     .map_err(|e| ExecError::BadConfig(e.to_string()))?;
 
+                parts.warmup(MPV).map_err(ExecError::BadConfig)?;
+
                 self.mcts_parts = Some(parts);
+
                 Ok(())
             }
             Command::AdvanceState(mov) => {

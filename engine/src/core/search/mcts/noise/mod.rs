@@ -7,7 +7,7 @@ use crate::{
     core::{
         r#move::MAX_LEGAL_MOVES,
         search::mcts::{
-            eval::{Policy, Probability},
+            eval::{Policy, Probability, Ratio},
             node::{NodeId, Tree, node_state::Evaluated},
         },
     },
@@ -27,12 +27,12 @@ pub trait Noiser {
 #[derive(Debug, Clone)]
 pub struct DirichletNoiser {
     alpha: f32,
-    eps: f32,
+    eps: Ratio,
     rng: SmallRng,
 }
 
 impl DirichletNoiser {
-    pub fn new(alpha: f32, eps: f32, rng: SmallRng) -> Self {
+    pub fn new(alpha: f32, eps: Ratio, rng: SmallRng) -> Self {
         Self { alpha, eps, rng }
     }
 
@@ -79,8 +79,7 @@ impl Noiser for DirichletNoiser {
         };
 
         // Apply noise
-        let eps = self.eps;
-        tree.apply_policy_noise(node, &noise, eps);
+        tree.apply_policy_noise(node, &noise, self.eps);
 
         Ok(())
     }

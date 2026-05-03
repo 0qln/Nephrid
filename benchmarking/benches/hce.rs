@@ -1,3 +1,4 @@
+use engine::core::{move_iter::sliding_piece::magics, search::mcts::eval::Ratio, zobrist};
 use std::{hint::black_box, time::Duration};
 
 use criterion::{Criterion, criterion_group, criterion_main};
@@ -21,6 +22,9 @@ use engine::{
 };
 
 pub fn policy(c: &mut Criterion) {
+    magics::init();
+    zobrist::init();
+
     let mut pos = Position::start_position();
     let mut tree = Tree::new();
     let root = tree.root();
@@ -42,6 +46,9 @@ pub fn policy(c: &mut Criterion) {
 }
 
 pub fn puct(c: &mut Criterion) {
+    magics::init();
+    zobrist::init();
+
     // very small function so make sure we get a lot of samples
     let mut group = c.benchmark_group("puct");
     group.measurement_time(Duration::from_secs(20));
@@ -79,12 +86,15 @@ pub fn puct(c: &mut Criterion) {
 }
 
 pub fn prob_mix(c: &mut Criterion) {
+    magics::init();
+    zobrist::init();
+
     let mut group = c.benchmark_group("puct");
     group.measurement_time(Duration::from_secs(20));
 
     let p1 = Probability::new(0.71_f32);
     let p2 = Probability::new(0.39_f32);
-    let ratio = 0.4_f32;
+    let ratio = Ratio::new(0.4_f32);
     group.bench_function("prob_mix", |b| {
         b.iter(|| Probability::mix(black_box(&mut p1.clone()), black_box(p2), black_box(ratio)))
     });
