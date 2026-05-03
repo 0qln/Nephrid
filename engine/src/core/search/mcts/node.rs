@@ -795,7 +795,6 @@ impl Tree {
         unsafe { node.cast() }
     }
 
-    // todo: `noise` is just a policy?
     pub fn apply_policy_noise(&mut self, node: NodeId<Evaluated>, noise: &Policy, eps: f32) {
         let data = &self.arena.nodes[node.index as usize];
         let start = data.branch_start as usize;
