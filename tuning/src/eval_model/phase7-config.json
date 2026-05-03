@@ -26,7 +26,7 @@
     "max_terminal_nodes": null
   },
   "caching": {
-    "proven_games": true
+    "proven_games": false
   },
   "self_play": {
     "concurrency": 256,
