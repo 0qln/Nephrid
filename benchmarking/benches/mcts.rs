@@ -27,8 +27,8 @@ pub fn mcts_benches(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("mcts");
     group
-        .measurement_time(Duration::from_secs(60))
-        .sample_size(20);
+        .measurement_time(Duration::from_secs(30))
+        .sample_size(10);
 
     let csv_data = include_str!("../resources/positions.csv");
 

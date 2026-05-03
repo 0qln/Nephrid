@@ -11,7 +11,14 @@ use crate::{
     impl_variants,
 };
 use itertools::Itertools;
-use std::{cmp::Ordering, collections::VecDeque, fmt, marker::PhantomData, ops::{self, Deref}, ptr};
+use std::{
+    cmp::Ordering,
+    collections::VecDeque,
+    fmt,
+    marker::PhantomData,
+    ops::{self, Deref},
+    ptr,
+};
 
 use crate::core::{
     Move, Position,
@@ -1208,7 +1215,7 @@ impl<'a> From<NodeView<'a, Evaluated>> for WinRate {
             Self::default()
         }
         else {
-            let prob = Probability::new(value.0.algebraic_div(visits.0 as f32));
+            let prob = Probability::new(value.0 / (visits.0 as f32));
             Self(prob)
         }
     }

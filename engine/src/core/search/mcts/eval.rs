@@ -224,7 +224,8 @@ pub struct Logits(pub List<{ MAX_LEGAL_MOVES }, f32>);
 pub struct Policy(List<{ MAX_LEGAL_MOVES }, Probability>);
 
 // todo: use typestate for easy internal type conversion by reference?
-// pub struct Policy<State: PolicyState>(List<{ MAX_LEGAL_MOVES }, State::Value>);
+// pub struct Policy<State: PolicyState>(List<{ MAX_LEGAL_MOVES },
+// State::Value>);
 
 // pub mod policy_state {
 //     use super::*;
@@ -621,8 +622,7 @@ impl Probability {
             "Noise ratio must be in range [0; 1], but was: {ratio}"
         );
 
-        self.0 = (self.0.algebraic_mul((1_f32).algebraic_sub(ratio)))
-            .algebraic_add(other.0.algebraic_mul(ratio));
+        self.0 = (self.0 * (1_f32 - ratio)) + (other.0 * ratio);
     }
 }
 
