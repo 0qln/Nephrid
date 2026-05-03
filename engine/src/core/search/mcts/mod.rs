@@ -86,17 +86,6 @@ pub trait MctsState {
     fn tree(&mut self) -> &mut Tree;
 }
 
-// todo:
-// instead of storing the gametree in between moves, try using bump-allocation
-// to allocate all the nodes. Maybe the speed up is better than storing the
-// compute? (We can't do both, since with bump allocation we either would have
-// to move the subtree to a new `Bump`, or we would just not be
-// able to deallocate the unused nodes. If our search is *that* slow that we
-// aren't even using that much memory for the Tree, maybe just risc having a
-// huge memory leak for each `ucinewgame` then :3 idk) or copy all the used
-// nodes to a new bump arena... you'd have to do that node by node which could
-// be really slow. <todo:benchmark />
-//
 /// # The search state.
 ///
 /// Either we have ownership of a search-tree, or we have the join handle of the
