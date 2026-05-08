@@ -20,3 +20,6 @@ thiserror = "2.0.11"
 [[bin]]
 name = "eval-model"
 path = "src/eval_model/main.rs"
+
+[lints]
+workspace = true

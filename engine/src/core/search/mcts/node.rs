@@ -504,7 +504,7 @@ impl Tree {
                 .sum::<usize>()
     }
 
-    /// Counts the wins of the root node player.
+    // /// Counts the wins of the root node player.
     // pub fn count_wins(&self) -> usize {
     //     self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, &|_node, _depth|
     // todo!()) }

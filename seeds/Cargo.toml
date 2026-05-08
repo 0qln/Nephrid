@@ -15,3 +15,6 @@ path = "src/zobrist_seed.rs"
 [[bin]]
 name = "magic-seeds"
 path = "src/magic_seeds.rs"
+
+[lints]
+workspace = true

@@ -21,3 +21,6 @@ regex = "1.12.3"
 [dev-dependencies]
 assert_cmd = "2.0"
 ntest = "0.9.5"
+
+[lints]
+workspace = true

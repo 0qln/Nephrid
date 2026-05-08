@@ -1,7 +1,4 @@
-use std::{
-    cmp::{max, min},
-    collections::{HashMap, hash_map::Entry},
-};
+use std::collections::{HashMap, hash_map::Entry};
 
 use itertools::Itertools;
 use rustc_hash::FxBuildHasher;
@@ -58,6 +55,11 @@ pub mod test;
 // todo:
 // the HashMap can probably be replaced by some custom stack info clever
 // indexing scheme...
+//
+// todo:
+// when switch to iterative, replace the `iterations < BATCH * 2` check. we
+// will keep a frontier of unexplorable nodes anyway (probably right?), and just
+// check if that is empty instead of doing the safestop above.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParentNodeId(pub usize);
@@ -303,11 +305,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         // todo
         let mut iterations = 0;
         let num_batchables = tree.count_nodes(&|node, _| node.state() == NodeState::Leaf, BATCH);
-        let batch_target = min(BATCH, num_batchables);
-        while self.selection.batched.len() < max(0, batch_target - self.selection.terminals.len())
-            // todo: find a proper way to determine when to stop
-            && iterations < 1024
-        {
+        while self.selection.batched.len() < num_batchables && iterations < BATCH * 2 {
             self.pick_branch::<P>(Depth::ROOT, root, tree, root_sel_id);
             iterations += 1;
         }

@@ -36,3 +36,6 @@ strip = "none"
 inherits = "release"
 strip = "none"
 debug = true
+
+[workspace.lints.clippy]
+blocks_in_conditions = "allow"
