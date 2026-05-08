@@ -1,4 +1,7 @@
-use std::collections::{HashMap, hash_map::Entry};
+use std::{
+    cmp::{max, min},
+    collections::{HashMap, hash_map::Entry},
+};
 
 use itertools::Itertools;
 use rustc_hash::FxBuildHasher;
@@ -298,8 +301,15 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         });
 
         // todo
-        for _ in 0..BATCH {
+        let mut iterations = 0;
+        let num_batchables = tree.count_nodes(&|node, _| node.state() == NodeState::Leaf, BATCH);
+        let batch_target = min(BATCH, num_batchables);
+        while self.selection.batched.len() < max(0, batch_target - self.selection.terminals.len())
+            // todo: find a proper way to determine when to stop
+            && iterations < 1024
+        {
             self.pick_branch::<P>(Depth::ROOT, root, tree, root_sel_id);
+            iterations += 1;
         }
 
         // // We'll keep a worklist of nodes to expand (evaluated nodes that are
@@ -413,7 +423,11 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                 }
                 // otherwise continue down the tree
                 else {
-                    self.selection.apply_virtual_loss(tree, node.down_cast(), 1);
+                    self.selection.apply_virtual_loss(
+                        tree,
+                        node.down_cast(),
+                        self.selector.virtual_loss(),
+                    );
                     let new_parent_id = self.selection.push_parent(ParentItem {
                         parent: Some(parent_sel_id),
                         trace: self.evaluator.trace(node, tree, self.position),
@@ -449,7 +463,8 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         eval: Evaluation,
         _depth: Depth,
     ) {
-        self.selection.apply_virtual_loss(tree, node.down_cast(), 1);
+        self.selection
+            .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
         self.selection.skips.push(SkipItem {
             node,
             sel_data: SelData { turn: self.position.get_turn() },
@@ -481,7 +496,8 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
     /// Select a shortcut to a node that can be considered terminal.
     #[inline]
     fn select_shortcut(&mut self, tree: &mut Tree, parent: ParentNodeId, node: NodeId<Leaf>) {
-        self.selection.apply_virtual_loss(tree, node.down_cast(), 1);
+        self.selection
+            .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
         self.selection.shortcuts.push(ShortcutItem { parent, node })
     }
 
@@ -493,7 +509,8 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         node: NodeId<Terminal>,
         depth: Depth,
     ) {
-        self.selection.apply_virtual_loss(tree, node.down_cast(), 1);
+        self.selection
+            .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
         self.selection.terminals.push(TerminalItem {
             parent,
             eval: eval_terminal(node, tree, depth, self.position),
@@ -510,7 +527,8 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         node: NodeId<Branching>,
         depth: Depth,
     ) {
-        self.selection.apply_virtual_loss(tree, node.down_cast(), 1);
+        self.selection
+            .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
 
         if depth > Depth::MAX {
             // return, such that the top-level while loop will try again and

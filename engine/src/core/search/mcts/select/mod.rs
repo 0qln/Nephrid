@@ -23,6 +23,10 @@ pub trait Selector {
     fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
 
     fn min_score(&self) -> Score;
+
+    fn virtual_loss(&self) -> u32 {
+        1
+    }
 }
 
 #[derive(PartialEq, Clone, Copy, Debug, Default)]

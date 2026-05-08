@@ -505,15 +505,16 @@ impl Tree {
     }
 
     /// Counts the wins of the root node player.
-    pub fn count_wins(&self) -> usize {
-        self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, &|_node, _depth| todo!())
-    }
+    // pub fn count_wins(&self) -> usize {
+    //     self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, &|_node, _depth|
+    // todo!()) }
 
     pub fn count_nodes(
         &self,
         pred: &impl Fn(NodeView<node_state::Unknown>, Depth) -> bool,
+        max: usize,
     ) -> usize {
-        self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, pred)
+        self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, pred, max)
     }
 
     pub fn count_subtree_nodes(
@@ -521,15 +522,24 @@ impl Tree {
         depth: Depth,
         node_id: RtNodeId,
         pred: &impl Fn(NodeView<node_state::Unknown>, Depth) -> bool,
+        max: usize,
     ) -> usize {
+        if max == 0 {
+            return 0;
+        }
+
         let node = self.node(node_id);
-        let count = if pred(node, depth) { 1 } else { 0 };
-        count
-            + self
-                .branches_rt(node_id)
-                .iter()
-                .map(|b| self.count_subtree_nodes(depth + 1, b.node, pred))
-                .sum::<usize>()
+        let mut total = if pred(node, depth) { 1 } else { 0 };
+
+        for b in self.branches_rt(node_id) {
+            if total >= max {
+                break;
+            }
+
+            total += self.count_subtree_nodes(depth + 1, b.node, pred, max - total);
+        }
+
+        total
     }
 
     /// Iterates the nodes in the tree under `root` in some order.

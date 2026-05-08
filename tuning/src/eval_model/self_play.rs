@@ -36,7 +36,10 @@ use std::{
     cmp::max,
     error::Error,
     ops::ControlFlow,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -77,6 +80,8 @@ pub struct SelfplayConfig {
     pub eval_models: usize,
     pub eval_batch_size: usize,
     pub eval_batch_wait_timeout_ms: u64,
+    pub eval_log_freq: u64,
+    pub eval_log_ema_alpha: f64,
 }
 
 pub enum UnfinishedGameHandling {
@@ -112,6 +117,7 @@ pub struct MctsConfig {
     pub dirichlet_alpha: f32,
     pub dirichlet_epsilon: f32,
     pub c_puct: f32,
+    pub virtual_loss: u32,
 }
 
 impl MctsConfig {
@@ -313,6 +319,8 @@ impl BatchGenerator {
             config.eval_models,
             config.eval_batch_size,
             Duration::from_millis(config.eval_batch_wait_timeout_ms),
+            Duration::from_millis(config.eval_log_freq),
+            config.eval_log_ema_alpha,
         );
 
         let parts = MctsTrainParts::new(
@@ -320,6 +328,7 @@ impl BatchGenerator {
             mcts.dirichlet_alpha,
             mcts.eps()?,
             mcts.c_puct,
+            mcts.virtual_loss,
         );
 
         let num_fens = fens.len();
@@ -702,6 +711,7 @@ pub struct MctsTrainParts {
     alpha: f32,
     epsilon: Ratio,
     c_puct: f32,
+    virtual_loss: u32,
 }
 
 impl MctsParts for MctsTrainParts {
@@ -710,7 +720,7 @@ impl MctsParts for MctsTrainParts {
     type Noiser = DirichletNoiser;
 
     fn selector(&self) -> Self::Selector {
-        MctsTrainSelector::new(self.c_puct, 1.)
+        MctsTrainSelector::new(self.c_puct, 1., self.virtual_loss)
     }
 
     fn evaluator(&self) -> Self::Evaluator {
@@ -732,12 +742,19 @@ impl TryFrom<&Configuration> for MctsTrainParts {
 }
 
 impl MctsTrainParts {
-    pub fn new(evaluator: BatchedNNEvaluator, alpha: f32, epsilon: Ratio, c_puct: f32) -> Self {
+    pub fn new(
+        evaluator: BatchedNNEvaluator,
+        alpha: f32,
+        epsilon: Ratio,
+        c_puct: f32,
+        virtual_loss: u32,
+    ) -> Self {
         Self {
             evaluator,
             alpha,
             epsilon,
             c_puct,
+            virtual_loss,
         }
     }
 }
@@ -745,11 +762,12 @@ impl MctsTrainParts {
 pub struct MctsTrainSelector {
     c: f32,
     policy_weight: f32,
+    virtual_loss: u32,
 }
 
 impl MctsTrainSelector {
-    pub fn new(c: f32, policy_weight: f32) -> Self {
-        Self { c, policy_weight }
+    pub fn new(c: f32, policy_weight: f32, virtual_loss: u32) -> Self {
+        Self { c, policy_weight, virtual_loss }
     }
 
     /// Weighted policy, where
@@ -766,6 +784,7 @@ impl Default for MctsTrainSelector {
         Self {
             c: f32::sqrt(2.0),
             policy_weight: 1.0,
+            virtual_loss: 1,
         }
     }
 }
@@ -807,6 +826,10 @@ impl Selector for MctsTrainSelector {
     fn min_score(&self) -> Score {
         Score::new(f32::NEG_INFINITY)
     }
+
+    fn virtual_loss(&self) -> u32 {
+        self.virtual_loss
+    }
 }
 
 /// The request sent from an MCTS thread to the Inference Worker.
@@ -832,6 +855,8 @@ pub fn spawn_inference_workers<B: Backend>(
     num_workers: usize,
     batch_size_max: usize,
     batch_wait_timeout: Duration,
+    logging_freq: Duration,
+    logging_ema_alpha: f64,
 ) -> Sender<NNRequest> {
     // 1. Create a single, bounded global queue.
     // Bounding it to ~4x the total batch capacity provides natural backpressure,
@@ -839,11 +864,18 @@ pub fn spawn_inference_workers<B: Backend>(
     let capacity = batch_size_max * num_workers * 4;
     let (req_tx, req_rx) = bounded::<NNRequest>(capacity);
 
+    let evals = Arc::new(AtomicUsize::new(0));
+    let inferences = Arc::new(AtomicUsize::new(0));
+
     // 2. Spawn the requested number of worker threads
-    for _ in 0..num_workers {
+    for i in 0..num_workers {
+        let _id = i + 1;
+
         let req_rx = req_rx.clone();
         let model = model.clone();
         let device = device.clone();
+        let evals = Arc::clone(&evals);
+        let inferences = Arc::clone(&inferences);
 
         thread::spawn(move || {
             let mut batch: Vec<NNRequest> = Vec::with_capacity(batch_size_max);
@@ -866,6 +898,8 @@ pub fn spawn_inference_workers<B: Backend>(
                         Err(RecvTimeoutError::Disconnected) => break,
                     }
                 }
+
+                let batch_size = batch.len();
 
                 // --- TENSOR CONSTRUCTION AND FORWARD PASS ---
                 let board_batch = BoardInputTensor::<B>::cat(
@@ -927,9 +961,79 @@ pub fn spawn_inference_workers<B: Backend>(
 
                     let _ = req.responder.send(NNResponse { value, raw_logits });
                 }
+
+                evals.fetch_add(batch_size, Ordering::Relaxed);
+                inferences.fetch_add(1, Ordering::Relaxed);
             }
         });
     }
+
+    let logger_evals = Arc::clone(&evals);
+    let logger_inferences = Arc::clone(&inferences);
+    thread::spawn(move || {
+        if logging_freq.is_zero() {
+            return;
+        }
+
+        let mut last_time = Instant::now();
+
+        let mut ema_evals_per_sec = 0.0;
+        // let mut ema_evals_per_inf = 0.0;
+        let mut ema_batch_full = 0.0;
+        let mut first_tick = true;
+
+        // 1.0 ~ forgets everything immediately
+        // 0.1 ~ smooths heavily over time
+        let alpha = logging_ema_alpha;
+
+        let update_ema = |current: f64, ema: f64| (alpha * current) + ((1.0 - alpha) * ema);
+
+        loop {
+            thread::sleep(logging_freq);
+
+            let current_time = Instant::now();
+            let time_diff = current_time.duration_since(last_time).as_secs_f64();
+            last_time = current_time;
+
+            let evals_diff = logger_evals.swap(0, Ordering::Relaxed) as f64;
+            let inferences_diff = logger_inferences.swap(0, Ordering::Relaxed) as f64;
+
+            let current_evals_per_sec = evals_diff / time_diff;
+            let current_batch_full = if inferences_diff > 0.0 {
+                (evals_diff / (inferences_diff * batch_size_max as f64)) * 100.0
+            }
+            else {
+                0.0
+            };
+
+            // let current_evals_per_inf = if inferences_diff > 0.0 {
+            //     (evals_diff / inferences_diff) * 100.0
+            // }
+            // else {
+            //     0.0
+            // };
+
+            // EMA
+            if first_tick {
+                ema_evals_per_sec = current_evals_per_sec;
+                ema_batch_full = current_batch_full;
+                first_tick = false;
+            }
+            else {
+                ema_evals_per_sec = update_ema(current_evals_per_sec, ema_evals_per_sec);
+                ema_batch_full = update_ema(current_batch_full, ema_batch_full);
+            }
+
+            log::info!(
+                target: "data",
+                "[EVAL] Evals/sec: {:.2}  Evals/inference: {}  Avg Batchfull: {:.2}%",
+                ema_evals_per_sec,
+                "/todo/",
+                // ema_evals_per_inf,
+                ema_batch_full
+            );
+        }
+    });
 
     req_tx
 }
