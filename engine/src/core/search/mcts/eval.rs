@@ -67,7 +67,7 @@ pub enum GameResult {
     Draw,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct Guess {
     pub relative_to: Color,
     pub quality: Quality,
@@ -100,7 +100,7 @@ impl Guess {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub enum Evaluation {
     /// we will go further and have a guess about this game.
     Guess(Box<Guess>),
@@ -218,11 +218,11 @@ impl std::fmt::Debug for RawPolicy {
 }
 
 /// Some kind of logits for each legal move in a position.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct Logits(pub List<{ MAX_LEGAL_MOVES }, f32>);
 
 /// A probability distribution over moves.
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq)]
 pub struct Policy(List<{ MAX_LEGAL_MOVES }, Probability>);
 
 // todo: use typestate for easy internal type conversion by reference?

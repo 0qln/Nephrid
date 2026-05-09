@@ -337,12 +337,9 @@ impl<const N: usize, T: Clone> Clone for List<N, T> {
         let mut new_list = Self::new();
         new_list.len = self.len;
         // todo: use memcopy?
-        for item in self.as_slice() {
+        for (i, item) in self.as_slice().iter().enumerate() {
             unsafe {
-                new_list
-                    .items
-                    .get_unchecked_mut(self.len)
-                    .write(item.clone());
+                new_list.items.get_unchecked_mut(i).write(item.clone());
             }
         }
         new_list

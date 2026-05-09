@@ -528,7 +528,7 @@ impl EvalInfo {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 pub struct HceEvaluator {
     policy_buf: Box<List<{ MAX_LEGAL_MOVES }, f32>>,
 }
