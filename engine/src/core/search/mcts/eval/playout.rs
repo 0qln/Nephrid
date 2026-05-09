@@ -91,8 +91,7 @@ impl Evaluator for PlayoutEvaluator {
             .filter_map(|leaf| leaf.trace.as_ref())
             .map(|eval_info| {
                 let result = self.playout(eval_info.start_pos.clone());
-                // todo: make policy optional or smth
-                let policy = Policy::new_even(0);
+                let policy = Policy::new_empty();
                 match result {
                     GameResult::Draw => Guess {
                         policy,
