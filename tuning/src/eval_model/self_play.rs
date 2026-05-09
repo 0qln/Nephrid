@@ -790,41 +790,53 @@ impl Default for MctsTrainSelector {
 }
 
 impl Selector for MctsTrainSelector {
-    fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+    #[inline]
+    fn exploration(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
         let parent = tree.node(parent_id);
 
+        let c = self.c;
+        let p = Self::weighted_policy(branch.policy().v(), self.policy_weight);
         let cap_n_i = parent.visits().0 as f32;
         let n_i = node.visits().0 as f32;
-        let value = node.value();
-        let policy = Self::weighted_policy(branch.policy().v(), self.policy_weight);
 
         #[cfg(debug_assertions)]
         {
-            assert!(!value.is_nan(), "value WAS NAN");
             assert!(!branch.policy().is_nan(), "policy WAS NAN");
             assert!(!n_i.is_nan(), "n_i WAS NAN");
         }
 
-        let exploitation = if n_i == 0. {
+        Score(c * p * cap_n_i.sqrt() / (1_f32 + (n_i)))
+    }
+
+    #[inline]
+    fn exploitation(
+        &self,
+        tree: &Tree,
+        branch_id: BranchId,
+        parent_id: NodeId<Evaluated>,
+    ) -> Score {
+        let branch = tree.branch(branch_id);
+        let node = tree.node(branch.node());
+        let parent = tree.node(parent_id);
+        let cap_n_i = parent.visits().0 as f32;
+        let n_i = node.visits().0 as f32;
+
+        #[cfg(debug_assertions)]
+        {
+            assert!(!node.value().is_nan(), "value WAS NAN");
+        }
+
+        if n_i == 0. {
             // fallback to parent q-value for unvisited nodes. note that the parent node
             // cannot be 0 because we only expand a node after visiting it at
             // least once.
-            parent.value() / cap_n_i
+            Score(parent.value() / cap_n_i)
         }
         else {
-            value / n_i
-        };
-        let exploration = self.c * policy * cap_n_i.sqrt() / (1f32 + n_i);
-
-        let result = exploitation + exploration;
-
-        Score::new(result)
-    }
-
-    fn min_score(&self) -> Score {
-        Score::new(f32::NEG_INFINITY)
+            Score(node.value() / n_i)
+        }
     }
 
     fn virtual_loss(&self) -> u32 {

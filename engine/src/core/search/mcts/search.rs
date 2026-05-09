@@ -1,4 +1,7 @@
-use std::collections::{HashMap, hash_map::Entry};
+use std::{
+    collections::{HashMap, hash_map::Entry},
+    mem::MaybeUninit,
+};
 
 use itertools::Itertools;
 use rustc_hash::FxBuildHasher;
@@ -7,14 +10,16 @@ use crate::core::{
     Position,
     color::{Perspective, colors, perspectives},
     depth::Depth,
+    r#move::Move,
     search::mcts::{
         back::{self},
         eval::{Evaluation, Evaluator, Guess, eval_terminal},
         node::{BranchId, NodeId, NodeView, RtNodeId, Tree, VisitCount, node_state::*},
         noise::Noiser,
-        select::Selector,
+        select::{self, Selector},
     },
     turn::Turn,
+    zobrist,
 };
 
 use super::eval::GameResult;
@@ -216,6 +221,7 @@ pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector
     evaluator: E,
     noiser: N,
     selection: Selection<E::TraceData>,
+    tt: Box<TranspositionTable<{ 2 << 10 }, TTData>>,
 }
 
 impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
@@ -228,6 +234,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             evaluator,
             noiser,
             selection: Default::default(),
+            tt: Default::default(),
         }
     }
 
@@ -367,20 +374,87 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         tree: &mut Tree,
         sel_node_id: ParentNodeId,
     ) {
+        let key = self.position.get_key();
+
+        let tt_entry = self.tt.get(key);
+        let tt_best_move = tt_entry.and_then(|data| data.best_move);
+
         let visit_threshold = VisitCount(4); // todo: fine-tune
-        let branches = tree.branch_ids(parent_node_id);
-        let best_branch_id = branches
-            .max_by_key(|&branch_id| {
+
+        // todo: remove the puct hardcoding
+        let sel = &self.selector;
+        const MIN: select::Score = select::Score(f32::NEG_INFINITY);
+
+        let (best_branch_id, best_move, best_exploitation, _) = {
+            let mut curr_score = MIN;
+            let mut curr_exploitation = MaybeUninit::uninit();
+            let mut curr_exploration = MaybeUninit::uninit();
+            let mut curr_move = MaybeUninit::uninit();
+            let mut curr_branch_id = MaybeUninit::uninit();
+
+            for branch_id in tree.branch_ids(parent_node_id) {
                 let branch = tree.branch(branch_id);
                 let child = tree.node(branch.node());
+                let mov = branch.mov();
+
+                let (score, exploitation, exploration);
+
+                // proven loss penalty
                 if child.value().is_proven_loss() && child.visits() >= visit_threshold {
-                    self.selector.min_score()
+                    score = MIN;
+                    exploitation = MIN;
+                    exploration = MIN;
                 }
                 else {
-                    self.selector.score(tree, branch_id, parent_node_id)
+                    let exploration_tt_fact = {
+                        // use the exploitation score from the tt best_move as guidance in the
+                        // exploration factor.
+                        if tt_best_move == Some(mov) {
+                            tt_entry.unwrap().exploitation.0 * 2.0
+                        }
+                        else {
+                            1.
+                        }
+                    };
+
+                    exploration = sel.exploration(tree, branch_id, parent_node_id)
+                        // transposition table heuristics
+                        * exploration_tt_fact;
+
+                    exploitation = sel.exploitation(tree, branch_id, parent_node_id);
+
+                    score = exploitation + exploration;
                 }
-            })
-            .expect("There has to be a branch on an evaluated node");
+
+                if score >= curr_score {
+                    curr_score = score;
+                    curr_exploitation.write(exploitation);
+                    curr_exploration.write(exploration);
+                    curr_move.write(mov);
+                    curr_branch_id.write(branch_id);
+                }
+            }
+
+            // SAFETY: a first pass is guruanteed because parent_node_id is evaluated and
+            // thus has to have atleast one branch.
+            unsafe {
+                (
+                    curr_branch_id.assume_init(),
+                    curr_move.assume_init(),
+                    curr_exploitation.assume_init(),
+                    curr_exploration.assume_init(),
+                )
+            }
+        };
+
+        self.tt.insert(
+            key,
+            TTData {
+                key,
+                best_move: Some(best_move),
+                exploitation: best_exploitation,
+            },
+        );
 
         // todo: just return the branch id instead of recursing
         self.select_branch::<P>(depth, best_branch_id, tree, sel_node_id)
@@ -617,5 +691,74 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                 .map(|p| (p.node, p.sel_data.turn));
             back::backpropagate_up(tree, path, eval, 1.0);
         }
+    }
+}
+
+pub struct TranspositionTable<const ENTRIES: usize, Data> {
+    entries: [Option<Data>; ENTRIES],
+}
+
+impl<const ENTRIES: usize, Data> Default for TranspositionTable<ENTRIES, Data> {
+    fn default() -> Self {
+        const fn const_none<T>() -> Option<T> {
+            None
+        }
+        Self {
+            entries: [const { const_none() }; ENTRIES],
+        }
+    }
+}
+
+impl<const ENTRIES: usize, Data: ZKey> TranspositionTable<ENTRIES, Data> {
+    /// Get data for the given key.
+    #[inline]
+    pub fn get(&self, key: zobrist::Hash) -> Option<&Data> {
+        let idx = key.index(ENTRIES);
+        let entry = self.entries[idx].as_ref();
+        if let Some(data) = entry
+            && data.key() == key
+        {
+            Some(data)
+        }
+        else {
+            None
+        }
+    }
+
+    /// Insert and overwrite in any case.
+    #[inline]
+    pub fn insert(&mut self, key: zobrist::Hash, data: Data) {
+        let idx = key.index(ENTRIES);
+        self.entries[idx] = Some(data);
+    }
+
+    /// Remove the entry for the given key, if it exists.
+    #[inline]
+    pub fn remove(&mut self, key: zobrist::Hash) {
+        let idx = key.index(ENTRIES);
+
+        // if there is no Some at the idx, there is no entry for this key anyhow.
+        if let Some(data) = &self.entries[idx]
+            // if the key doesn't match, there wasn't an entry for this key anyhow.
+            && data.key() == key
+        {
+            self.entries[idx] = None;
+        }
+    }
+}
+
+pub trait ZKey {
+    fn key(&self) -> zobrist::Hash;
+}
+
+pub struct TTData {
+    key: zobrist::Hash,
+    best_move: Option<Move>,
+    exploitation: select::Score,
+}
+
+impl ZKey for TTData {
+    fn key(&self) -> zobrist::Hash {
+        self.key
     }
 }
