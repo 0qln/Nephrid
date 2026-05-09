@@ -39,6 +39,7 @@ impl fmt::Display for Score {
 impl_op!(-|x: Score| -> Score { Score(-x.0) });
 impl_op!(+|x: Score, y: Score| -> Score { Score(x.0 + y.0) });
 impl_op!(*|x: Score, y: f32| -> Score { Score(x.0 * y) });
+impl_op!(+|x: Score, y: f32| -> Score { Score(x.0 + y) });
 
 impl Eq for Score {}
 

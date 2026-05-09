@@ -222,6 +222,7 @@ pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector
     noiser: N,
     selection: Selection<E::TraceData>,
     tt: Box<TranspositionTable<{ 2 << 10 }, TTData>>,
+    ss: SearchStack,
 }
 
 impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
@@ -235,6 +236,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             noiser,
             selection: Default::default(),
             tt: Default::default(),
+            ss: SearchStack::new(),
         }
     }
 
@@ -378,14 +380,18 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
 
         let tt_entry = self.tt.get(key);
         let tt_best_move = tt_entry.and_then(|data| data.best_move);
+        let tt_exploitation = tt_entry.map(|data| data.exploitation);
+
+        let ss_entry = self.ss.get(depth);
+        let killer_move = ss_entry.and_then(|entry| entry.killer_move);
+        let killer_exploitation = ss_entry.and_then(|entry| entry.killer_exploitation);
 
         let visit_threshold = VisitCount(4); // todo: fine-tune
 
-        // todo: remove the puct hardcoding
         let sel = &self.selector;
         const MIN: select::Score = select::Score(f32::NEG_INFINITY);
-
         let (best_branch_id, best_move, best_exploitation, _) = {
+            // best score etc.
             let mut curr_score = MIN;
             let mut curr_exploitation = MaybeUninit::uninit();
             let mut curr_exploration = MaybeUninit::uninit();
@@ -406,24 +412,31 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                     exploration = MIN;
                 }
                 else {
-                    let exploration_tt_fact = {
+                    let exploration_tt_move = {
                         // use the exploitation score from the tt best_move as guidance in the
                         // exploration factor.
                         if tt_best_move == Some(mov) {
-                            tt_entry.unwrap().exploitation.0 * 2.0
+                            tt_exploitation.unwrap().0 * 2.0 // todo: make this tunable
                         }
                         else {
                             1.
                         }
                     };
 
-                    exploration = sel.exploration(tree, branch_id, parent_node_id)
-                        // transposition table heuristics
-                        * exploration_tt_fact;
+                    let killer_move = {
+                        // if a quiete move from a sibling branch proved to be of high exploitation
+                        // after some searching, consider that move here aswell.
+                        if killer_move == Some(mov) && child.visits() <= VisitCount(2) {
+                            killer_exploitation.unwrap().0 * 1.0 // todo: make this tunable
+                        }
+                        else {
+                            0.
+                        }
+                    };
 
+                    exploration = sel.exploration(tree, branch_id, parent_node_id);
                     exploitation = sel.exploitation(tree, branch_id, parent_node_id);
-
-                    score = exploitation + exploration;
+                    score = (exploitation + killer_move) + (exploration * exploration_tt_move);
                 }
 
                 if score >= curr_score {
@@ -447,6 +460,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             }
         };
 
+        // update tt
         self.tt.insert(
             key,
             TTData {
@@ -455,6 +469,15 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                 exploitation: best_exploitation,
             },
         );
+
+        // update ss.killer
+        if !best_move.get_flag().is_capture()
+            && killer_exploitation.is_none_or(|e| e < best_exploitation)
+        {
+            let e = self.ss.entry(depth);
+            e.killer_move = Some(best_move);
+            e.killer_exploitation = Some(best_exploitation);
+        }
 
         // todo: just return the branch id instead of recursing
         self.select_branch::<P>(depth, best_branch_id, tree, sel_node_id)
@@ -761,4 +784,34 @@ impl ZKey for TTData {
     fn key(&self) -> zobrist::Hash {
         self.key
     }
+}
+
+#[derive(Default)]
+pub struct SearchStack {
+    entries: Vec<SearchEntry>,
+}
+
+impl SearchStack {
+    pub fn new() -> Self {
+        Self { entries: Vec::new() }
+    }
+
+    pub fn get(&self, depth: Depth) -> Option<&SearchEntry> {
+        let idx = depth.v() as usize;
+        self.entries.get(idx)
+    }
+
+    pub fn entry(&mut self, depth: Depth) -> &mut SearchEntry {
+        let idx = depth.v() as usize;
+        if idx >= self.entries.len() {
+            self.entries.resize(idx + 1, SearchEntry::default());
+        }
+        &mut self.entries[idx]
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct SearchEntry {
+    killer_move: Option<Move>,
+    killer_exploitation: Option<select::Score>,
 }
