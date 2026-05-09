@@ -69,6 +69,7 @@ pub struct ParentItem<T> {
     pub trace: T,
     sel_data: SelData,
     node: NodeId<Evaluated>,
+    depth: Depth,
 }
 
 #[derive(Clone, Copy)]
@@ -300,73 +301,71 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             trace: trace_data,
             sel_data: SelData { turn: P::COLOR },
             node: root,
+            depth: Depth::ROOT,
         });
 
-        // todo
+        let mut frontier = vec![root_sel_id];
+        let mut frontier_alt = Vec::<ParentNodeId>::new();
+
         let mut iterations = 0;
         let num_batchables = tree.count_nodes(&|node, _| node.state() == NodeState::Leaf, BATCH);
-        while self.selection.batched.len() < num_batchables && iterations < BATCH * 2 {
-            self.pick_branch::<P>(Depth::ROOT, root, tree, root_sel_id);
+        while self.selection.batched.len() < num_batchables
+            && iterations < BATCH * 2
+            && !frontier.is_empty()
+        {
+            frontier_alt.clear();
+            for &parent in &frontier {
+                let sel_node = &self.selection.parents[parent.0];
+                let depth = sel_node.depth;
+                self.select_parent::<P>(depth, root, tree, parent, &mut frontier_alt);
+
+                if self.selection.batched.len() >= BATCH {
+                    // stop early
+                    break;
+                }
+            }
+
+            (frontier, frontier_alt) = (frontier_alt, frontier);
             iterations += 1;
         }
-
-        // // We'll keep a worklist of nodes to expand (evaluated nodes that are
-        // not // terminal) let mut frontier = vec![root_sel_id];
-
-        // while self.selection.batched.len() < BATCH && !frontier.is_empty() {
-        //     let mut next_frontier = Vec::new();
-        //     for &parent_id in &frontier {
-        //         self.expand_parent::<P>(tree, parent_id, &mut next_frontier);
-        // // Batch became full – we can         if
-        // self.selection.batched.len() >= BATCH {             // stop
-        // early             break;
-        //         }
-        //     }
-        //     frontier = next_frontier;
-        // }
     }
 
-    // fn expand_parent<P: Perspective>(
-    //     &mut self,
-    //     tree: &mut Tree,
-    //     parent_sel_id: ParentNodeId,
-    // ) -> bool {
-    //     match tree.node_switch(child_node) {
-    //         Switch::Evaluated(node) => {
-    //             if value.is_proven_win() {
-    //                 // ...
-    //             }
-    //             else if value.is_proven_loss() {
-    //                 // ...
-    //             }
-    //             else {
-    //                 // Continue deeper
-    //                 let child_parent = self.selection.push_parent(ParentItem {
-    //                     // ...
-    //                 });
-    //                 next_frontier.push(child_parent);
-    //             }
-    //         }
-    //         Switch::Branching(node) => {
-    //             // ...
-    //         }
-    //         Switch::Leaf(node) => {
-    //             // Expand leaf
-    //             // ...
-    //         }
-    //         Switch::Terminal(node) => {
-    //             // ...
-    //         }
-    //     }
-    // }
-
-    fn pick_branch<P: Perspective>(
+    fn expand_parent<P: Perspective>(
         &mut self,
-        depth: Depth,
-        parent_node_id: NodeId<Evaluated>,
         tree: &mut Tree,
-        sel_node_id: ParentNodeId,
-    ) {
+        parent_sel_id: ParentNodeId,
+    ) -> bool {
+        match tree.node_switch(child_node) {
+            Switch::Evaluated(node) => {
+                if value.is_proven_win() {
+                    // ...
+                }
+                else if value.is_proven_loss() {
+                    // ...
+                }
+                else {
+                    // Continue deeper
+                    let child_parent = self.selection.push_parent(ParentItem {
+                        // ...
+                    });
+                    next_frontier.push(child_parent);
+                }
+            }
+            Switch::Branching(node) => {
+                // ...
+            }
+            Switch::Leaf(node) => {
+                // Expand leaf
+                // ...
+            }
+            Switch::Terminal(node) => {
+                // ...
+            }
+        };
+        false
+    }
+
+    fn pick_branch(&mut self, parent_node_id: NodeId<Evaluated>, tree: &mut Tree) -> BranchId {
         let visit_threshold = VisitCount(4); // todo: fine-tune
         let branches = tree.branch_ids(parent_node_id);
         let best_branch_id = branches
@@ -382,28 +381,35 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             })
             .expect("There has to be a branch on an evaluated node");
 
-        // todo: just return the branch id instead of recursing
-        self.select_branch::<P>(depth, best_branch_id, tree, sel_node_id)
+        best_branch_id
+    }
+
+    fn select_parent<P: Perspective>(
+        &mut self,
+        parent_node_id: NodeId<Evaluated>,
+        tree: &mut Tree,
+        sel_node_id: ParentNodeId,
+        next_frontier: &mut Vec<ParentNodeId>,
+    ) {
+        let branch = self.pick_branch(parent_node_id, tree);
+        self.select_branch::<P>(branch, tree, sel_node_id, next_frontier)
     }
 
     fn select_branch<P: Perspective>(
         &mut self,
-        depth: Depth,
         branch: BranchId,
         tree: &mut Tree,
         parent_sel_id: ParentNodeId,
+        next_frontier: &mut Vec<ParentNodeId>,
     ) {
         let (mov, node) = {
             let branch = tree.branch(branch);
             (branch.mov(), branch.node())
         };
 
-        // todo: make this a debug assertion
-        // let depth = Depth::new(self.selection.iter_path_up(parent_sel_id).count() as
-        // u8);
-
         self.position.make_move_for::<P>(mov);
-        let depth = depth + 1;
+        let parent_sel = &self.selection.parents[parent_sel_id.0];
+        let depth = parent_sel.depth + 1;
         let turn = self.position.get_turn();
 
         match tree.node_switch(node) {
