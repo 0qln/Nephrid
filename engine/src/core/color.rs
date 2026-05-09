@@ -47,7 +47,7 @@ impl TryFrom<&mut Tokenizer<'_>> for Color {
     type Error = ColorTokenizationError;
 
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
-        match fen.skip_ws().next_char() {
+        match fen.next_char() {
             Some(c) => Self::try_from(c).map_err(Self::Error::InvalidColor),
             None => Err(Self::Error::MissingChar),
         }
@@ -75,5 +75,31 @@ impl fmt::Debug for Color {
 impl fmt::Display for Color {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", Into::<char>::into(*self))
+    }
+}
+
+pub trait Perspective: Clone + Copy {
+    const IS_WHITE: bool;
+    const COLOR: Color;
+    type Opponent: Perspective<Opponent = Self>;
+}
+
+pub mod perspectives {
+    use super::*;
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct White;
+    impl Perspective for White {
+        const IS_WHITE: bool = true;
+        const COLOR: Color = WHITE;
+        type Opponent = Black;
+    }
+
+    #[derive(Debug, Copy, Clone)]
+    pub struct Black;
+    impl Perspective for Black {
+        const IS_WHITE: bool = false;
+        const COLOR: Color = BLACK;
+        type Opponent = White;
     }
 }

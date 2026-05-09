@@ -11,7 +11,6 @@ use engine::{
         position::Position,
         zobrist,
     },
-    misc::ConstFrom,
 };
 use itertools::Itertools;
 
@@ -38,22 +37,10 @@ pub fn get_bitboard(c: &mut Criterion) {
 
 pub fn put_piece(c: &mut Criterion) {
     let inputs = [
-        Pair(
-            squares::A3,
-            Piece::from_c((colors::WHITE, piece_type::PAWN)),
-        ),
-        Pair(
-            squares::B4,
-            Piece::from_c((colors::WHITE, piece_type::QUEEN)),
-        ),
-        Pair(
-            squares::E4,
-            Piece::from_c((colors::BLACK, piece_type::PAWN)),
-        ),
-        Pair(
-            squares::H5,
-            Piece::from_c((colors::BLACK, piece_type::QUEEN)),
-        ),
+        Pair(squares::A3, Piece::from((colors::WHITE, piece_type::PAWN))),
+        Pair(squares::B4, Piece::from((colors::WHITE, piece_type::QUEEN))),
+        Pair(squares::E4, Piece::from((colors::BLACK, piece_type::PAWN))),
+        Pair(squares::H5, Piece::from((colors::BLACK, piece_type::QUEEN))),
     ];
 
     magics::init();

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+cargo build --release --bin eval-model
+
+target/release/eval-model --phase 0
+target/release/eval-model --phase 1
+target/release/eval-model --phase 2
+target/release/eval-model --phase 3
+target/release/eval-model --phase 4
+target/release/eval-model --phase 5
+target/release/eval-model --phase 6
+target/release/eval-model --phase 7

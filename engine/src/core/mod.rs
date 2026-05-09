@@ -1,23 +1,23 @@
-use search::{limit::Limit, mode::Mode};
+use search::mode::Mode;
 use std::{
     sync::{Arc, Mutex},
     thread, time,
 };
+use thiserror::Error;
 
-use self::r#move::LongAlgebraicUciNotation;
 use crate::{
     core::{
         config::Configuration,
         depth::Depth,
-        r#move::Move,
-        position::{FenImport, PgnExport, Position},
-        search::{Command, PonderToken, Thread},
+        r#move::{Move, SanParseError},
+        position::{
+            EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError,
+            PgnImport, PgnImportError, Position, ReducedPgn,
+        },
+        search::{Command, PonderToken, SearchThread, SearchWorker, limit::UciLimit},
     },
-    misc::{DebugMode, trim_newline},
-    uci::{
-        sync::{self, CancellationToken, UciError},
-        tokens::Tokenizer,
-    },
+    misc::{CancellationToken, DebugMode, trim_newline},
+    uci::{UciError, tokens::Tokenizer},
 };
 use std::{error::Error, process};
 
@@ -46,9 +46,59 @@ pub struct Game {
     position: Position,
 }
 
+#[derive(Debug, Error)]
+pub enum EpdImportError {
+    #[error("EPD line parsing failed: {0}")]
+    ParseEpd(#[from] EpdLineParseError),
+
+    #[error("SAN move parsing failed: {0}")]
+    ParseSan(#[from] SanParseError),
+}
+
 impl Game {
-    pub fn new(position: Position) -> Self {
+    pub fn from_moves(position: Position, moves: impl Iterator<Item = Move>) -> Self {
+        let mut game = Self::from_position(position);
+        for mov in moves {
+            game.push_move(mov);
+        }
+        game
+    }
+
+    pub fn from_history(position: Position, history: Vec<Move>) -> Self {
+        Self { position, history }
+    }
+
+    pub fn from_position(position: Position) -> Self {
         Self { position, ..Default::default() }
+    }
+
+    pub fn from_fen(fen: FenImport<'_, '_>) -> Result<Self, FenParseError> {
+        Ok(Self::from_position(Position::try_from(fen)?))
+    }
+
+    pub fn from_epd(epd: EpdLineImport<'_, '_>) -> Result<Self, EpdImportError> {
+        let (pos, ops) = epd.try_into()?;
+        let mut game = Self::from_position(pos);
+
+        if let Some(op) = ops.iter().find(|op| matches!(op.0.as_ref(), "sm")) {
+            let EpdOp(_, mov) = op;
+            let mov = Move::from_san(mov, &game.position)?;
+            game.push_move(mov);
+        }
+
+        Ok(game)
+    }
+
+    pub fn from_pgn(pgn: PgnImport<'_, '_>) -> Result<Self, PgnImportError> {
+        let pgn = ReducedPgn::try_from(pgn.0)?;
+
+        let position = pgn.start_position()?;
+        let mut game = Self::from_position(position);
+        for san in pgn.moves() {
+            let mov = Move::from_san(san, &game.position)?;
+            game.push_move(mov);
+        }
+        Ok(game)
     }
 
     pub fn moves(&self) -> &[Move] {
@@ -68,8 +118,8 @@ impl Game {
         self.position.make_move(mov);
     }
 
-    pub fn to_pgn(&self) -> PgnExport {
-        PgnExport::from_current_pos(self.position.clone(), &self.history[..])
+    pub fn to_pgn(&self) -> ReducedPgn {
+        ReducedPgn::from_current_pos(self.position.clone(), &self.history[..])
     }
 }
 
@@ -79,10 +129,10 @@ pub struct Engine {
     config: Arc<Mutex<Configuration>>,
 
     /// Search thread
-    search_t: Thread,
-    
+    search_t: SearchThread,
+
     /// A token to trigger the transition from pondering to normal search.
-    ponder_hit: PonderToken,
+    ponder_token: PonderToken,
 
     /// Whether the engine runs in debug mode.
     debug: DebugMode,
@@ -95,22 +145,15 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new() -> Self {
-        let search_t = search::init();
+    pub fn new<Searcher: SearchWorker>() -> Self {
         Self {
             config: Default::default(),
-            search_t,
+            search_t: search::init::<Searcher>(),
             debug: Default::default(),
             game: Default::default(),
             _pos_src: Default::default(),
-            ponder_hit: Default::default(),
+            ponder_token: Default::default(),
         }
-    }
-}
-
-impl Default for Engine {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -124,28 +167,26 @@ pub fn execute_uci(
     match tokenizer.next_token() {
         Some("d") | Some("print") => {
             let pos = &engine.game.position();
-            let str = if engine.debug.get() {
-                format!("{pos:?}")
+            if engine.debug.get() {
+                println!("{pos:?}")
             }
             else {
-                format!("{pos}")
+                println!("{pos}")
             };
-
-            sync::out(&str);
 
             Ok(())
         }
-        Some("mcts") => match tokenizer.next_token() {
-            Some("d") => Ok(engine.search_t.tx.send(Command::MctsDebugTree)?),
+        Some("search") => match tokenizer.next_token() {
+            Some("d") => Ok(engine.search_t.tx.send(Command::Debug)?),
             Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
             None => unimplemented!(),
         },
         Some("pgn") => {
-            let pgn = engine.game.to_pgn();
-            let str = format!("{pgn}");
-
-            sync::out(&str);
-
+            println!("{}", engine.game.to_pgn());
+            Ok(())
+        }
+        Some("fen") => {
+            println!("{}", FenExport(&engine.game.position));
             Ok(())
         }
         Some("quit") => {
@@ -171,7 +212,7 @@ pub fn execute_uci(
 
             let (mode, limit) = {
                 let mut mode = Mode::default();
-                let mut limit = Limit::default();
+                let mut limit = UciLimit::default();
 
                 let config = engine.config.lock().expect("Config dead :(");
                 limit.lag_buf = config.gui_lag();
@@ -194,9 +235,8 @@ pub fn execute_uci(
                         "searchmoves" => {
                             // interpret all remaining arguments as moves.
                             while let Some(token) = tokenizer.next_token() {
-                                let mut token = Tokenizer::new(token);
-                                let mov = LongAlgebraicUciNotation::new(&mut token, &position);
-                                limit.search_moves.push(Move::try_from(mov)?);
+                                let mov = Move::from_lan(token, &position)?;
+                                limit.search_moves.push(mov);
                             }
                             break;
                         }
@@ -213,10 +253,10 @@ pub fn execute_uci(
             let cmd = match mode {
                 Mode::Normal => Command::Normal(position, limit, token, debug),
                 Mode::Ponder => {
-                    let ponder_hit = engine.ponder_hit.clone();
+                    let ponder_hit = engine.ponder_token.clone();
                     ponder_hit.start_ponder();
                     Command::Ponder(position, limit, token, debug, ponder_hit)
-                },
+                }
                 Mode::Perft => Command::Perft(position, limit, token, debug),
             };
 
@@ -225,7 +265,7 @@ pub fn execute_uci(
             Ok(())
         }
         Some("ponderhit") => {
-            engine.ponder_hit.stop_ponder();
+            engine.ponder_token.stop_ponder();
             Ok(())
         }
         Some("position") => {
@@ -243,6 +283,12 @@ pub fn execute_uci(
                     .map(|c| c.game_tree_caching())
                     .unwrap_or(false);
 
+                // todo: the gui usually does not start our clock until it has sent the `go`
+                // command. which means, instead of having the search-thread block until it can
+                // prozess the go command (since we return here early and the engine will send
+                // the go as soon as we answer (or does it do that immediatly? todo research)),
+                // we can block here until the search thread has completed the
+                // mcts tree advances etc.
                 engine.search_t.tx.send(match game_tree_caching {
                     true => Command::AdvanceState(mov),
                     false => Command::ResetState,
@@ -265,12 +311,14 @@ pub fn execute_uci(
                     process_move(engine, tok)?;
                 }
             }
-            // Otherwise, we have a diverging position string. 
+            // Otherwise, we have a diverging position string.
             else {
                 // 1. Parse the new base position into a temporary game state
-                let mut new_game = Game::new(match tokenizer.next_token() {
-                    Some("fen") => Position::try_from(FenImport(&mut tokenizer))?,
-                    Some("startpos") => Position::start_position(),
+                let mut new_game = match tokenizer.next_token() {
+                    Some("pgn") => Game::from_pgn(PgnImport(&mut tokenizer))?,
+                    Some("epd") => Game::from_epd(EpdLineImport(&mut tokenizer))?,
+                    Some("fen") => Game::from_fen(FenImport(&mut tokenizer))?,
+                    Some("startpos") => Game::from_position(Position::start_position()),
                     None => return Err(UciError::MissingArgument("value").into()),
                     Some(x) => {
                         return Err(UciError::InvalidValue(
@@ -279,7 +327,7 @@ pub fn execute_uci(
                         )
                         .into());
                     }
-                });
+                };
 
                 // 2. Parse all the new moves into our temporary game state
                 if tokenizer.next_token() == Some("moves") {
@@ -293,7 +341,7 @@ pub fn execute_uci(
                 let old_moves = engine.game.moves();
                 let new_moves = new_game.moves();
 
-                let is_ponder_miss = !old_moves.is_empty() 
+                let is_ponder_miss = !old_moves.is_empty()
                     && new_moves.len() == old_moves.len()
                     && old_moves[..old_moves.len() - 1] == new_moves[..new_moves.len() - 1]
                     && old_moves.last() != new_moves.last();
@@ -305,10 +353,15 @@ pub fn execute_uci(
                     .unwrap_or(false);
 
                 if is_ponder_miss && game_tree_caching {
-                    // Ponder Miss detected! Restore the 1-ply backup and advance down the actual move.
+                    // Ponder Miss detected! Restore the 1-ply backup and advance down the actual
+                    // move.
                     let actual_move = *new_moves.last().unwrap();
-                    engine.search_t.tx.send(Command::RollbackAndAdvance(actual_move))?;
-                } else {
+                    engine
+                        .search_t
+                        .tx
+                        .send(Command::RollbackAndAdvance(actual_move))?;
+                }
+                else {
                     // Completely new game or caching disabled: safely reset the tree entirely.
                     engine.search_t.tx.send(Command::ResetState)?;
                 }
@@ -331,12 +384,15 @@ pub fn execute_uci(
         }
         Some("uci") => {
             // Id response
-            sync::out("id name Nephrid");
-            sync::out("id author 0qln");
+            println!("id name Nephrid");
+            println!("id author 0qln");
+
             // Option response
             engine.config.lock().expect("Config dead :(").print_uci();
+
             // Uciok response
-            sync::out("uciok");
+            println!("uciok");
+
             Ok(())
         }
         Some("setoption") => {
@@ -398,7 +454,7 @@ pub fn execute_uci(
             Ok(())
         }
         Some("isready") => {
-            sync::out("readyok");
+            println!("readyok");
             Ok(())
         }
         Some("perf") => {

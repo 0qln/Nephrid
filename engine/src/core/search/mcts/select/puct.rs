@@ -1,8 +1,7 @@
-use core::fmt;
-
-use crate::core::search::mcts::{eval, node::NodeData};
-
-use super::*;
+use crate::core::search::mcts::{
+    node::{BranchId, NodeId, Tree, node_state::Evaluated},
+    select::Score,
+};
 
 pub struct PuctSelector {
     // todo: fine tune c. or make a uci option out of it idk
@@ -21,58 +20,33 @@ impl Default for PuctSelector {
     }
 }
 
-impl Selector for PuctSelector {
-    type Score = Score;
+impl super::Selector for PuctSelector {
+    fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+        let branch = tree.branch(branch_id);
+        let node = tree.node(branch.node());
+        let parent = tree.node(parent_id);
 
-    fn score(&self, node: &NodeData, branch: &Branch, cap_n_i: u32) -> Score {
-        let n_i = node.visits() as f32;
+        let cap_n_i = parent.visits().0 as f32;
+        let n_i = node.visits().0 as f32;
 
-        // The quality is updated incrementally as the tree is explored.
-        // Because of this, we have to divide by the number of playouts
-        // to get the average quality of this node.
-        // If this node has not yet been visited, we set the quality to 0 and rely
-        // completely on exploration factor.
         let value = node.value();
         let exploitation = if n_i == 0. {
-            eval::Value::draw().v()
+            // fallback to parent q-value for unvisited nodes. note that the parent node
+            // cannot be 0 because we only expand a node after visiting it at
+            // least once.
+            parent.value() / (cap_n_i)
         }
         else {
-            value / n_i
+            value / (n_i)
         };
 
-        let exploration = self.c * branch.policy() * (cap_n_i as f32).sqrt() / (1. + n_i);
+        let policy = branch.policy().v();
+        let exploration = self.c * (policy) * cap_n_i.sqrt() / (1_f32 + (n_i));
 
-        Score(exploitation + exploration)
+        Score::new(exploitation + exploration)
     }
 
-    fn min_score(&self) -> Self::Score {
-        Score(f32::NEG_INFINITY)
-    }
-}
-
-#[derive(PartialEq, Clone, Copy, Debug, Default)]
-pub struct Score(pub f32);
-
-impl fmt::Display for Score {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl_op!(-|x: Score| -> Score { Score(-x.0) });
-
-impl Eq for Score {}
-
-impl PartialOrd for Score {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Score {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0
-            .partial_cmp(&other.0)
-            .expect("This shouldn't happen for puct scores.")
+    fn min_score(&self) -> Score {
+        Score::new(f32::NEG_INFINITY)
     }
 }

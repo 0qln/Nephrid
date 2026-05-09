@@ -26,14 +26,14 @@ fn test_node_id_and_view_initialization() {
 
     let view = tree.node(root_id);
     assert_eq!(view.state(), NodeState::Leaf);
-    assert_eq!(view.visits(), 0);
+    assert_eq!(view.visits(), VisitCount(0));
     assert_eq!(view.value(), Value(0.0));
 
     let switch = tree.node_switch(root_id);
     match switch {
         Switch::Leaf(leaf_id) => {
             let leaf_view = tree.node(leaf_id);
-            assert_eq!(leaf_view.visits(), 0);
+            assert_eq!(leaf_view.visits(), VisitCount(0));
         }
         _ => panic!("Expected the switch to yield a Leaf variant"),
     }
@@ -47,7 +47,7 @@ fn test_tree_default_initializes_leaf_node() {
     let root = tree.node(tree.root());
 
     assert_eq!(root.state(), NodeState::Leaf);
-    assert_eq!(root.visits(), 0);
+    assert_eq!(root.visits(), VisitCount(0));
     assert_eq!(root.value(), Value(0.0));
 }
 
@@ -128,9 +128,9 @@ fn test_node_sort_by_visits() {
     let branching = tree.node_switch(tree.root()).get::<Branching>().unwrap();
 
     // Tweak visits manually via private array (allowed in same-module tests)
-    tree.arena.nodes[tree.arena.branches[0].node().index()].visits = 3;
-    tree.arena.nodes[tree.arena.branches[1].node().index()].visits = 1;
-    tree.arena.nodes[tree.arena.branches[2].node().index()].visits = 2;
+    tree.arena.nodes[tree.arena.branches[0].node().index()].visits = VisitCount(3);
+    tree.arena.nodes[tree.arena.branches[1].node().index()].visits = VisitCount(1);
+    tree.arena.nodes[tree.arena.branches[2].node().index()].visits = VisitCount(2);
 
     // Transition to Evaluated state to satisfy `sort_branches_by` constraints
     let eval_node = tree.skip_policy(branching);
@@ -143,15 +143,15 @@ fn test_node_sort_by_visits() {
     let sorted_branches = tree.branches(eval_node);
     assert_eq!(
         tree.arena.nodes[sorted_branches[0].node().index()].visits(),
-        3
+        VisitCount(3)
     );
     assert_eq!(
         tree.arena.nodes[sorted_branches[1].node().index()].visits(),
-        2
+        VisitCount(2)
     );
     assert_eq!(
         tree.arena.nodes[sorted_branches[2].node().index()].visits(),
-        1
+        VisitCount(1)
     );
 }
 
@@ -175,14 +175,14 @@ fn test_tree_advance_best_moves_root() {
 
     // Force a high visit count on the first branch to make it "best"
     let target_node_id = tree.branches(branching)[0].node();
-    tree.arena.nodes[target_node_id.index()].visits = 100;
+    tree.arena.nodes[target_node_id.index()].visits = VisitCount(100);
 
     // Advance GC
     tree.advance_to(&mut back_buffer, target_node_id);
 
     // The new tree root should have the forced 100 visits and be back to a Leaf
     // state
-    assert_eq!(tree.node(tree.root()).visits(), 100);
+    assert_eq!(tree.node(tree.root()).visits(), VisitCount(100));
     assert_eq!(tree.node(tree.root()).state(), NodeState::Leaf);
 }
 
@@ -221,33 +221,33 @@ fn test_tree_principal_variation_simple_path() {
     tree.arena.nodes.push(NodeData {
         branch_start: 0,
         branch_count: MoveIndex::from(1),
-        visits: 10,
+        visits: VisitCount(10),
         value: Value(0.),
         state: NodeState::Evaluated,
     });
     tree.arena.nodes.push(NodeData {
         branch_start: 1,
         branch_count: MoveIndex::from(1),
-        visits: 5,
+        visits: VisitCount(5),
         value: Value(0.),
         state: NodeState::Evaluated,
     });
     tree.arena.nodes.push(NodeData {
         branch_start: 0,
         branch_count: MoveIndex::from(0),
-        visits: 5,
+        visits: VisitCount(5),
         value: Value(0.),
         state: NodeState::Leaf,
     });
 
     tree.arena.branches.push(Branch {
         node: RtNodeId::new(1),
-        policy: 0.8,
+        policy: Probability::new(0.8),
         mov: Move::new(squares::E2, squares::E4, move_flags::QUIET),
     });
     tree.arena.branches.push(Branch {
         node: RtNodeId::new(2),
-        policy: 0.7,
+        policy: Probability::new(0.7),
         mov: Move::new(squares::E7, squares::E5, move_flags::QUIET),
     });
 
@@ -313,7 +313,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
     tree.arena.nodes.push(NodeData {
         branch_start: 0,
         branch_count: MoveIndex::from(2),
-        visits: 10,
+        visits: VisitCount(10),
         value: Value(0.),
         state: NodeState::Evaluated,
     });
@@ -321,7 +321,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
     tree.arena.nodes.push(NodeData {
         branch_start: 0,
         branch_count: MoveIndex::from(0),
-        visits: 2,
+        visits: VisitCount(2),
         value: Value(-1.),
         state: NodeState::Leaf,
     });
@@ -329,7 +329,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
     tree.arena.nodes.push(NodeData {
         branch_start: 2, // Starts after root's 2 branches
         branch_count: MoveIndex::from(1),
-        visits: 8,
+        visits: VisitCount(8),
         value: Value(1.),
         state: NodeState::Evaluated,
     });
@@ -337,7 +337,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
     tree.arena.nodes.push(NodeData {
         branch_start: 0,
         branch_count: MoveIndex::from(0),
-        visits: 5,
+        visits: VisitCount(5),
         value: Value(2.),
         state: NodeState::Leaf,
     });
@@ -345,18 +345,18 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
     // Root branches
     tree.arena.branches.push(Branch {
         node: RtNodeId::new(1),
-        policy: 0.1,
+        policy: Probability::new(0.1),
         mov: Move::new(squares::A1, squares::A2, move_flags::QUIET),
     });
     tree.arena.branches.push(Branch {
         node: RtNodeId::new(2),
-        policy: 0.9,
+        policy: Probability::new(0.9),
         mov: Move::new(squares::A1, squares::B1, move_flags::QUIET),
     });
     // Target branches
     tree.arena.branches.push(Branch {
         node: RtNodeId::new(3),
-        policy: 1.0,
+        policy: Probability::new(1.0),
         mov: Move::new(squares::B1, squares::B2, move_flags::QUIET),
     });
 
@@ -370,7 +370,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
 
     // Assert New Root (formerly Target)
     let new_root = tree.node(tree.root());
-    assert_eq!(new_root.visits(), 8);
+    assert_eq!(new_root.visits(), VisitCount(8));
     assert_eq!(new_root.value(), Value(1.0));
     assert_eq!(new_root.state(), NodeState::Evaluated);
 
@@ -379,7 +379,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
 
     // Assert Retained Child (formerly Grandchild)
     let child = tree.node(branches[0].node());
-    assert_eq!(child.visits(), 5);
+    assert_eq!(child.visits(), VisitCount(5));
     assert_eq!(child.value(), Value(2.0));
     assert_eq!(child.state(), NodeState::Leaf);
 }
@@ -394,7 +394,7 @@ fn test_advance_to_leaf_node_resets_tree_size_and_height() {
     tree.arena.nodes.push(NodeData {
         branch_start: 0,
         branch_count: MoveIndex::from(1),
-        visits: 10,
+        visits: VisitCount(10),
         value: Value(0.),
         state: NodeState::Evaluated,
     });
@@ -402,14 +402,14 @@ fn test_advance_to_leaf_node_resets_tree_size_and_height() {
     tree.arena.nodes.push(NodeData {
         branch_start: 0,
         branch_count: MoveIndex::from(0),
-        visits: 5,
+        visits: VisitCount(5),
         value: Value(5.5),
         state: NodeState::Leaf,
     });
 
     tree.arena.branches.push(Branch {
         node: RtNodeId::new(1),
-        policy: 1.0,
+        policy: Probability::new(1.0),
         mov: Move::new(squares::E2, squares::E4, move_flags::QUIET),
     });
 
@@ -422,7 +422,7 @@ fn test_advance_to_leaf_node_resets_tree_size_and_height() {
     assert_eq!(tree.maxheight(), Height::ROOT);
 
     let new_root = tree.node(tree.root());
-    assert_eq!(new_root.visits(), 5);
+    assert_eq!(new_root.visits(), VisitCount(5));
     assert_eq!(new_root.value(), Value(5.5));
     assert_eq!(new_root.state(), NodeState::Leaf);
     assert_eq!(tree.branches_rt(tree.root()).len(), 0);

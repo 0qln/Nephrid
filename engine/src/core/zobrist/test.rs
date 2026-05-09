@@ -8,7 +8,6 @@ use crate::{
         position::Position,
         zobrist,
     },
-    misc::ConstFrom,
 };
 
 #[test]
@@ -74,7 +73,7 @@ fn move_piece_back_and_forth_hash_only() {
     let pos = Position::from_fen(fen).unwrap();
     let key_begin = pos.get_key();
 
-    let piece = Piece::from_c((colors::WHITE, piece_type::KNIGHT));
+    let piece = Piece::from((colors::WHITE, piece_type::KNIGHT));
     let mut key = key_begin;
     key.move_piece_sq(G1, F3, piece);
     key.move_piece_sq(F3, G1, piece);
@@ -95,7 +94,7 @@ fn place_piece_and_remove_hash_only() {
     let pos = Position::from_fen(fen).unwrap();
     let key_begin = pos.get_key();
 
-    let piece = Piece::from_c((colors::WHITE, piece_type::KNIGHT));
+    let piece = Piece::from((colors::WHITE, piece_type::KNIGHT));
     let mut key = key_begin;
     key.toggle_piece_sq(G1, piece);
     key.toggle_piece_sq(G1, piece);
@@ -116,7 +115,7 @@ fn place_piece_and_remove_nested_hash_only() {
     let pos = Position::from_fen(fen).unwrap();
     let key_begin = pos.get_key();
 
-    let piece = Piece::from_c((colors::WHITE, piece_type::KNIGHT));
+    let piece = Piece::from((colors::WHITE, piece_type::KNIGHT));
     let mut key = key_begin;
     key.toggle_piece_sq(G1, piece);
     assert_ne!(key_begin, key);
@@ -142,7 +141,7 @@ fn place_piece_and_remove_out_of_order_hash_only() {
     let pos = Position::from_fen(fen).unwrap();
     let key_begin = pos.get_key();
 
-    let piece = Piece::from_c((colors::WHITE, piece_type::KNIGHT));
+    let piece = Piece::from((colors::WHITE, piece_type::KNIGHT));
     let mut key = key_begin;
     key.toggle_piece_sq(G1, piece);
     assert_ne!(key_begin, key);

@@ -9,7 +9,7 @@ use thiserror::Error;
 use crate::{
     core::color::{Color, colors},
     impl_variants,
-    misc::{ConstFrom, InvalidValueError, ValueOutOfRangeError, ValueOutOfSetError},
+    misc::{InvalidValueError, ValueOutOfRangeError, ValueOutOfSetError},
     uci::tokens::Tokenizer,
 };
 
@@ -162,11 +162,14 @@ impl TryFrom<char> for PromoPieceType {
     fn try_from(value: char) -> Result<Self, Self::Error> {
         use promo_piece_type::*;
         match value {
-            'n' => Ok(KNIGHT),
-            'b' => Ok(BISHOP),
-            'r' => Ok(ROOK),
-            'q' => Ok(QUEEN),
-            x => Err(Self::Error::new(x, &['n', 'b', 'r', 'q'])),
+            'n' | 'N' => Ok(KNIGHT),
+            'b' | 'B' => Ok(BISHOP),
+            'r' | 'R' => Ok(ROOK),
+            'q' | 'Q' => Ok(QUEEN),
+            x => Err(Self::Error::new(
+                x,
+                &['n', 'b', 'r', 'q', 'N', 'B', 'R', 'Q'],
+            )),
         }
     }
 }
@@ -233,18 +236,18 @@ impl Piece {
     }
 }
 
-impl const ConstFrom<(Color, PieceType)> for Piece {
+impl const From<(Color, PieceType)> for Piece {
     #[inline]
-    fn from_c((color, piece_type): (Color, PieceType)) -> Self {
+    fn from((color, piece_type): (Color, PieceType)) -> Self {
         Piece {
             v: color.v() | (piece_type.v() << 1),
         }
     }
 }
 
-impl const ConstFrom<(Color, PromoPieceType)> for Piece {
+impl const From<(Color, PromoPieceType)> for Piece {
     #[inline]
-    fn from_c((color, piece_type): (Color, PromoPieceType)) -> Self {
+    fn from((color, piece_type): (Color, PromoPieceType)) -> Self {
         Piece {
             v: color.v() | (piece_type.v().v() << 1),
         }
@@ -268,13 +271,13 @@ impl TryFrom<char> for Piece {
             'a'..'z' => {
                 let color = colors::BLACK;
                 let p_type = PieceType::try_from(value).map_err(Self::Error::InvalidType)?;
-                Ok(Self::from_c((color, p_type)))
+                Ok(Self::from((color, p_type)))
             }
             'A'..'Z' => {
                 let color = colors::WHITE;
                 let value = (value as u8 + (b'a' - b'A')) as char;
                 let p_type = PieceType::try_from(value).map_err(Self::Error::InvalidType)?;
-                Ok(Self::from_c((color, p_type)))
+                Ok(Self::from((color, p_type)))
             }
             _ => Err(Self::Error::InvalidChar),
         }

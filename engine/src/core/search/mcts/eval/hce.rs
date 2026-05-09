@@ -1,7 +1,8 @@
 use std::{cmp::Reverse, marker::PhantomData, ops};
 
 use crate::core::{
-    r#move::{MoveIndex, MoveList},
+    color::{Perspective, perspectives},
+    r#move::MoveList,
     move_iter::{fold_legal_captures, fold_legal_moves},
     piece::PromoPieceType,
     position::CheckState,
@@ -221,25 +222,6 @@ impl TaperValue {
     }
 }
 
-pub trait Perspective: Clone + Copy {
-    const IS_WHITE: bool;
-    type Opponent: Perspective<Opponent = Self>;
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct WhiteP;
-impl Perspective for WhiteP {
-    const IS_WHITE: bool = true;
-    type Opponent = BlackP;
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct BlackP;
-impl Perspective for BlackP {
-    const IS_WHITE: bool = false;
-    type Opponent = WhiteP;
-}
-
 #[derive(Debug, Copy, Clone)]
 pub struct Score<P: Perspective>(pub i32, PhantomData<P>);
 
@@ -331,33 +313,26 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
 
     // consider captures (and quiets if in check)
     let mut move_list = MoveList::default();
-    let n_moves = if in_check {
-        fold_legal_moves::<_, _, _>(pos, MoveIndex::from(0), |curr, m| {
-            move_list[curr] = m;
-            ControlFlow::Continue::<(), _>(curr + 1)
-        })
-        .continue_value()
-        .unwrap()
+    if in_check {
+        _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
+            move_list.push(m);
+            ControlFlow::Continue::<(), ()>(())
+        });
     }
     else {
-        fold_legal_captures::<_, _, _>(pos, MoveIndex::from(0), |curr, m| {
-            move_list[curr] = m;
-            ControlFlow::Continue::<(), _>(curr + 1)
-        })
-        .continue_value()
-        .unwrap()
+        _ = fold_legal_captures::<_, _, _>(pos, (), |_, m| {
+            move_list.push(m);
+            ControlFlow::Continue::<(), ()>(())
+        });
     };
 
     // move ordering
     move_list
-        .as_mut_slice(n_moves.v)
+        .as_mut_slice()
         .sort_unstable_by_key(|&m| Reverse(PolicyInput::mvv_lva(pos.piece_info(), m)));
 
     // recurse
-    for i in 0..n_moves.v {
-        let i = MoveIndex::from(i);
-        let m = move_list[i];
-
+    for &m in move_list.iter() {
         // delta pruning
         if !in_check && phase < TaperValue(16) {
             let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {
@@ -380,11 +355,11 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
             }
         }
 
-        pos.make_move(m);
+        pos.make_move_for::<P>(m);
 
         let score = !qsearch(pos, !beta, !alpha);
 
-        pos.unmake_move(m);
+        pos.unmake_move_for::<P>(m);
 
         if score >= beta {
             return score;
@@ -497,8 +472,12 @@ pub struct EvalInfo {
 impl EvalInfo {
     pub fn new(node: NodeId<Branching>, tree: &Tree, pos: &mut Position) -> Self {
         let quality: Cp = match pos.get_turn().v() {
-            colors::WHITE_C => qsearch::<WhiteP>(pos, Score::NEG_INF, Score::POS_INF).into(),
-            colors::BLACK_C => qsearch::<BlackP>(pos, Score::NEG_INF, Score::POS_INF).into(),
+            colors::WHITE_C => {
+                qsearch::<perspectives::White>(pos, Score::NEG_INF, Score::POS_INF).into()
+            }
+            colors::BLACK_C => {
+                qsearch::<perspectives::Black>(pos, Score::NEG_INF, Score::POS_INF).into()
+            }
             _ => unreachable!(),
         };
         Self {
@@ -517,13 +496,20 @@ impl EvalInfo {
         Quality::from(self.quality)
     }
 
-    fn policy(&self) -> Policy {
+    pub fn policy(&self, buf: &mut List<{ MAX_LEGAL_MOVES }, f32>) -> Policy {
         let pos = &self.pos;
         let phase = self.phase;
         let state = &self.state;
         let color = self.turn;
 
-        let mut logits = Vec::new();
+        // let mut logits = unsafe {
+        //     let pointer = &mut policy.0 as *mut List<{ MAX_LEGAL_MOVES },
+        // Probability>;     let logits = ptr::read(pointer.cast::<List<_,
+        // f32>>());     ManuallyDrop::new(logits)
+        // };
+
+        let mut logits = List::new();
+
         for &mov in self.moves.iter() {
             // policy for each move in the position is the difference of the psqt score from
             // the previous position and the psqt score of the next position that is
@@ -538,20 +524,24 @@ impl EvalInfo {
             logits.push(score as f32);
         }
 
-        Policy::from_logits(logits)
+        Policy::from_logits(Logits(logits), 10., buf)
     }
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct StaticEvaluator;
+#[derive(Debug, Default)]
+pub struct HceEvaluator {
+    policy_buf: Box<List<{ MAX_LEGAL_MOVES }, f32>>,
+}
 
-impl StaticEvaluator {
+impl HceEvaluator {
     pub fn new() -> Self {
-        Self
+        Self {
+            policy_buf: Box::new(List::new()),
+        }
     }
 }
 
-impl Evaluator for StaticEvaluator {
+impl Evaluator for HceEvaluator {
     type TraceData = Option<EvalInfo>;
 
     fn trace<S: const Valid + HasBranches>(
@@ -564,19 +554,19 @@ impl Evaluator for StaticEvaluator {
             .map(|node| EvalInfo::new(node, tree, pos))
     }
 
-    fn eval_batch<const X: usize>(
+    fn eval_batch(
         &mut self,
         _tree: &Tree,
-        _selection: &Selection<X, Self::TraceData>,
+        _selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
-    ) -> impl Iterator<Item = Evaluation> {
+    ) -> impl Iterator<Item = Guess> {
         leafs.iter().filter_map(|&leaf| {
-            let eval_info = leaf.data.as_ref()?;
-            Some(Evaluation::Guess(Box::new(Guess {
+            let eval_info = leaf.trace.as_ref()?;
+            Some(Guess {
                 relative_to: colors::WHITE,
                 quality: eval_info.quality(),
-                policy: eval_info.policy(),
-            })))
+                policy: eval_info.policy(&mut self.policy_buf),
+            })
         })
     }
 }

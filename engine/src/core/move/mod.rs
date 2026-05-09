@@ -1,9 +1,9 @@
 use core::fmt;
 use move_flags as f;
-use std::ops;
 use std::{
     fmt::Write,
-    ops::{ControlFlow, Index, IndexMut},
+    ops::{self, ControlFlow},
+    slice,
 };
 use thiserror::Error;
 
@@ -13,21 +13,22 @@ use crate::{
         castling::{CastlingSideParseError, castling_sides},
         color::colors,
         coordinates::{
-            EpCaptureSquare, EpTargetSquare, File, Rank, Square, SquareTokenizationError,
+            EpCaptureSquare, EpTargetSquare, File, Rank, Square, SquareTokenizationError, files,
+            ranks,
         },
         move_iter::{
             bishop::Bishop,
-            fold_legal_moves,
+            fold_legal_moves, fold_legals,
             king::{self},
             knight,
             rook::Rook,
             sliding_piece::SlidingAttacks,
         },
-        piece::{Piece, PromoPieceTokenizationError, piece_type},
+        piece::{Piece, PieceType, PromoPieceTokenizationError, piece_type},
         position::{CheckState, Position},
     },
     impl_variants_with_assertion,
-    misc::{ConstFrom, ValueOutOfRangeError},
+    misc::{List, ValueOutOfRangeError},
     uci::tokens::Tokenizer,
 };
 
@@ -52,7 +53,16 @@ impl<'a, 'b, 'c> LongAlgebraicUciNotation<'a, 'b, 'c> {
     }
 }
 
-pub struct StandardAlgebraicNotation;
+pub struct StandardAlgebraicNotationParser<'a, 'b> {
+    pub san: &'a str,
+    pub context: &'b Position,
+}
+
+impl<'a, 'b> StandardAlgebraicNotationParser<'a, 'b> {
+    pub const fn new(san: &'a str, context: &'b Position) -> Self {
+        Self { san, context }
+    }
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct MoveFlag {
@@ -139,8 +149,8 @@ impl TryFrom<TMoveFlag> for MoveFlag {
     }
 }
 
-impl const ConstFrom<CastlingSide> for MoveFlag {
-    fn from_c(value: CastlingSide) -> Self {
+impl const From<CastlingSide> for MoveFlag {
+    fn from(value: CastlingSide) -> Self {
         match value {
             castling_sides::KING_SIDE => f::KING_CASTLE,
             castling_sides::QUEEN_SIDE => f::QUEEN_CASTLE,
@@ -155,18 +165,23 @@ pub struct Move {
 }
 
 impl Move {
-    const SHIFT_FROM: u16 = 0;
-    const SHIFT_TO: u16 = 6;
-    const SHIFT_FLAG: u16 = 12;
+    pub const SHIFT_FROM: u16 = 0;
+    pub const SHIFT_TO: u16 = 6;
+    pub const SHIFT_FLAG: u16 = 12;
 
-    const MASK_FROM: u16 = 0b111111 << Move::SHIFT_FROM;
-    const MASK_TO: u16 = 0b111111 << Move::SHIFT_TO;
-    const MASK_FLAG: u16 = 0b1111 << Move::SHIFT_FLAG;
-    const MASK_SQ: u16 = Move::MASK_FROM | Move::MASK_TO;
+    pub const MASK_FROM: u16 = 0b111111 << Move::SHIFT_FROM;
+    pub const MASK_TO: u16 = 0b111111 << Move::SHIFT_TO;
+    pub const MASK_FLAG: u16 = 0b1111 << Move::SHIFT_FLAG;
+    pub const MASK_SQ: u16 = Move::MASK_FROM | Move::MASK_TO;
 
     #[inline]
     pub const fn null() -> Self {
         Move { v: 0 }
+    }
+
+    #[inline]
+    pub const fn v(&self) -> u16 {
+        self.v
     }
 
     #[inline]
@@ -223,9 +238,16 @@ impl Move {
 
     /// Convenience wrapper.
     #[inline]
-    pub fn from_lan(lan: &str, context: &Position) -> Result<Move, MoveParseError> {
+    pub fn from_lan(lan: &str, context: &Position) -> Result<Move, LanParseError> {
         let tok = &mut Tokenizer::new(lan);
         let mov = LongAlgebraicUciNotation::new(tok, context);
+        Move::try_from(mov)
+    }
+
+    /// Convenience wrapper.
+    #[inline]
+    pub fn from_san(san: &str, context: &Position) -> Result<Move, SanParseError> {
+        let mov = StandardAlgebraicNotationParser::new(san, context);
         Move::try_from(mov)
     }
 }
@@ -277,9 +299,9 @@ impl<'a> fmt::Display for SAN<'a> {
         };
 
         let from = self.mov.get_from();
-        let from_bb = Bitboard::from_c(from);
-        let from_file = File::from_c(from);
-        let from_rank = Rank::from_c(from);
+        let from_bb = Bitboard::from(from);
+        let from_file = File::from(from);
+        let from_rank = Rank::from(from);
         let to = self.mov.get_to();
         let piece = self.context.get_piece(from);
         let piece_type = piece.piece_type();
@@ -287,7 +309,7 @@ impl<'a> fmt::Display for SAN<'a> {
 
         if piece_type != piece_type::PAWN {
             // Convert to a white piece such that we print as uppercase
-            let piece = Piece::from_c((colors::WHITE, piece_type));
+            let piece = Piece::from((colors::WHITE, piece_type));
             write!(f, "{piece}")?;
         }
 
@@ -315,7 +337,7 @@ impl<'a> fmt::Display for SAN<'a> {
                         // Accumilate all from-squares, where there exists a legal move that
                         // has our to-square as destination.
                         if mov.get_to() == to {
-                            acc |= Bitboard::from_c(mov.get_from())
+                            acc |= Bitboard::from(mov.get_from())
                         }
                         ControlFlow::Continue::<(), _>(acc)
                     })
@@ -328,13 +350,13 @@ impl<'a> fmt::Display for SAN<'a> {
                     // First, if the moving pieces can be distinguished by their originating files,
                     // the originating file letter of the moving piece is inserted immediately after
                     // the moving piece letter.
-                    if candidates & Bitboard::from_c(from_file) == from_bb {
+                    if candidates & Bitboard::from(from_file) == from_bb {
                         write!(f, "{from_file}")?;
                     }
                     // Second (when the first step fails), if the moving pieces can be distinguished
                     // by their originating ranks, the originating rank digit of the moving piece is
                     // inserted immediately after the moving piece letter.
-                    else if candidates & Bitboard::from_c(from_rank) == from_bb {
+                    else if candidates & Bitboard::from(from_rank) == from_bb {
                         write!(f, "{from_rank}")?;
                     }
                     // Third (when both the first and the second steps fail), the two character
@@ -364,7 +386,7 @@ impl<'a> fmt::Display for SAN<'a> {
             // Convert to a white piece such that we print as uppercase
             let promo = PromoPieceType::try_from(flag);
             let promo = promo.expect("We only go here if it actually is a promo");
-            let promo = Piece::from_c((colors::WHITE, promo));
+            let promo = Piece::from((colors::WHITE, promo));
             write!(f, "={promo}")?;
         }
 
@@ -386,7 +408,185 @@ impl<'a> fmt::Display for SAN<'a> {
 }
 
 #[derive(Error, Debug)]
-pub enum MoveParseError {
+pub enum SanParseError {
+    #[error("SAN string is too short to be valid.")]
+    TooShort,
+
+    #[error("Invalid to-square: {0}")]
+    InvalidToSquare(SquareTokenizationError),
+
+    #[error("Missing to-square")]
+    MissingToSquare,
+
+    #[error("Invalid promotion piece type: {0}")]
+    InvalidPromoPieceType(PromoPieceTokenizationError),
+
+    #[error(
+        "The SAN string does not contain enough disambiguation information. Candidate moves: {0}"
+    )]
+    NotEnoughDisambiguation(Box<MoveList>),
+
+    #[error("The SAN string does not correspond to a legal move in the given position.")]
+    IllegalMove,
+}
+
+impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
+    type Error = SanParseError;
+
+    fn try_from(parser: StandardAlgebraicNotationParser<'a, 'b>) -> Result<Self, Self::Error> {
+        type E = SanParseError;
+
+        let san = parser.san;
+        let pos = parser.context;
+        let tok = &mut Tokenizer::new(san);
+        let us = parser.context.get_turn();
+        let rank0 = if us == colors::WHITE { ranks::_1 } else { ranks::_8 };
+
+        // Castling is indicated by the special notations, "O-O" for kingside castling
+        // and "O-O-O" for queenside castling. While the FIDE handbook uses the
+        // digit zero, the SAN PGN-Standard requires the capital letter 'O' for its
+        // export format.
+        match san {
+            "O-O" | "0-0" => {
+                return Ok(Move::new(
+                    Square::from((files::E, rank0)),
+                    Square::from((files::G, rank0)),
+                    MoveFlag::from(castling_sides::KING_SIDE),
+                ));
+            }
+            "O-O-O" | "0-0-0" => {
+                return Ok(Move::new(
+                    Square::from((files::E, rank0)),
+                    Square::from((files::C, rank0)),
+                    MoveFlag::from(castling_sides::QUEEN_SIDE),
+                ));
+            }
+            _ => {}
+        }
+
+        // Moving piece
+        let moving_type = {
+            let char = tok.peek_next_char().ok_or(E::TooShort)?;
+            if char.is_ascii_uppercase()
+                && let Ok(pt) = PieceType::try_from(char.to_ascii_lowercase())
+            {
+                tok.next_char(); // consume
+                pt
+            }
+            else {
+                // If the first character is not uppercase, we assume
+                // it's a pawn move and the first character is actually
+                // the from-square file.
+                piece_type::PAWN
+            }
+        };
+
+        // First Square information
+        let (file_1, rank_1) = {
+            (
+                File::try_from(tok.peek_next_char().ok_or(E::TooShort)?)
+                    .inspect(|_| tok.consume_next_char())
+                    .ok(),
+                Rank::try_from(tok.peek_next_char().ok_or(E::TooShort)?)
+                    .inspect(|_| tok.consume_next_char())
+                    .ok(),
+            )
+        };
+
+        // Captures are denoted by the lower case letter "x" immediately prior to the
+        // destination square. Pawn captures with the omitted piece symbol, include the
+        // file letter of the originating square of the capturing pawn prior to the "x"
+        // character, even if not required for unambiguousness. Some SAN variations in
+        // printed media even omit the target rank if unambiguous, like dxe, which might
+        // not be accepted as input format.
+        let _is_capture = {
+            if tok.peek_next_char() == Some('x') {
+                tok.next_char(); // consume
+                true
+            }
+            else {
+                false
+            }
+        };
+
+        // Second Square information
+        let (file_2, rank_2) = {
+            (
+                tok.peek_next_char().and_then(|c| {
+                    File::try_from(c).ok().inspect(|_| {
+                        tok.next_char(); // consume
+                    })
+                }),
+                tok.peek_next_char().and_then(|c| {
+                    Rank::try_from(c).ok().inspect(|_| {
+                        tok.next_char(); // consume
+                    })
+                }),
+            )
+        };
+
+        // Coordinate square data
+        let (from_file, from_rank, to) = {
+            match (file_1, rank_1, file_2, rank_2) {
+                // If the only square information contains both file and rank, it's the to-square
+                (Some(f), Some(r), None, None) => (None, None, Square::from((f, r))),
+
+                // If the second square information contains both file and rank, it's the to-square
+                (f_1, r_1, Some(f), Some(r)) => (f_1, r_1, Square::from((f, r))),
+
+                // Otherwise, we are missing information for the to-square.
+                _ => return Err(E::MissingToSquare),
+            }
+        };
+
+        // A pawn promotion requires the information about the chosen piece, appended as
+        // trailing Piece letter behind the target square. The SAN PGN-Standard requires
+        // an equal sign ('=') immediately following the destination square.
+        let promo = {
+            let token = tok.peek_next_char();
+            if token == Some('=') {
+                tok.next_char(); // consume
+                Some(PromoPieceType::try_from(tok).map_err(E::InvalidPromoPieceType)?)
+            }
+            else {
+                // some poorly formatted SAN data, like the ERET datum
+                // `... bm e8N; id "ERET 089 - Underpromotion";`
+                // can contain bad data (`e8=N` would've been correct),
+                // so we should try to handle those cases aswell.
+                PromoPieceType::try_from(tok).ok()
+            }
+        };
+
+        // Disambiguation
+        let mut moves = MoveList::new();
+        _ = fold_legals::<true, _, _, _>(pos, (), |_, m| {
+            let m_flag = m.get_flag();
+            let m_from = m.get_from();
+            let m_piece = pos.get_piece(m.get_from());
+            let to_matches = m.get_to() == to;
+
+            let piece_matches = m_piece.piece_type() == moving_type;
+            let rank_matches = from_rank.is_none_or(|r| r == Rank::from(m_from));
+            let file_matches = from_file.is_none_or(|f| f == File::from(m_from));
+            let promo_matches = promo.is_none_or(|p| Ok(p) == PromoPieceType::try_from(m_flag));
+
+            if piece_matches && rank_matches && file_matches && to_matches && promo_matches {
+                moves.push(m);
+            }
+
+            ControlFlow::Continue::<(), _>(())
+        });
+
+        match moves.len() {
+            0 => Err(E::IllegalMove),
+            1 => Ok(moves.as_slice()[0]),
+            2.. => Err(E::NotEnoughDisambiguation(Box::new(moves))),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum LanParseError {
     #[error("Invalid to-square: {0}")]
     InvalidToSquare(SquareTokenizationError),
 
@@ -401,14 +601,14 @@ pub enum MoveParseError {
 }
 
 impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
-    type Error = MoveParseError;
+    type Error = LanParseError;
 
     fn try_from(move_notation: LongAlgebraicUciNotation<'_, '_, '_>) -> Result<Self, Self::Error> {
         let from = Square::try_from(&mut *move_notation.tokens)
-            .map_err(MoveParseError::InvalidFromSquare)?;
+            .map_err(LanParseError::InvalidFromSquare)?;
 
-        let to = Square::try_from(&mut *move_notation.tokens)
-            .map_err(MoveParseError::InvalidToSquare)?;
+        let to =
+            Square::try_from(&mut *move_notation.tokens).map_err(LanParseError::InvalidToSquare)?;
 
         let moving_p = move_notation.context.get_piece(from);
         let captured_p = move_notation.context.get_piece(to);
@@ -424,14 +624,14 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
                     _ => match PromoPieceType::try_from(move_notation.tokens) {
                         Ok(promo_piece) => MoveFlag::from((promo_piece, captures)),
                         Err(PromoPieceTokenizationError::MissingToken) => flag,
-                        Err(error) => return Err(MoveParseError::InvalidPromoPieceType(error)),
+                        Err(error) => return Err(LanParseError::InvalidPromoPieceType(error)),
                     },
                 }
             }
             piece_type::KING if abs_dist == 2 => {
-                let file = File::from_c(to);
+                let file = File::from(to);
                 let side = CastlingSide::try_from(file).map_err(Self::Error::IllegalCastling)?;
-                flag = MoveFlag::from_c(side);
+                flag = MoveFlag::from(side);
             }
             _ => {}
         };
@@ -440,104 +640,70 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
     }
 }
 
-impl From<Move> for usize {
-    /// Converts a move to a index, such that in any given position, no two
-    /// moves will have the same index and there are few gaps.
-    fn from(mov: Move) -> Self {
-        let flag = mov.get_flag();
-        let result = if flag.is_promo() {
-            // Promotions are special cases:
-            // 1. Since promotions have multiple moves for the same from-to combination, we
-            //    add a variance for different promotions.
-            // 2. We need to bias, such that we don't collide with valid from-to indeces.
-            //    (SQ_MASK)
-            // 3. We also need to bias by the file of the from square, such that we don't
-            //    collide with other promotions.
-            let min_index = Move::MASK_SQ + 1;
-            let min_promo_flag = move_flags::PROMOTION_KNIGHT.v() as u16;
-            let flag_off = flag.v() as u16 - min_promo_flag;
-            let file_off = File::from_c(mov.get_from()).v() as u16;
-            min_index + flag_off + file_off
-        }
-        else {
-            // For most moves, we can just use the from and to squares to get a unique index
-            // for any set of moves of any position.
-            mov.v & Move::MASK_SQ
-        };
-        result as usize
-    }
-}
-
-// todo
-// impl TryFrom<(usize, &Position)> for Move {
-//     type Error = ValueOutOfRangeError<usize>;
-
-//     /// Inverse of the above...
-//     fn try_from(value: (usize, &Position)) -> Result<Self, Self::Error> {
-//         if value > Move::MASK_SQ {
-//             // promo
-//         } else {
-//             // normal
-//         }
-//     }
-// }
-
 /// A list of moves in a single position.
 /// Since the 218 is the maximum number of moves in a single position,
 /// we can use a fixed length array to store the moves and by using a
 /// size of 256 we can safely index into the array with a u8.
-#[derive(Debug, Clone)]
-pub struct MoveList([Move; 256]);
+pub struct MoveList {
+    inner: List<{ Self::CAPACITY }, Move>,
+}
+
+impl fmt::Debug for MoveList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.inner, f)
+    }
+}
+
+pub const MAX_LEGAL_MOVES: usize = 218;
 
 impl MoveList {
-    /// Returns a mutable slice of the initialized moves up to `len`.
-    pub fn as_mut_slice(&mut self, len: u8) -> &mut [Move] {
-        // SAFETY: len is guaranteed to be <= 256 because it's a u8.
-        unsafe { self.0.get_unchecked_mut(..len as usize) }
+    pub const CAPACITY: usize = 256;
+
+    /// Creates a new, empty move list.
+    #[inline]
+    pub fn new() -> Self {
+        Self { inner: List::new() }
     }
 
-    /// Returns an iterator over the initialized moves up to the first null
-    /// move.
-    ///
-    /// NOTE: This could maybe be written more efficently. And also, just use
-    /// indexing instead maybe, since we can easily prove the bounds checks
-    /// in most cases.
-    pub fn iter(&self) -> impl Iterator<Item = Move> {
-        self.0
-            .iter()
-            .take_while(|&mov| *mov != Move::null())
-            .copied()
+    #[inline]
+    pub fn len(&self) -> u8 {
+        self.inner.len() as u8
+    }
+
+    /// Pushes a move to the list.
+    #[inline]
+    pub fn push(&mut self, m: Move) {
+        self.inner.push(m);
+    }
+
+    /// Returns a mutable slice of the initialized moves up to `len`.
+    #[inline]
+    pub fn as_mut_slice(&mut self) -> &mut [Move] {
+        self.inner.as_mut_slice()
+    }
+
+    /// Returns a slice of the initialized moves.
+    #[inline]
+    pub fn as_slice(&self) -> &[Move] {
+        self.inner.as_slice()
+    }
+
+    /// Returns an iterator over the initialized moves.
+    #[inline]
+    pub fn iter(&self) -> slice::Iter<'_, Move> {
+        self.inner.iter()
     }
 }
 
 impl Default for MoveList {
     fn default() -> Self {
-        Self([Move::default(); 256])
-    }
-}
-
-impl Index<MoveIndex> for MoveList {
-    type Output = Move;
-
-    fn index(&self, index: MoveIndex) -> &Self::Output {
-        unsafe { self.0.get_unchecked(index.v as usize) }
-    }
-}
-
-impl IndexMut<MoveIndex> for MoveList {
-    fn index_mut(&mut self, index: MoveIndex) -> &mut Self::Output {
-        unsafe { self.0.get_unchecked_mut(index.v as usize) }
+        Self::new()
     }
 }
 
 impl fmt::Display for MoveList {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let moves = self
-            .0
-            .iter()
-            .take_while(|mov| mov.v != 0)
-            .map(|mov| mov.to_string());
-        write!(f, "[{}]", moves.collect::<Vec<_>>().join(", "))
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_list().entries(self.as_slice()).finish()
     }
 }
 
@@ -552,11 +718,11 @@ impl_op!(+|a: MoveIndex, b: u8| -> MoveIndex { Self { v: a.v + b } });
 impl TryFrom<usize> for MoveIndex {
     type Error = ValueOutOfRangeError<usize>;
     fn try_from(value: usize) -> Result<Self, Self::Error> {
-        if value <= 255 {
+        if value < MoveList::CAPACITY {
             Ok(Self { v: value as u8 })
         }
         else {
-            Err(ValueOutOfRangeError::new(value, 0..=255))
+            Err(ValueOutOfRangeError::new(value, 0..MoveList::CAPACITY))
         }
     }
 }

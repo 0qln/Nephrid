@@ -4,23 +4,19 @@ use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_ma
 use engine::core::{
     move_iter::sliding_piece::magics,
     position::Position,
-    search::mcts::{
-        MctsParts, StaticParts, limiter::DefaultLimiter, node::Tree, search::TreeSearcher,
-    },
+    search::mcts::{HceParts, MctsParts, node::Tree, search::TreeSearcher},
     zobrist,
 };
 
-fn bench_mcts<P: MctsParts>(mut pos: Position, mut tree: Tree, parts: P) {
-    let mut searcher = TreeSearcher::<1, _, _, _, _, _>::new(
+fn bench_mcts<const B: usize, P: MctsParts>(mut pos: Position, mut tree: Tree, parts: P) {
+    let mut searcher = TreeSearcher::<B, _, _, _>::new(
         &mut pos,
         parts.selector(),
-        DefaultLimiter::default(),
         parts.evaluator(),
-        parts.backprop(),
         parts.noiser(),
     );
     searcher.init_root(&mut tree);
-    for _ in 0..20_000 {
+    for _ in 0..(20_000 / B) {
         searcher.grow(&mut tree);
     }
 }
@@ -31,8 +27,8 @@ pub fn mcts_benches(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("mcts");
     group
-        .measurement_time(Duration::from_secs(60))
-        .sample_size(20);
+        .measurement_time(Duration::from_secs(30))
+        .sample_size(10);
 
     let csv_data = include_str!("../resources/positions.csv");
 
@@ -49,21 +45,92 @@ pub fn mcts_benches(c: &mut Criterion) {
 
         let fen = fen_str.trim();
 
-        let name = format!("fuzz_{i}");
+        let name = &format!("fuzz_{i}");
 
-        group.bench_with_input(BenchmarkId::new(name, fen), &fen, |b, &fen| {
-            b.iter_batched(
-                || {
-                    (
-                        Position::from_fen(fen).unwrap(),
-                        Tree::default(),
-                        StaticParts::default(),
+        {
+            const BATCH_SIZE: usize = 1;
+            let param = (BATCH_SIZE, fen);
+            group.bench_with_input(
+                BenchmarkId::new(name, format!("{param:?}")),
+                &param,
+                |b, &(_bs, fen)| {
+                    b.iter_batched(
+                        || {
+                            (
+                                Position::from_fen(fen).unwrap(),
+                                Tree::default(),
+                                HceParts::default(),
+                            )
+                        },
+                        |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
+                        BatchSize::LargeInput,
                     )
                 },
-                |(pos, tree, parts)| bench_mcts(pos, tree, &parts),
-                BatchSize::LargeInput,
-            )
-        });
+            );
+        }
+        {
+            const BATCH_SIZE: usize = 2;
+            let param = (BATCH_SIZE, fen);
+            group.bench_with_input(
+                BenchmarkId::new(name, format!("{param:?}")),
+                &param,
+                |b, &(_bs, fen)| {
+                    b.iter_batched(
+                        || {
+                            (
+                                Position::from_fen(fen).unwrap(),
+                                Tree::default(),
+                                HceParts::default(),
+                            )
+                        },
+                        |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
+                        BatchSize::LargeInput,
+                    )
+                },
+            );
+        }
+        {
+            const BATCH_SIZE: usize = 4;
+            let param = (BATCH_SIZE, fen);
+            group.bench_with_input(
+                BenchmarkId::new(name, format!("{param:?}")),
+                &param,
+                |b, &(_bs, fen)| {
+                    b.iter_batched(
+                        || {
+                            (
+                                Position::from_fen(fen).unwrap(),
+                                Tree::default(),
+                                HceParts::default(),
+                            )
+                        },
+                        |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
+                        BatchSize::LargeInput,
+                    )
+                },
+            );
+        }
+        {
+            const BATCH_SIZE: usize = 64;
+            let param = (BATCH_SIZE, fen);
+            group.bench_with_input(
+                BenchmarkId::new(name, format!("{param:?}")),
+                &param,
+                |b, &(_bs, fen)| {
+                    b.iter_batched(
+                        || {
+                            (
+                                Position::from_fen(fen).unwrap(),
+                                Tree::default(),
+                                HceParts::default(),
+                            )
+                        },
+                        |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
+                        BatchSize::LargeInput,
+                    )
+                },
+            );
+        }
     }
 
     group.finish();

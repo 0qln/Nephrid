@@ -7,7 +7,7 @@ use crate::core::{color::colors, depth::Depth, r#move::Move, position::Position}
 
 /// A struct to hold all by the UCI defined search limits and targets.
 #[derive(Debug, Clone)]
-pub struct Limit {
+pub struct UciLimit {
     pub is_active: bool,
     pub wtime: u64,
     pub btime: u64,
@@ -23,7 +23,7 @@ pub struct Limit {
     pub lag_buf: u16,
 }
 
-impl Limit {
+impl UciLimit {
     pub fn max() -> Self {
         Self {
             is_active: false,
@@ -78,7 +78,7 @@ impl Limit {
     }
 }
 
-impl Default for Limit {
+impl Default for UciLimit {
     fn default() -> Self {
         Self {
             is_active: true,

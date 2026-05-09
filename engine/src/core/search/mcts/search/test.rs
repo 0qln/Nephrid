@@ -3,18 +3,15 @@ use crate::core::{
     move_iter::sliding_piece::magics,
     position::Position,
     search::mcts::{
-        MctsParts, NullNoiser, StaticParts, back::DefaultBackuper, limiter::NoopLimiter,
-        node::Tree, search::TreeSearcher, select::ucb::UcbSelector, test::DummyEvaluator,
+        HceParts, MctsParts, NullNoiser, node::Tree, search::TreeSearcher,
+        select::ucb::UcbSelector, test::DummyEvaluator,
     },
     zobrist,
 };
 
 use std::{error::Error, thread};
 
-fn fuzz<const X: usize, P: Send + 'static>(pos: &'static str, parts: P, rounds: usize)
-where
-    for<'a> &'a P: MctsParts,
-{
+fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts: P, rounds: usize) {
     magics::init();
     zobrist::init();
 
@@ -29,16 +26,16 @@ where
 
             let parts = &parts;
 
-            let mut searcher = TreeSearcher::<X, _, _, _, _, _>::new(
+            let mut searcher = TreeSearcher::<X, _, _, _>::new(
                 &mut pos_clone,
                 parts.selector(),
-                NoopLimiter,
                 parts.evaluator(),
-                parts.backprop(),
                 parts.noiser(),
             );
 
             searcher.init_root(&mut tree);
+
+            let iterations = rounds / X;
 
             for _i in 0..(rounds / X) {
                 searcher.grow(&mut tree);
@@ -46,10 +43,20 @@ where
 
             assert_eq!(&pos, &pos_clone);
             assert_eq!(tree.size(), tree.compute_subtree_size(tree.root()));
-            // assert_eq!(tree.mindepth(), tree.compute_mindepth());
+            assert_eq!(
+                tree.terminal_nodes(),
+                tree.compute_subtree_terminal_nodes_count(tree.root())
+            );
             assert_eq!(
                 tree.maxheight(),
                 tree.compute_subtree_maxheight(tree.root())
+            );
+            assert!(
+                tree.size() > iterations,
+                "Tree should have more nodes than iterations, but it has {} nodes and after {} \
+                 iterations",
+                tree.size(),
+                iterations
             );
         })
         .expect("Couldn't spawn thread")
@@ -61,7 +68,7 @@ where
 pub fn sa_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
     fuzz::<1, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        StaticParts::default(),
+        HceParts::default(),
         50_000,
     );
     Ok(())
@@ -71,7 +78,7 @@ pub fn sa_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
 pub fn sa_fuzz_bs_8() -> Result<(), Box<dyn Error>> {
     fuzz::<8, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        StaticParts::default(),
+        HceParts::default(),
         50_000,
     );
     Ok(())
@@ -81,7 +88,7 @@ pub fn sa_fuzz_bs_8() -> Result<(), Box<dyn Error>> {
 pub fn sa_fuzz_bs_64() -> Result<(), Box<dyn Error>> {
     fuzz::<64, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        StaticParts::default(),
+        HceParts::default(),
         50_000,
     );
     Ok(())
@@ -90,22 +97,16 @@ pub fn sa_fuzz_bs_64() -> Result<(), Box<dyn Error>> {
 #[derive(Default)]
 struct NoAnalysisParts;
 
-impl MctsParts for &NoAnalysisParts {
+impl MctsParts for NoAnalysisParts {
     type Selector = UcbSelector;
     type Evaluator = DummyEvaluator;
-    type Backprop = DefaultBackuper;
     type Noiser = NullNoiser;
-    type Instance = NoAnalysisParts;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        Default::default()
-    }
-
-    fn backprop(&self) -> Self::Backprop {
         Default::default()
     }
 

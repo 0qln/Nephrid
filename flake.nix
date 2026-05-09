@@ -60,7 +60,7 @@
               src = ./.;
               cargoLock.lockFile = ./Cargo.lock;
               buildNoDefaultFeatures = true;
-              buildFeatures = ["mcts-nn" "gpu"];
+              buildFeatures = ["mcts-nn"];
               nativeBuildInputs = [pkgs.pkg-config];
               buildInputs =
                 [pkgs.zlib]
@@ -71,17 +71,17 @@
                 ]);
             };
 
-            nephrid-sa = rustPlatform.buildRustPackage {
+            nephrid-hce = rustPlatform.buildRustPackage {
               pname = "nephrid";
-              version = "sa";
+              version = "hce";
               src = ./.;
               cargoLock.lockFile = ./Cargo.lock;
               buildNoDefaultFeatures = true;
-              buildFeatures = ["mcts-sa" "cpu"];
+              buildFeatures = ["mcts-hce"];
               nativeBuildInputs = [pkgs.pkg-config];
             };
 
-            default = config.packages.nephrid-sa;
+            default = config.packages.nephrid-hce;
           };
 
           devShells.default = pkgs.mkShell {
@@ -91,6 +91,8 @@
                 bacon
                 perf
                 act
+                python3
+                gnuplot
               ])
               ++ (with pkgs-cuda; [
                 # reference: https://discourse.nixos.org/t/cuda-12-8-support-in-nixpkgs/60645/39
@@ -133,7 +135,7 @@
               (with pkgs-cuda; ''
                 # CUDA libraries
                 # how to get lib/ of nvrtc: https://github.com/NixOS/nixpkgs/pull/297590/files#diff-59c22b0fc67d897077e55030166ca816d19c80b7767b2ad486bc0aaa2a772115R494
-                export LD_LIBRARY_PATH="${lib.getLib cudaPackages.cuda_nvrtc}/lib:${linuxPackages.nvidia_x11}/lib:$LD_LIBRARY_PATH"
+                export LD_LIBRARY_PATH="${lib.getLib cudaPackages.cuda_nvrtc}/lib:/run/opengl-driver/lib:$LD_LIBRARY_PATH"
                 export CUDA_PATH=${cudatoolkit}
               '')
               +
@@ -150,7 +152,7 @@
                 echo "yo! o/"
                 echo ""
                 echo "howto compilation (example): "
-                echo '$ cargo run --bin nephrid --release --features "mcts-nn,gpu" --no-default-features'
+                echo '$ cargo run --bin nephrid --release --features "mcts-nn" --no-default-features'
                 echo ""
                 echo "to run all tests: "
                 echo '$ cargo test --workspace'

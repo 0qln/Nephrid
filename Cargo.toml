@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [ "benchmarking", "engine", "nephrid", "tuning" ]
+members = [ "benchmarking", "engine", "nephrid", "tuning", "seeds" ]
 
 [workspace.package]
 documentation = "https://github.com/0qln/Nephrid"
@@ -36,3 +36,6 @@ strip = "none"
 inherits = "release"
 strip = "none"
 debug = true
+
+[workspace.lints.clippy]
+blocks_in_conditions = "allow"

@@ -13,6 +13,12 @@ pub struct FullMoveCount {
     pub v: u16,
 }
 
+impl From<u16> for FullMoveCount {
+    fn from(v: u16) -> Self {
+        Self { v }
+    }
+}
+
 impl fmt::Display for FullMoveCount {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.v)
@@ -51,10 +57,10 @@ impl TryFrom<&mut Tokenizer<'_>> for FullMoveCount {
     type Error = FullMoveCountTokenizationError;
 
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
-        match fen.next_token() {
-            None => Err(Self::Error::MissingToken),
-            Some(tok) => Self::try_from(tok).map_err(Self::Error::InvalidToken),
-        }
+        let peek = fen.peek_next_token().ok_or(Self::Error::MissingToken)?;
+        let val = Self::try_from(peek.val()).map_err(Self::Error::InvalidToken)?;
+        peek.consume();
+        Ok(val)
     }
 }
 
@@ -73,6 +79,12 @@ impl Ply {
 impl fmt::Display for Ply {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.v)
+    }
+}
+
+impl From<u16> for Ply {
+    fn from(v: u16) -> Self {
+        Self { v }
     }
 }
 
@@ -118,9 +130,9 @@ impl TryFrom<&mut Tokenizer<'_>> for Ply {
     type Error = PlyTokenizationError;
 
     fn try_from(fen: &mut Tokenizer<'_>) -> Result<Self, Self::Error> {
-        match fen.next_token() {
-            None => Err(Self::Error::MissingToken),
-            Some(tok) => Self::try_from(tok).map_err(Self::Error::InvalidToken),
-        }
+        let peek = fen.peek_next_token().ok_or(Self::Error::MissingToken)?;
+        let ply = Self::try_from(peek.val()).map_err(Self::Error::InvalidToken)?;
+        peek.consume();
+        Ok(ply)
     }
 }

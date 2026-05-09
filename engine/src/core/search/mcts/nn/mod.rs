@@ -5,28 +5,135 @@ use burn::{
     config::Config,
     module::Module,
     nn::{
-        BatchNorm, BatchNormConfig, Dropout, DropoutConfig, Linear, LinearConfig, PaddingConfig2d,
-        Relu, Tanh,
+        BatchNorm, BatchNormConfig, Linear, LinearConfig, PaddingConfig2d, Relu, Tanh,
         conv::{Conv2d, Conv2dConfig},
-        pool::{MaxPool2d, MaxPool2dConfig},
     },
     prelude::Backend,
-    tensor::{Tensor, activation::softmax},
+    tensor::Tensor,
 };
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::core::{
-    bitboard,
-    castling::castling_sides,
-    color::colors,
-    coordinates::{files, ranks, squares},
-    piece::{piece_type, promo_piece_type},
-    position::Position,
+use crate::{
+    core::{
+        bitboard,
+        castling::castling_sides,
+        color::colors,
+        coordinates::{File, files, ranks, squares},
+        r#move::{Move, move_flags},
+        piece::{piece_type, promo_piece_type},
+        position::Position,
+    },
+    misc::{CheckHealth, CheckHealthResult},
 };
 
 #[cfg(test)]
 pub mod test;
+
+#[derive(Debug, Error)]
+pub enum CheckTensorHealthError {
+    #[error("Tensor value is nan: {0}")]
+    Nan(f32),
+
+    #[error("Tensor value is infinite: {0}")]
+    Infinite(f32),
+}
+
+impl<const D: usize, B: Backend> CheckHealth for Tensor<B, D> {
+    type Error = CheckTensorHealthError;
+
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        for &value in self.clone().into_data().as_slice::<f32>().unwrap() {
+            if value.is_nan() {
+                return Err(CheckTensorHealthError::Nan(value));
+            }
+            if value.is_infinite() {
+                return Err(CheckTensorHealthError::Infinite(value));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum CheckLinearHealthError {
+    #[error("Linear weight tensor is unhealthy: {0}")]
+    Weight(CheckTensorHealthError),
+
+    #[error("Linear bias tensor is unhealthy: {0}")]
+    Bias(CheckTensorHealthError),
+}
+
+impl<B: Backend> CheckHealth for Linear<B> {
+    type Error = CheckLinearHealthError;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        if let Err(e) = self.weight.clone().into_value().check_health() {
+            return Err(CheckLinearHealthError::Weight(e));
+        }
+
+        if let Some(bias) = self.bias.clone()
+            && let Err(e) = bias.into_value().check_health()
+        {
+            return Err(CheckLinearHealthError::Bias(e));
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum CheckConv2dHealthError {
+    #[error("Conv weight tensor is unhealthy: {0}")]
+    Weight(CheckTensorHealthError),
+
+    #[error("Conv bias tensor is unhealthy: {0}")]
+    Bias(CheckTensorHealthError),
+}
+
+impl<B: Backend> CheckHealth for Conv2d<B> {
+    type Error = CheckConv2dHealthError;
+
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        if let Err(e) = self.weight.clone().into_value().check_health() {
+            return Err(CheckConv2dHealthError::Weight(e));
+        }
+
+        if let Some(bias) = self.bias.clone()
+            && let Err(e) = bias.into_value().check_health()
+        {
+            return Err(CheckConv2dHealthError::Bias(e));
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum CheckBatchnormHealthError {
+    #[error("BatchNorm gamma tensor is unhealthy: {0}")]
+    Gamma(CheckTensorHealthError),
+
+    #[error("BatchNorm beta tensor is unhealthy: {0}")]
+    Beta(CheckTensorHealthError),
+}
+
+impl<B: Backend> CheckHealth for BatchNorm<B> {
+    type Error = CheckBatchnormHealthError;
+
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        if let Err(e) = self.gamma.clone().into_value().check_health() {
+            return Err(CheckBatchnormHealthError::Gamma(e));
+        }
+
+        if let Err(e) = self.beta.clone().into_value().check_health() {
+            return Err(CheckBatchnormHealthError::Beta(e));
+        }
+
+        Ok(())
+    }
+}
+
+pub const INPUT_CHANNELS: usize = BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY;
 
 pub const BOARD_INPUT_HISTORY: usize = 8;
 
@@ -82,7 +189,7 @@ pub const VALUE_OUTPUT_TENSOR_DIM: usize = {
     1
 };
 
-pub type BoardInputTensor<B> = Tensor<B, 4>;
+pub type BoardInputTensor<B> = Tensor<B, BOARD_INPUT_TENSOR_DIM>;
 
 pub type BoardInputFloats = [bitboard::Floats; BOARD_INPUT_CHANNELS];
 
@@ -90,6 +197,8 @@ pub fn board_input(pos: &Position) -> BoardInputFloats {
     let us = pos.get_turn();
     let flip = us == colors::BLACK;
     let them = !us;
+
+    // todo: more inputs (e.g. pins, checks, attacks)
     [
         pos.get_bitboard(piece_type::PAWN, us).into_floats(flip),
         pos.get_bitboard(piece_type::PAWN, them).into_floats(flip),
@@ -160,7 +269,7 @@ pub fn board_history_input<B: Backend>(
     }
 }
 
-pub type StateInputTensor<B> = Tensor<B, 2>;
+pub type StateInputTensor<B> = Tensor<B, STATE_INPUT_TENSOR_DIM>;
 
 pub type StateInputFloats = [f32; STATE_INPUT_LEN];
 
@@ -175,23 +284,13 @@ pub fn state_input(pos: &Position) -> StateInputFloats {
         castling.get_float(castling_sides::QUEEN_SIDE, them),
         // todo: figure out what the right scale is. maybe make it dependent on the max depth at
         // which the limiter stops the mcts search? maybe just a sigmoid or something?
-        pos.plys_50().v as f32 / 50.0,
+        pos.plys_50().v as f32 / 100.0,
     ]
-}
-
-pub fn input_batched<const N: usize, B: Backend>(
-    inputs: [BoardInputFloats; N],
-    device: &B::Device,
-) -> Tensor<B, BOARD_INPUT_TENSOR_DIM> {
-    Tensor::from_floats(inputs, device)
 }
 
 pub const VALUE_OUTPUTS: usize = 1;
 
-// because our value_output_layer is uses tanh
-pub const VALUE_WIN: f32 = 1.0;
-pub const VALUE_DRAW: f32 = 0.0;
-pub const VALUE_LOSE: f32 = -1.0;
+pub type ValueOutputTensor<B> = Tensor<B, VALUE_OUTPUT_TENSOR_DIM>;
 
 pub const POLICY_OUTPUTS: usize = {
     // from * to
@@ -199,6 +298,116 @@ pub const POLICY_OUTPUTS: usize = {
     // Possible promotions
     promo_piece_type::N_VARIANTS * files::N_VARIANTS
 };
+
+/// An index that is guaruanteed to be valid when indexing into a policy head
+/// output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct PolicyHeadIndex(u16);
+
+impl PolicyHeadIndex {
+    pub const MAX: u16 = (POLICY_OUTPUTS - 1) as u16;
+
+    pub fn new(i: u16) -> Self {
+        debug_assert!(
+            i <= Self::MAX,
+            "PolicyHeadIndex must be between 0 and {}",
+            Self::MAX
+        );
+
+        Self(i)
+    }
+
+    pub fn v(&self) -> u16 {
+        self.0
+    }
+}
+
+impl From<Move> for PolicyHeadIndex {
+    /// Converts a move to a index, such that in any given position, no two
+    /// moves will have the same index and there are few gaps.
+    fn from(mov: Move) -> Self {
+        let flag = mov.get_flag();
+        let result = if flag.is_promo() {
+            // Promotions are special cases:
+            // 1. Since promotions have multiple moves for the same from-to combination, we
+            //    add a variance for different promotions.
+            // 2. We need to bias, such that we don't collide with valid from-to indeces.
+            //    (SQ_MASK)
+            // 3. We also need to bias by the file of the from square, such that we don't
+            //    collide with other promotions.
+            let min_index = Move::MASK_SQ + 1;
+            let min_promo_flag = move_flags::PROMOTION_KNIGHT.v() as u16;
+            let flag_off = flag.v() as u16 - min_promo_flag;
+            let file_off = File::from(mov.get_from()).v() as u16;
+            min_index + flag_off + file_off
+        }
+        else {
+            // For most moves, we can just use the from and to squares to get a unique index
+            // for any set of moves of any position.
+            mov.v() & Move::MASK_SQ
+        };
+        Self::new(result)
+    }
+}
+
+// todo: this better belongs in `nn/mod.rs`, right?
+/// Raw logits outputs of the network.
+#[derive(PartialEq, Clone)]
+pub struct RawLogits(pub [f32; POLICY_OUTPUTS]);
+
+impl std::fmt::Debug for RawLogits {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("RawLogits").field(&"...").finish()
+    }
+}
+
+impl Default for RawLogits {
+    fn default() -> Self {
+        Self::null()
+    }
+}
+
+impl RawLogits {
+    pub fn get(&self, i: PolicyHeadIndex) -> f32 {
+        unsafe { *self.0.get_unchecked(i.0 as usize) }
+    }
+
+    pub fn set(&mut self, i: usize, val: f32) {
+        self.0[i] = val;
+    }
+
+    pub fn null() -> Self {
+        Self::new([0.0; POLICY_OUTPUTS])
+    }
+
+    pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
+        Self(p)
+    }
+
+    /// Returns an immutable view of the underlying policy values.
+    pub fn as_slice(&self) -> &[f32] {
+        &self.0
+    }
+
+    pub fn sum(&self) -> f32 {
+        self.0.iter().sum::<f32>()
+    }
+
+    pub fn len(&self) -> usize {
+        debug_assert_eq!(POLICY_OUTPUTS, self.0.len());
+        POLICY_OUTPUTS
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = f32> {
+        self.0.iter().cloned()
+    }
+
+    pub fn inner_mut(&mut self) -> &mut [f32] {
+        &mut self.0
+    }
+}
+
+pub type PolicyOutputTensor<B> = Tensor<B, POLICY_OUTPUT_TENSOR_DIM>;
 
 #[derive(Module, Debug)]
 pub struct ConvBlock<B: Backend> {
@@ -218,277 +427,307 @@ impl<B: Backend> ConvBlock<B> {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum CheckConvBlockHealthError {
+    #[error("Conv block is unhealthy: {0}")]
+    BadConv(#[from] CheckConv2dHealthError),
+
+    #[error("BatchNorm in conv block is unhealthy: {0}")]
+    BadBatchNorm(#[from] CheckBatchnormHealthError),
+}
+
+impl<B: Backend> CheckHealth for ConvBlock<B> {
+    type Error = CheckConvBlockHealthError;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        self.conv.check_health()?;
+        self.b_norm.check_health()?;
+        Ok(())
+    }
+}
+
 #[derive(Config, Debug)]
 pub struct ConvBlockConfig {
     channels_in: usize,
-    channels: usize,
+    channels_out: usize,
     kernel_size: [usize; 2],
 }
 
 impl ConvBlockConfig {
     pub fn init<B: Backend>(&self, device: &B::Device) -> ConvBlock<B> {
         ConvBlock {
-            conv: Conv2dConfig::new([self.channels_in, self.channels], self.kernel_size)
+            conv: Conv2dConfig::new([self.channels_in, self.channels_out], self.kernel_size)
+                // PaddingConfig2d::Same ensures our 8x8 spatial grid is preserved.
                 .with_padding(PaddingConfig2d::Same)
                 .init(device),
-            activation: Default::default(),
-            b_norm: BatchNormConfig::new(self.channels).init(device),
+            b_norm: BatchNormConfig::new(self.channels_out).init(device),
+            activation: Relu::new(),
         }
     }
 }
 
 #[derive(Module, Debug)]
-pub struct MultiConvBlock<B: Backend> {
-    convs: Vec<ConvBlock<B>>,
+pub struct ResidualBlock<B: Backend> {
+    conv1: Conv2d<B>,
+    bn1: BatchNorm<B>,
+    relu1: Relu,
+    conv2: Conv2d<B>,
+    bn2: BatchNorm<B>,
+    relu2: Relu,
 }
 
-impl<B: Backend> MultiConvBlock<B> {
+impl<B: Backend> ResidualBlock<B> {
     pub fn forward(
         &self,
         x: Tensor<B, { BOARD_INPUT_TENSOR_DIM }>,
     ) -> Tensor<B, { BOARD_INPUT_TENSOR_DIM }> {
-        Tensor::cat(
-            self.convs
-                .iter()
-                .map(|conv| conv.forward(x.clone()))
-                .collect_vec(),
-            1,
-        )
+        let identity = x.clone();
+
+        let out = self.conv1.forward(x);
+        let out = self.bn1.forward(out);
+        let out = self.relu1.forward(out);
+
+        let out = self.conv2.forward(out);
+        let out = self.bn2.forward(out);
+
+        // Residual skip-connection: add the original input before the final activation
+        let out = out + identity;
+        self.relu2.forward(out)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum CheckResidualBlockHealthError {
+    #[error("Conv block is unhealthy: {0}")]
+    BadConv(#[from] CheckConv2dHealthError),
+
+    #[error("BatchNorm in conv block is unhealthy: {0}")]
+    BadBatchNorm(#[from] CheckBatchnormHealthError),
+}
+
+impl<B: Backend> CheckHealth for ResidualBlock<B> {
+    type Error = CheckResidualBlockHealthError;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        self.conv1.check_health()?;
+        self.bn1.check_health()?;
+        self.conv2.check_health()?;
+        self.bn2.check_health()?;
+        Ok(())
     }
 }
 
 #[derive(Config, Debug)]
-pub struct MultiConvBlockConfig {
-    heads: Vec<[usize; 2]>,
-    channels_in: usize,
+pub struct ResidualBlockConfig {
     channels: usize,
 }
 
-impl MultiConvBlockConfig {
-    pub fn init<B: Backend>(self, device: &B::Device) -> MultiConvBlock<B> {
-        let convs = self
-            .heads
-            .into_iter()
-            .map(|k| ConvBlockConfig::new(self.channels_in, self.channels, k).init(device))
-            .collect_vec();
-
-        MultiConvBlock { convs }
-    }
-}
-
-#[derive(Module, Debug)]
-pub struct ResidualConvBlock<B: Backend> {
-    // If we want this to be a residual layer, we need to transform the output
-    // to have as many features as the input
-    adapter: ConvBlock<B>,
-    conv_block: MultiConvBlock<B>,
-}
-
-impl<B: Backend> ResidualConvBlock<B> {
-    pub fn forward(
-        &self,
-        mut x: Tensor<B, { BOARD_INPUT_TENSOR_DIM }>,
-    ) -> Tensor<B, { BOARD_INPUT_TENSOR_DIM }> {
-        x = self.adapter.forward(x);
-        x = x.clone() + self.conv_block.forward(x);
-        x
-    }
-}
-
-#[derive(Config, Debug)]
-pub struct ResidualConvBlockConfig {
-    conv_block: MultiConvBlockConfig,
-    channels_in: usize,
-}
-
-impl ResidualConvBlockConfig {
-    pub fn init<B: Backend>(self, device: &B::Device) -> ResidualConvBlock<B> {
-        // need an adapter layer to go from [n,c_0,w,h] to [n,c_1,w,h]
-        let adapter = ConvBlockConfig::new(
-            self.channels_in,
-            self.conv_block.channels * self.conv_block.heads.len(),
-            [1, 1],
-        )
-        .init(device);
-
-        let conv_block = self.conv_block.init(device);
-
-        ResidualConvBlock { adapter, conv_block }
+impl ResidualBlockConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> ResidualBlock<B> {
+        ResidualBlock {
+            conv1: Conv2dConfig::new([self.channels, self.channels], [3, 3])
+                .with_padding(PaddingConfig2d::Same)
+                .init(device),
+            bn1: BatchNormConfig::new(self.channels).init(device),
+            relu1: Relu::new(),
+            conv2: Conv2dConfig::new([self.channels, self.channels], [3, 3])
+                .with_padding(PaddingConfig2d::Same)
+                .init(device),
+            bn2: BatchNormConfig::new(self.channels).init(device),
+            relu2: Relu::new(),
+        }
     }
 }
 
 #[derive(Module, Debug)]
 pub struct Model<B: Backend> {
-    pool: MaxPool2d,
+    initial_conv: ConvBlock<B>,
+    res_blocks: Vec<ResidualBlock<B>>,
 
-    convs1: MultiConvBlock<B>,
-    convs2: MultiConvBlock<B>,
-    convs3: MultiConvBlock<B>,
-    convs4: MultiConvBlock<B>,
-    convs5: MultiConvBlock<B>,
-    convs6: MultiConvBlock<B>,
-    convs7: MultiConvBlock<B>,
-    convs8: MultiConvBlock<B>,
-    dropout: Dropout,
+    // Value Head
+    value_conv: ConvBlock<B>,
+    value_relu: Relu,
+    value_dense1: Linear<B>,
+    value_dense2: Linear<B>,
+    value_tanh: Tanh,
 
-    dense0: Linear<B>,
-    dense1: Linear<B>,
-    dense2: Linear<B>,
-    dense3: Linear<B>,
-
-    value_dense: Linear<B>,
-    value_out: Linear<B>,
-    value_activ: Tanh,
-
+    // Policy Head
+    policy_conv: ConvBlock<B>,
     policy_dense: Linear<B>,
-    policy_out: Linear<B>,
 }
 
 impl<B: Backend> Model<B> {
-    /// # Shapes
-    /// - `value_out`: (batch_size, 1)
-    /// - `policy_out`: (batch_size, num_moves)
     pub fn forward(
         &self,
-        // getting some kind of recursive evaluation error here, so inline the constants （´＿｀）
-        board_input: Tensor<B, 4>, // BOARD_INPUT_TENSOR_DIM
-        state_input: Tensor<B, 2>, // STATE_INPUT_TENSOR_DIM
-    ) -> (
-        Tensor<B, 2>, // VALUE_OUTPUT_TENSOR_DIM
-        Tensor<B, 2>, // POLICY_OUTPUT_TENSOR_DIM
-    ) {
-        let [bi_batch_size, bil, rs, fs] = board_input.dims();
-        let [si_batch_size, sil] = state_input.dims();
+        board_input: BoardInputTensor<B>,
+        state_input: StateInputTensor<B>,
+    ) -> (ValueOutputTensor<B>, PolicyOutputTensor<B>) {
+        let mut x = self.initial_conv.forward(board_input);
 
-        assert_eq!(si_batch_size, bi_batch_size);
+        for block in self.res_blocks.iter() {
+            x = block.forward(x);
+        }
 
-        assert_eq!(bil, BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY);
-        assert_eq!(rs, ranks::N_VARIANTS);
-        assert_eq!(fs, files::N_VARIANTS);
+        // Value Head
+        let v = self.value_conv.forward(x.clone());
+        let v = v.flatten(1, 3);
 
-        assert_eq!(sil, STATE_INPUT_LEN);
+        // State Inputs
+        let v = Tensor::cat(vec![v, state_input], 1);
+        let v = self.value_dense1.forward(v);
+        let v = self.value_relu.forward(v);
+        let v = self.value_dense2.forward(v);
+        let v = self.value_tanh.forward(v);
 
-        let x = board_input;
+        // Policy Head
+        // todo: maybe also inject state data here?
+        let p = self.policy_conv.forward(x);
+        let p = p.flatten(1, 3);
+        let p = self.policy_dense.forward(p);
 
-        let x = self.convs1.forward(x);
+        (v, p)
+    }
 
-        let x = self.convs2.forward(x);
-        let x = self.convs3.forward(x);
-        let x = self.convs4.forward(x);
-        let x = self.convs5.forward(x);
-        let x = self.convs6.forward(x);
-        let x = self.pool.forward(x);
+    pub fn warmup(&self, batch_size_max: usize, device: &B::Device) {
+        // todo:
+        // this or just doing one batchsize and then filling with zeroes if not full?
+        for batch_size in 1..=batch_size_max {
+            let dummy_state = StateInputTensor::<B>::zeros([batch_size, STATE_INPUT_LEN], device);
+            let dummy_board = BoardInputTensor::<B>::zeros(
+                [
+                    batch_size,
+                    INPUT_CHANNELS,
+                    ranks::N_VARIANTS,
+                    files::N_VARIANTS,
+                ],
+                device,
+            );
 
-        let x = self.convs7.forward(x);
-        let x = self.pool.forward(x);
+            let output = self.forward(dummy_board, dummy_state);
 
-        let x = self.convs8.forward(x);
-        let x = self.pool.forward(x);
+            let _warmup = output.0.sum().into_scalar();
+            let _warmup = output.1.sum().into_scalar();
+        }
 
-        let x = x.flatten(1, 3);
+        B::sync(device);
+    }
+}
 
-        // todo: should we always use a dropout layer?
-        // let x = self.dropout.forward(x);
+#[derive(Debug, Error)]
+pub enum CheckModelHealthError {
+    #[error("Initial Conv Block is unhealthy: {0}")]
+    InitialConv(CheckConvBlockHealthError),
 
-        let x = Tensor::cat(vec![x, state_input], 1);
+    #[error("Residual Block {index} is unhealthy: {error}")]
+    ResidualBlock {
+        index: usize,
+        #[source]
+        error: CheckResidualBlockHealthError,
+    },
 
-        let x = self.dense0.forward(x);
-        let x = self.dense1.forward(x);
-        let x = self.dense2.forward(x);
-        let x = self.dense3.forward(x);
+    #[error("Value Head is unhealthy: {0}")]
+    ValueHeadConv(CheckConvBlockHealthError),
 
-        let value_out = self.value_dense.forward(x.clone());
-        let value_out = self.value_out.forward(value_out);
-        let value_out = self.value_activ.forward(value_out);
+    #[error("Value Head is unhealthy: {0}")]
+    ValueHeadDense(CheckLinearHealthError),
 
-        let policy_out = self.policy_dense.forward(x.clone());
-        let policy_out = self.policy_out.forward(policy_out);
-        let policy_out = softmax(policy_out, 1);
+    #[error("Policy Head is unhealthy: {0}")]
+    PolicyHeadConv(CheckConvBlockHealthError),
 
-        (value_out, policy_out)
+    #[error("Policy Head is unhealthy: {0}")]
+    PolicyHeadDense(CheckLinearHealthError),
+}
+
+impl<B: Backend> CheckHealth for Model<B> {
+    type Error = CheckModelHealthError;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        self.initial_conv
+            .check_health()
+            .map_err(Self::Error::InitialConv)?;
+
+        for (index, block) in self.res_blocks.iter().enumerate() {
+            block
+                .check_health()
+                .map_err(|e| CheckModelHealthError::ResidualBlock { index, error: e })?;
+        }
+
+        self.value_conv
+            .check_health()
+            .map_err(Self::Error::ValueHeadConv)?;
+        self.value_dense1
+            .check_health()
+            .map_err(Self::Error::ValueHeadDense)?;
+        self.value_dense2
+            .check_health()
+            .map_err(Self::Error::ValueHeadDense)?;
+
+        self.policy_conv
+            .check_health()
+            .map_err(CheckModelHealthError::PolicyHeadConv)?;
+        self.policy_dense
+            .check_health()
+            .map_err(Self::Error::PolicyHeadDense)?;
+
+        Ok(())
     }
 }
 
 #[derive(Config, Debug)]
 pub struct ModelConfig {
-    #[config(default = 0.2)]
-    dropout: f64,
+    #[config(default = 128)]
+    pub channels: usize,
+
+    #[config(default = 8)]
+    pub num_res_blocks: usize,
+
+    #[config(default = 256)]
+    pub value_dense_hidden: usize,
+
+    #[config(default = 1)]
+    pub value_head_channels: usize,
+
+    #[config(default = 2)]
+    pub policy_head_channels: usize,
 }
 
 impl ModelConfig {
-    /// Returns the initialized model.
     pub fn init<B: Backend>(&self, device: &B::Device) -> Model<B> {
-        let pool = MaxPool2dConfig::new([2, 2]);
+        let Self {
+            channels,
+            value_dense_hidden,
+            num_res_blocks,
+            value_head_channels,
+            policy_head_channels,
+        } = *self;
 
-        const B1_CHANNELS: usize = 16;
-        const B1_HEADS: [[usize; 2]; 6] = [[3, 3], [5, 5], [9, 9], [15, 15], [1, 7], [7, 1]];
+        let initial_conv = ConvBlockConfig::new(INPUT_CHANNELS, channels, [3, 3]).init(device);
 
-        const B6_CHANNELS: usize = 32;
-        const B6_HEADS: [[usize; 2]; 6] = B1_HEADS; // [[3, 3], [5, 5]];
+        let mut res_blocks = Vec::with_capacity(num_res_blocks);
+        for _ in 0..num_res_blocks {
+            res_blocks.push(ResidualBlockConfig::new(channels).init(device));
+        }
 
-        const B7_CHANNELS: usize = 256;
-        const B7_HEADS: [[usize; 2]; 2] = [[3, 3], [5, 5]];
+        // Value Head
+        let value_conv = ConvBlockConfig::new(channels, value_head_channels, [1, 1]).init(device);
+        let value_flattened_size = (squares::N_VARIANTS * value_head_channels) + STATE_INPUT_LEN;
+        let value_dense1 = LinearConfig::new(value_flattened_size, value_dense_hidden).init(device);
+        let value_dense2 = LinearConfig::new(value_dense_hidden, VALUE_OUTPUTS).init(device);
 
-        const B8_CHANNELS: usize = 1024;
-        const B8_HEADS: [[usize; 2]; 2] = [[1, 1], [3, 3]];
-
-        let convs1_in = BOARD_INPUT_CHANNELS * BOARD_INPUT_HISTORY;
-        let convs1 = MultiConvBlockConfig::new(B1_HEADS.to_vec(), convs1_in, B1_CHANNELS);
-
-        let convs2_in = B1_CHANNELS * B1_HEADS.len();
-        let convs2 = MultiConvBlockConfig::new(B1_HEADS.to_vec(), convs2_in, B1_CHANNELS);
-
-        let convs6_in = B1_CHANNELS * B1_HEADS.len();
-        let convs6 = MultiConvBlockConfig::new(B6_HEADS.to_vec(), convs6_in, B6_CHANNELS);
-        // let convs2 = ResidualConvBlockConfig::new(convs2, convs2_in);
-
-        let convs7_in = B6_CHANNELS * B6_HEADS.len();
-        let convs7 = MultiConvBlockConfig::new(B7_HEADS.to_vec(), convs7_in, B7_CHANNELS);
-        // let convs3 = ResidualConvBlockConfig::new(convs3, convs3_in);
-
-        let convs8_in = B7_CHANNELS * B7_HEADS.len();
-        let convs8 = MultiConvBlockConfig::new(B8_HEADS.to_vec(), convs8_in, B8_CHANNELS);
-        // let convs4 = ResidualConvBlockConfig::new(convs4, convs4_in);
-
-        let dropout = DropoutConfig::new(self.dropout);
-
-        let dense0 = LinearConfig::new(B8_CHANNELS * B8_HEADS.len() + STATE_INPUT_LEN, 64 << 4);
-        let dense1 = LinearConfig::new(64 << 4, 64 << 3);
-        let dense2 = LinearConfig::new(64 << 3, 64 << 2);
-        let dense3 = LinearConfig::new(64 << 2, 64 << 2);
-
-        let value_dense = LinearConfig::new(64 << 2, 64 << 1);
-        let value_out = LinearConfig::new(64 << 1, VALUE_OUTPUTS);
-        let value_activ = Tanh::new();
-
-        let policy_dense = LinearConfig::new(64 << 2, 64 << 4);
-        let policy_out = LinearConfig::new(64 << 4, POLICY_OUTPUTS);
+        // Policy Head
+        let policy_conv = ConvBlockConfig::new(channels, policy_head_channels, [1, 1]).init(device);
+        let policy_flattened_size = squares::N_VARIANTS * policy_head_channels;
+        let policy_dense = LinearConfig::new(policy_flattened_size, POLICY_OUTPUTS).init(device);
 
         Model {
-            convs1: convs1.clone().init(device),
-            convs2: convs2.clone().init(device),
-            convs3: convs2.clone().init(device),
-            convs4: convs2.clone().init(device),
-            convs5: convs2.clone().init(device),
-            convs6: convs6.init(device),
-            convs7: convs7.init(device),
-            convs8: convs8.init(device),
+            initial_conv,
+            res_blocks,
 
-            pool: pool.init(),
+            value_conv,
+            value_relu: Relu::new(),
+            value_dense1,
+            value_dense2,
+            value_tanh: Tanh::new(),
 
-            dropout: dropout.init(),
-
-            dense0: dense0.init(device),
-            dense1: dense1.init(device),
-            dense2: dense2.init(device),
-            dense3: dense3.init(device),
-
-            value_dense: value_dense.init(device),
-            value_out: value_out.init(device),
-            value_activ,
-
-            policy_dense: policy_dense.init(device),
-            policy_out: policy_out.init(device),
+            policy_conv,
+            policy_dense,
         }
     }
 }
@@ -496,16 +735,14 @@ impl ModelConfig {
 #[derive(Debug, Error)]
 pub enum LoadNNError {
     #[error("Bad nn record: {0}")]
-    BadRecord(RecorderError),
+    BadRecord(#[from] RecorderError),
 }
 
 impl<B: Backend> TryFrom<(PathBuf, &B::Device)> for Model<B> {
     type Error = LoadNNError;
 
     fn try_from((path, device): (PathBuf, &B::Device)) -> Result<Self, Self::Error> {
-        let record = CompactRecorder::new()
-            .load(path, device)
-            .map_err(LoadNNError::BadRecord)?;
+        let record = CompactRecorder::new().load(path, device)?;
         let nn = ModelConfig::new().init(device).load_record(record);
         Ok(nn)
     }

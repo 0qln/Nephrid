@@ -1,16 +1,18 @@
 [package]
 name = "nephrid"
-version = "26.4.4+1e7b349"
+version = "26.5.9+5ce1513"
 edition = "2024"
 
 [features]
-cpu = ["engine/nn-backend-ndarray"]
-gpu = ["engine/nn-backend-cuda"]
-mcts-nn = ["engine/mcts-nn"]
-mcts-sa = ["engine/mcts-sa"]
-mcts-pure = ["engine/mcts-pure"]
 
-default = ["cpu", "mcts-sa"]
+nn-backend-cuda = []
+nn-backend-ndarray = []
+
+mcts-pure = []
+mcts-nn = []
+mcts-hce = []
+
+default = ["mcts-hce"]
 
 [dependencies]
 engine = { version = "*", path = "../engine", default-features = false }
@@ -19,3 +21,6 @@ regex = "1.12.3"
 [dev-dependencies]
 assert_cmd = "2.0"
 ntest = "0.9.5"
+
+[lints]
+workspace = true

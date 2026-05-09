@@ -1,4 +1,4 @@
-use std::fmt;
+use crate::core::search::mcts::node::{BranchId, Tree, VisitCount};
 
 use super::*;
 
@@ -19,12 +19,15 @@ impl Default for UcbSelector {
 }
 
 impl Selector for UcbSelector {
-    type Score = Score;
+    fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+        let VisitCount(cap_n_i) = tree.node(parent_id).visits();
 
-    fn score(&self, node: &NodeData, _branch: &Branch, cap_n_i: u32) -> Score {
+        let branch = tree.branch(branch_id);
+        let node = tree.node(branch.node());
+
         match node.visits() {
-            0 => Score(f32::INFINITY),
-            n_i => {
+            VisitCount(0) => Score(f32::INFINITY),
+            VisitCount(n_i) => {
                 let w_i = node.value();
                 let n_i = n_i as f32;
                 let exploitation = w_i / n_i;
@@ -34,34 +37,7 @@ impl Selector for UcbSelector {
         }
     }
 
-    fn min_score(&self) -> Self::Score {
-        Score(f32::NEG_INFINITY)
-    }
-}
-
-#[derive(PartialEq, Clone, Copy, Debug, Default)]
-pub struct Score(pub f32);
-
-impl fmt::Display for Score {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl_op!(-|x: Score| -> Score { Score(-x.0) });
-
-impl Eq for Score {}
-
-impl PartialOrd for Score {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for Score {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0
-            .partial_cmp(&other.0)
-            .expect("This shouldn't happen for ucb scores.")
+    fn min_score(&self) -> Score {
+        Score::new(f32::NEG_INFINITY)
     }
 }

@@ -2,29 +2,32 @@ use burn::prelude::Backend;
 use rand::{SeedableRng, rngs::SmallRng};
 use thiserror::Error;
 
-use crate::core::{
-    Limit,
-    config::Configuration,
-    r#move::Move,
-    position::Position,
-    search::mcts::{
-        back::{Backpropagater, MctsSolver},
-        eval::{Evaluator, nn::NNEvaluator, playout::PlayoutEvaluator, r#static::StaticEvaluator},
-        limiter::{DefaultLimiter, Limiter},
-        nn::{LoadNNError, Model},
-        node::Tree,
-        noise::{DirichletNoiser, Noiser, NullNoiser},
-        search::TreeSearcher,
-        select::{Selector, puct::PuctSelector, ucb::UcbSelector},
-        strategy::MctsStrategy,
+use crate::{
+    core::{
+        config::Configuration,
+        r#move::Move,
+        position::Position,
+        search::mcts::{
+            eval::{
+                Evaluator, Ratio, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator,
+            },
+            nn::{CheckModelHealthError, LoadNNError, Model},
+            node::Tree,
+            noise::{DirichletNoiser, Noiser, NullNoiser},
+            search::TreeSearcher,
+            select::{Selector, puct::PuctSelector, ucb::UcbSelector},
+            strategy::MctsStrategy,
+        },
     },
+    misc::CheckHealth,
 };
 
-use std::path::PathBuf;
+use std::{path::PathBuf, rc::Rc};
+
+use std::error::Error as StdError;
 
 pub mod back;
 pub mod eval;
-pub mod limiter;
 pub mod nn;
 pub mod node;
 pub mod noise;
@@ -34,50 +37,48 @@ pub mod strategy;
 
 pub mod test;
 
-pub fn mcts<S: MctsStrategy, P: MctsParts, M: MctsState>(
+pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState>(
     pos: &mut Position,
-    parts: P,
+    parts: &C::Parts,
     state: &mut M,
-    limit: &Limit,
-    mut strategy: S,
-) -> S::Result {
+    strat: &mut C::Strat,
+) -> <C::Strat as MctsStrategy>::Result {
     let tree = state.tree();
 
-    strategy.start(tree, pos, limit);
+    strat.start(tree, pos);
 
-    let mut searcher = TreeSearcher::<{ config::MPV }, _, _, _, _, _>::new(
+    let mut searcher = TreeSearcher::<{ MPV }, _, _, _>::new(
         pos,
         parts.selector(),
-        parts.limiter(limit),
         parts.evaluator(),
-        parts.backprop(),
         parts.noiser(),
     );
 
     searcher.init_root(tree);
 
-    while !strategy.should_stop(tree, limit) {
+    while !strat.should_stop(tree) {
         searcher.grow(tree);
-        strategy.step(tree);
+        strat.step(tree);
     }
 
-    strategy.result(state.tree())
+    strat.result(state.tree())
 }
 
-pub trait MctsParts<const X: usize = { config::MPV }> {
+pub trait MctsConfig {
+    type Parts: MctsParts;
+    type Strat: MctsStrategy;
+}
+
+pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
     type Selector: Selector;
     type Evaluator: Evaluator;
-    type Backprop: Backpropagater;
     type Noiser: Noiser;
-    type Instance: for<'a> TryFrom<&'a Configuration>;
-    type Limiter: Limiter = DefaultLimiter;
 
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
-    fn backprop(&self) -> Self::Backprop;
     fn noiser(&self) -> Self::Noiser;
-    fn limiter(&self, limit: &Limit) -> Self::Limiter {
-        Self::Limiter::new(limit)
+    fn warmup(&mut self, _batch_size: usize) -> Result<(), String> {
+        Ok(())
     }
 }
 
@@ -85,17 +86,6 @@ pub trait MctsState {
     fn tree(&mut self) -> &mut Tree;
 }
 
-// todo:
-// instead of storing the gametree in between moves, try using bump-allocation
-// to allocate all the nodes. Maybe the speed up is better than storing the
-// compute? (We can't do both, since with bump allocation we either would have
-// to move the subtree to a new `Bump`, or we would just not be
-// able to deallocate the unused nodes. If our search is *that* slow that we
-// aren't even using that much memory for the Tree, maybe just risc having a
-// huge memory leak for each `ucinewgame` then :3 idk) or copy all the used
-// nodes to a new bump arena... you'd have to do that node by node which could
-// be really slow. <todo:benchmark />
-//
 /// # The search state.
 ///
 /// Either we have ownership of a search-tree, or we have the join handle of the
@@ -109,13 +99,15 @@ pub struct SearchState {
     pub tree: Tree,
     pub back_buffer: Tree,
 }
+
 impl SearchState {
     pub fn advance_to(&mut self, mov: Move) {
         let root = self.tree.root();
         if self.tree.node(root).state().has_branches()
-            && let Some(new_root) = self.tree.branches_rt(root).iter().find(|b| b.mov() == mov) {
-                self.tree.advance_to(&mut self.back_buffer, new_root.node());
-            }
+            && let Some(new_root) = self.tree.branches_rt(root).iter().find(|b| b.mov() == mov)
+        {
+            self.tree.advance_to(&mut self.back_buffer, new_root.node());
+        }
     }
 }
 
@@ -128,33 +120,98 @@ impl MctsState for SearchState {
 /// Mcts parts for mcts with puct + nn analysis.
 #[derive(Debug)]
 pub struct NNParts<B: Backend> {
-    /// NN Model
-    pub nn: Box<Model<B>>,
-
-    /// Hardware abstraction for the nn model
-    pub device: B::Device,
+    model: Rc<Model<B>>,
+    device: Rc<B::Device>,
 
     // Noiser
     alpha: f32,
-    epsilon: f32,
+    epsilon: Ratio,
 }
 
-impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
+impl<B: Backend> MctsParts for NNParts<B> {
     type Selector = PuctSelector;
-    type Evaluator = NNEvaluator<'a, 'a, B>;
-    type Backprop = MctsSolver;
+    type Evaluator = NNEvaluator<B>;
     type Noiser = DirichletNoiser;
-    type Instance = NNParts<B>;
 
     fn selector(&self) -> Self::Selector {
         PuctSelector::default()
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        NNEvaluator::new(&self.nn, &self.device)
+        NNEvaluator::new(self.model.clone(), self.device.clone())
     }
 
-    fn backprop(&self) -> Self::Backprop {
+    fn noiser(&self) -> Self::Noiser {
+        let rng = SmallRng::from_os_rng();
+        DirichletNoiser::new(self.alpha, self.epsilon, rng)
+    }
+
+    fn warmup(&mut self, batch_size: usize) -> Result<(), String> {
+        self.model.warmup(batch_size, &self.device);
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum CreateNNPartsError {
+    #[error("Error while creating nn-parts: {0}")]
+    LoadNNError(#[from] LoadNNError),
+
+    #[error("Unhealthy epsilon: {0}")]
+    BadEpsilon(String),
+
+    #[error("Unhealthy nn: {0}")]
+    BadNN(CheckModelHealthError),
+}
+
+impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
+    type Error = CreateNNPartsError;
+
+    fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
+        let alpha = config.dirichlet_alpha();
+
+        let epsilon = Ratio::new(config.dirichlet_epsilon());
+        epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
+
+        let weights = PathBuf::from(config.weights_path());
+
+        let device = B::Device::default();
+
+        let nn = Model::try_from((weights, &device))?;
+        nn.check_health().map_err(Self::Error::BadNN)?;
+
+        Ok(Self::new(nn, device, alpha, epsilon))
+    }
+}
+
+impl<B: Backend> NNParts<B> {
+    pub fn new(nn: Model<B>, device: B::Device, alpha: f32, epsilon: Ratio) -> Self {
+        Self {
+            model: Rc::new(nn),
+            device: Rc::new(device),
+            alpha,
+            epsilon,
+        }
+    }
+}
+
+/// Mcts parts for mcts with puct + static analysis.
+#[derive(Debug)]
+pub struct HceParts {
+    alpha: f32,
+    epsilon: Ratio,
+}
+
+impl MctsParts for HceParts {
+    type Selector = PuctSelector;
+    type Evaluator = HceEvaluator;
+    type Noiser = DirichletNoiser;
+
+    fn selector(&self) -> Self::Selector {
+        Default::default()
+    }
+
+    fn evaluator(&self) -> Self::Evaluator {
         Default::default()
     }
 
@@ -165,83 +222,32 @@ impl<'a, B: Backend, const X: usize> MctsParts<X> for &'a NNParts<B> {
 }
 
 #[derive(Error, Debug)]
-pub enum CreateNNPartsError {
-    #[error("Error while creating nn-parts: {0}")]
-    LoadNNError(LoadNNError),
+pub enum CreateHcePartsError {
+    #[error("Unhealthy epsilon: {0}")]
+    BadEpsilon(String),
 }
 
-impl<B: Backend> TryFrom<&Configuration> for NNParts<B> {
-    type Error = CreateNNPartsError;
+impl TryFrom<&Configuration> for HceParts {
+    type Error = CreateHcePartsError;
 
     fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
         let alpha = config.dirichlet_alpha();
-        let epsilon = config.dirichlet_epsilon();
-        let weights = PathBuf::from(config.weights_path());
-        let device = B::Device::default();
-        let nn = Model::try_from((weights, &device)).map_err(Self::Error::LoadNNError)?;
-        Ok(Self::new(nn, device, alpha, epsilon))
+
+        let epsilon = Ratio::new(config.dirichlet_epsilon());
+        epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
+
+        Ok(Self::new(alpha, epsilon))
     }
 }
 
-impl<B: Backend> NNParts<B> {
-    pub fn new(nn: Model<B>, device: B::Device, alpha: f32, epsilon: f32) -> Self {
-        Self {
-            nn: Box::new(nn),
-            device,
-            alpha,
-            epsilon,
-        }
-    }
-}
-
-/// Mcts parts for mcts with puct + static analysis.
-#[derive(Debug)]
-pub struct StaticParts {
-    alpha: f32,
-    epsilon: f32,
-}
-
-impl<const X: usize> MctsParts<X> for &StaticParts {
-    type Selector = PuctSelector;
-    type Evaluator = StaticEvaluator;
-    type Backprop = MctsSolver;
-    type Noiser = DirichletNoiser;
-    type Instance = StaticParts;
-
-    fn selector(&self) -> Self::Selector {
-        Default::default()
-    }
-
-    fn evaluator(&self) -> Self::Evaluator {
-        Default::default()
-    }
-
-    fn backprop(&self) -> Self::Backprop {
-        Default::default()
-    }
-
-    fn noiser(&self) -> Self::Noiser {
-        let rng = SmallRng::from_os_rng();
-        DirichletNoiser::new(self.alpha, self.epsilon, rng)
-    }
-}
-
-impl From<&Configuration> for StaticParts {
-    fn from(config: &Configuration) -> Self {
-        let alpha = config.dirichlet_alpha();
-        let epsilon = config.dirichlet_epsilon();
-        Self::new(alpha, epsilon)
-    }
-}
-
-impl Default for StaticParts {
+impl Default for HceParts {
     fn default() -> Self {
-        Self::new(0.3, 0.25)
+        Self::new(0.3, Ratio::new(0.25))
     }
 }
 
-impl StaticParts {
-    pub fn new(alpha: f32, epsilon: f32) -> Self {
+impl HceParts {
+    pub fn new(alpha: f32, epsilon: Ratio) -> Self {
         Self { alpha, epsilon }
     }
 }
@@ -250,12 +256,10 @@ impl StaticParts {
 #[derive(Debug, Default)]
 pub struct PureParts;
 
-impl<const X: usize> MctsParts<X> for &PureParts {
+impl MctsParts for PureParts {
     type Selector = UcbSelector;
     type Evaluator = PlayoutEvaluator;
-    type Backprop = MctsSolver;
     type Noiser = NullNoiser;
-    type Instance = PureParts;
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -266,10 +270,6 @@ impl<const X: usize> MctsParts<X> for &PureParts {
         PlayoutEvaluator::new(rng)
     }
 
-    fn backprop(&self) -> Self::Backprop {
-        Default::default()
-    }
-
     fn noiser(&self) -> Self::Noiser {
         Default::default()
     }
@@ -278,47 +278,5 @@ impl<const X: usize> MctsParts<X> for &PureParts {
 impl From<&Configuration> for PureParts {
     fn from(_config: &Configuration) -> Self {
         Self {}
-    }
-}
-
-pub mod config {
-    #[cfg(feature = "mcts-pure")]
-    pub const MPV: usize = 1;
-
-    #[cfg(all(feature = "nn-backend-cuda", not(feature = "mcts-pure")))]
-    pub const MPV: usize = 32;
-
-    #[cfg(all(feature = "nn-backend-ndarray", not(feature = "mcts-pure")))]
-    pub const MPV: usize = 1;
-
-    #[cfg(feature = "nn-backend-cuda")]
-    pub mod nn_backend {
-        pub type Backend = burn_cuda::Cuda<f32>;
-        pub type Device = <self::Backend as burn::prelude::Backend>::Device;
-    }
-
-    #[cfg(feature = "nn-backend-ndarray")]
-    pub mod nn_backend {
-        use burn::backend::NdArray;
-        pub type Backend = NdArray;
-        pub type Device = <self::Backend as burn::prelude::Backend>::Device;
-    }
-
-    #[cfg(feature = "mcts-nn")]
-    pub mod mcts {
-        use crate::core::search::mcts::NNParts;
-        pub type Parts = NNParts<super::nn_backend::Backend>;
-    }
-
-    #[cfg(feature = "mcts-sa")]
-    pub mod mcts {
-        use crate::core::search::mcts::StaticParts;
-        pub type Parts = StaticParts;
-    }
-
-    #[cfg(feature = "mcts-pure")]
-    pub mod mcts {
-        use crate::core::search::mcts::PureParts;
-        pub type Parts = PureParts;
     }
 }

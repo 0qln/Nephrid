@@ -9,7 +9,7 @@ use crate::{
         position::Position,
         search::{
             PonderToken,
-            limit::Limit,
+            limit::UciLimit,
             mcts::{
                 Tree,
                 eval::Cp,
@@ -17,20 +17,17 @@ use crate::{
             },
         },
     },
-    misc::DebugMode,
-    uci::sync::{self, CancellationToken},
+    misc::{CancellationToken, DebugMode},
 };
 
 pub trait MctsStrategy {
     type Result;
     type Step;
 
-    fn start(&mut self, _tree: &mut Tree, _pos: &Position, _limit: &Limit) {}
+    fn start(&mut self, tree: &mut Tree, pos: &Position);
     fn result(&mut self, tree: &mut Tree) -> Self::Result;
     fn step(&mut self, tree: &mut Tree) -> Self::Step;
-    fn should_stop(&mut self, _tree: &Tree, _limit: &Limit) -> bool {
-        false
-    }
+    fn should_stop(&mut self, tree: &Tree) -> bool;
 }
 
 #[derive(Default, Debug)]
@@ -57,10 +54,16 @@ impl MctsStrategy for MctsFindBest {
         }
         None
     }
+
+    fn start(&mut self, _tree: &mut Tree, _pos: &Position) {}
+
+    fn should_stop(&mut self, _tree: &Tree) -> bool {
+        false
+    }
 }
 
 #[derive(Debug)]
-pub struct UciCp(Cp);
+pub struct UciCp(pub Cp);
 
 impl fmt::Display for UciCp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -191,25 +194,35 @@ pub struct MctsUci {
     search_start: Option<Instant>,
     last_uci_out: Option<Instant>,
 
-    // --- Added fields for search control ---
+    // search control
     ct: CancellationToken,
-    ponder_tok: Option<PonderToken>,
+    pt: Option<PonderToken>,
     debug: DebugMode,
 
-    // --- Runtime tracking ---
+    // runtime tracking
     time_per_move: Duration,
     time_limit: Option<Instant>,
     nodes_begin: u64,
+    terminal_nodes_begin: u64,
     iterations: u64,
     is_not_pondering: bool,
+
+    // configuration
+    limit: UciLimit,
 }
 
 impl MctsUci {
-    pub fn new(debug: DebugMode, ct: CancellationToken, ponder_tok: Option<PonderToken>) -> Self {
+    pub fn new(
+        limit: UciLimit,
+        debug: DebugMode,
+        ct: CancellationToken,
+        pt: Option<PonderToken>,
+    ) -> Self {
         Self {
+            limit,
             debug,
             ct,
-            ponder_tok,
+            pt,
             ..Default::default()
         }
     }
@@ -226,7 +239,9 @@ impl MctsUci {
             .map(UciNps)
     }
 
-    fn determine_score(&self, tree: &Tree, pv_len: usize) -> Option<UciScore> {
+    /// Determine score in centipawns / mate-in-x, etc.
+    /// Returns `None` if the root node is not evaluated or unproven.
+    pub fn determine_score(&self, tree: &Tree, pv_len: usize) -> Option<UciScore> {
         let root = tree.node(tree.root());
         let root_value = root.value();
 
@@ -244,7 +259,9 @@ impl MctsUci {
         }
         else if let Some(evaluated) = tree.try_node::<Evaluated>(tree.root()) {
             // (invert bc it's relative to parent node)
-            let win_rate = -WinRate::from(evaluated);
+            // todo: i think it would be more accurate to take the winrate of the best move
+            // that we can make...
+            let win_rate = WinRate::from(evaluated).inv();
             let cp = UciCp(Cp::from(win_rate));
             Some(UciScore::Centipawns(cp))
         }
@@ -259,20 +276,19 @@ impl MctsUci {
     fn uci_info(&self, tree: &Tree, mov: Move) {
         let tree_size = tree.size();
         let pv = tree.principal_line();
+        let new_nodes = tree_size - self.nodes_begin as usize;
 
         let currmove = UciArg::Some(UciCurrmove(mov));
         let score = UciArg::from(self.determine_score(tree, pv.len()));
         let nodes = UciArg::Some(UciNodes(tree_size));
-        let nps = UciArg::from(self.nps(tree_size));
+        let nps = UciArg::from(self.nps(new_nodes));
         let depth = UciArg::Some(UciDepth(tree.compute_minheight().into()));
         let seldepth = UciArg::Some(UciSeldepth(tree.maxheight().into()));
         let pv = UciArg::Some(UciPv(pv));
         let time = UciArg::from(self.search_time());
         let string = UciArg::<String>::None;
 
-        sync::out(&format!(
-            "info{currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}"
-        ));
+        println!("info{currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}");
     }
 
     /// # uci_bestmove
@@ -283,7 +299,7 @@ impl MctsUci {
         let best_move = UciArg::Some(mov);
         let ponder_move = UciArg::from(pv.0.get(1).map(|b| UciPondermove(b.mov())));
 
-        sync::out(&format!("bestmove{best_move}{ponder_move}"));
+        println!("bestmove{best_move}{ponder_move}");
     }
 
     fn output_frequency(&self) -> Duration {
@@ -294,20 +310,25 @@ impl MctsUci {
             Duration::from_millis(500)
         }
     }
+
+    pub fn limit(&self) -> &UciLimit {
+        &self.limit
+    }
 }
 
 impl MctsStrategy for MctsUci {
     type Result = <MctsFindBest as MctsStrategy>::Result;
     type Step = <MctsFindBest as MctsStrategy>::Step;
 
-    fn start(&mut self, tree: &mut Tree, pos: &Position, limit: &Limit) {
+    fn start(&mut self, tree: &mut Tree, pos: &Position) {
         self.search_start = Some(Instant::now());
         self.nodes_begin = tree.size() as u64;
+        self.terminal_nodes_begin = tree.terminal_nodes() as u64;
         self.iterations = 0;
 
-        self.time_per_move = limit.time_per_move(pos);
+        self.time_per_move = self.limit.time_per_move(pos);
         self.time_limit = Some(Instant::now() + self.time_per_move);
-        self.is_not_pondering = self.ponder_tok.is_none();
+        self.is_not_pondering = self.pt.is_none();
     }
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
@@ -324,7 +345,7 @@ impl MctsStrategy for MctsUci {
         step
     }
 
-    fn should_stop(&mut self, tree: &Tree, limit: &Limit) -> bool {
+    fn should_stop(&mut self, tree: &Tree) -> bool {
         // 1. User typed "stop" (GUI interrupt)
         // We ALWAYS respect this, whether pondering or not.
         if self.ct.is_cancelled() {
@@ -332,7 +353,7 @@ impl MctsStrategy for MctsUci {
         }
 
         // 2. Ponder Hit transition
-        if let Some(ponder_tok) = &self.ponder_tok
+        if let Some(ponder_tok) = &self.pt
             && !self.is_not_pondering
             && !ponder_tok.should_ponder()
         {
@@ -357,8 +378,8 @@ impl MctsStrategy for MctsUci {
         }
 
         // 5. Standard time/node limits
-        if limit.is_active()
-            && limit.is_reached(
+        if self.limit.is_active()
+            && self.limit.is_reached(
                 tree.size() as u64 - self.nodes_begin,
                 Instant::now(),
                 self.time_limit.unwrap(),
@@ -400,5 +421,13 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
         let step = (self.inner.step(tree), self.iteration);
         self.iteration += 1;
         step
+    }
+
+    fn start(&mut self, tree: &mut Tree, pos: &Position) {
+        self.inner.start(tree, pos);
+    }
+
+    fn should_stop(&mut self, tree: &Tree) -> bool {
+        self.inner.should_stop(tree)
     }
 }
