@@ -60,7 +60,7 @@
               src = ./.;
               cargoLock.lockFile = ./Cargo.lock;
               buildNoDefaultFeatures = true;
-              buildFeatures = ["mcts-nn" "gpu"];
+              buildFeatures = ["mcts-nn"];
               nativeBuildInputs = [pkgs.pkg-config];
               buildInputs =
                 [pkgs.zlib]
@@ -77,7 +77,7 @@
               src = ./.;
               cargoLock.lockFile = ./Cargo.lock;
               buildNoDefaultFeatures = true;
-              buildFeatures = ["mcts-hce" "cpu"];
+              buildFeatures = ["mcts-hce"];
               nativeBuildInputs = [pkgs.pkg-config];
             };
 
@@ -152,7 +152,7 @@
                 echo "yo! o/"
                 echo ""
                 echo "howto compilation (example): "
-                echo '$ cargo run --bin nephrid --release --features "mcts-nn,gpu" --no-default-features'
+                echo '$ cargo run --bin nephrid --release --features "mcts-nn" --no-default-features'
                 echo ""
                 echo "to run all tests: "
                 echo '$ cargo test --workspace'
