@@ -472,8 +472,8 @@ impl CheckHealth for Quality {
 }
 
 impl From<Value> for Quality {
-    fn from(v: Value) -> Self {
-        Self::new((v.0 - 0.5) * 2.)
+    fn from(value: Value) -> Self {
+        Self::new((value.v() - 0.5) * 2.)
     }
 }
 
@@ -485,47 +485,43 @@ impl fmt::Display for Quality {
 
 /// A value in range [0; 1]
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct Value(f32);
+pub struct Value(pub Bounded<f32, Bounds0to1>);
 
 impl Value {
     pub fn new(v: f32) -> Self {
-        debug_assert!(v >= Self::min().v() && v <= Self::max().v());
-        Self(v)
+        Self(Bounded::new(v))
     }
 
     /// Inverses the value in it's range
     pub fn inverse(&self) -> Value {
-        Self(1. - self.0)
+        Self(self.0.inv())
     }
 
     pub fn v(&self) -> f32 {
-        self.0
-    }
-
-    pub const fn max() -> Self {
-        Self(1.)
-    }
-
-    pub const fn min() -> Self {
-        Self(0.)
+        self.0.v()
     }
 
     // these are functions, because maybe later we want to have different values for
     // // e.g. a win that is close to the root node or further.
 
     pub const fn draw() -> Self {
-        Self(0.5)
+        Self(Bounded::<f32, Bounds0to1>::even())
     }
 
     pub const fn win() -> Self {
-        Self::max()
+        Self(Bounded::<f32, Bounds0to1>::one())
     }
 
     pub const fn loss() -> Self {
-        Self::min()
+        Self(Bounded::<f32, Bounds0to1>::zero())
     }
 }
 
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
 impl From<Quality> for Value {
     fn from(q: Quality) -> Self {
         Self::new((q.0 + 1.) / 2.)

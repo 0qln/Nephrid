@@ -449,9 +449,9 @@ fn static_eval(pos: &PieceInfo, phase: TaperValue) -> i32 {
     w_q - b_q
 }
 
-pub struct EvalInfo {
+pub struct EvalInfo<Moves: AsRef<[Move]>> {
     /// The to-be-evaluated that this eval info is for.
-    moves: Vec<Move>,
+    moves: Moves,
 
     /// Turn of the current player.
     turn: Turn,
@@ -469,8 +469,8 @@ pub struct EvalInfo {
     quality: Cp,
 }
 
-impl EvalInfo {
-    pub fn new(node: NodeId<Branching>, tree: &Tree, pos: &mut Position) -> Self {
+impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
+    pub fn new(moves: Moves, pos: &mut Position) -> Self {
         let quality: Cp = match pos.get_turn().v() {
             colors::WHITE_C => {
                 qsearch::<perspectives::White>(pos, Score::NEG_INF, Score::POS_INF).into()
@@ -485,14 +485,14 @@ impl EvalInfo {
             pos: pos.piece_info().clone(),
             state: pos.state_info().clone(),
             phase: TaperValue::from_position(pos.piece_info()),
-            moves: tree.branches(node).iter().map(|b| b.mov()).collect(),
+            moves,
             turn: pos.get_turn(),
         }
     }
 
     /// Convert QualityInput into Quality, where the Quality is relative to
     /// white.
-    fn quality(&self) -> Quality {
+    pub fn quality(&self) -> Quality {
         Quality::from(self.quality)
     }
 
@@ -510,7 +510,7 @@ impl EvalInfo {
 
         let mut logits = List::new();
 
-        for &mov in self.moves.iter() {
+        for &mov in self.moves.as_ref().iter() {
             // policy for each move in the position is the difference of the psqt score from
             // the previous position and the psqt score of the next position that is
             // achieved by the move.
@@ -528,7 +528,7 @@ impl EvalInfo {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct HceEvaluator {
     policy_buf: Box<List<{ MAX_LEGAL_MOVES }, f32>>,
 }
@@ -542,7 +542,7 @@ impl HceEvaluator {
 }
 
 impl Evaluator for HceEvaluator {
-    type TraceData = Option<EvalInfo>;
+    type TraceData = Option<EvalInfo<Vec<Move>>>;
 
     fn trace<S: const Valid + HasBranches>(
         &self,
@@ -551,7 +551,7 @@ impl Evaluator for HceEvaluator {
         pos: &mut Position,
     ) -> Self::TraceData {
         node.try_into::<Branching>()
-            .map(|node| EvalInfo::new(node, tree, pos))
+            .map(|node| EvalInfo::new(tree.branches(node).iter().map(|b| b.mov()).collect(), pos))
     }
 
     fn eval_batch(
