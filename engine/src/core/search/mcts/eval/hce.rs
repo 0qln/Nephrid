@@ -381,6 +381,11 @@ fn material(pos: &PieceInfo, color: Color) -> i32 {
         .sum()
 }
 
+fn bishop_pair(pos: &PieceInfo, color: Color) -> i32 {
+    let bishop_cnt = pos.get_bitboard(piece_type::BISHOP, color).pop_cnt();
+    if bishop_cnt >= 2 { 75 } else { 0 }
+}
+
 fn psqt(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
     fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> i32 {
         (piece_type::PAWN..=piece_type::KING)
@@ -398,7 +403,7 @@ fn psqt(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
 }
 
 fn static_value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
-    material(pos, color) + psqt(pos, color, phase)
+    material(pos, color) + psqt(pos, color, phase) + bishop_pair(pos, color)
 }
 
 #[derive(Debug, PartialEq, Default)]
