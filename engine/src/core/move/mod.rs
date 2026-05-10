@@ -644,8 +644,15 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
 /// Since the 218 is the maximum number of moves in a single position,
 /// we can use a fixed length array to store the moves and by using a
 /// size of 256 we can safely index into the array with a u8.
+#[derive(Clone)]
 pub struct MoveList {
     inner: List<{ Self::CAPACITY }, Move>,
+}
+
+impl AsRef<[Move]> for MoveList {
+    fn as_ref(&self) -> &[Move] {
+        self.inner.as_ref()
+    }
 }
 
 impl fmt::Debug for MoveList {
@@ -668,6 +675,10 @@ impl MoveList {
     #[inline]
     pub fn len(&self) -> u8 {
         self.inner.len() as u8
+    }
+
+    pub fn clear(&mut self) {
+        self.inner.clear();
     }
 
     /// Pushes a move to the list.

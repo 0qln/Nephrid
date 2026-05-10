@@ -18,7 +18,7 @@ use crate::{
             squares,
         },
         depth::Depth,
-        r#move::{Move, SAN, SanParseError, move_flags},
+        r#move::{Move, MoveList, SAN, SanParseError, move_flags},
         move_iter::{
             bishop::{self, Bishop},
             fold_legal_moves,
@@ -397,6 +397,15 @@ impl Position {
         let key = zobrist::Hash::from(&position);
         position.state.get_current_mut().key = key;
         position
+    }
+
+    pub fn collect_moves(&self, mut move_list: MoveList) -> MoveList {
+        move_list.clear();
+        _ = fold_legal_moves::<_, _, _>(self, (), |_, m| {
+            move_list.push(m);
+            ControlFlow::Continue::<(), _>(())
+        });
+        move_list
     }
 
     #[inline]

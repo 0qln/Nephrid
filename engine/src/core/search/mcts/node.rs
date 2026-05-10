@@ -1240,6 +1240,12 @@ impl From<WinRate> for eval::Value {
     }
 }
 
+impl From<eval::Value> for WinRate {
+    fn from(value: eval::Value) -> Self {
+        Self(Probability::new(value.v()))
+    }
+}
+
 impl fmt::Display for WinRate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:.2}%", self.0.v() * 100.)
