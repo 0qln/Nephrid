@@ -635,7 +635,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
         Quality::from(self.quality)
     }
 
-    pub fn policy(&self, buf: &mut List<{ MAX_LEGAL_MOVES }, f32>) -> Policy {
+    pub fn policy(&self, buf: &mut List<218 /* inlined MAX_LEGAL_MOVES */, f32>) -> Policy {
         let pos = &self.pos;
         let phase = self.phase;
         let state = &self.state;
