@@ -17,6 +17,7 @@ impl_op!(-|a: Depth, b: u8| -> Depth { Depth { v: a.v - b } });
 impl_op!(+|a: Depth, b: u8| -> Depth { Depth { v: a.v + b } });
 impl_op!(+|a: Depth, b: Depth| -> Depth { Depth { v: a.v + b.v } });
 impl_op!(+=|a: &mut Depth, b: u8| { a.v += b });
+impl_op!(-=|a: &mut Depth, b: u8| { a.v -= b });
 impl_op!(-|a: Depth, b: Depth| -> Depth { Depth { v: a.v - b.v } });
 
 impl TryFrom<&str> for Depth {
@@ -45,6 +46,10 @@ impl Depth {
 
     pub const fn v(&self) -> u8 {
         self.v
+    }
+
+    pub const fn index(&self) -> usize {
+        self.v as usize
     }
 
     pub fn new(depth: u8) -> Depth {
