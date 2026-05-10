@@ -424,7 +424,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                     };
 
                     let killer_move = {
-                        // if a quiete move from a sibling branch proved to be of high exploitation
+                        // if a quiet move from a sibling branch proved to be of high exploitation
                         // after some searching, consider that move here aswell.
                         if killer_move == Some(mov) && child.visits() <= VisitCount(2) {
                             killer_exploitation.unwrap().0 * 1.0 // todo: make this tunable
