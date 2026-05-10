@@ -448,8 +448,8 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                 }
             }
 
-            // SAFETY: a first pass is guruanteed because parent_node_id is evaluated and
-            // thus has to have atleast one branch.
+            // SAFETY: a first pass is guaranteed because parent_node_id is evaluated and
+            // thus has to have at least one branch.
             unsafe {
                 (
                     curr_branch_id.assume_init(),
