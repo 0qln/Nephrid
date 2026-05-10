@@ -483,7 +483,7 @@ pub fn execute_uci(
             Ok(())
         }
         Some("isready") => {
-            println!("readyok");
+            engine.search_t.tx.send(Command::IsReady)?;
             Ok(())
         }
         Some("perf") => {
