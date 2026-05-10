@@ -1,6 +1,6 @@
 [package]
 name = "engine"
-version = "26.5.10+4bcdf66"
+version = "26.5.10+bb1c578"
 edition = "2024"
 
 [dependencies]
