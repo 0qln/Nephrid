@@ -9,14 +9,24 @@ use crate::{
     core::{
         config::Configuration,
         depth::Depth,
-        r#move::{Move, SanParseError},
+        r#move::{Move, MoveList, SanParseError},
         position::{
             EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError,
             PgnImport, PgnImportError, Position, ReducedPgn,
         },
-        search::{Command, PonderToken, SearchThread, SearchWorker, limit::UciLimit},
+        search::{
+            Command, PonderToken, SearchThread, SearchWorker,
+            limit::UciLimit,
+            mcts::{
+                eval::{
+                    self, Cp,
+                    hce::{self},
+                },
+                node::WinRate,
+            },
+        },
     },
-    misc::{CancellationToken, DebugMode, trim_newline},
+    misc::{CancellationToken, DebugMode, List, trim_newline},
     uci::{UciError, tokens::Tokenizer},
 };
 use std::{error::Error, process};
@@ -268,6 +278,25 @@ pub fn execute_uci(
             engine.ponder_token.stop_ponder();
             Ok(())
         }
+        Some("hce") => {
+            let mut pos = engine.game.position.clone();
+            let moves = pos.collect_moves(MoveList::new());
+            let eval = hce::EvalInfo::new(moves.clone(), &mut pos);
+            let quality = eval.quality();
+            let value = eval::Value::from(quality);
+            let winrate = WinRate::from(value);
+            let centipawns = Cp::from(winrate);
+            let policy = eval.policy(&mut List::new());
+            println!("Centipawns: {centipawns}");
+            println!("Winrate:    {winrate}");
+            println!("Value:      {value}");
+            println!("Quality:    {quality}");
+            println!("Policy:");
+            for (mov, p) in moves.iter().zip(policy.iter()) {
+                println!("  {mov}: {p:.2}");
+            }
+            Ok(())
+        }
         Some("position") => {
             let process_move = |engine: &mut Engine, mov| -> Result<(), Box<dyn Error>> {
                 // decode move
@@ -454,7 +483,7 @@ pub fn execute_uci(
             Ok(())
         }
         Some("isready") => {
-            println!("readyok");
+            engine.search_t.tx.send(Command::IsReady)?;
             Ok(())
         }
         Some("perf") => {

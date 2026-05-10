@@ -480,3 +480,9 @@ impl<const N: usize, T> FromIterator<T> for List<N, T> {
         list
     }
 }
+
+impl<const N: usize, T> AsRef<[T]> for List<N, T> {
+    fn as_ref(&self) -> &[T] {
+        self.as_slice()
+    }
+}

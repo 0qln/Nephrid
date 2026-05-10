@@ -18,7 +18,7 @@ use crate::{
             squares,
         },
         depth::Depth,
-        r#move::{Move, SAN, SanParseError, move_flags},
+        r#move::{Move, MoveList, SAN, SanParseError, move_flags},
         move_iter::{
             bishop::{self, Bishop},
             fold_legal_moves,
@@ -328,7 +328,7 @@ impl PieceInfo {
         unsafe { self.piece_counts.get_unchecked_mut(piece.v() as usize) }
     }
 
-    fn remove_piece(&mut self, sq: Square) {
+    pub fn remove_piece(&mut self, sq: Square) {
         let target = Bitboard::from(sq);
         let piece = self.get_piece(sq);
         debug_assert_ne!(piece, Piece::default(), "No piece at {sq}");
@@ -338,7 +338,7 @@ impl PieceInfo {
         *self.get_piece_count_mut(piece) -= 1;
     }
 
-    fn put_piece(&mut self, sq: Square, piece: Piece) {
+    pub fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from(sq);
         debug_assert_eq!(
             self.get_piece(sq),
@@ -352,7 +352,7 @@ impl PieceInfo {
         *self.get_piece_count_mut(piece) += 1;
     }
 
-    fn move_piece(&mut self, from: Square, to: Square) {
+    pub fn move_piece(&mut self, from: Square, to: Square) {
         debug_assert!(
             self.get_piece(from) != Piece::default(),
             "No piece at {from}"
@@ -397,6 +397,15 @@ impl Position {
         let key = zobrist::Hash::from(&position);
         position.state.get_current_mut().key = key;
         position
+    }
+
+    pub fn collect_moves(&self, mut move_list: MoveList) -> MoveList {
+        move_list.clear();
+        _ = fold_legal_moves::<_, _, _>(self, (), |_, m| {
+            move_list.push(m);
+            ControlFlow::Continue::<(), _>(())
+        });
+        move_list
     }
 
     #[inline]

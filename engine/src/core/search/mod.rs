@@ -94,6 +94,10 @@ impl<const MPV: usize, C: MctsConfig> MctsWorker<MPV, C> {
 impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWorker<MPV, C> {
     fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
         match cmd {
+            Command::IsReady => {
+                println!("readyok");
+                Ok(())
+            }
             Command::Perft(mut pos, limit, ct, debug) => {
                 perft::<true>(&mut pos, &limit, ct, debug);
                 Ok(())
@@ -256,6 +260,7 @@ pub enum Command {
     Configure(Arc<Mutex<Configuration>>),
     ResetState,
     Debug,
+    IsReady,
 }
 
 #[derive(Debug, Clone)]

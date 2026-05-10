@@ -1,19 +1,17 @@
-use engine::core::{move_iter::sliding_piece::magics, search::mcts::eval::Ratio, zobrist};
+use engine::core::{
+    r#move::MoveList, move_iter::sliding_piece::magics, search::mcts::eval::Ratio, zobrist,
+};
 use std::{hint::black_box, time::Duration};
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use engine::{
     core::{
-        depth::Depth,
         r#move::MAX_LEGAL_MOVES,
         position::Position,
         search::mcts::{
             HceParts, MctsParts,
             eval::{Probability, hce::EvalInfo},
-            node::{
-                Height, Tree, VisitCount,
-                node_state::{Branching, Evaluated, Leaf},
-            },
+            node::{Height, Tree, VisitCount, node_state::Evaluated},
             search::TreeSearcher,
             select::puct::PuctSelector,
         },
@@ -26,19 +24,9 @@ pub fn policy(c: &mut Criterion) {
     zobrist::init();
 
     let mut pos = Position::start_position();
-    let mut tree = Tree::new();
-    let root = tree.root();
 
-    let root = tree
-        .expand_node(
-            tree.node_switch(root).get::<Leaf>().unwrap(),
-            &pos,
-            Depth::ROOT,
-        )
-        .get::<Branching>()
-        .unwrap();
-
-    let eval = EvalInfo::new(root, &tree, &mut pos);
+    let moves = pos.collect_moves(MoveList::new());
+    let eval = EvalInfo::new(moves, &mut pos);
 
     let mut buf = List::<{ MAX_LEGAL_MOVES }, f32>::new();
 
