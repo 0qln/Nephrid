@@ -1,6 +1,6 @@
 [package]
 name = "nephrid"
-version = "26.5.10+b0ef685"
+version = "26.5.10+4bcdf66"
 edition = "2024"
 
 [features]
