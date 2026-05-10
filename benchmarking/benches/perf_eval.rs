@@ -64,6 +64,7 @@ impl TryFrom<EpdLineImport<'_, '_>> for Test {
     }
 }
 
+#[cfg(debug_assertions)]
 fn print_dataset(tests: &[Test]) {
     #[derive(Tabled)]
     struct EretEntry {
@@ -186,7 +187,7 @@ impl PerfRunner for MctsHceRunner {
 
 fn run_perf_eval<Runner: PerfRunner>(test: Test, runner: Runner) -> TestResult<Runner::Diagnostic> {
     let limit = {
-        #[cfg(test)]
+        #[cfg(debug_assertions)]
         {
             UciLimit {
                 nodes: 100_000,
@@ -195,7 +196,7 @@ fn run_perf_eval<Runner: PerfRunner>(test: Test, runner: Runner) -> TestResult<R
             }
         }
 
-        #[cfg(not(test))]
+        #[cfg(not(debug_assertions))]
         {
             UciLimit {
                 wtime: 0,
