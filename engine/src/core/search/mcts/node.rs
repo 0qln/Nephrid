@@ -1000,7 +1000,7 @@ impl Tree {
 // Typestates & Zero-Cost Views
 // -----------------------------------------------------------------------------
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BranchId {
     index: u32,
 }

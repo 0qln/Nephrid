@@ -194,6 +194,9 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                             let state = node.state();
                             let parts = self.mcts_parts.as_ref().unwrap();
                             let selector = <C as MctsConfig>::Parts::selector(parts);
+                            let exploration = selector.exploration(tree, branch_id, root_id);
+                            let exploitation = selector.exploitation(tree, branch_id, root_id);
+                            let score = exploration + exploitation;
                             println!(
                                 "{} {: >9} {: <5} v {: >8.2}/{: <8} p {:.3} ~ {}",
                                 if root_best_move == Some(mov) { '*' } else { '-' },
@@ -202,7 +205,7 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                                 node.value(),
                                 node.visits(),
                                 branch.policy(),
-                                selector.score(tree, branch_id, root_id)
+                                score
                             );
                         }
                     }

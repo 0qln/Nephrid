@@ -2,7 +2,7 @@ use std::{fmt, mem, ops, sync::Once};
 
 use rand::{RngCore, SeedableRng, rngs::SmallRng};
 
-use crate::{core::color::colors};
+use crate::core::color::colors;
 
 use super::{
     bitboard::Bitboard,
@@ -39,6 +39,11 @@ fn hasher() -> &'static Hasher {
 impl Hash {
     pub const fn v(self) -> u64 {
         self.v
+    }
+
+    pub const fn index(&self, max_entries: usize) -> usize {
+        debug_assert!(max_entries != 0, "Hash::index requires max_entries != 0");
+        (self.v as usize) % max_entries
     }
 
     pub fn from_v(v: u64) -> Self {

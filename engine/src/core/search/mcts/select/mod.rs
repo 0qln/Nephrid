@@ -12,17 +12,9 @@ pub trait Selector {
     // different parents. same reason that we have different struct for node and
     // branch.
 
-    /// # Selector::score
-    ///
-    /// The score that the selector would assign to a branch.
-    ///
-    /// ## Params
-    ///
-    /// branch: The branch to be scored.
-    /// cap_n_i: The number of times that the parent node has been visited.
-    fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
-
-    fn min_score(&self) -> Score;
+    fn exploitation(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>)
+    -> Score;
+    fn exploration(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
 
     fn virtual_loss(&self) -> u32 {
         1
@@ -45,6 +37,9 @@ impl fmt::Display for Score {
 }
 
 impl_op!(-|x: Score| -> Score { Score(-x.0) });
+impl_op!(+|x: Score, y: Score| -> Score { Score(x.0 + y.0) });
+impl_op!(*|x: Score, y: f32| -> Score { Score(x.0 * y) });
+impl_op!(+|x: Score, y: f32| -> Score { Score(x.0 + y) });
 
 impl Eq for Score {}
 

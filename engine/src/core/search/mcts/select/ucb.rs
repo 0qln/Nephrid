@@ -19,9 +19,12 @@ impl Default for UcbSelector {
 }
 
 impl Selector for UcbSelector {
-    fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
-        let VisitCount(cap_n_i) = tree.node(parent_id).visits();
-
+    fn exploitation(
+        &self,
+        tree: &Tree,
+        branch_id: BranchId,
+        _parent_id: NodeId<Evaluated>,
+    ) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
 
@@ -30,14 +33,22 @@ impl Selector for UcbSelector {
             VisitCount(n_i) => {
                 let w_i = node.value();
                 let n_i = n_i as f32;
-                let exploitation = w_i / n_i;
-                let exploration = self.c * f32::sqrt((cap_n_i as f32).ln() / n_i);
-                Score(exploitation + exploration)
+                Score(w_i / n_i)
             }
         }
     }
 
-    fn min_score(&self) -> Score {
-        Score::new(f32::NEG_INFINITY)
+    fn exploration(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+        let branch = tree.branch(branch_id);
+        let node = tree.node(branch.node());
+
+        match node.visits() {
+            VisitCount(0) => Score(f32::INFINITY),
+            VisitCount(n_i) => {
+                let VisitCount(cap_n_i) = tree.node(parent_id).visits();
+                let n_i = n_i as f32;
+                Score(self.c * f32::sqrt((cap_n_i as f32).ln() / n_i))
+            }
+        }
     }
 }

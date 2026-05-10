@@ -1,6 +1,6 @@
 use crate::core::search::mcts::{
     node::{BranchId, NodeId, Tree, node_state::Evaluated},
-    select::Score,
+    select::{Score, Selector},
 };
 
 pub struct PuctSelector {
@@ -12,6 +12,13 @@ impl PuctSelector {
     pub fn new(c: f32) -> Self {
         Self { c }
     }
+
+    #[inline]
+    pub fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+        let exploitation = self.exploitation(tree, branch_id, parent_id);
+        let exploration = self.exploration(tree, branch_id, parent_id);
+        exploitation + exploration
+    }
 }
 
 impl Default for PuctSelector {
@@ -21,32 +28,40 @@ impl Default for PuctSelector {
 }
 
 impl super::Selector for PuctSelector {
-    fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+    #[inline]
+    fn exploration(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
         let parent = tree.node(parent_id);
 
+        let c = self.c;
+        let p = branch.policy().v();
         let cap_n_i = parent.visits().0 as f32;
         let n_i = node.visits().0 as f32;
 
-        let value = node.value();
-        let exploitation = if n_i == 0. {
+        Score(c * p * cap_n_i.sqrt() / (1_f32 + (n_i)))
+    }
+
+    #[inline]
+    fn exploitation(
+        &self,
+        tree: &Tree,
+        branch_id: BranchId,
+        parent_id: NodeId<Evaluated>,
+    ) -> Score {
+        let branch = tree.branch(branch_id);
+        let node = tree.node(branch.node());
+        let parent = tree.node(parent_id);
+        let cap_n_i = parent.visits().0 as f32;
+        let n_i = node.visits().0 as f32;
+        if n_i == 0. {
             // fallback to parent q-value for unvisited nodes. note that the parent node
             // cannot be 0 because we only expand a node after visiting it at
             // least once.
-            parent.value() / (cap_n_i)
+            Score(parent.value() / cap_n_i)
         }
         else {
-            value / (n_i)
-        };
-
-        let policy = branch.policy().v();
-        let exploration = self.c * (policy) * cap_n_i.sqrt() / (1_f32 + (n_i));
-
-        Score::new(exploitation + exploration)
-    }
-
-    fn min_score(&self) -> Score {
-        Score::new(f32::NEG_INFINITY)
+            Score(node.value() / n_i)
+        }
     }
 }

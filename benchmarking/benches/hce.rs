@@ -15,7 +15,7 @@ use engine::{
                 node_state::{Branching, Evaluated, Leaf},
             },
             search::TreeSearcher,
-            select::{Selector, puct::PuctSelector},
+            select::puct::PuctSelector,
         },
     },
     misc::List,
