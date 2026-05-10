@@ -42,6 +42,7 @@ impl Hash {
     }
 
     pub const fn index(&self, max_entries: usize) -> usize {
+        debug_assert!(max_entries != 0, "Hash::index requires max_entries != 0");
         (self.v as usize) % max_entries
     }
 
