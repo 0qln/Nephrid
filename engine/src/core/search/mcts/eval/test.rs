@@ -124,7 +124,7 @@ fn run_see_test(fen: &str, mov: Move, us: Color, expected: i32) {
 
     let pos = Position::from_fen(fen).unwrap();
 
-    let actual_score = see(&pos.piece_info(), mov, us);
+    let actual_score = see(pos.piece_info(), mov, us);
 
     assert_eq!(
         actual_score, expected,
