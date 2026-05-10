@@ -1,9 +1,18 @@
-use std::{cmp::Reverse, marker::PhantomData, ops};
+use std::{
+    cmp::{Reverse, min},
+    marker::PhantomData,
+    ops,
+};
 
 use crate::core::{
+    bitboard::Bitboard,
     color::{Perspective, perspectives},
+    coordinates::{Rank, ranks},
     r#move::MoveList,
-    move_iter::{fold_legal_captures, fold_legal_moves},
+    move_iter::{
+        bishop::Bishop, fold_legal_captures, fold_legal_moves, king, knight, pawn, queen::Queen,
+        rook::Rook, sliding_piece::SlidingAttacks,
+    },
     piece::PromoPieceType,
     position::CheckState,
     turn::Turn,
@@ -329,7 +338,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     // move ordering
     move_list
         .as_mut_slice()
-        .sort_unstable_by_key(|&m| Reverse(PolicyInput::mvv_lva(pos.piece_info(), m)));
+        .sort_unstable_by_key(|&m| Reverse(see(pos.piece_info(), m, P::COLOR)));
 
     // recurse
     for &m in move_list.iter() {
@@ -381,6 +390,8 @@ fn material(pos: &PieceInfo, color: Color) -> i32 {
         .sum()
 }
 
+// fn mobility()
+
 fn bishop_pair(pos: &PieceInfo, color: Color) -> i32 {
     let bishop_cnt = pos.get_bitboard(piece_type::BISHOP, color).pop_cnt();
     if bishop_cnt >= 2 { 75 } else { 0 }
@@ -409,6 +420,55 @@ fn static_value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
 #[derive(Debug, PartialEq, Default)]
 pub struct PolicyInput {}
 
+// todo: optimzie using reverse lookup
+fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard) -> Option<Square> {
+    let to_bb = Bitboard::from(to);
+
+    if let Some(pawn) = (occ & pos.get_bitboard(piece_type::PAWN, us)).find(|&pawn| {
+        let attacks = pawn::lookup_attacks(pawn, us);
+        !(attacks & to_bb).is_empty()
+    }) {
+        return Some(pawn);
+    }
+
+    if let Some(knight) = (occ & pos.get_bitboard(piece_type::KNIGHT, us)).find(|&knight| {
+        let attacks = knight::lookup_attacks(knight);
+        !(attacks & to_bb).is_empty()
+    }) {
+        return Some(knight);
+    }
+
+    if let Some(bishop) = (occ & pos.get_bitboard(piece_type::BISHOP, us)).find(|&bishop| {
+        let attacks = <Bishop as SlidingAttacks>::lookup_attacks(bishop, occ);
+        !(attacks & to_bb).is_empty()
+    }) {
+        return Some(bishop);
+    }
+
+    if let Some(rook) = (occ & pos.get_bitboard(piece_type::ROOK, us)).find(|&rook| {
+        let attacks = <Rook as SlidingAttacks>::lookup_attacks(rook, occ);
+        !(attacks & to_bb).is_empty()
+    }) {
+        return Some(rook);
+    }
+
+    if let Some(queen) = (occ & pos.get_bitboard(piece_type::QUEEN, us)).find(|&queen| {
+        let attacks = <Queen as SlidingAttacks>::lookup_attacks(queen, occ);
+        !(attacks & to_bb).is_empty()
+    }) {
+        return Some(queen);
+    }
+
+    if let Some(king) = (occ & pos.get_bitboard(piece_type::KING, us)).find(|&king| {
+        let attacks = king::lookup_attacks(king);
+        !(attacks & to_bb).is_empty()
+    }) {
+        return Some(king);
+    }
+
+    None
+}
+
 impl PolicyInput {
     pub fn psqt(
         phase: TaperValue,
@@ -430,22 +490,99 @@ impl PolicyInput {
         new_score - curr_score
     }
 
-    /// MVV-LVA inspired bonus for capturing high-value pieces with low-value
-    /// pieces.
-    pub fn mvv_lva(pos: &PieceInfo, mov: Move) -> i32 {
-        if let Some(capture_sq) = mov.get_capture_sq() {
-            let capturing = pos.get_piece(mov.get_from()).piece_type();
-            let captured = pos.get_piece(capture_sq).piece_type();
-            let score = piece_score(captured) - piece_score(capturing);
-            return score;
-        }
-        0
-    }
-
     pub fn meta(_pos: &PieceInfo, _mov: Move, _state: &StateInfo) -> i32 {
         // todo: give bonus for promotions etc.
         0
     }
+}
+
+/// MVV-LVA inspired bonus for capturing high-value pieces with low-value
+/// pieces.
+pub fn mvv_lva(pos: &PieceInfo, mov: Move) -> i32 {
+    if let Some(capture_sq) = mov.get_capture_sq() {
+        let capturing = pos.get_piece(mov.get_from()).piece_type();
+        let captured = pos.get_piece(capture_sq).piece_type();
+        let score = piece_score(captured) - piece_score(capturing);
+        return score;
+    }
+    0
+}
+
+/// Static Exchange Evaluation (SEE) for captures.
+pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> i32 {
+    let to = mov.get_to();
+    let from = mov.get_from();
+
+    let mut gain = [0; 32];
+    let mut depth = Depth::ROOT;
+
+    let mut occupancy = pos.get_occupancy();
+    let mut attacker_sq = from;
+    let mut attacker_pt = pos.get_piece(from).piece_type();
+
+    // initial gain
+    gain[0] = {
+        let mut initial_gain = 0;
+
+        // en passant
+        if let Some(sq) = mov.get_capture_sq() {
+            initial_gain = piece_score(pos.get_piece(sq).piece_type());
+            occupancy &= !Bitboard::from(sq);
+        }
+
+        // promos
+        if let Ok(promo) = PromoPieceType::try_from(mov.get_flag()) {
+            initial_gain += piece_score(promo.v()) - piece_score(piece_type::PAWN);
+            attacker_pt = promo.v();
+        }
+
+        // return early on quiet moves
+        if initial_gain == 0 && mov.get_capture_sq().is_none() {
+            return 0;
+        }
+
+        initial_gain
+    };
+
+    loop {
+        depth += 1;
+        us = !us;
+
+        occupancy ^= Bitboard::from(attacker_sq);
+
+        let next_attacker = find_smallest_attacker(pos, to, us, occupancy);
+
+        match next_attacker {
+            Some(sq) => {
+                attacker_sq = sq;
+                let next_attacker_pt = pos.get_piece(attacker_sq).piece_type();
+
+                // Gain at this depth is the value of the piece we just exposed to capture,
+                // minus the value we give up if the opponent recaptures.
+                gain[depth.index()] = piece_score(attacker_pt) - gain[depth.index() - 1];
+
+                // If the piece that just attacked is a pawn, and 'to' is a promotion rank,
+                // it promotes. We assume it promotes to a Queen for SEE purposes.
+                if next_attacker_pt == piece_type::PAWN
+                    && matches!(Rank::from(to), ranks::_1 | ranks::_8)
+                {
+                    attacker_pt = piece_type::QUEEN;
+                }
+                else {
+                    attacker_pt = next_attacker_pt;
+                }
+            }
+            None => break,
+        }
+    }
+
+    // Negamax propagation back up the sequence
+    while depth > Depth::new(1) {
+        depth -= 1;
+        gain[depth.index() - 1] = min(gain[depth.index() - 1], -gain[depth.index()]);
+    }
+
+    gain[0]
 }
 
 fn static_eval(pos: &PieceInfo, phase: TaperValue) -> i32 {
@@ -523,7 +660,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             let to = mov.get_to();
             let piece = pos.get_piece(from).piece_type();
             let score = PolicyInput::psqt(phase, piece, from, to, color)
-                + PolicyInput::mvv_lva(pos, mov)
+                + see(pos, mov, color)
                 + PolicyInput::meta(pos, mov, state);
 
             logits.push(score as f32);
