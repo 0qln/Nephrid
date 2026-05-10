@@ -417,50 +417,47 @@ fn static_value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
     material(pos, color) + psqt(pos, color, phase) + bishop_pair(pos, color)
 }
 
-// todo: optimzie using reverse lookup
 fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard) -> Option<Square> {
-    let to_bb = Bitboard::from(to);
-
-    if let Some(pawn) = (occ & pos.get_bitboard(piece_type::PAWN, us)).find(|&pawn| {
-        let attacks = pawn::lookup_attacks(pawn, us);
-        !(attacks & to_bb).is_empty()
-    }) {
-        return Some(pawn);
+    let all_pawns = pos.get_bitboard(piece_type::PAWN, us);
+    let available_pawns = occ & all_pawns;
+    let attacking_pawns = pawn::lookup_attacks(to, !us) & available_pawns;
+    if let pawn @ Some(_) = attacking_pawns.lsb() {
+        return pawn;
     }
 
-    if let Some(knight) = (occ & pos.get_bitboard(piece_type::KNIGHT, us)).find(|&knight| {
-        let attacks = knight::lookup_attacks(knight);
-        !(attacks & to_bb).is_empty()
-    }) {
-        return Some(knight);
+    let all_knights = pos.get_bitboard(piece_type::KNIGHT, us);
+    let available_knights = occ & all_knights;
+    let attacking_knights = knight::lookup_attacks(to) & available_knights;
+    if let knight @ Some(_) = attacking_knights.lsb() {
+        return knight;
     }
 
-    if let Some(bishop) = (occ & pos.get_bitboard(piece_type::BISHOP, us)).find(|&bishop| {
-        let attacks = <Bishop as SlidingAttacks>::lookup_attacks(bishop, occ);
-        !(attacks & to_bb).is_empty()
-    }) {
-        return Some(bishop);
+    let all_bishops = pos.get_bitboard(piece_type::BISHOP, us);
+    let available_bishops = occ & all_bishops;
+    let attacking_bishops = <Bishop as SlidingAttacks>::lookup_attacks(to, occ) & available_bishops;
+    if let bishop @ Some(_) = attacking_bishops.lsb() {
+        return bishop;
     }
 
-    if let Some(rook) = (occ & pos.get_bitboard(piece_type::ROOK, us)).find(|&rook| {
-        let attacks = <Rook as SlidingAttacks>::lookup_attacks(rook, occ);
-        !(attacks & to_bb).is_empty()
-    }) {
-        return Some(rook);
+    let all_rooks = pos.get_bitboard(piece_type::ROOK, us);
+    let available_rooks = occ & all_rooks;
+    let attacking_rooks = <Rook as SlidingAttacks>::lookup_attacks(to, occ) & available_rooks;
+    if let rook @ Some(_) = attacking_rooks.lsb() {
+        return rook;
     }
 
-    if let Some(queen) = (occ & pos.get_bitboard(piece_type::QUEEN, us)).find(|&queen| {
-        let attacks = <Queen as SlidingAttacks>::lookup_attacks(queen, occ);
-        !(attacks & to_bb).is_empty()
-    }) {
-        return Some(queen);
+    let all_queens = pos.get_bitboard(piece_type::QUEEN, us);
+    let available_queens = occ & all_queens;
+    let attacking_queens = <Queen as SlidingAttacks>::lookup_attacks(to, occ) & available_queens;
+    if let queen @ Some(_) = attacking_queens.lsb() {
+        return queen;
     }
 
-    if let Some(king) = (occ & pos.get_bitboard(piece_type::KING, us)).find(|&king| {
-        let attacks = king::lookup_attacks(king);
-        !(attacks & to_bb).is_empty()
-    }) {
-        return Some(king);
+    let all_kings = pos.get_bitboard(piece_type::KING, us);
+    let available_kings = occ & all_kings;
+    let attacking_kings = king::lookup_attacks(to) & available_kings;
+    if let king @ Some(_) = attacking_kings.lsb() {
+        return king;
     }
 
     None
