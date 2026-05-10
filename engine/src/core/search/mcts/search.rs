@@ -461,14 +461,11 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         };
 
         // update tt
-        self.tt.insert(
+        self.tt.insert(TTData {
             key,
-            TTData {
-                key,
-                best_move: Some(best_move),
-                exploitation: best_exploitation,
-            },
-        );
+            best_move: Some(best_move),
+            exploitation: best_exploitation,
+        });
 
         // update ss.killer
         if !best_move.get_flag().is_capture()
@@ -750,7 +747,8 @@ impl<const ENTRIES: usize, Data: ZKey> TranspositionTable<ENTRIES, Data> {
 
     /// Insert and overwrite in any case.
     #[inline]
-    pub fn insert(&mut self, key: zobrist::Hash, data: Data) {
+    pub fn insert(&mut self, data: Data) {
+        let key = data.key();
         let idx = key.index(ENTRIES);
         self.entries[idx] = Some(data);
     }
