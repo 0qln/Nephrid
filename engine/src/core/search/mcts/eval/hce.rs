@@ -417,9 +417,6 @@ fn static_value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
     material(pos, color) + psqt(pos, color, phase) + bishop_pair(pos, color)
 }
 
-#[derive(Debug, PartialEq, Default)]
-pub struct PolicyInput {}
-
 // todo: optimzie using reverse lookup
 fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard) -> Option<Square> {
     let to_bb = Bitboard::from(to);
@@ -467,33 +464,6 @@ fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard)
     }
 
     None
-}
-
-impl PolicyInput {
-    pub fn psqt(
-        phase: TaperValue,
-        piece: PieceType,
-        from: Square,
-        to: Square,
-        color: Color,
-    ) -> i32 {
-        let curr_score = {
-            let mg = psqt_score(game_phases::MG, piece, from, color);
-            let eg = psqt_score(game_phases::EG, piece, from, color);
-            phase.weighted_eval(mg, eg)
-        };
-        let new_score = {
-            let mg = psqt_score(game_phases::MG, piece, to, color);
-            let eg = psqt_score(game_phases::EG, piece, to, color);
-            phase.weighted_eval(mg, eg)
-        };
-        new_score - curr_score
-    }
-
-    pub fn meta(_pos: &PieceInfo, _mov: Move, _state: &StateInfo) -> i32 {
-        // todo: give bonus for promotions etc.
-        0
-    }
 }
 
 /// MVV-LVA inspired bonus for capturing high-value pieces with low-value
@@ -589,6 +559,36 @@ fn static_eval(pos: &PieceInfo, phase: TaperValue) -> i32 {
     let w_q = static_value(pos, colors::WHITE, phase);
     let b_q = static_value(pos, colors::BLACK, phase);
     w_q - b_q
+}
+
+#[derive(Debug, PartialEq, Default)]
+pub struct PolicyInput;
+
+impl PolicyInput {
+    pub fn psqt(
+        phase: TaperValue,
+        piece: PieceType,
+        from: Square,
+        to: Square,
+        color: Color,
+    ) -> i32 {
+        let curr_score = {
+            let mg = psqt_score(game_phases::MG, piece, from, color);
+            let eg = psqt_score(game_phases::EG, piece, from, color);
+            phase.weighted_eval(mg, eg)
+        };
+        let new_score = {
+            let mg = psqt_score(game_phases::MG, piece, to, color);
+            let eg = psqt_score(game_phases::EG, piece, to, color);
+            phase.weighted_eval(mg, eg)
+        };
+        new_score - curr_score
+    }
+
+    pub fn meta(_pos: &PieceInfo, _mov: Move, _state: &StateInfo) -> i32 {
+        // todo: give bonus for promotions etc.
+        0
+    }
 }
 
 pub struct EvalInfo<Moves: AsRef<[Move]>> {
