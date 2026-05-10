@@ -412,7 +412,8 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                     exploration = MIN;
                 }
                 else {
-                    let exploration_tt_move = {
+                    // tt-move bonus from
+                    let tt_move_bonus = {
                         // use the exploitation score from the tt best_move as guidance in the
                         // exploration factor.
                         if tt_best_move == Some(mov) {
@@ -423,7 +424,8 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                         }
                     };
 
-                    let killer_move = {
+                    // killer move bonus for barely visited nodes
+                    let killer_move_bonus = {
                         // if a quiet move from a sibling branch proved to be of high exploitation
                         // after some searching, consider that move here aswell.
                         if killer_move == Some(mov) && child.visits() <= VisitCount(2) {
@@ -436,7 +438,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
 
                     exploration = sel.exploration(tree, branch_id, parent_node_id);
                     exploitation = sel.exploitation(tree, branch_id, parent_node_id);
-                    score = (exploitation + killer_move) + (exploration * exploration_tt_move);
+                    score = (exploitation + killer_move_bonus) + (exploration * tt_move_bonus);
                 }
 
                 if score >= curr_score {
