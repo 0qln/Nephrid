@@ -7,7 +7,7 @@ use std::{
 use crate::core::{
     bitboard::Bitboard,
     color::{Perspective, perspectives},
-    coordinates::{File, Rank, ranks},
+    coordinates::{File, Rank, pawn_utils::single_step, ranks},
     r#move::MoveList,
     move_iter::{
         bishop::Bishop, fold_legal_captures, fold_legal_moves, king, knight, pawn, queen::Queen,
@@ -436,6 +436,30 @@ pub fn mobility(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
         .sum()
 }
 
+pub fn pawn_shield(pos: &PieceInfo, color: Color, phase: TaperValue, king: Square) -> i32 {
+    let pawns = pos.get_bitboard(piece_type::PAWN, color);
+
+    let p1_squares = king::lookup_attacks(king);
+    let p2_squares = king::lookup_attacks(king + single_step(color));
+
+    let p1_shield = pawns & p1_squares;
+    let p2_shield = pawns & p2_squares; // todo: don't count unprotected pawns
+
+    let p1_score = p1_shield.pop_cnt() as i32 * 10;
+    let p2_score = p2_shield.pop_cnt() as i32 * 5;
+
+    phase.weighted_eval(p1_score + p2_score, 0)
+}
+
+pub fn king_safety(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
+    if let Some(king) = pos.get_bitboard(piece_type::KING, color).lsb() {
+        pawn_shield(pos, color, phase, king)
+    }
+    else {
+        0
+    }
+}
+
 fn bishop_pair(pos: &PieceInfo, color: Color) -> i32 {
     let bishop_cnt = pos.get_bitboard(piece_type::BISHOP, color).pop_cnt();
     if bishop_cnt >= 2 { 75 } else { 0 }
@@ -462,6 +486,7 @@ fn static_value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
         + mobility(pos, color, phase)
         + psqt(pos, color, phase)
         + bishop_pair(pos, color)
+        + king_safety(pos, color, phase)
 }
 
 fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard) -> Option<Square> {

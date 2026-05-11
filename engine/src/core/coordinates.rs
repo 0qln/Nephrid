@@ -94,6 +94,7 @@ impl_variants! {
 impl_op!(<< |a: usize, b: Square| -> usize { a << b.v } );
 impl_op!(% |a: Square, b: u8| -> Square { Square { v: a.v % b } } );
 impl_op!(-|a: Square, b: Square| -> Square { Square { v: a.v - b.v } });
+impl_op!(+|a: Square, b: CompassRose| -> Square { Square { v: (a.v as i8 - b.v) as u8 } });
 
 impl Square {
     pub const MAX: Square = H8;
@@ -543,5 +544,68 @@ impl const From<Square> for DiagA8H1 {
         DiagA8H1 {
             v: Rank::from(sq).v + File::from(sq).v,
         }
+    }
+}
+
+pub mod pawn_utils {
+    use crate::core::{bitboard::Bitboard, color::colors};
+
+    use super::*;
+
+    #[inline]
+    pub const fn promo_rank(c: Color) -> Rank {
+        match c {
+            colors::WHITE => ranks::_7,
+            colors::BLACK => ranks::_2,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    pub const fn start_rank(c: Color) -> Rank {
+        match c {
+            colors::WHITE => ranks::_2,
+            colors::BLACK => ranks::_7,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Double pawn push rank
+    #[inline]
+    pub const fn dpp_rank(c: Color) -> Rank {
+        match c {
+            colors::WHITE => ranks::_2,
+            colors::BLACK => ranks::_6,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    pub const fn single_step(c: Color) -> CompassRose {
+        match c {
+            colors::WHITE => compass_rose::NORT,
+            colors::BLACK => compass_rose::SOUT,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    pub const fn double_step(c: Color) -> CompassRose {
+        single_step(c).double()
+    }
+
+    #[inline]
+    pub const fn forward(bb: Bitboard, dir: CompassRose) -> Bitboard {
+        bb.shift(dir)
+    }
+
+    #[inline]
+    pub const fn backward(bb: Bitboard, dir: CompassRose) -> Bitboard {
+        bb.shift(dir.neg())
+    }
+
+    #[inline]
+    pub const fn capture(c: Color, dir: CompassRose) -> CompassRose {
+        CompassRose::new(dir.v() + single_step(c).v())
     }
 }

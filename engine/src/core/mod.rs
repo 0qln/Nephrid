@@ -11,6 +11,7 @@ use crate::{
         config::Configuration,
         depth::Depth,
         r#move::{Move, MoveList, SanParseError},
+        piece::piece_type,
         position::{
             EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError,
             PgnImport, PgnImportError, Position, ReducedPgn,
@@ -282,6 +283,15 @@ pub fn execute_uci(
         Some("hce") => {
             let mut pos = engine.game.position.clone();
             let moves = pos.collect_moves(MoveList::new());
+            let king_w = pos
+                .get_bitboard(piece_type::KING, colors::WHITE)
+                .lsb()
+                .ok_or("White king is missing. Cannot evaluate.")?;
+            let king_b = pos
+                .get_bitboard(piece_type::KING, colors::BLACK)
+                .lsb()
+                .ok_or("Black king is missing. Cannot evaluate.")?;
+
             let eval = hce::EvalInfo::new(moves.clone(), &mut pos);
             let quality = eval.quality();
             let value = eval::Value::from(quality);
@@ -297,14 +307,18 @@ pub fn execute_uci(
             let mobility_b = hce::mobility(pos.piece_info(), colors::BLACK, phase);
             let mobility = mobility_w - mobility_b;
 
+            let pawn_shield_w = hce::pawn_shield(pos.piece_info(), colors::WHITE, phase, king_w);
+            let pawn_shield_b = hce::pawn_shield(pos.piece_info(), colors::BLACK, phase, king_b);
+
             let policy = eval.policy(&mut List::new());
-            println!("Phase:      {phase:?}");
-            println!("Material:   w:{material_w:<4} b:{material_b:<4} t:{material:<4}");
-            println!("Mobility:   w:{mobility_w:<4} b:{mobility_b:<4} t:{mobility:<4}");
-            println!("Centipawns: {centipawns}");
-            println!("Winrate:    {winrate}");
-            println!("Value:      {value}");
-            println!("Quality:    {quality}");
+            println!("Phase:       {phase:?}");
+            println!("Material:    w:{material_w:<4} b:{material_b:<4} t:{material:<4}");
+            println!("Mobility:    w:{mobility_w:<4} b:{mobility_b:<4} t:{mobility:<4}");
+            println!("Pawn Shield: w:{pawn_shield_w:<4} b:{pawn_shield_b:<4}");
+            println!("Centipawns:  {centipawns}");
+            println!("Winrate:     {winrate}");
+            println!("Value:       {value}");
+            println!("Quality:     {quality}");
             println!("Policy:");
             for (mov, p) in moves.iter().zip(policy.iter()) {
                 println!("  {mov}: {p:.2}");

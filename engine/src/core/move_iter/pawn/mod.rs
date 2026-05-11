@@ -2,26 +2,21 @@ use super::{
     FoldMoves, NoDoubleCheck, bishop::Bishop, king::King, pin_mask, rook::Rook,
     sliding_piece::SlidingAttacks,
 };
-use crate::{
-    core::{
-        bitboard::Bitboard,
-        color::{Color, TColor, colors},
-        coordinates::{
-            CompassRose, EpTargetSquare, File, Square, TCompassRose, compass_rose, files, squares,
-        },
-        r#move::{Move, MoveFlag, move_flags},
-        piece::{IPieceType, piece_type},
-        position::Position,
+use crate::core::{
+    bitboard::Bitboard,
+    color::{Color, TColor, colors},
+    coordinates::{
+        CompassRose, EpTargetSquare, File, Square, TCompassRose, compass_rose, files,
+        pawn_utils::*, squares,
     },
+    r#move::{Move, MoveFlag, move_flags},
+    piece::{IPieceType, piece_type},
+    position::Position,
 };
 use const_for::const_for;
 use std::ops::Try;
 
-use helpers::*;
-
 use variants::Variant;
-
-mod helpers;
 
 pub struct Pawn;
 
