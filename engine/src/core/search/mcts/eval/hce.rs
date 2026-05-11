@@ -7,7 +7,7 @@ use std::{
 use crate::core::{
     bitboard::Bitboard,
     color::{Perspective, perspectives},
-    coordinates::{Rank, ranks},
+    coordinates::{File, Rank, ranks},
     r#move::MoveList,
     move_iter::{
         bishop::Bishop, fold_legal_captures, fold_legal_moves, king, knight, pawn, queen::Queen,
@@ -384,13 +384,57 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     best_value
 }
 
-fn material(pos: &PieceInfo, color: Color) -> i32 {
+pub fn material(pos: &PieceInfo, color: Color) -> i32 {
     (piece_type::PAWN..piece_type::KING)
         .map(|p| pos.get_bitboard(p, color).pop_cnt() as i32 * piece_score(p))
         .sum()
 }
 
-// fn mobility()
+#[allow(clippy::identity_op)]
+pub fn mobility(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
+    let occ = pos.get_occupancy();
+    (piece_type::KNIGHT..piece_type::KING)
+        .map(|pt| {
+            let pieces = pos.get_bitboard(pt, color);
+            let scores: i32 = pieces
+                .map(|sq| match pt {
+                    piece_type::KNIGHT => {
+                        let attacks = knight::lookup_attacks(sq);
+                        let score = attacks.pop_cnt() * 5;
+                        let score = score as i32;
+                        phase.weighted_eval(score, score)
+                    }
+                    piece_type::BISHOP => {
+                        let attacks = <Bishop as SlidingAttacks>::lookup_attacks(sq, occ);
+                        let score = attacks.pop_cnt() * 5;
+                        let score = score as i32;
+                        phase.weighted_eval(score, score)
+                    }
+                    piece_type::ROOK => {
+                        let attacks = <Rook as SlidingAttacks>::lookup_attacks(sq, occ);
+                        let vertical = attacks & Bitboard::from(File::from(sq));
+                        let horizontal = attacks & Bitboard::from(Rank::from(sq));
+                        let vert_cnt = vertical.pop_cnt();
+                        let hort_cnt = horizontal.pop_cnt();
+                        phase.weighted_eval(
+                            // vertical mobility is more valuable in the opening
+                            (vert_cnt * 3 + hort_cnt * 1) as i32,
+                            (vert_cnt * 5 + hort_cnt * 5) as i32,
+                        )
+                    }
+                    piece_type::QUEEN => {
+                        let attacks = <Queen as SlidingAttacks>::lookup_attacks(sq, occ);
+                        let score = attacks.pop_cnt() * 5;
+                        score as i32
+                    }
+                    _ => unreachable!(),
+                })
+                .sum();
+
+            scores
+        })
+        .sum()
+}
 
 fn bishop_pair(pos: &PieceInfo, color: Color) -> i32 {
     let bishop_cnt = pos.get_bitboard(piece_type::BISHOP, color).pop_cnt();
@@ -414,7 +458,10 @@ fn psqt(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
 }
 
 fn static_value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
-    material(pos, color) + psqt(pos, color, phase) + bishop_pair(pos, color)
+    material(pos, color)
+        + mobility(pos, color, phase)
+        + psqt(pos, color, phase)
+        + bishop_pair(pos, color)
 }
 
 fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard) -> Option<Square> {

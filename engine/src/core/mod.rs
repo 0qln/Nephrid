@@ -7,6 +7,7 @@ use thiserror::Error;
 
 use crate::{
     core::{
+        color::colors,
         config::Configuration,
         depth::Depth,
         r#move::{Move, MoveList, SanParseError},
@@ -286,7 +287,20 @@ pub fn execute_uci(
             let value = eval::Value::from(quality);
             let winrate = WinRate::from(value);
             let centipawns = Cp::from(winrate);
+            let phase = hce::TaperValue::from_position(pos.piece_info());
+
+            let material_w = hce::material(pos.piece_info(), colors::WHITE);
+            let material_b = hce::material(pos.piece_info(), colors::BLACK);
+            let material = material_w - material_b;
+
+            let mobility_w = hce::mobility(pos.piece_info(), colors::WHITE, phase);
+            let mobility_b = hce::mobility(pos.piece_info(), colors::BLACK, phase);
+            let mobility = mobility_w - mobility_b;
+
             let policy = eval.policy(&mut List::new());
+            println!("Phase:      {phase:?}");
+            println!("Material:   w:{material_w:<4} b:{material_b:<4} t:{material:<4}");
+            println!("Mobility:   w:{mobility_w:<4} b:{mobility_b:<4} t:{mobility:<4}");
             println!("Centipawns: {centipawns}");
             println!("Winrate:    {winrate}");
             println!("Value:      {value}");
