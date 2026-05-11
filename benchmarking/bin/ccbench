@@ -19,7 +19,7 @@ cutechess-cli \
     -recover \
     -concurrency 6 \
     -sprt elo0=0 elo1=2.0 alpha=0.05 beta=0.05 \
-    -ratinginterval 20 \
-    -outcomeinterval 20 \
+    -ratinginterval 50 \
+    -outcomeinterval 50 \
     -pgnout "$out" \
     "$@"
