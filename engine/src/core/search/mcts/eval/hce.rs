@@ -390,6 +390,7 @@ pub fn material(pos: &PieceInfo, color: Color) -> i32 {
         .sum()
 }
 
+#[allow(clippy::identity_op)]
 pub fn mobility(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
     let occ = pos.get_occupancy();
     (piece_type::KNIGHT..piece_type::KING)
@@ -430,7 +431,7 @@ pub fn mobility(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
                 })
                 .sum();
 
-            scores as i32
+            scores
         })
         .sum()
 }
