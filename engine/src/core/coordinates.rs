@@ -61,8 +61,13 @@ impl CompassRose {
     }
 
     #[inline]
+    pub const fn scale(&self, factor: i8) -> Self {
+        CompassRose { v: self.v * factor }
+    }
+
+    #[inline]
     pub const fn double(&self) -> Self {
-        CompassRose { v: self.v * 2 }
+        self.scale(2)
     }
 
     #[inline]
@@ -352,6 +357,28 @@ impl_variants! {
     }
 }
 
+impl Rank {
+    pub const fn saturating_shift(&self, amount: i8) -> Self {
+        let min = ranks::_1.v as i8;
+        let max = ranks::_8.v as i8;
+        let val = self.v as i8 + amount;
+        Self { v: clamp(val, min, max) as u8 }
+    }
+}
+
+// stdlib is non-const
+const fn clamp(input: i8, min: i8, max: i8) -> i8 {
+    if input < min {
+        min
+    }
+    else if input > max {
+        max
+    }
+    else {
+        input
+    }
+}
+
 impl Default for Rank {
     fn default() -> Self {
         ranks::_1
@@ -429,6 +456,13 @@ impl File {
             EAST => files::H,
             _ => panic!("The only two edge files are in the west and in the east."),
         }
+    }
+
+    pub const fn saturating_shift(&self, amount: i8) -> Self {
+        let min = files::A.v as i8;
+        let max = files::H.v as i8;
+        let val = self.v as i8 + amount;
+        Self { v: clamp(val, min, max) as u8 }
     }
 }
 

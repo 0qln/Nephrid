@@ -20,6 +20,7 @@
 #![feature(strip_circumfix)]
 #![feature(const_convert)]
 #![feature(iter_collect_into)]
+#![feature(const_ops)]
 
 #[macro_use]
 extern crate impl_ops;
