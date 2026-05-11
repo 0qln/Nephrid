@@ -1,3 +1,5 @@
+use const_for::const_for;
+
 use std::{
     cmp::{Reverse, min},
     marker::PhantomData,
@@ -7,7 +9,7 @@ use std::{
 use crate::core::{
     bitboard::Bitboard,
     color::{Perspective, perspectives},
-    coordinates::{File, Rank, pawn_utils::single_step, ranks},
+    coordinates::{File, Rank, files, pawn_utils::single_step, ranks},
     r#move::MoveList,
     move_iter::{
         bishop::Bishop, fold_legal_captures, fold_legal_moves, king, knight, pawn, queen::Queen,
@@ -463,9 +465,7 @@ pub fn pawn_shield(pos: &PieceInfo, color: Color, phase: TaperValue, king: Squar
 //     let enemy_pawns = pos.get_bitboard(piece_type::PAWN, them);
 
 //     const DANGER_ZONES: [[Bitboard; squares::N_VARIANTS]; colors::N_VARIANTS]
-// = {         use const_for::const_for;
-
-//         let step_b = -1;
+// = {         let step_b = -1;
 //         let step_w = 1;
 
 //         let zones_w = {
@@ -531,9 +531,59 @@ pub fn pawn_shield(pos: &PieceInfo, color: Color, phase: TaperValue, king: Squar
 //     -(storm_danger_penalty as i32)
 // }
 
+pub fn open_king_file_penalty(
+    pos: &PieceInfo,
+    color: Color,
+    king: Square,
+    // only consider rooks (and queens?) for this phase
+    // phase: TaperValue,
+) -> i32 {
+    // [[start, end], king_file]
+    const DANGER_FILES: [[File; 2]; files::N_VARIANTS] = {
+        let mut files = [[files::A; 2]; files::N_VARIANTS];
+        const_for!(king_file_v in files::A_C..(files::H_C+1) => {
+            // SAFETY: correct range
+            let king_file = unsafe { File::from_v(king_file_v) };
+
+            let left = king_file.saturating_shift(-1);
+            let midd = king_file;
+            let right = king_file.saturating_shift(1);
+
+            files[king_file_v as usize] = [
+                if midd.v() == files::A_C { midd } else { left },
+                if midd.v() == files::H_C { midd } else { right },
+            ];
+        });
+        files
+    };
+
+    let mut penalty = 0;
+
+    let king_file = File::from(king);
+    // let enemy_pawns = pos.get_bitboard(piece_type::PAWN, !color);
+    let ally_pawns = pos.get_bitboard(piece_type::PAWN, color);
+    let [f_min, f_max] = DANGER_FILES[king_file.v() as usize];
+    for file in f_min..f_max {
+        let file_bb = Bitboard::from(file);
+        let has_ally = !(ally_pawns & file_bb).is_empty();
+        // let has_enemy = !(enemy_pawns & file_bb).is_empty();
+
+        if !has_ally {
+            penalty += 50;
+        }
+
+        // todo: how to value this?
+        // if !has_enemy {
+        //     penalty += 20;
+        // }
+    }
+
+    -penalty
+}
+
 pub fn king_safety(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
     if let Some(king) = pos.get_bitboard(piece_type::KING, color).lsb() {
-        pawn_shield(pos, color, phase, king)
+        pawn_shield(pos, color, phase, king) + open_king_file_penalty(pos, color, king)
         // + pawn_storm_penalty(pos, color, king)
     }
     else {

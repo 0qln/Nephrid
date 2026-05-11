@@ -441,6 +441,20 @@ pub struct File {
     v: TFile,
 }
 
+impl Step for File {
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
+        Step::steps_between(&start.v, &end.v)
+    }
+
+    fn forward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::forward_checked(start.v, count)?).ok()
+    }
+
+    fn backward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::backward_checked(start.v, count)?).ok()
+    }
+}
+
 pub type TFile = u8;
 
 impl_variants! {
