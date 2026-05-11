@@ -441,14 +441,20 @@ pub fn pawn_shield(pos: &PieceInfo, color: Color, phase: TaperValue, king: Squar
 
     let p1_squares = king::lookup_attacks(king);
     let p2_squares = king::lookup_attacks(king + single_step(color));
+    let p2_protected = pawn::compute_attacks(pawns, color);
 
     let p1_shield = pawns & p1_squares;
-    let p2_shield = pawns & p2_squares; // todo: don't count unprotected pawns
+    let p2_shield_strong = pawns & p2_squares & p2_protected;
+    let p2_shield_weak = pawns & p2_squares & !p2_protected;
 
-    let p1_score = p1_shield.pop_cnt() as i32 * 10;
-    let p2_score = p2_shield.pop_cnt() as i32 * 5;
+    let p1_score = p1_shield.pop_cnt() as i32;
+    let p2_score_strong = p2_shield_strong.pop_cnt() as i32;
+    let p2_score_weak = p2_shield_weak.pop_cnt() as i32;
 
-    phase.weighted_eval(p1_score + p2_score, 0)
+    let score = p1_score * 10 + p2_score_strong * 5 + p2_score_weak * 4;
+
+    // we don't want the pawns from trying to promote in the endgame
+    phase.weighted_eval(score, 0)
 }
 
 pub fn king_safety(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
