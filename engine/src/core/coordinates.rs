@@ -210,6 +210,10 @@ impl EpTargetSquare {
     pub const fn v(&self) -> Option<Square> {
         self.v
     }
+
+    pub const fn none() -> Self {
+        Self { v: None }
+    }
 }
 
 pub type EpTargetSquareParseError = ValueOutOfSetError<Rank>;
@@ -292,6 +296,10 @@ pub struct EpCaptureSquare {
 impl EpCaptureSquare {
     pub const fn v(&self) -> Option<Square> {
         self.v
+    }
+
+    pub const fn none() -> Self {
+        Self { v: None }
     }
 }
 
