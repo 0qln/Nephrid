@@ -534,9 +534,8 @@ pub fn pawn_shield(pos: &PieceInfo, color: Color, phase: TaperValue, king: Squar
 pub fn open_king_file_penalty(
     pos: &PieceInfo,
     color: Color,
+    phase: TaperValue, // todo: only consider rooks (and queens?) for this phase ?
     king: Square,
-    // only consider rooks (and queens?) for this phase
-    // phase: TaperValue,
 ) -> i32 {
     // [[start, end], king_file]
     const DANGER_FILES: [[File; 2]; files::N_VARIANTS] = {
@@ -578,12 +577,12 @@ pub fn open_king_file_penalty(
         // }
     }
 
-    -penalty
+    phase.weighted_eval(-penalty, 0)
 }
 
 pub fn king_safety(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
     if let Some(king) = pos.get_bitboard(piece_type::KING, color).lsb() {
-        pawn_shield(pos, color, phase, king) + open_king_file_penalty(pos, color, king)
+        pawn_shield(pos, color, phase, king) + open_king_file_penalty(pos, color, phase, king)
         // + pawn_storm_penalty(pos, color, king)
     }
     else {
