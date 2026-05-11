@@ -99,7 +99,6 @@ impl_variants! {
 impl_op!(<< |a: usize, b: Square| -> usize { a << b.v } );
 impl_op!(% |a: Square, b: u8| -> Square { Square { v: a.v % b } } );
 impl_op!(-|a: Square, b: Square| -> Square { Square { v: a.v - b.v } });
-impl_op!(+|a: Square, b: CompassRose| -> Square { Square { v: (a.v as i8 - b.v) as u8 } });
 
 impl Square {
     pub const MAX: Square = H8;
