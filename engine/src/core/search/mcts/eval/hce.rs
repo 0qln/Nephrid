@@ -457,83 +457,84 @@ pub fn pawn_shield(pos: &PieceInfo, color: Color, phase: TaperValue, king: Squar
     phase.weighted_eval(score, 0)
 }
 
-/// Evaluates the safety of our king's position by looking at enemy pawn storm.
-pub fn pawn_storm_penalty(pos: &PieceInfo, us: Color, king: Square) -> i32 {
-    let them = !us;
-    let enemy_pawns = pos.get_bitboard(piece_type::PAWN, them);
+// /// Evaluates the safety of our king's position by looking at enemy pawn
+// storm. pub fn pawn_storm_penalty(pos: &PieceInfo, us: Color, king: Square) ->
+// i32 {     let them = !us;
+//     let enemy_pawns = pos.get_bitboard(piece_type::PAWN, them);
 
-    const DANGER_ZONES: [[Bitboard; squares::N_VARIANTS]; colors::N_VARIANTS] = {
-        use const_for::const_for;
+//     const DANGER_ZONES: [[Bitboard; squares::N_VARIANTS]; colors::N_VARIANTS]
+// = {         use const_for::const_for;
 
-        let step_b = -1;
-        let step_w = 1;
+//         let step_b = -1;
+//         let step_w = 1;
 
-        let zones_w = {
-            let mut zones = [Bitboard::empty(); squares::N_VARIANTS];
-            const_for!(king_sq_v in squares::A1_C..(squares::H8_C+1) => {
-                // SAFETY: correct range
-                let king_sq = unsafe { Square::from_v(king_sq_v) };
-                let king_rank = Rank::from(king_sq);
-                let king_file = File::from(king_sq);
+//         let zones_w = {
+//             let mut zones = [Bitboard::empty(); squares::N_VARIANTS];
+//             const_for!(king_sq_v in squares::A1_C..(squares::H8_C+1) => {
+//                 // SAFETY: correct range
+//                 let king_sq = unsafe { Square::from_v(king_sq_v) };
+//                 let king_rank = Rank::from(king_sq);
+//                 let king_file = File::from(king_sq);
 
-                let danger_ranks = {
-                    Bitboard::from(king_rank.saturating_shift(step_b))
-                    | Bitboard::from(king_rank.saturating_shift(step_b * 2))
-                    | Bitboard::from(king_rank.saturating_shift(step_b * 3))
-                };
-                let danger_files = {
-                    Bitboard::from(king_file)
-                    | Bitboard::from(king_file.saturating_shift(1))
-                    | Bitboard::from(king_file.saturating_shift(-1))
-                };
+//                 let danger_ranks = {
+//                     Bitboard::from(king_rank.saturating_shift(step_b))
+//                     | Bitboard::from(king_rank.saturating_shift(step_b * 2))
+//                     | Bitboard::from(king_rank.saturating_shift(step_b * 3))
+//                 };
+//                 let danger_files = {
+//                     Bitboard::from(king_file)
+//                     | Bitboard::from(king_file.saturating_shift(1))
+//                     | Bitboard::from(king_file.saturating_shift(-1))
+//                 };
 
-                zones[king_sq_v as usize] = danger_ranks & danger_files;
-            });
-            zones
-        };
+//                 zones[king_sq_v as usize] = danger_ranks & danger_files;
+//             });
+//             zones
+//         };
 
-        let zones_b = {
-            let mut zones = [Bitboard::empty(); squares::N_VARIANTS];
-            const_for!(king_sq_v in squares::A1_C..(squares::H8_C+1) => {
-                // SAFETY: correct range
-                let king_sq = unsafe { Square::from_v(king_sq_v) };
-                let king_rank = Rank::from(king_sq);
-                let king_file = File::from(king_sq);
+//         let zones_b = {
+//             let mut zones = [Bitboard::empty(); squares::N_VARIANTS];
+//             const_for!(king_sq_v in squares::A1_C..(squares::H8_C+1) => {
+//                 // SAFETY: correct range
+//                 let king_sq = unsafe { Square::from_v(king_sq_v) };
+//                 let king_rank = Rank::from(king_sq);
+//                 let king_file = File::from(king_sq);
 
-                let danger_ranks = {
-                    Bitboard::from(king_rank.saturating_shift(step_w))
-                    | Bitboard::from(king_rank.saturating_shift(step_w * 2))
-                    | Bitboard::from(king_rank.saturating_shift(step_w * 3))
-                };
-                let danger_files = {
-                    Bitboard::from(king_file)
-                    | Bitboard::from(king_file.saturating_shift(1))
-                    | Bitboard::from(king_file.saturating_shift(-1))
-                };
+//                 let danger_ranks = {
+//                     Bitboard::from(king_rank.saturating_shift(step_w))
+//                     | Bitboard::from(king_rank.saturating_shift(step_w * 2))
+//                     | Bitboard::from(king_rank.saturating_shift(step_w * 3))
+//                 };
+//                 let danger_files = {
+//                     Bitboard::from(king_file)
+//                     | Bitboard::from(king_file.saturating_shift(1))
+//                     | Bitboard::from(king_file.saturating_shift(-1))
+//                 };
 
-                zones[king_sq_v as usize] = danger_ranks & danger_files;
-            });
-            zones
-        };
+//                 zones[king_sq_v as usize] = danger_ranks & danger_files;
+//             });
+//             zones
+//         };
 
-        let mut zones = [[Bitboard::empty(); squares::N_VARIANTS]; colors::N_VARIANTS];
-        zones[colors::WHITE.v() as usize] = zones_w;
-        zones[colors::BLACK.v() as usize] = zones_b;
+//         let mut zones = [[Bitboard::empty(); squares::N_VARIANTS];
+// colors::N_VARIANTS];         zones[colors::WHITE.v() as usize] = zones_w;
+//         zones[colors::BLACK.v() as usize] = zones_b;
 
-        zones
-    };
+//         zones
+//     };
 
-    let danger_zone = DANGER_ZONES[us.v() as usize][king.v() as usize];
-    let danger_pawns = enemy_pawns & danger_zone;
+//     let danger_zone = DANGER_ZONES[us.v() as usize][king.v() as usize];
+//     let danger_pawns = enemy_pawns & danger_zone;
 
-    let storm_danger_penalty = danger_pawns.pop_cnt() * 20;
+//     let storm_danger_penalty = danger_pawns.pop_cnt() * 20;
 
-    -(storm_danger_penalty as i32)
-}
+//     -(storm_danger_penalty as i32)
+// }
 
 pub fn king_safety(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
     if let Some(king) = pos.get_bitboard(piece_type::KING, color).lsb() {
-        pawn_shield(pos, color, phase, king) + pawn_storm_penalty(pos, color, king)
+        pawn_shield(pos, color, phase, king)
+        // + pawn_storm_penalty(pos, color, king)
     }
     else {
         0
