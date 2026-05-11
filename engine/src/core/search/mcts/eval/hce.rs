@@ -559,22 +559,20 @@ pub fn open_king_file_penalty(
     let mut penalty = 0;
 
     let king_file = File::from(king);
-    // let enemy_pawns = pos.get_bitboard(piece_type::PAWN, !color);
+    let enemy_pawns = pos.get_bitboard(piece_type::PAWN, !color);
     let ally_pawns = pos.get_bitboard(piece_type::PAWN, color);
     let [f_min, f_max] = DANGER_FILES[king_file.v() as usize];
     for file in f_min..f_max {
         let file_bb = Bitboard::from(file);
         let has_ally = !(ally_pawns & file_bb).is_empty();
-        // let has_enemy = !(enemy_pawns & file_bb).is_empty();
+        let has_enemy = !(enemy_pawns & file_bb).is_empty();
 
-        if !has_ally {
-            penalty += 50;
+        match (has_ally, has_enemy) {
+            (true, false) => penalty += 15,  // enemy has a semi-open file
+            (false, true) => penalty += 35,  // pawn shield is gone
+            (false, false) => penalty += 60, // fully open file
+            (true, true) => {}               // closed file
         }
-
-        // todo: how to value this?
-        // if !has_enemy {
-        //     penalty += 20;
-        // }
     }
 
     phase.weighted_eval(-penalty, 0)
