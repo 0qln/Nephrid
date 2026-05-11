@@ -704,9 +704,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             let piece = pos.get_piece(from).piece_type();
             let score = PolicyInput::psqt(phase, piece, from, to, color)
                 + see(pos, mov, color)
-                + PolicyInput::meta(pos, mov, state)
-                // todo: add mobility score
-                ;
+                + PolicyInput::meta(pos, mov, state);
 
             logits.push(score as f32);
         }
