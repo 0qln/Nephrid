@@ -674,6 +674,55 @@ pub fn king_safety<P: Perspective>(
     }
 }
 
+pub fn passed_pawns<P: Perspective>(
+    pos: &PieceInfo,
+    ep_sq: EpTargetSquare,
+    turn: Turn,
+) -> Score<P> {
+    let us = P::COLOR;
+    let them = !us;
+
+    let our_pawns = pos.get_bitboard(piece_type::PAWN, us);
+    let their_pawns = pos.get_bitboard(piece_type::PAWN, them);
+    let their_attacks = pawn::compute_attacks(their_pawns, them);
+
+    // we only consider the ep a valid capture if it's the opponents turn.
+    let ep_target = if turn == them { Some(ep_sq) } else { None };
+    let ep_target_bb = Bitboard::from(ep_target.and_then(|x| x.v()));
+
+    // inlined compassrose because the constant 'NORT_C' wichi is literally just '8'
+    // is 'unconstrained' -_-, thanks rust
+    //
+    // if this gets ever fixed, we should just be able to pass in
+    // single_step::<P::COLOR>() as the direction without trouble...
+    //
+    let their_frontfill = match P::COLOR {
+        colors::WHITE => (their_pawns | their_attacks).fill::<-8 /*south*/>(),
+        colors::BLACK => (their_pawns | their_attacks).fill::<8 /* north*/>(),
+        _ => unreachable!(),
+    };
+
+    // our rearfill
+    let our_rearspan = match P::COLOR {
+        colors::WHITE => our_pawns.span::<-8 /*south*/>(),
+        colors::BLACK => our_pawns.span::<8 /* north*/>(),
+        _ => unreachable!(),
+    };
+
+    // if the passed pawn can be captured en passant, don't count him
+    let their_ep_capture = their_attacks & ep_target_bb;
+    let their_ep_capt_sq = their_ep_capture.shift(single_step(us));
+
+    let passed_pawns = our_pawns & !(their_frontfill | their_ep_capt_sq);
+    let primary_passed_pawns = passed_pawns & !our_rearspan;
+    let secondary_passed_pawns = passed_pawns & our_rearspan;
+
+    // score primary passed pawns higher than secondary/doubled passed pawns
+    let score = primary_passed_pawns.pop_cnt() * 100 + secondary_passed_pawns.pop_cnt() * 20;
+
+    Score::new(score as i32)
+}
+
 fn bishop_pair<P: Perspective>(pos: &PieceInfo) -> Score<P> {
     let bishop_cnt = pos.get_bitboard(piece_type::BISHOP, P::COLOR).pop_cnt();
     let score = if bishop_cnt >= 2 { 75 } else { 0 };
@@ -707,6 +756,7 @@ fn static_value<P: Perspective>(
         + psqt::<P>(pos, phase)
         + bishop_pair::<P>(pos)
         + king_safety::<P>(pos, ep_sq, turn, phase)
+        + passed_pawns::<P>(pos, ep_sq, turn)
 }
 
 fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard) -> Option<Square> {

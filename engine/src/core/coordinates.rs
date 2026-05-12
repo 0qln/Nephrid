@@ -357,10 +357,25 @@ pub type TRank = u8;
 
 impl_op!(*|a: u8, b: Rank| -> Rank { Rank { v: a * b.v } });
 impl_op!(*|a: Color, b: Rank| -> Rank { Rank { v: a.v() * b.v } });
+impl_op!(+|a: Rank, b: u8| -> Rank { Rank { v: a.v() + b } });
 
 impl_variants! {
     TRank as Rank in ranks {
         _1, _2, _3, _4, _5, _6, _7, _8
+    }
+}
+
+impl Step for Rank {
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
+        Step::steps_between(&start.v, &end.v)
+    }
+
+    fn forward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::forward_checked(start.v, count)?).ok()
+    }
+
+    fn backward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::backward_checked(start.v, count)?).ok()
     }
 }
 
@@ -640,6 +655,15 @@ pub mod pawn_utils {
         match c {
             colors::WHITE => compass_rose::NORT,
             colors::BLACK => compass_rose::SOUT,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    pub const fn back_step(c: Color) -> CompassRose {
+        match c {
+            colors::WHITE => compass_rose::SOUT,
+            colors::BLACK => compass_rose::NORT,
             _ => unreachable!(),
         }
     }
