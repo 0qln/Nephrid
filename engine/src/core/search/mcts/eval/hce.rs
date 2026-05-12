@@ -683,6 +683,7 @@ pub fn passed_pawns<P: Perspective>(
     let them = !us;
 
     let our_pawns = pos.get_bitboard(piece_type::PAWN, us);
+    let our_attacks = pawn::compute_attacks(our_pawns, us);
     let their_pawns = pos.get_bitboard(piece_type::PAWN, them);
     let their_attacks = pawn::compute_attacks(their_pawns, them);
 
@@ -714,11 +715,15 @@ pub fn passed_pawns<P: Perspective>(
     let their_ep_capt_sq = their_ep_capture.shift(single_step(us));
 
     let passed_pawns = our_pawns & !(their_frontfill | their_ep_capt_sq);
-    let primary_passed_pawns = passed_pawns & !our_rearspan;
     let secondary_passed_pawns = passed_pawns & our_rearspan;
+    let primary_passed_pawns = passed_pawns & !our_rearspan;
+    let protected_passed_pawns = passed_pawns & our_attacks;
 
     // score primary passed pawns higher than secondary/doubled passed pawns
-    let score = primary_passed_pawns.pop_cnt() * 100 + secondary_passed_pawns.pop_cnt() * 20;
+    // give a bonus for protected passed pawns.
+    let score = protected_passed_pawns.pop_cnt() * 100
+        + primary_passed_pawns.pop_cnt() * 100
+        + secondary_passed_pawns.pop_cnt() * 20;
 
     Score::new(score as i32)
 }
