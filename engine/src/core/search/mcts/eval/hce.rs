@@ -10,7 +10,6 @@ use crate::core::{
     bitboard::Bitboard,
     color::{Perspective, perspectives},
     coordinates::{EpTargetSquare, File, Rank, files, pawn_utils::single_step, ranks},
-    r#move::MoveList,
     move_iter::{
         bishop::Bishop, fold_legal_captures, fold_legal_moves, king, knight, pawn, queen::Queen,
         rook::Rook, sliding_piece::SlidingAttacks,
@@ -356,27 +355,31 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     }
 
     // consider captures (and quiets if in check)
-    let mut move_list = MoveList::default();
+    let mut move_list = List::<{ MAX_LEGAL_MOVES }, (Move, i32)>::new();
     if in_check {
         _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-            move_list.push(m);
+            move_list.push((m, 0));
             ControlFlow::Continue::<(), ()>(())
         });
     }
     else {
         _ = fold_legal_captures::<_, _, _>(pos, (), |_, m| {
-            move_list.push(m);
+            move_list.push((m, 0));
             ControlFlow::Continue::<(), ()>(())
         });
     };
 
+    for &mut (m, ref mut see_score) in move_list.as_mut_slice() {
+        *see_score = see(pos.piece_info(), m, P::COLOR);
+    }
+
     // move ordering
     move_list
         .as_mut_slice()
-        .sort_unstable_by_key(|&m| Reverse(see(pos.piece_info(), m, P::COLOR)));
+        .sort_unstable_by_key(|&(_, see)| Reverse(see));
 
     // recurse
-    for &m in move_list.iter() {
+    for &(m, _) in move_list.iter() {
         // delta pruning
         if !in_check && phase < TaperValue(16) {
             let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {
@@ -641,8 +644,8 @@ pub fn open_king_file_penalty<P: Perspective>(
 
 pub fn king_safety<P: Perspective>(
     pos: &PieceInfo,
-    ep_sq: EpTargetSquare,
-    turn: Turn,
+    _ep_sq: EpTargetSquare,
+    _turn: Turn,
     phase: TaperValue,
 ) -> Score<P> {
     if let Some(king) = pos.get_bitboard(piece_type::KING, P::COLOR).lsb() {
