@@ -730,11 +730,11 @@ pub fn passed_pawns<P: Perspective>(
 
     // score primary passed pawns higher than secondary/doubled passed pawns
     // give a bonus for protected passed pawns.
-    let score = protected_passed_pawns.pop_cnt() as i32 * 100
-        + primary_passed_pawns.pop_cnt() as i32 * 100
-        + secondary_passed_pawns.pop_cnt() as i32 * 20
-        + protective_rooks.pop_cnt() as i32 * 50
-        - aggressor_rooks.pop_cnt() as i32 * 50;
+    let score = protected_passed_pawns.pop_cnt() as i32 * 50
+        + primary_passed_pawns.pop_cnt() as i32 * 30
+        + secondary_passed_pawns.pop_cnt() as i32 * 10
+        + protective_rooks.pop_cnt() as i32 * 20
+        - aggressor_rooks.pop_cnt() as i32 * 15;
 
     Score::new(score as i32)
 }
