@@ -190,6 +190,10 @@ pub fn execute_uci(
         }
         Some("search") => match tokenizer.next_token() {
             Some("d") => Ok(engine.search_t.tx.send(Command::Debug)?),
+            Some("pv") => {
+                let pos = engine.game.position().clone();
+                Ok(engine.search_t.tx.send(Command::PrintPv(pos))?)
+            }
             Some(unknown) => Err(UciError::InvalidCommand(unknown.to_string()).into()),
             None => unimplemented!(),
         },
@@ -298,6 +302,7 @@ pub fn execute_uci(
 
             let turn = pos.get_turn();
             let pieces = pos.piece_info();
+            let ep_sq = pos.get_ep_target_square();
 
             if matches!(cmd, None | Some("psqt")) {
                 println!("Phase:          {phase:?}");
@@ -323,7 +328,6 @@ pub fn execute_uci(
 
             if matches!(cmd, None | Some("pawn_storm_penalty")) {
                 use hce::pawn_storm_penalty;
-                let ep_sq = pos.get_ep_target_square();
                 let pawn_storm_penalty_w = pawn_storm_penalty::<White>(pieces, ep_sq, turn, king_w);
                 let pawn_storm_penalty_b = pawn_storm_penalty::<Black>(pieces, ep_sq, turn, king_b);
                 println!("Pawn Storm:     {pawn_storm_penalty_w:>16} - {pawn_storm_penalty_b:<16}");
@@ -334,6 +338,12 @@ pub fn execute_uci(
                 let penalty_w = penalty_fn::<White>(pieces, phase, king_w);
                 let penalty_b = penalty_fn::<Black>(pieces, phase, king_b);
                 println!("Open King File: {penalty_w:>16} - {penalty_b:<16}");
+            }
+
+            if matches!(cmd, None | Some("passed_pawns")) {
+                let passed_pawns_w = hce::passed_pawns::<White>(pieces, ep_sq, turn);
+                let passed_pawns_b = hce::passed_pawns::<Black>(pieces, ep_sq, turn);
+                println!("Passed Pawns:   {passed_pawns_w:>16} - {passed_pawns_b:<16}");
             }
 
             let moves = pos.collect_moves(MoveList::new());
