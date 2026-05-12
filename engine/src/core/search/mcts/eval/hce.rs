@@ -1032,6 +1032,8 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             logits.push(score as f32);
         }
 
+        // todo: setting the temperature to 20 showed a huge improvement in commit
+        // 8646dd8d554d
         Policy::from_logits(Logits(logits), 10., buf)
     }
 }
