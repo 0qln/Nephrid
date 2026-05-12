@@ -241,6 +241,13 @@ impl<P: Perspective> fmt::Display for Penalty<P> {
     }
 }
 
+impl<P: Perspective> From<Penalty<P>> for Score<P> {
+    #[inline(always)]
+    fn from(val: Penalty<P>) -> Self {
+        Score::new(-val.0)
+    }
+}
+
 /// A bonus for `P`
 #[derive(Debug, Copy, Clone)]
 pub struct Score<P: Perspective>(pub i32, PhantomData<P>);
@@ -251,35 +258,33 @@ impl<P: Perspective> fmt::Display for Score<P> {
     }
 }
 
-impl<P: Perspective> ops::Add<Self> for Score<P> {
+impl<P: Perspective, Rhs: Into<Score<P>>> ops::Add<Rhs> for Score<P> {
     type Output = Self;
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0, PhantomData)
-    }
-}
 
-impl<P: Perspective> ops::Add<Penalty<P>> for Score<P> {
-    type Output = Self;
-    fn add(self, rhs: Penalty<P>) -> Self::Output {
-        Self(self.0 - rhs.0, PhantomData)
+    #[inline(always)]
+    fn add(self, rhs: Rhs) -> Self::Output {
+        Self(self.0 + rhs.into().0, PhantomData)
     }
 }
 
 impl<P: Perspective> Eq for Score<P> {}
 
 impl<P: Perspective> Ord for Score<P> {
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.cmp(&other.0).then_with(|| self.1.cmp(&other.1))
     }
 }
 
 impl<P: Perspective> PartialOrd for Score<P> {
+    #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<P: Perspective> PartialEq for Score<P> {
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
@@ -289,12 +294,14 @@ impl<P: Perspective> Score<P> {
     pub const POS_INF: Self = Self::new(30_000);
     pub const NEG_INF: Self = Self::new(-30_000);
 
+    #[inline(always)]
     pub const fn new(val: i32) -> Self {
         Self(val, PhantomData)
     }
 }
 
 impl<P: Perspective> Penalty<P> {
+    #[inline(always)]
     pub const fn new(val: i32) -> Self {
         Self(val, PhantomData)
     }
@@ -306,12 +313,14 @@ impl<P: Perspective> ops::Not for Score<P> {
     type Output = Score<P::Opponent>;
 
     /// Negate the score and flip the perspective to the opponent.
+    #[inline(always)]
     fn not(self) -> Self::Output {
         Score::new(-self.0)
     }
 }
 
 impl<P: Perspective> From<Score<P>> for Cp {
+    #[inline(always)]
     fn from(value: Score<P>) -> Self {
         if P::IS_WHITE {
             Cp { v: value.0 as i16 }
@@ -369,6 +378,14 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
         });
     };
 
+    /*\                                             /*\
+    |*|---------------------------------------------|*|
+    |*| generate the see score outside of the move  |*|
+    |*| generation and the sorting, such that it    |*|
+    |*| isn't computed for each comparison and when |*|
+    |*| don't break cache locality.                 |*|
+    |*|---------------------------------------------|*|
+    \*/                                             \*/
     for &mut (m, ref mut see_score) in move_list.as_mut_slice() {
         *see_score = see(pos.piece_info(), m, P::COLOR);
     }
@@ -476,7 +493,7 @@ pub fn mobility<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> 
         })
         .sum();
 
-    Score(score, PhantomData)
+    Score::new(score)
 }
 
 pub fn pawn_shield<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Square) -> Score<P> {
@@ -499,7 +516,7 @@ pub fn pawn_shield<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Squ
     // we don't want the pawns from trying to promote in the endgame
     let score = phase.weighted_eval(score, 0);
 
-    Score(score, PhantomData)
+    Score::new(score)
 }
 
 /// Evaluates the safety of our king's position by looking at enemy pawn storm.
