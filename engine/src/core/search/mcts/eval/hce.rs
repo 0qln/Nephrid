@@ -646,9 +646,8 @@ pub fn king_safety<P: Perspective>(
     phase: TaperValue,
 ) -> Score<P> {
     if let Some(king) = pos.get_bitboard(piece_type::KING, P::COLOR).lsb() {
-        pawn_shield::<P>(pos, phase, king)
-            + open_king_file_penalty::<P>(pos, phase, king)
-            + pawn_storm_penalty::<P>(pos, ep_sq, turn, king)
+        pawn_shield::<P>(pos, phase, king) + open_king_file_penalty::<P>(pos, phase, king)
+        // + pawn_storm_penalty::<P>(pos, ep_sq, turn, king)
     }
     else {
         Score::new(0)
