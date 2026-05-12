@@ -11,6 +11,7 @@ use crate::{
         config::Configuration,
         depth::Depth,
         r#move::{Move, MoveList, SanParseError},
+        piece::piece_type,
         position::{
             EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError,
             PgnImport, PgnImportError, Position, ReducedPgn,
@@ -280,35 +281,98 @@ pub fn execute_uci(
             Ok(())
         }
         Some("hce") => {
+            use color::perspectives::{Black, White};
+            let cmd = tokenizer.next_token();
+
             let mut pos = engine.game.position.clone();
-            let moves = pos.collect_moves(MoveList::new());
-            let eval = hce::EvalInfo::new(moves.clone(), &mut pos);
-            let quality = eval.quality();
-            let value = eval::Value::from(quality);
-            let winrate = WinRate::from(value);
-            let centipawns = Cp::from(winrate);
+            let king_w = pos
+                .get_bitboard(piece_type::KING, colors::WHITE)
+                .lsb()
+                .ok_or("White king is missing. Cannot evaluate.")?;
+            let king_b = pos
+                .get_bitboard(piece_type::KING, colors::BLACK)
+                .lsb()
+                .ok_or("Black king is missing. Cannot evaluate.")?;
+
             let phase = hce::TaperValue::from_position(pos.piece_info());
 
-            let material_w = hce::material(pos.piece_info(), colors::WHITE);
-            let material_b = hce::material(pos.piece_info(), colors::BLACK);
-            let material = material_w - material_b;
+            let turn = pos.get_turn();
+            let pieces = pos.piece_info();
 
-            let mobility_w = hce::mobility(pos.piece_info(), colors::WHITE, phase);
-            let mobility_b = hce::mobility(pos.piece_info(), colors::BLACK, phase);
-            let mobility = mobility_w - mobility_b;
-
-            let policy = eval.policy(&mut List::new());
-            println!("Phase:      {phase:?}");
-            println!("Material:   w:{material_w:<4} b:{material_b:<4} t:{material:<4}");
-            println!("Mobility:   w:{mobility_w:<4} b:{mobility_b:<4} t:{mobility:<4}");
-            println!("Centipawns: {centipawns}");
-            println!("Winrate:    {winrate}");
-            println!("Value:      {value}");
-            println!("Quality:    {quality}");
-            println!("Policy:");
-            for (mov, p) in moves.iter().zip(policy.iter()) {
-                println!("  {mov}: {p:.2}");
+            if matches!(cmd, None | Some("psqt")) {
+                println!("Phase:          {phase:?}");
             }
+
+            if matches!(cmd, None | Some("material")) {
+                let material_w = hce::material::<White>(pos.piece_info());
+                let material_b = hce::material::<Black>(pos.piece_info());
+                println!("Material:       {material_w:>16} - {material_b:<16}");
+            }
+
+            if matches!(cmd, None | Some("mobility")) {
+                let mobility_w = hce::mobility::<White>(pos.piece_info(), phase);
+                let mobility_b = hce::mobility::<Black>(pos.piece_info(), phase);
+                println!("Mobility:       {mobility_w:>16} - {mobility_b:<16}");
+            }
+
+            if matches!(cmd, None | Some("pawn_shield")) {
+                let pawn_shield_w = hce::pawn_shield::<White>(pieces, phase, king_w);
+                let pawn_shield_b = hce::pawn_shield::<Black>(pieces, phase, king_b);
+                println!("Pawn Shield:    {pawn_shield_w:>16} - {pawn_shield_b:<16}");
+            }
+
+            if matches!(cmd, None | Some("pawn_storm_penalty")) {
+                use hce::pawn_storm_penalty;
+                let ep_sq = pos.get_ep_target_square();
+                let pawn_storm_penalty_w = pawn_storm_penalty::<White>(pieces, ep_sq, turn, king_w);
+                let pawn_storm_penalty_b = pawn_storm_penalty::<Black>(pieces, ep_sq, turn, king_b);
+                println!("Pawn Storm:     {pawn_storm_penalty_w:>16} - {pawn_storm_penalty_b:<16}");
+            }
+
+            if matches!(cmd, None | Some("open_king_file_penalty")) {
+                use hce::open_king_file_penalty as penalty_fn;
+                let penalty_w = penalty_fn::<White>(pieces, phase, king_w);
+                let penalty_b = penalty_fn::<Black>(pieces, phase, king_b);
+                println!("Open King File: {penalty_w:>16} - {penalty_b:<16}");
+            }
+
+            let moves = pos.collect_moves(MoveList::new());
+            let eval = hce::EvalInfo::new(moves.clone(), &mut pos);
+
+            if matches!(cmd, None | Some("centipawns")) {
+                let quality = eval.quality();
+                let value = eval::Value::from(quality);
+                let winrate = WinRate::from(value);
+                let centipawns = Cp::from(winrate);
+                println!("Centipawns:     {centipawns}");
+            }
+
+            if matches!(cmd, None | Some("winrate")) {
+                let quality = eval.quality();
+                let value = eval::Value::from(quality);
+                let winrate = WinRate::from(value);
+                println!("Winrate:        {winrate}");
+            }
+
+            if matches!(cmd, None | Some("value")) {
+                let quality = eval.quality();
+                let value = eval::Value::from(quality);
+                println!("Value:          {value}");
+            }
+
+            if matches!(cmd, None | Some("quality")) {
+                let quality = eval.quality();
+                println!("Quality:        {quality}");
+            }
+
+            if matches!(cmd, None | Some("policy")) {
+                let policy = eval.policy(&mut List::new());
+                println!("Policy:");
+                for (mov, p) in moves.iter().zip(policy.iter()) {
+                    println!("  {mov}: {p:.2}");
+                }
+            }
+
             Ok(())
         }
         Some("position") => {

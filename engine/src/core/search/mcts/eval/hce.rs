@@ -1,3 +1,5 @@
+use const_for::const_for;
+
 use std::{
     cmp::{Reverse, min},
     marker::PhantomData,
@@ -7,8 +9,7 @@ use std::{
 use crate::core::{
     bitboard::Bitboard,
     color::{Perspective, perspectives},
-    coordinates::{File, Rank, ranks},
-    r#move::MoveList,
+    coordinates::{EpTargetSquare, File, Rank, files, pawn_utils::single_step, ranks},
     move_iter::{
         bishop::Bishop, fold_legal_captures, fold_legal_moves, king, knight, pawn, queen::Queen,
         rook::Rook, sliding_piece::SlidingAttacks,
@@ -231,31 +232,59 @@ impl TaperValue {
     }
 }
 
+/// A penalty for `P`
+pub struct Penalty<P: Perspective>(pub i32, PhantomData<P>);
+
+impl<P: Perspective> fmt::Display for Penalty<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Penalty<{}>({})", P::COLOR, self.0)
+    }
+}
+
+impl<P: Perspective> From<Penalty<P>> for Score<P> {
+    #[inline(always)]
+    fn from(val: Penalty<P>) -> Self {
+        Score::new(-val.0)
+    }
+}
+
+/// A bonus for `P`
 #[derive(Debug, Copy, Clone)]
 pub struct Score<P: Perspective>(pub i32, PhantomData<P>);
 
-impl<P: Perspective> ops::Add for Score<P> {
+impl<P: Perspective> fmt::Display for Score<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Score<{}>({})", P::COLOR, self.0)
+    }
+}
+
+impl<P: Perspective, Rhs: Into<Score<P>>> ops::Add<Rhs> for Score<P> {
     type Output = Self;
-    fn add(self, rhs: Self) -> Self::Output {
-        Self(self.0 + rhs.0, PhantomData)
+
+    #[inline(always)]
+    fn add(self, rhs: Rhs) -> Self::Output {
+        Self(self.0 + rhs.into().0, PhantomData)
     }
 }
 
 impl<P: Perspective> Eq for Score<P> {}
 
 impl<P: Perspective> Ord for Score<P> {
+    #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.0.cmp(&other.0).then_with(|| self.1.cmp(&other.1))
     }
 }
 
 impl<P: Perspective> PartialOrd for Score<P> {
+    #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl<P: Perspective> PartialEq for Score<P> {
+    #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
         self.0 == other.0
     }
@@ -265,6 +294,14 @@ impl<P: Perspective> Score<P> {
     pub const POS_INF: Self = Self::new(30_000);
     pub const NEG_INF: Self = Self::new(-30_000);
 
+    #[inline(always)]
+    pub const fn new(val: i32) -> Self {
+        Self(val, PhantomData)
+    }
+}
+
+impl<P: Perspective> Penalty<P> {
+    #[inline(always)]
     pub const fn new(val: i32) -> Self {
         Self(val, PhantomData)
     }
@@ -276,12 +313,14 @@ impl<P: Perspective> ops::Not for Score<P> {
     type Output = Score<P::Opponent>;
 
     /// Negate the score and flip the perspective to the opponent.
+    #[inline(always)]
     fn not(self) -> Self::Output {
         Score::new(-self.0)
     }
 }
 
 impl<P: Perspective> From<Score<P>> for Cp {
+    #[inline(always)]
     fn from(value: Score<P>) -> Self {
         if P::IS_WHITE {
             Cp { v: value.0 as i16 }
@@ -307,8 +346,12 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
 
     // stand pad if not in check
     if !in_check {
-        let color_multiplier = if P::IS_WHITE { 1 } else { -1 };
-        let static_eval = Score::<P>::new(static_eval(piece_info, phase) * color_multiplier);
+        let static_eval = static_eval(
+            piece_info,
+            pos.get_ep_target_square(),
+            pos.get_turn(),
+            phase,
+        );
 
         best_value = static_eval;
 
@@ -321,27 +364,39 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     }
 
     // consider captures (and quiets if in check)
-    let mut move_list = MoveList::default();
+    let mut move_list = List::<{ MAX_LEGAL_MOVES }, (Move, i32)>::new();
     if in_check {
         _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-            move_list.push(m);
+            move_list.push((m, 0));
             ControlFlow::Continue::<(), ()>(())
         });
     }
     else {
         _ = fold_legal_captures::<_, _, _>(pos, (), |_, m| {
-            move_list.push(m);
+            move_list.push((m, 0));
             ControlFlow::Continue::<(), ()>(())
         });
     };
 
+    /*\                                             /*\
+    |*|---------------------------------------------|*|
+    |*| generate the see score outside of the move  |*|
+    |*| generation and the sorting, such that it    |*|
+    |*| isn't computed for each comparison and when |*|
+    |*| don't break cache locality.                 |*|
+    |*|---------------------------------------------|*|
+    \*/                                             \*/
+    for &mut (m, ref mut see_score) in move_list.as_mut_slice() {
+        *see_score = see(pos.piece_info(), m, P::COLOR);
+    }
+
     // move ordering
     move_list
         .as_mut_slice()
-        .sort_unstable_by_key(|&m| Reverse(see(pos.piece_info(), m, P::COLOR)));
+        .sort_unstable_by_key(|&(_, see)| Reverse(see));
 
     // recurse
-    for &m in move_list.iter() {
+    for &(m, _) in move_list.iter() {
         // delta pruning
         if !in_check && phase < TaperValue(16) {
             let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {
@@ -384,16 +439,19 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     best_value
 }
 
-pub fn material(pos: &PieceInfo, color: Color) -> i32 {
-    (piece_type::PAWN..piece_type::KING)
-        .map(|p| pos.get_bitboard(p, color).pop_cnt() as i32 * piece_score(p))
-        .sum()
+pub fn material<P: Perspective>(pos: &PieceInfo) -> Score<P> {
+    let score = (piece_type::PAWN..piece_type::KING)
+        .map(|p| pos.get_bitboard(p, P::COLOR).pop_cnt() as i32 * piece_score(p))
+        .sum();
+
+    Score::new(score)
 }
 
 #[allow(clippy::identity_op)]
-pub fn mobility(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
+pub fn mobility<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
+    let color = P::COLOR;
     let occ = pos.get_occupancy();
-    (piece_type::KNIGHT..piece_type::KING)
+    let score = (piece_type::KNIGHT..piece_type::KING)
         .map(|pt| {
             let pieces = pos.get_bitboard(pt, color);
             let scores: i32 = pieces
@@ -433,15 +491,196 @@ pub fn mobility(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
 
             scores
         })
-        .sum()
+        .sum();
+
+    Score::new(score)
 }
 
-fn bishop_pair(pos: &PieceInfo, color: Color) -> i32 {
-    let bishop_cnt = pos.get_bitboard(piece_type::BISHOP, color).pop_cnt();
-    if bishop_cnt >= 2 { 75 } else { 0 }
+pub fn pawn_shield<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Square) -> Score<P> {
+    let pawns = pos.get_bitboard(piece_type::PAWN, P::COLOR);
+
+    let p1_squares = king::lookup_attacks(king);
+    let p2_squares = king::lookup_attacks(king).shift(single_step(P::COLOR));
+    let p2_protected = pawn::compute_attacks(pawns, P::COLOR);
+
+    let p1_shield = pawns & p1_squares;
+    let p2_shield_strong = pawns & p2_squares & p2_protected;
+    let p2_shield_weak = pawns & p2_squares & !p2_protected;
+
+    let p1_score = p1_shield.pop_cnt() as i32;
+    let p2_score_strong = p2_shield_strong.pop_cnt() as i32;
+    let p2_score_weak = p2_shield_weak.pop_cnt() as i32;
+
+    let score = p1_score * 10 + p2_score_strong * 5 + p2_score_weak * 4;
+
+    // we don't want the pawns from trying to promote in the endgame
+    let score = phase.weighted_eval(score, 0);
+
+    Score::new(score)
 }
 
-fn psqt(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
+/// Evaluates the safety of our king's position by looking at enemy pawn storm.
+pub fn pawn_storm_penalty<P: Perspective>(
+    pos: &PieceInfo,
+    ep_sq: EpTargetSquare,
+    turn: Turn,
+    king: Square,
+) -> Penalty<P> {
+    const DANGER_ZONES: [[Bitboard; squares::N_VARIANTS]; colors::N_VARIANTS] = {
+        let step_b = 1;
+        let step_w = -1;
+
+        let zones_w = {
+            let mut zones = [Bitboard::empty(); squares::N_VARIANTS];
+            const_for!(king_sq_v in squares::A1_C..(squares::H8_C+1) => {
+                // SAFETY: correct range
+                let king_sq = unsafe { Square::from_v(king_sq_v) };
+                let king_rank = Rank::from(king_sq);
+                let king_file = File::from(king_sq);
+
+                let danger_ranks = {
+                    Bitboard::from(king_rank.saturating_shift(step_b))
+                    | Bitboard::from(king_rank.saturating_shift(step_b * 2))
+                    | Bitboard::from(king_rank.saturating_shift(step_b * 3))
+                    | Bitboard::from(king_rank.saturating_shift(step_b * 4))
+                };
+                let danger_files = {
+                    Bitboard::from(king_file)
+                    | Bitboard::from(king_file.saturating_shift(1))
+                    | Bitboard::from(king_file.saturating_shift(-1))
+                };
+
+                zones[king_sq_v as usize] = danger_ranks & danger_files;
+            });
+            zones
+        };
+
+        let zones_b = {
+            let mut zones = [Bitboard::empty(); squares::N_VARIANTS];
+            const_for!(king_sq_v in squares::A1_C..(squares::H8_C+1) => {
+                // SAFETY: correct range
+                let king_sq = unsafe { Square::from_v(king_sq_v) };
+                let king_rank = Rank::from(king_sq);
+                let king_file = File::from(king_sq);
+
+                let danger_ranks = {
+                    Bitboard::from(king_rank.saturating_shift(step_w))
+                    | Bitboard::from(king_rank.saturating_shift(step_w * 2))
+                    | Bitboard::from(king_rank.saturating_shift(step_w * 3))
+                    | Bitboard::from(king_rank.saturating_shift(step_w * 4))
+                };
+                let danger_files = {
+                    Bitboard::from(king_file)
+                    | Bitboard::from(king_file.saturating_shift(1))
+                    | Bitboard::from(king_file.saturating_shift(-1))
+                };
+
+                zones[king_sq_v as usize] = danger_ranks & danger_files;
+            });
+            zones
+        };
+
+        let mut zones = [[Bitboard::empty(); squares::N_VARIANTS]; colors::N_VARIANTS];
+        zones[colors::WHITE.v() as usize] = zones_w;
+        zones[colors::BLACK.v() as usize] = zones_b;
+
+        zones
+    };
+
+    let us = P::COLOR;
+    let them = !us;
+    let danger_zone = DANGER_ZONES[us.v() as usize][king.v() as usize];
+
+    let enemy_pawns = pos.get_bitboard(piece_type::PAWN, them);
+    let relevant_pawns = enemy_pawns & danger_zone;
+    let ally_pawns = pos.get_bitboard(piece_type::PAWN, us);
+    let allies = pos.get_color_bb(us);
+
+    // we only consider the ep a valid capture if it's the opponents turn.
+    let ep_target = if turn == them { Some(ep_sq) } else { None };
+    let ep_target_bb = Bitboard::from(ep_target.and_then(|x| x.v()));
+
+    let capture_sq = allies | ep_target_bb;
+    let nomnom_pawns = relevant_pawns & pawn::compute_attacks(capture_sq, us);
+    let unblocked_pawns = relevant_pawns & !ally_pawns.shift(single_step(us)) & !nomnom_pawns;
+
+    let storm_danger_penalty = unblocked_pawns.pop_cnt() * 10 + nomnom_pawns.pop_cnt() * 30;
+
+    Penalty::<P>::new(storm_danger_penalty as i32)
+}
+
+pub fn open_king_file_penalty<P: Perspective>(
+    pos: &PieceInfo,
+    phase: TaperValue,
+    king: Square,
+) -> Penalty<P> {
+    // [[start, end], king_file]
+    const DANGER_FILES: [[File; 2]; files::N_VARIANTS] = {
+        let mut files = [[files::A; 2]; files::N_VARIANTS];
+        const_for!(king_file_v in files::A_C..(files::H_C+1) => {
+            // SAFETY: correct range
+            let king_file = unsafe { File::from_v(king_file_v) };
+
+            let left = king_file.saturating_shift(-1);
+            let midd = king_file;
+            let right = king_file.saturating_shift(1);
+
+            files[king_file_v as usize] = [
+                if midd.v() == files::A_C { midd } else { left },
+                if midd.v() == files::H_C { midd } else { right },
+            ];
+        });
+        files
+    };
+
+    let mut penalty = 0;
+
+    let king_file = File::from(king);
+    let us = P::COLOR;
+    let them = !us;
+    let enemy_pawns = pos.get_bitboard(piece_type::PAWN, them);
+    let ally_pawns = pos.get_bitboard(piece_type::PAWN, us);
+    let [f_min, f_max] = DANGER_FILES[king_file.v() as usize];
+    for file in f_min..f_max {
+        let file_bb = Bitboard::from(file);
+        let has_ally = !(ally_pawns & file_bb).is_empty();
+        let has_enemy = !(enemy_pawns & file_bb).is_empty();
+
+        match (has_ally, has_enemy) {
+            (true, false) => penalty += 15,  // enemy has a semi-open file
+            (false, true) => penalty += 35,  // pawn shield is gone
+            (false, false) => penalty += 60, // fully open file
+            (true, true) => {}               // closed file
+        }
+    }
+
+    let score = phase.weighted_eval(penalty, 0);
+
+    Penalty::<P>::new(score)
+}
+
+pub fn king_safety<P: Perspective>(
+    pos: &PieceInfo,
+    _ep_sq: EpTargetSquare,
+    _turn: Turn,
+    phase: TaperValue,
+) -> Score<P> {
+    if let Some(king) = pos.get_bitboard(piece_type::KING, P::COLOR).lsb() {
+        pawn_shield::<P>(pos, phase, king) + open_king_file_penalty::<P>(pos, phase, king)
+        // + pawn_storm_penalty::<P>(pos, ep_sq, turn, king)
+    }
+    else {
+        Score::new(0)
+    }
+}
+
+fn bishop_pair<P: Perspective>(pos: &PieceInfo) -> Score<P> {
+    let bishop_cnt = pos.get_bitboard(piece_type::BISHOP, P::COLOR).pop_cnt();
+    let score = if bishop_cnt >= 2 { 75 } else { 0 };
+    Score::new(score)
+}
+
+fn psqt<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
     fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> i32 {
         (piece_type::PAWN..=piece_type::KING)
             .map(|piece| {
@@ -452,16 +691,22 @@ fn psqt(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
             .sum()
     }
 
-    let mg = score(pos, color, game_phases::MG);
-    let eg = score(pos, color, game_phases::EG);
-    phase.weighted_eval(mg, eg)
+    let mg = score(pos, P::COLOR, game_phases::MG);
+    let eg = score(pos, P::COLOR, game_phases::EG);
+    Score::new(phase.weighted_eval(mg, eg))
 }
 
-fn static_value(pos: &PieceInfo, color: Color, phase: TaperValue) -> i32 {
-    material(pos, color)
-        + mobility(pos, color, phase)
-        + psqt(pos, color, phase)
-        + bishop_pair(pos, color)
+fn static_value<P: Perspective>(
+    pos: &PieceInfo,
+    ep_sq: EpTargetSquare,
+    turn: Turn,
+    phase: TaperValue,
+) -> Score<P> {
+    material::<P>(pos)
+        + mobility::<P>(pos, phase)
+        + psqt::<P>(pos, phase)
+        + bishop_pair::<P>(pos)
+        + king_safety::<P>(pos, ep_sq, turn, phase)
 }
 
 fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard) -> Option<Square> {
@@ -599,10 +844,21 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> i32 {
     gain[0]
 }
 
-fn static_eval(pos: &PieceInfo, phase: TaperValue) -> i32 {
-    let w_q = static_value(pos, colors::WHITE, phase);
-    let b_q = static_value(pos, colors::BLACK, phase);
-    w_q - b_q
+fn static_eval<P: Perspective>(
+    pos: &PieceInfo,
+    ep_sq: EpTargetSquare,
+    turn: Turn,
+    phase: TaperValue,
+) -> Score<P> {
+    let (ep_w, ep_b) = if turn == colors::WHITE {
+        (ep_sq, EpTargetSquare::none())
+    }
+    else {
+        (EpTargetSquare::none(), ep_sq)
+    };
+    let w_q = static_value::<P>(pos, ep_w, turn, phase);
+    let b_q = static_value::<P::Opponent>(pos, ep_b, turn, phase);
+    w_q + !b_q
 }
 
 #[derive(Debug, PartialEq, Default)]

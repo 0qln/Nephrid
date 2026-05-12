@@ -1,8 +1,6 @@
-use crate::{
-    core::{
-        coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks, squares},
-        move_iter::{bishop, rook},
-    },
+use crate::core::{
+    coordinates::{CompassRose, File, Rank, Square, compass_rose::*, files, ranks, squares},
+    move_iter::{bishop, rook},
 };
 use std::{
     fmt::Debug,
@@ -79,9 +77,21 @@ impl_op!(+ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v + r.v } })
 impl_op!(-|l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v - r.v } });
 impl_op!(-|l: Bitboard, r: u64| -> Bitboard { Bitboard { v: l.v - r } });
 impl_op!(^ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v ^ r.v } } );
-impl_op!(| |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v | r.v } } );
+impl const ops::BitOr<Bitboard> for Bitboard {
+    type Output = Bitboard;
+    fn bitor(self, r: Bitboard) -> Self::Output {
+        let l = self;
+        Bitboard { v: l.v | r.v }
+    }
+}
 impl_op!(| |l: Bitboard, r: usize| -> Bitboard { Bitboard { v: l.v | r as u64 } } );
-impl_op!(&|l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v & r.v } });
+impl const ops::BitAnd<Bitboard> for Bitboard {
+    type Output = Bitboard;
+    fn bitand(self, r: Bitboard) -> Self::Output {
+        let l = self;
+        Bitboard { v: l.v & r.v }
+    }
+}
 impl_op!(^= |l: &mut Bitboard, r: Bitboard| { l.v ^= r.v } );
 impl_op!(|= |l: &mut Bitboard, r: Bitboard| { l.v |= r.v } );
 impl_op!(&= |l: &mut Bitboard, r: Bitboard| { l.v &= r.v } );

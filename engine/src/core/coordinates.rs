@@ -61,8 +61,13 @@ impl CompassRose {
     }
 
     #[inline]
+    pub const fn scale(&self, factor: i8) -> Self {
+        CompassRose { v: self.v * factor }
+    }
+
+    #[inline]
     pub const fn double(&self) -> Self {
-        CompassRose { v: self.v * 2 }
+        self.scale(2)
     }
 
     #[inline]
@@ -204,6 +209,10 @@ impl EpTargetSquare {
     pub const fn v(&self) -> Option<Square> {
         self.v
     }
+
+    pub const fn none() -> Self {
+        Self { v: None }
+    }
 }
 
 pub type EpTargetSquareParseError = ValueOutOfSetError<Rank>;
@@ -287,6 +296,10 @@ impl EpCaptureSquare {
     pub const fn v(&self) -> Option<Square> {
         self.v
     }
+
+    pub const fn none() -> Self {
+        Self { v: None }
+    }
 }
 
 pub type EpCaptureSquareParseError = ValueOutOfSetError<Rank>;
@@ -348,6 +361,28 @@ impl_op!(*|a: Color, b: Rank| -> Rank { Rank { v: a.v() * b.v } });
 impl_variants! {
     TRank as Rank in ranks {
         _1, _2, _3, _4, _5, _6, _7, _8
+    }
+}
+
+impl Rank {
+    pub const fn saturating_shift(&self, amount: i8) -> Self {
+        let min = ranks::_1.v as i8;
+        let max = ranks::_8.v as i8;
+        let val = self.v as i8 + amount;
+        Self { v: clamp(val, min, max) as u8 }
+    }
+}
+
+// stdlib is non-const
+const fn clamp(input: i8, min: i8, max: i8) -> i8 {
+    if input < min {
+        min
+    }
+    else if input > max {
+        max
+    }
+    else {
+        input
     }
 }
 
@@ -413,6 +448,20 @@ pub struct File {
     v: TFile,
 }
 
+impl Step for File {
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
+        Step::steps_between(&start.v, &end.v)
+    }
+
+    fn forward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::forward_checked(start.v, count)?).ok()
+    }
+
+    fn backward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::backward_checked(start.v, count)?).ok()
+    }
+}
+
 pub type TFile = u8;
 
 impl_variants! {
@@ -428,6 +477,13 @@ impl File {
             EAST => files::H,
             _ => panic!("The only two edge files are in the west and in the east."),
         }
+    }
+
+    pub const fn saturating_shift(&self, amount: i8) -> Self {
+        let min = files::A.v as i8;
+        let max = files::H.v as i8;
+        let val = self.v as i8 + amount;
+        Self { v: clamp(val, min, max) as u8 }
     }
 }
 
@@ -543,5 +599,68 @@ impl const From<Square> for DiagA8H1 {
         DiagA8H1 {
             v: Rank::from(sq).v + File::from(sq).v,
         }
+    }
+}
+
+pub mod pawn_utils {
+    use crate::core::{bitboard::Bitboard, color::colors};
+
+    use super::*;
+
+    #[inline]
+    pub const fn promo_rank(c: Color) -> Rank {
+        match c {
+            colors::WHITE => ranks::_7,
+            colors::BLACK => ranks::_2,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    pub const fn start_rank(c: Color) -> Rank {
+        match c {
+            colors::WHITE => ranks::_2,
+            colors::BLACK => ranks::_7,
+            _ => unreachable!(),
+        }
+    }
+
+    /// Double pawn push rank
+    #[inline]
+    pub const fn dpp_rank(c: Color) -> Rank {
+        match c {
+            colors::WHITE => ranks::_2,
+            colors::BLACK => ranks::_6,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    pub const fn single_step(c: Color) -> CompassRose {
+        match c {
+            colors::WHITE => compass_rose::NORT,
+            colors::BLACK => compass_rose::SOUT,
+            _ => unreachable!(),
+        }
+    }
+
+    #[inline]
+    pub const fn double_step(c: Color) -> CompassRose {
+        single_step(c).double()
+    }
+
+    #[inline]
+    pub const fn forward(bb: Bitboard, dir: CompassRose) -> Bitboard {
+        bb.shift(dir)
+    }
+
+    #[inline]
+    pub const fn backward(bb: Bitboard, dir: CompassRose) -> Bitboard {
+        bb.shift(dir.neg())
+    }
+
+    #[inline]
+    pub const fn capture(c: Color, dir: CompassRose) -> CompassRose {
+        CompassRose::new(dir.v() + single_step(c).v())
     }
 }
