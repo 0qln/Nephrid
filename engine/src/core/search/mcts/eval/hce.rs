@@ -732,7 +732,7 @@ pub fn passed_pawns<P: Perspective>(
     // give a bonus for protected passed pawns.
     let score = protected_passed_pawns.pop_cnt() as i32 * 50
         + primary_passed_pawns.pop_cnt() as i32 * 30
-        + secondary_passed_pawns.pop_cnt() as i32 * 10
+        + secondary_passed_pawns.pop_cnt() as i32 * 0
         + protective_rooks.pop_cnt() as i32 * 20
         - aggressor_rooks.pop_cnt() as i32 * 15;
 
