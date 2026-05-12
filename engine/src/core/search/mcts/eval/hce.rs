@@ -703,27 +703,38 @@ pub fn passed_pawns<P: Perspective>(
         _ => unreachable!(),
     };
 
-    // our rearfill
-    let our_rearspan = match P::COLOR {
-        colors::WHITE => our_pawns.span::<-8 /*south*/>(),
-        colors::BLACK => our_pawns.span::<8 /* north*/>(),
-        _ => unreachable!(),
-    };
-
     // if the passed pawn can be captured en passant, don't count him
     let their_ep_capture = their_attacks & ep_target_bb;
     let their_ep_capt_sq = their_ep_capture.shift(single_step(us));
 
     let passed_pawns = our_pawns & !(their_frontfill | their_ep_capt_sq);
-    let secondary_passed_pawns = passed_pawns & our_rearspan;
-    let primary_passed_pawns = passed_pawns & !our_rearspan;
+
+    let our_passer_rearspan = match P::COLOR {
+        colors::WHITE => passed_pawns.span::<-8 /*south*/>(),
+        colors::BLACK => passed_pawns.span::<8 /* north*/>(),
+        _ => unreachable!(),
+    };
+
+    // normal or doubled passed pawns
+    let secondary_passed_pawns = passed_pawns & our_passer_rearspan;
+    let primary_passed_pawns = passed_pawns & !our_passer_rearspan;
+
+    // protected passed pawn
     let protected_passed_pawns = passed_pawns & our_attacks;
+
+    // tarrasch rule
+    let our_rooks = pos.get_bitboard(piece_type::ROOK, us);
+    let their_rooks = pos.get_bitboard(piece_type::ROOK, them);
+    let protective_rooks = our_rooks & our_passer_rearspan;
+    let aggressor_rooks = their_rooks & our_passer_rearspan;
 
     // score primary passed pawns higher than secondary/doubled passed pawns
     // give a bonus for protected passed pawns.
-    let score = protected_passed_pawns.pop_cnt() * 100
-        + primary_passed_pawns.pop_cnt() * 100
-        + secondary_passed_pawns.pop_cnt() * 20;
+    let score = protected_passed_pawns.pop_cnt() as i32 * 100
+        + primary_passed_pawns.pop_cnt() as i32 * 100
+        + secondary_passed_pawns.pop_cnt() as i32 * 20
+        + protective_rooks.pop_cnt() as i32 * 50
+        - aggressor_rooks.pop_cnt() as i32 * 50;
 
     Score::new(score as i32)
 }
