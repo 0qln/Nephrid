@@ -796,15 +796,26 @@ fn hygge_king<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
             })
             .sum::<i32>();
 
+        let our_king = pos.get_bitboard(piece_type::KING, us).lsb();
+        let king_bonus = our_king
+            .map(|k| k.distance(their_king))
+            .map(|dist| match dist {
+                0 | 1 => 0, // can't happen
+                2 => 30,
+                3 => 20,
+                4 => 10,
+                5 => 5,
+                _ => 0,
+            })
+            .unwrap_or(0);
+
         // pawns walk up the board, which is handled in psqt
 
         // bishop should move to center, which is handled in psqt
 
         // rook distance is not that important for mating in the eg
 
-        // todo: king ?
-
-        let score = knight_bonuses + queen_bonuses;
+        let score = knight_bonuses + queen_bonuses + king_bonus;
 
         Score::new(phase.weighted_eval(0, score))
     }
