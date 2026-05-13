@@ -69,6 +69,7 @@
                   cudaPackages_12_8.cudnn
                   cudaPackages_12_8.cudatoolkit
                 ]);
+              meta.mainProgram = "nephrid";
             };
 
             nephrid-hce = rustPlatform.buildRustPackage {
@@ -79,6 +80,7 @@
               buildNoDefaultFeatures = true;
               buildFeatures = ["mcts-hce"];
               nativeBuildInputs = [pkgs.pkg-config];
+              meta.mainProgram = "nephrid";
             };
 
             default = config.packages.nephrid-hce;
