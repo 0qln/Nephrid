@@ -1,9 +1,10 @@
 use crate::{
     impl_variants,
-    misc::{ValueOutOfRangeError, ValueOutOfSetError},
+    misc::{ValueOutOfRangeError, ValueOutOfSetError, c_abs},
     uci::tokens::Tokenizer,
 };
-use core::{fmt, panic};
+use const_for::const_for;
+use core::{cmp::max, fmt, panic};
 use std::{
     any::type_name,
     error::Error,
@@ -117,6 +118,39 @@ impl Square {
     #[inline]
     pub const fn index(&self) -> usize {
         self.v as usize
+    }
+
+    pub const fn compute_distance(self, other: Square) -> u8 {
+        let file1 = File::from(self);
+        let file2 = File::from(other);
+        let rank1 = Rank::from(self);
+        let rank2 = Rank::from(other);
+        let rank_distance = c_abs(rank1.v() as i8 - rank2.v() as i8);
+        let file_distance = c_abs(file1.v() as i8 - file2.v() as i8);
+        max(rank_distance, file_distance) as u8
+    }
+
+    #[inline]
+    pub fn distance(self, other: Square) -> u8 {
+        const DISTANCES: [[u8; squares::N_VARIANTS]; squares::N_VARIANTS] = {
+            let mut result = [[0; squares::N_VARIANTS]; squares::N_VARIANTS];
+            const_for!(sq1_v in squares::A1_C..(squares::H8_C+1) => {
+                const_for!(sq2_v in squares::A1_C..(squares::H8_C+1) => {
+                    let sq1 = unsafe { Square::from_v(sq1_v) };
+                    let sq2 = unsafe { Square::from_v(sq2_v) };
+                    result[sq1_v as usize][sq2_v as usize] = sq1.compute_distance(sq2);
+                });
+            });
+
+            result
+        };
+
+        unsafe {
+            // Safety: sq is in range
+            *DISTANCES
+                .get_unchecked(self.v() as usize)
+                .get_unchecked(other.v() as usize)
+        }
     }
 }
 

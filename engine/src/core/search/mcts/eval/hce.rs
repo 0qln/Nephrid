@@ -764,6 +764,55 @@ fn psqt<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
     Score::new(phase.weighted_eval(mg, eg))
 }
 
+fn hygge_king<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
+    let us = P::COLOR;
+    let them = !us;
+
+    if let Some(their_king) = pos.get_bitboard(piece_type::KING, them).lsb() {
+        let our_knights = pos.get_bitboard(piece_type::KNIGHT, us);
+        let knight_bonuses = our_knights
+            .map(|knight| knight.distance(their_king))
+            .map(|dist| match dist {
+                0 => 0,      // can't happen
+                1 => 5,      // probably too close
+                2 | 3 => 20, // knight attacks are effective here
+                4 | 5 => 10, // we're getting there :D
+                _ => 0,
+            })
+            .sum::<i32>();
+
+        let our_queens = pos.get_bitboard(piece_type::QUEEN, us);
+        let queen_bonuses = our_queens
+            .map(|queen| queen.distance(their_king))
+            .map(|dist| match dist {
+                0 => 0, // can't happen
+                1 => 50,
+                2 => 40,
+                3 => 30,
+                4 => 20,
+                5 => 10,
+                6 => 5,
+                _ => 0,
+            })
+            .sum::<i32>();
+
+        // pawns walk up the board, which is handled in psqt
+
+        // bishop should move to center, which is handled in psqt
+
+        // rook distance is not that important for mating in the eg
+
+        // todo: king ?
+
+        let score = knight_bonuses + queen_bonuses;
+
+        Score::new(phase.weighted_eval(0, score))
+    }
+    else {
+        Score::new(0)
+    }
+}
+
 fn static_value<P: Perspective>(
     pos: &PieceInfo,
     ep_sq: EpTargetSquare,
@@ -776,6 +825,7 @@ fn static_value<P: Perspective>(
         + bishop_pair::<P>(pos)
         + king_safety::<P>(pos, ep_sq, turn, phase)
         + passed_pawns::<P>(pos, ep_sq, turn)
+        + hygge_king::<P>(pos, phase)
 }
 
 fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard) -> Option<Square> {
