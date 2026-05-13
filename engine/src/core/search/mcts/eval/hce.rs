@@ -676,6 +676,7 @@ pub fn king_safety<P: Perspective>(
 
 // todo: ep capture possibilities are subject of qsearch anyway, so maybe it's
 // better to just ignore that possibility.
+#[allow(clippy::erasing_op)]
 pub fn passed_pawns<P: Perspective>(
     pos: &PieceInfo,
     ep_sq: EpTargetSquare,

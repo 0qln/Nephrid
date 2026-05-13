@@ -162,6 +162,7 @@ impl Bitboard {
     }
 
     #[inline]
+    #[allow(clippy::identity_op)]
     pub const fn fill<const DIR: TCompassRose>(&self) -> Self
     where
         // what the fuck is even going on <]:,)
@@ -184,6 +185,7 @@ impl Bitboard {
     }
 
     #[inline]
+    #[allow(clippy::identity_op)]
     pub const fn span<const DIR: TCompassRose>(&self) -> Self
     where
         [(); { DIR * 1 } as usize]:,
