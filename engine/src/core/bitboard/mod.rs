@@ -162,6 +162,50 @@ impl Bitboard {
     }
 
     #[inline]
+    #[allow(clippy::identity_op)]
+    pub const fn fill<const DIR: TCompassRose>(&self) -> Self
+    where
+        // what the fuck is even going on <]:,)
+        [(); { DIR * 1 } as usize]:,
+        [(); { DIR * 2 } as usize]:,
+        [(); { DIR * 3 } as usize]:,
+        [(); { DIR * 4 } as usize]:,
+        [(); { DIR * 5 } as usize]:,
+        [(); { DIR * 6 } as usize]:,
+        [(); { DIR * 7 } as usize]:,
+    {
+        *self
+            | self.shift_c::<{ DIR * 1 }>()
+            | self.shift_c::<{ DIR * 2 }>()
+            | self.shift_c::<{ DIR * 3 }>()
+            | self.shift_c::<{ DIR * 4 }>()
+            | self.shift_c::<{ DIR * 5 }>()
+            | self.shift_c::<{ DIR * 6 }>()
+            | self.shift_c::<{ DIR * 7 }>()
+    }
+
+    #[inline]
+    #[allow(clippy::identity_op)]
+    pub const fn span<const DIR: TCompassRose>(&self) -> Self
+    where
+        [(); { DIR * 1 } as usize]:,
+        [(); { DIR * 2 } as usize]:,
+        [(); { DIR * 3 } as usize]:,
+        [(); { DIR * 4 } as usize]:,
+        [(); { DIR * 5 } as usize]:,
+        [(); { DIR * 6 } as usize]:,
+        [(); { DIR * 7 } as usize]:,
+    {
+        self.shift_c::<{ DIR * 1 }>()
+            | self.shift_c::<{ DIR * 2 }>()
+            | self.shift_c::<{ DIR * 3 }>()
+            | self.shift_c::<{ DIR * 4 }>()
+            | self.shift_c::<{ DIR * 5 }>()
+            | self.shift_c::<{ DIR * 6 }>()
+            | self.shift_c::<{ DIR * 7 }>()
+    }
+
+    #[inline]
     pub const fn get_bit(&self, sq: Square) -> u64 {
         (self.v & Self::from(sq).v) >> sq.v() as u32
     }

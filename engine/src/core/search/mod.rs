@@ -2,7 +2,7 @@ use thiserror::Error;
 
 use crate::{
     core::{
-        Move,
+        Game, Move,
         config::Configuration,
         search::{
             limit::UciLimit,
@@ -94,6 +94,14 @@ impl<const MPV: usize, C: MctsConfig> MctsWorker<MPV, C> {
 impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWorker<MPV, C> {
     fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
         match cmd {
+            Command::PrintPv(pos) => {
+                let pv = self.mcts_state.tree.principal_line();
+                let continuation = pv.0.into_iter().map(|b| b.mov());
+                let game = Game::from_moves(pos, continuation);
+                let pgn = game.to_pgn();
+                println!("Principal Variation:\n{pgn}");
+                Ok(())
+            }
             Command::IsReady => {
                 println!("readyok");
                 Ok(())
@@ -261,6 +269,7 @@ pub enum Command {
     ResetState,
     Debug,
     IsReady,
+    PrintPv(Position),
 }
 
 #[derive(Debug, Clone)]

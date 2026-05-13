@@ -674,6 +674,74 @@ pub fn king_safety<P: Perspective>(
     }
 }
 
+// todo: ep capture possibilities are subject of qsearch anyway, so maybe it's
+// better to just ignore that possibility.
+#[allow(clippy::erasing_op)]
+pub fn passed_pawns<P: Perspective>(
+    pos: &PieceInfo,
+    ep_sq: EpTargetSquare,
+    turn: Turn,
+) -> Score<P> {
+    let us = P::COLOR;
+    let them = !us;
+
+    let our_pawns = pos.get_bitboard(piece_type::PAWN, us);
+    let our_attacks = pawn::compute_attacks(our_pawns, us);
+    let their_pawns = pos.get_bitboard(piece_type::PAWN, them);
+    let their_attacks = pawn::compute_attacks(their_pawns, them);
+
+    // we only consider the ep a valid capture if it's the opponents turn.
+    let ep_target = if turn == them { Some(ep_sq) } else { None };
+    let ep_target_bb = Bitboard::from(ep_target.and_then(|x| x.v()));
+
+    // inlined compassrose because the constant 'NORT_C' wichi is literally just '8'
+    // is 'unconstrained' -_-, thanks rust
+    //
+    // if this gets ever fixed, we should just be able to pass in
+    // single_step::<P::COLOR>() as the direction without trouble...
+    //
+    let their_frontfill = match P::COLOR {
+        colors::WHITE => (their_pawns | their_attacks).fill::<-8 /*south*/>(),
+        colors::BLACK => (their_pawns | their_attacks).fill::<8 /* north*/>(),
+        _ => unreachable!(),
+    };
+
+    // if the passed pawn can be captured en passant, don't count him
+    let their_ep_capture = their_attacks & ep_target_bb;
+    let their_ep_capt_sq = their_ep_capture.shift(single_step(us));
+
+    let passed_pawns = our_pawns & !(their_frontfill | their_ep_capt_sq);
+
+    let our_passer_rearspan = match P::COLOR {
+        colors::WHITE => passed_pawns.span::<-8 /*south*/>(),
+        colors::BLACK => passed_pawns.span::<8 /* north*/>(),
+        _ => unreachable!(),
+    };
+
+    // normal or doubled passed pawns
+    let secondary_passed_pawns = passed_pawns & our_passer_rearspan;
+    let primary_passed_pawns = passed_pawns & !our_passer_rearspan;
+
+    // protected passed pawn
+    let protected_passed_pawns = passed_pawns & our_attacks;
+
+    // tarrasch rule
+    let our_rooks = pos.get_bitboard(piece_type::ROOK, us);
+    let their_rooks = pos.get_bitboard(piece_type::ROOK, them);
+    let protective_rooks = our_rooks & our_passer_rearspan;
+    let aggressor_rooks = their_rooks & our_passer_rearspan;
+
+    // score primary passed pawns higher than secondary/doubled passed pawns
+    // give a bonus for protected passed pawns.
+    let score = protected_passed_pawns.pop_cnt() as i32 * 50
+        + primary_passed_pawns.pop_cnt() as i32 * 30
+        + secondary_passed_pawns.pop_cnt() as i32 * 0
+        + protective_rooks.pop_cnt() as i32 * 20
+        - aggressor_rooks.pop_cnt() as i32 * 15;
+
+    Score::new(score as i32)
+}
+
 fn bishop_pair<P: Perspective>(pos: &PieceInfo) -> Score<P> {
     let bishop_cnt = pos.get_bitboard(piece_type::BISHOP, P::COLOR).pop_cnt();
     let score = if bishop_cnt >= 2 { 75 } else { 0 };
@@ -707,6 +775,7 @@ fn static_value<P: Perspective>(
         + psqt::<P>(pos, phase)
         + bishop_pair::<P>(pos)
         + king_safety::<P>(pos, ep_sq, turn, phase)
+        + passed_pawns::<P>(pos, ep_sq, turn)
 }
 
 fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard) -> Option<Square> {
@@ -966,6 +1035,8 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             logits.push(score as f32);
         }
 
+        // todo: setting the temperature to 20 showed a huge improvement in commit
+        // 8646dd8d554d
         Policy::from_logits(Logits(logits), 10., buf)
     }
 }

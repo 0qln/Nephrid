@@ -4,7 +4,7 @@ use engine::{
     core::{
         r#move::Move,
         move_iter::sliding_piece::magics,
-        position::{EpdLineImport, FenExport, Position},
+        position::{EpdLineImport, Position},
         search::{
             limit::UciLimit,
             mcts::{
@@ -66,6 +66,8 @@ impl TryFrom<EpdLineImport<'_, '_>> for Test {
 
 #[cfg(debug_assertions)]
 fn print_dataset(tests: &[Test]) {
+    use engine::core::position::FenExport;
+
     #[derive(Tabled)]
     struct EretEntry {
         #[tabled(rename = "ID")]
