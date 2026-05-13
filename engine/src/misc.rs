@@ -486,3 +486,9 @@ impl<const N: usize, T> AsRef<[T]> for List<N, T> {
         self.as_slice()
     }
 }
+
+// stdlib is not const
+#[inline(always)]
+pub const fn c_abs(this: i8) -> i8 {
+    if this.is_negative() { -this } else { this }
+}

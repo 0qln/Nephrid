@@ -21,6 +21,7 @@
 #![feature(const_convert)]
 #![feature(iter_collect_into)]
 #![feature(const_ops)]
+#![feature(const_cmp)]
 
 #[macro_use]
 extern crate impl_ops;
