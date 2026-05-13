@@ -70,6 +70,8 @@
                   cudaPackages_12_8.cudatoolkit
                 ]);
               meta.mainProgram = "nephrid";
+              cargoBuildFlags = ["--bin" "nephrid"];
+              cargoTestFlags = ["--bin" "nephrid"];
             };
 
             nephrid-hce = rustPlatform.buildRustPackage {
@@ -81,6 +83,8 @@
               buildFeatures = ["mcts-hce"];
               nativeBuildInputs = [pkgs.pkg-config];
               meta.mainProgram = "nephrid";
+              cargoBuildFlags = ["--bin" "nephrid"];
+              cargoTestFlags = ["--bin" "nephrid"];
             };
 
             default = config.packages.nephrid-hce;
