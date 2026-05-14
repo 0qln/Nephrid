@@ -1,11 +1,11 @@
 use crate::{
     core::{
-        params::ConcreteParams,
+        params::HceParams,
         search::mcts::{
             eval::hce::{PolicyParams, QSearchParams, TaperValue},
             node::VisitCount,
             search::SearchParams,
-            select::puct::PuctSelector,
+            select::puct::PuctParams,
         },
     },
     misc::{InvalidValueError, ValueOutOfRangeError},
@@ -256,6 +256,12 @@ pub struct Configuration {
 
     /// Visit threshold for proven loss cutoff in mcts. In visits.
     mcts_proven_loss_visit_threshold: ConfigOption<Spin>,
+
+    /// Killer exploitation factor for mcts. In percent.
+    mcts_killer_exploitation: ConfigOption<Spin>,
+
+    /// Bonus for tt best move in mcts. In percent.
+    mcts_tt_best_move: ConfigOption<Spin>,
 }
 
 impl Default for Configuration {
@@ -272,31 +278,31 @@ impl Default for Configuration {
             ponder: ConfigOption::new("ponder", Check::new(true)),
             eval_policy_temperature: ConfigOption::new(
                 "eval-policy-temperature",
-                Spin::new(
-                    (ConcreteParams.policy_temperature() * 100.) as i32,
-                    1,
-                    10000,
-                ),
+                Spin::new((HceParams.policy_temperature() * 100.) as i32, 1, 10000),
             ),
             eval_futility_margin: ConfigOption::new(
                 "eval-futility-margin",
-                Spin::new(ConcreteParams.futility_margin(), 100, 300),
+                Spin::new(HceParams.futility_margin(), 100, 300),
             ),
             eval_delta_pruning_threshold: ConfigOption::new(
                 "eval-delta-pruning-threshold",
-                Spin::new(ConcreteParams.delta_pruning_threshold().v() as i32, 0, 24),
+                Spin::new(HceParams.delta_pruning_threshold().v() as i32, 0, 24),
             ),
             select_cpuct: ConfigOption::new(
                 "select-cpuct",
-                Spin::new((PuctSelector::default().c() * 100.) as i32, 1, 5000),
+                Spin::new((HceParams.select_cpuct() * 100.) as i32, 1, 5000),
             ),
             mcts_proven_loss_visit_threshold: ConfigOption::new(
                 "mcts-proven-loss-visit-threshold",
-                Spin::new(
-                    ConcreteParams.proven_loss_visit_threshold().0 as i32,
-                    1,
-                    100,
-                ),
+                Spin::new(HceParams.proven_loss_visit_threshold().0 as i32, 1, 100),
+            ),
+            mcts_killer_exploitation: ConfigOption::new(
+                "mcts-killer-exploitation",
+                Spin::new((HceParams.killer_exploitation() * 100.) as i32, 0, 5000),
+            ),
+            mcts_tt_best_move: ConfigOption::new(
+                "mcts-tt-best-move",
+                Spin::new((HceParams.tt_best_move() * 100.) as i32, 0, 5000),
             ),
         }
     }
@@ -357,6 +363,14 @@ impl Configuration {
         VisitCount(self.mcts_proven_loss_visit_threshold.value as u32)
     }
 
+    pub fn mcts_killer_exploitation(&self) -> f32 {
+        self.mcts_killer_exploitation.value as f32 / 100.
+    }
+
+    pub fn mcts_tt_best_move(&self) -> f32 {
+        self.mcts_tt_best_move.value as f32 / 100.
+    }
+
     // Setter
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -386,6 +400,10 @@ impl Configuration {
             "select-cpuct" => self.select_cpuct.set(value),
             #[cfg(feature = "tunable")]
             "mcts-proven-loss-visit-threshold" => self.mcts_proven_loss_visit_threshold.set(value),
+            #[cfg(feature = "tunable")]
+            "mcts-killer-exploitation" => self.mcts_killer_exploitation.set(value),
+            #[cfg(feature = "tunable")]
+            "mcts-tt-best-move" => self.mcts_tt_best_move.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -410,6 +428,10 @@ impl Configuration {
         println!("{}", self.select_cpuct);
         #[cfg(feature = "tunable")]
         println!("{}", self.mcts_proven_loss_visit_threshold);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.mcts_killer_exploitation);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.mcts_tt_best_move);
     }
 }
 

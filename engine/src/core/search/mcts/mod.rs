@@ -1,4 +1,4 @@
-use crate::core::params::{ConcreteParams, IParams};
+use crate::core::{params::{IParams, ParamsRef}, search::mcts::select::puct::PuctParams};
 use burn::prelude::Backend;
 use rand::{SeedableRng, rngs::SmallRng};
 use thiserror::Error;
@@ -50,8 +50,8 @@ pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState>(
     strat.start(tree, pos);
 
     let mut searcher = TreeSearcher::<{ MPV }, _, _, _>::new(
-        ConcreteParams,
         pos,
+        parts.params(),
         parts.selector(),
         parts.evaluator(),
         parts.noiser(),
@@ -77,6 +77,7 @@ pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
     type Evaluator: Evaluator;
     type Noiser: Noiser;
 
+    fn params(&self) -> ParamsRef;
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
     fn noiser(&self) -> Self::Noiser;
@@ -135,6 +136,10 @@ impl<B: Backend> MctsParts for NNParts<B> {
     type Selector = PuctSelector;
     type Evaluator = NNEvaluator<B>;
     type Noiser = DirichletNoiser;
+
+    fn params(&self) -> ParamsRef {
+        todo!()
+    }
 
     fn selector(&self) -> Self::Selector {
         PuctSelector::default()
@@ -203,8 +208,7 @@ impl<B: Backend> NNParts<B> {
 pub struct HceParts {
     alpha: f32,
     epsilon: Ratio,
-    params: Params,
-    cpuct: f32,
+    params: ParamsRef,
 }
 
 impl MctsParts for HceParts {
@@ -212,12 +216,16 @@ impl MctsParts for HceParts {
     type Evaluator = HceEvaluator;
     type Noiser = DirichletNoiser;
 
+    fn params(&self) -> ParamsRef {
+        self.params.clone()
+    }
+
     fn selector(&self) -> Self::Selector {
-        PuctSelector::new(self.cpuct)
+        PuctSelector::new(self.params.select_cpuct())
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        HceEvaluator::new(self.params.clone().shared())
+        HceEvaluator::new(self.params.clone())
     }
 
     fn noiser(&self) -> Self::Noiser {
@@ -244,11 +252,9 @@ impl TryFrom<&Configuration> for HceParts {
         let epsilon = Ratio::new(config.dirichlet_epsilon());
         epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
 
-        let eval_params = Params::try_from(config)?;
+        let params = Params::try_from(config)?.shared();
 
-        let select_cpuct = config.select_cpuct();
-
-        Ok(Self::new(alpha, epsilon, select_cpuct, eval_params))
+        Ok(Self::new(alpha, epsilon, params))
     }
 }
 
@@ -260,8 +266,8 @@ impl Default for HceParts {
 }
 
 impl HceParts {
-    pub fn new(alpha: f32, epsilon: Ratio, cpuct: f32, params: Params) -> Self {
-        Self { alpha, epsilon, cpuct, params }
+    pub fn new(alpha: f32, epsilon: Ratio, params: ParamsRef) -> Self {
+        Self { alpha, epsilon, params }
     }
 }
 
@@ -273,6 +279,10 @@ impl MctsParts for PureParts {
     type Selector = UcbSelector;
     type Evaluator = PlayoutEvaluator;
     type Noiser = NullNoiser;
+
+    fn params(&self) -> ParamsRef {
+        todo!()
+    }
 
     fn selector(&self) -> Self::Selector {
         Default::default()

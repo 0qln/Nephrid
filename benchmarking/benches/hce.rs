@@ -2,7 +2,7 @@ use engine::core::{
     config::Configuration,
     r#move::MoveList,
     move_iter::sliding_piece::magics,
-    params::{ConcreteParams, IParams, Params},
+    params::{IParams, Params},
     search::mcts::eval::Ratio,
     zobrist,
 };
@@ -52,8 +52,8 @@ pub fn puct(c: &mut Criterion) {
     let mut tree = Tree::new();
     let parts = HceParts::default();
     let mut searcher = TreeSearcher::<1, _, _, _>::new(
-        ConcreteParams,
         &mut pos,
+        Params::default().shared(),
         PuctSelector::default(),
         parts.evaluator(),
         parts.noiser(),

@@ -17,9 +17,9 @@ pub type ParamsRef = Rc<TunableParams>;
 pub type CreateParamsError = CreateTunableParamsError;
 
 #[cfg(not(feature = "tunable"))]
-pub type Params = ConcreteParams;
+pub type Params = HceParams;
 #[cfg(not(feature = "tunable"))]
-pub type ParamsRef = ConcreteParams;
+pub type ParamsRef = HceParams;
 #[cfg(not(feature = "tunable"))]
 pub type CreateParamsError = CreateConcreteParamsError;
 
@@ -28,28 +28,62 @@ pub struct TunableParams {
     hce_policy_temp: f32,
     hce_q_futility_margin: i32,
     hce_q_delta_pruning_threshold: TaperValue,
+    select_cpuct: f32,
     mcts_proven_loss_visit_threshold: VisitCount,
+    mcts_killer_exploitation: f32,
+    mcts_tt_best_move: f32,
 }
 
 impl TunableParams {
     pub fn new(
-        policy_temp: f32,
-        futility_margin: i32,
-        delta_pruning_threshold: TaperValue,
+        hce_policy_temp: f32,
+        hce_q_futility_margin: i32,
+        hce_q_delta_pruning_threshold: TaperValue,
+        select_cpuct: f32,
         mcts_proven_loss_visit_threshold: VisitCount,
+        mcts_killer_exploitation: f32,
+        mcts_tt_best_move: f32,
     ) -> Self {
         Self {
-            hce_policy_temp: policy_temp,
-            hce_q_futility_margin: futility_margin,
-            hce_q_delta_pruning_threshold: delta_pruning_threshold,
+            hce_policy_temp,
+            hce_q_futility_margin,
+            hce_q_delta_pruning_threshold,
+            select_cpuct,
             mcts_proven_loss_visit_threshold,
+            mcts_killer_exploitation,
+            mcts_tt_best_move,
         }
+    }
+
+    pub fn select_cpuct(&self) -> f32 {
+        self.select_cpuct
+    }
+}
+
+impl Default for TunableParams {
+    fn default() -> Self {
+        let config = Configuration::default();
+        Self::try_from(&config).expect("default config should contain healthy values")
+    }
+}
+
+impl mcts::select::puct::PuctParams for Rc<TunableParams> {
+    fn select_cpuct(&self) -> f32 {
+        self.select_cpuct
     }
 }
 
 impl mcts::search::SearchParams for Rc<TunableParams> {
     fn proven_loss_visit_threshold(&self) -> mcts::node::VisitCount {
         self.mcts_proven_loss_visit_threshold
+    }
+
+    fn killer_exploitation(&self) -> f32 {
+        self.mcts_killer_exploitation
+    }
+
+    fn tt_best_move(&self) -> f32 {
+        self.mcts_tt_best_move
     }
 }
 
@@ -90,29 +124,58 @@ impl TryFrom<&Configuration> for TunableParams {
     type Error = CreateTunableParamsError;
 
     fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
-        let policy_temp = config.eval_policy_temperature();
-        let futility_margin = config.eval_futility_margin();
-        let delta_pruning_threshold = config.eval_delta_pruning_threshold();
+        let hce_policy_temp = config.eval_policy_temperature();
+        let hce_q_futility_margin = config.eval_futility_margin();
+        let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
+        let select_cpuct = config.select_cpuct();
         let mcts_proven_loss_visit_threshold = config.mcts_proven_loss_visit_threshold();
+        let mcts_killer_exploitation = config.mcts_killer_exploitation();
+        let mcts_tt_best_move = config.mcts_tt_best_move();
         Ok(Self {
-            hce_policy_temp: policy_temp,
-            hce_q_futility_margin: futility_margin,
-            hce_q_delta_pruning_threshold: delta_pruning_threshold,
-            mcts_proven_loss_visit_threshold
+            hce_policy_temp,
+            hce_q_futility_margin,
+            hce_q_delta_pruning_threshold,
+            select_cpuct,
+            mcts_proven_loss_visit_threshold,
+            mcts_killer_exploitation,
+            mcts_tt_best_move,
         })
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ConcreteParams;
+// todo:
+// move the HceParams into the nephrid binary target.
+// these values are tuned for this specific evaluation function and are are
+// likely to have different optimal values for e.g. NNParts
 
-impl mcts::search::SearchParams for ConcreteParams {
-    fn proven_loss_visit_threshold(&self) -> mcts::node::VisitCount {
-        VisitCount(4)
+#[derive(Debug, Default, Clone)]
+pub struct HceParams;
+
+impl mcts::select::puct::PuctParams for HceParams {
+    #[inline(always)]
+    fn select_cpuct(&self) -> f32 {
+        1.12
     }
 }
 
-impl QSearchParams for ConcreteParams {
+impl mcts::search::SearchParams for HceParams {
+    #[inline(always)]
+    fn proven_loss_visit_threshold(&self) -> mcts::node::VisitCount {
+        VisitCount(4)
+    }
+
+    #[inline(always)]
+    fn killer_exploitation(&self) -> f32 {
+        1.0
+    }
+
+    #[inline(always)]
+    fn tt_best_move(&self) -> f32 {
+        2.0
+    }
+}
+
+impl QSearchParams for HceParams {
     #[inline(always)]
     fn futility_margin(&self) -> i32 {
         201
@@ -124,23 +187,27 @@ impl QSearchParams for ConcreteParams {
     }
 }
 
-impl PolicyParams for ConcreteParams {
+impl PolicyParams for HceParams {
     #[inline(always)]
     fn policy_temperature(&self) -> f32 {
         21.26
     }
 }
 
-impl IParams for ConcreteParams {
+impl IParams for HceParams {
     type Ref = Self;
+
+    #[inline(always)]
     fn shared(self) -> Self::Ref {
         self
     }
 }
 
 #[allow(clippy::infallible_try_from)]
-impl TryFrom<&Configuration> for ConcreteParams {
+impl TryFrom<&Configuration> for HceParams {
     type Error = CreateConcreteParamsError;
+
+    #[inline(always)]
     fn try_from(_: &Configuration) -> Result<Self, Self::Error> {
         Ok(Self)
     }
