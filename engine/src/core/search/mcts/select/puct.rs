@@ -4,7 +4,6 @@ use crate::core::search::mcts::{
 };
 
 pub struct PuctSelector {
-    // todo: fine tune c. or make a uci option out of it idk
     c: f32,
 }
 

@@ -204,6 +204,7 @@ pub struct HceParts {
     alpha: f32,
     epsilon: Ratio,
     eval_params: hce::Params,
+    cpuct: f32,
 }
 
 impl MctsParts for HceParts {
@@ -212,11 +213,11 @@ impl MctsParts for HceParts {
     type Noiser = DirichletNoiser;
 
     fn selector(&self) -> Self::Selector {
-        Default::default()
+        PuctSelector::new(self.cpuct)
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        Default::default()
+        HceEvaluator::new(Rc::new(self.eval_params.clone()))
     }
 
     fn noiser(&self) -> Self::Noiser {
@@ -245,19 +246,26 @@ impl TryFrom<&Configuration> for HceParts {
 
         let eval_params = hce::Params::try_from(config).map_err(Self::Error::Misc)?;
 
-        Ok(Self::new(alpha, epsilon, eval_params))
+        let select_cpuct = config.select_cpuct();
+
+        Ok(Self::new(alpha, epsilon, select_cpuct, eval_params))
     }
 }
 
 impl Default for HceParts {
     fn default() -> Self {
-        Self::new(0.3, Ratio::new(0.25), hce::Params::default())
+        Self::new(0.3, Ratio::new(0.25), 1.5, hce::Params::default())
     }
 }
 
 impl HceParts {
-    pub fn new(alpha: f32, epsilon: Ratio, eval_params: hce::Params) -> Self {
-        Self { alpha, epsilon, eval_params }
+    pub fn new(alpha: f32, epsilon: Ratio, cpuct: f32, eval_params: hce::Params) -> Self {
+        Self {
+            alpha,
+            epsilon,
+            cpuct,
+            eval_params,
+        }
     }
 }
 

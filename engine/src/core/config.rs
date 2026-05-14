@@ -233,6 +233,9 @@ pub struct Configuration {
 
     /// Evaluation policy temperature. In percent.
     eval_policy_temperature: ConfigOption<Spin>,
+
+    /// Cpuct constant for selection. In percent.
+    select_cpuct: ConfigOption<Spin>,
 }
 
 impl Default for Configuration {
@@ -249,8 +252,9 @@ impl Default for Configuration {
             ponder: ConfigOption::new("ponder", Check::new(true)),
             eval_policy_temperature: ConfigOption::new(
                 "eval-policy-temperature",
-                Spin::new(2000, 1, 10000),
+                Spin::new(2126, 1, 10000),
             ),
+            select_cpuct: ConfigOption::new("select-cpuct", Spin::new(120, 1, 5000)),
         }
     }
 }
@@ -294,6 +298,10 @@ impl Configuration {
         self.eval_policy_temperature.value as f32 / 100.
     }
 
+    pub fn select_cpuct(&self) -> f32 {
+        self.select_cpuct.value as f32 / 100.
+    }
+
     // Setter
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -314,6 +322,7 @@ impl Configuration {
             "gui-lag" => self.gui_lag.set(value),
             "ponder" => self.ponder.set(value),
             "eval-policy-temperature" => self.eval_policy_temperature.set(value),
+            "select-cpuct" => self.select_cpuct.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -329,6 +338,7 @@ impl Configuration {
         println!("{}", self.gui_lag);
         println!("{}", self.ponder);
         println!("{}", self.eval_policy_temperature);
+        println!("{}", self.select_cpuct);
     }
 }
 
