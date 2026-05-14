@@ -219,6 +219,11 @@ const PIECE_PHASES: [PiecePhase; piece_type::N_VARIANTS] = {
 pub struct TaperValue(u32);
 
 impl TaperValue {
+    pub fn new(val: u32) -> Self {
+        debug_assert!(val <= piece_phases::TOTAL_C);
+        Self(val)
+    }
+
     pub fn from_position(pos: &PieceInfo) -> Self {
         let inv_phase = (piece_type::PAWN..piece_type::KING)
             .map(|p| pos.get_piece_bb(p).pop_cnt() * PIECE_PHASES[p.v() as usize].v())
@@ -333,12 +338,27 @@ impl<P: Perspective> From<Score<P>> for Cp {
     }
 }
 
+pub trait QSearchParams {
+    fn futility_margin(&self) -> i32 {
+        200
+    }
+
+    fn delta_pruning_threshold(&self) -> TaperValue {
+        TaperValue(16)
+    }
+}
+
 /// # Q-Search
 ///
 /// Make the position quiet.
 ///
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
-fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<P>) -> Score<P> {
+fn qsearch<P: Perspective, X: QSearchParams + Clone>(
+    pos: &mut Position,
+    mut alpha: Score<P>,
+    beta: Score<P>,
+    params: X,
+) -> Score<P> {
     let in_check = pos.get_check_state() != CheckState::None;
 
     let mut best_value = Score::NEG_INF;
@@ -400,7 +420,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     // recurse
     for &(m, _) in move_list.iter() {
         // delta pruning
-        if !in_check && phase < TaperValue(16) {
+        if !in_check && phase < params.delta_pruning_threshold() {
             let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {
                 piece_score(promo.into()) - piece_score(piece_type::PAWN)
             }
@@ -413,7 +433,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
             let captured_piece = pos.get_piece(capture_square);
             let captured_value = piece_score(captured_piece.piece_type());
 
-            let futility_margin = 200;
+            let futility_margin = params.futility_margin();
             let futility_score = captured_value + value_bonus + futility_margin;
 
             if best_value + Score::new(futility_score) < alpha {
@@ -423,7 +443,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
 
         pos.make_move_for::<P>(m);
 
-        let score = !qsearch(pos, !beta, !alpha);
+        let score = !qsearch(pos, !beta, !alpha, params.clone());
 
         pos.unmake_move_for::<P>(m);
 
@@ -1023,25 +1043,110 @@ impl PolicyInput {
     }
 }
 
+#[cfg(feature = "tunable")]
 #[derive(Debug, Clone)]
 pub struct Params {
     policy_temp: f32,
+    futility_margin: i32,
+    delta_pruning_threshold: TaperValue,
 }
 
+#[cfg(feature = "tunable")]
+impl Params {
+    pub fn new(
+        policy_temp: f32,
+        futility_margin: i32,
+        delta_pruning_threshold: TaperValue,
+    ) -> Self {
+        Self {
+            policy_temp,
+            futility_margin,
+            delta_pruning_threshold,
+        }
+    }
+}
+
+#[cfg(feature = "tunable")]
+impl QSearchParams for Rc<Params> {
+    fn futility_margin(&self) -> i32 {
+        self.futility_margin
+    }
+    fn delta_pruning_threshold(&self) -> TaperValue {
+        self.delta_pruning_threshold
+    }
+}
+
+#[cfg(feature = "tunable")]
+impl PolicyParams for Rc<Params> {
+    #[inline(always)]
+    fn policy_temperature(&self) -> f32 {
+        self.policy_temp
+    }
+}
+
+#[cfg(feature = "tunable")]
 impl TryFrom<&Configuration> for Params {
-    type Error = String;
+    type Error = CreateParamsError;
 
     fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
         let policy_temp = config.eval_policy_temperature();
-        Ok(Self { policy_temp })
+        let futility_margin = config.eval_futility_margin();
+        let delta_pruning_threshold = config.eval_delta_pruning_threshold();
+        Ok(Self {
+            policy_temp,
+            futility_margin,
+            delta_pruning_threshold,
+        })
     }
 }
 
-impl Default for Params {
-    fn default() -> Self {
-        Self { policy_temp: 20.0 }
+#[cfg(feature = "tunable")]
+#[derive(Debug, thiserror::Error)]
+pub enum CreateParamsError {
+    #[error("invalid policy temperature: {0}")]
+    InvalidPolicyTemperature(String),
+    #[error("invalid futility margin: {0}")]
+    InvalidFutilityMargin(String),
+    #[error("invalid delta pruning threshold: {0}")]
+    InvalidDeltaPruningThreshold(String),
+}
+
+#[cfg(not(feature = "tunable"))]
+#[derive(Debug, Clone)]
+pub struct Params;
+
+#[cfg(not(feature = "tunable"))]
+impl QSearchParams for Rc<Params> {
+    #[inline(always)]
+    fn futility_margin(&self) -> i32 {
+        200
+    }
+
+    #[inline(always)]
+    fn delta_pruning_threshold(&self) -> TaperValue {
+        TaperValue(16)
     }
 }
+
+#[cfg(not(feature = "tunable"))]
+impl PolicyParams for Rc<Params> {
+    #[inline(always)]
+    fn policy_temperature(&self) -> f32 {
+        21.26
+    }
+}
+
+#[cfg(not(feature = "tunable"))]
+#[allow(clippy::infallible_try_from)]
+impl TryFrom<&Configuration> for Params {
+    type Error = CreateParamsError;
+    fn try_from(_: &Configuration) -> Result<Self, Self::Error> {
+        Ok(Self)
+    }
+}
+
+#[cfg(not(feature = "tunable"))]
+pub type CreateParamsError = std::convert::Infallible;
 
 pub struct EvalInfo<Moves: AsRef<[Move]>> {
     /// The to-be-evaluated that this eval info is for.
@@ -1069,12 +1174,20 @@ pub struct EvalInfo<Moves: AsRef<[Move]>> {
 impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
     pub fn new(moves: Moves, pos: &mut Position, params: Rc<Params>) -> Self {
         let quality: Cp = match pos.get_turn().v() {
-            colors::WHITE_C => {
-                qsearch::<perspectives::White>(pos, Score::NEG_INF, Score::POS_INF).into()
-            }
-            colors::BLACK_C => {
-                qsearch::<perspectives::Black>(pos, Score::NEG_INF, Score::POS_INF).into()
-            }
+            colors::WHITE_C => qsearch::<perspectives::White, _>(
+                pos,
+                Score::NEG_INF,
+                Score::POS_INF,
+                params.clone(),
+            )
+            .into(),
+            colors::BLACK_C => qsearch::<perspectives::Black, _>(
+                pos,
+                Score::NEG_INF,
+                Score::POS_INF,
+                params.clone(),
+            )
+            .into(),
             _ => unreachable!(),
         };
         Self {
@@ -1122,11 +1235,15 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             logits.push(score as f32);
         }
 
-        Policy::from_logits(Logits(logits), self.params.policy_temp, buf)
+        Policy::from_logits(Logits(logits), self.params.policy_temperature(), buf)
     }
 }
 
-#[derive(Debug, Default, Clone)]
+pub trait PolicyParams {
+    fn policy_temperature(&self) -> f32;
+}
+
+#[derive(Debug, Clone)]
 pub struct HceEvaluator {
     policy_buf: Box<List<{ MAX_LEGAL_MOVES }, f32>>,
     params: Rc<Params>,

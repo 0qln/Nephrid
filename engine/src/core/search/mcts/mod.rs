@@ -231,8 +231,8 @@ pub enum CreateHcePartsError {
     #[error("Unhealthy epsilon: {0}")]
     BadEpsilon(String),
 
-    #[error("Error while creating hce-parts: {0}")]
-    Misc(String),
+    #[error("Error while creating evaluator params: {0}")]
+    EvalParams(#[from] hce::CreateParamsError),
 }
 
 impl TryFrom<&Configuration> for HceParts {
@@ -244,7 +244,7 @@ impl TryFrom<&Configuration> for HceParts {
         let epsilon = Ratio::new(config.dirichlet_epsilon());
         epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
 
-        let eval_params = hce::Params::try_from(config).map_err(Self::Error::Misc)?;
+        let eval_params = hce::Params::try_from(config)?;
 
         let select_cpuct = config.select_cpuct();
 
@@ -254,7 +254,8 @@ impl TryFrom<&Configuration> for HceParts {
 
 impl Default for HceParts {
     fn default() -> Self {
-        Self::new(0.3, Ratio::new(0.25), 1.5, hce::Params::default())
+        let config = Configuration::default();
+        Self::try_from(&config).expect("The default config should be healthy")
     }
 }
 
