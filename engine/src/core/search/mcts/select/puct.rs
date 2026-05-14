@@ -18,11 +18,15 @@ impl PuctSelector {
         let exploration = self.exploration(tree, branch_id, parent_id);
         exploitation + exploration
     }
+
+    pub const fn c(&self) -> f32 {
+        self.c
+    }
 }
 
 impl Default for PuctSelector {
     fn default() -> Self {
-        Self { c: f32::sqrt(2.0) }
+        Self { c: 1.12 }
     }
 }
 

@@ -1,5 +1,8 @@
 use crate::{
-    core::search::mcts::eval::hce::TaperValue,
+    core::search::mcts::{
+        eval::hce::{self, PolicyParams, QSearchParams, TaperValue},
+        select::puct::PuctSelector,
+    },
     misc::{InvalidValueError, ValueOutOfRangeError},
 };
 use std::{
@@ -261,17 +264,28 @@ impl Default for Configuration {
             ponder: ConfigOption::new("ponder", Check::new(true)),
             eval_policy_temperature: ConfigOption::new(
                 "eval-policy-temperature",
-                Spin::new(2126, 1, 10000),
+                Spin::new(
+                    (hce::ConcreteParams.policy_temperature() * 100.) as i32,
+                    1,
+                    10000,
+                ),
             ),
             eval_futility_margin: ConfigOption::new(
                 "eval-futility-margin",
-                Spin::new(200, 100, 300),
+                Spin::new(hce::ConcreteParams.futility_margin(), 100, 300),
             ),
             eval_delta_pruning_threshold: ConfigOption::new(
                 "eval-delta-pruning-threshold",
-                Spin::new(16, 0, 24),
+                Spin::new(
+                    hce::ConcreteParams.delta_pruning_threshold().v() as i32,
+                    0,
+                    24,
+                ),
             ),
-            select_cpuct: ConfigOption::new("select-cpuct", Spin::new(120, 1, 5000)),
+            select_cpuct: ConfigOption::new(
+                "select-cpuct",
+                Spin::new((PuctSelector::default().c() * 100.) as i32, 1, 5000),
+            ),
         }
     }
 }
@@ -352,6 +366,7 @@ impl Configuration {
             "eval-futility-margin" => self.eval_futility_margin.set(value),
             #[cfg(feature = "tunable")]
             "eval-delta-pruning-threshold" => self.eval_delta_pruning_threshold.set(value),
+            #[cfg(feature = "tunable")]
             "select-cpuct" => self.select_cpuct.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
@@ -373,6 +388,7 @@ impl Configuration {
         println!("{}", self.eval_futility_margin);
         #[cfg(feature = "tunable")]
         println!("{}", self.eval_delta_pruning_threshold);
+        #[cfg(feature = "tunable")]
         println!("{}", self.select_cpuct);
     }
 }

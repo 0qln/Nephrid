@@ -237,6 +237,10 @@ impl TaperValue {
         let total = piece_phases::TOTAL_C as i32;
         ((mg_eval * (total - phase)) + (eg_eval * phase)) / total
     }
+
+    pub const fn v(&self) -> u32 {
+        self.0
+    }
 }
 
 /// A penalty for `P`
@@ -1132,7 +1136,7 @@ pub struct ConcreteParams;
 impl QSearchParams for ConcreteParams {
     #[inline(always)]
     fn futility_margin(&self) -> i32 {
-        200
+        201
     }
 
     #[inline(always)]
