@@ -9,7 +9,10 @@ use crate::{
         position::Position,
         search::mcts::{
             eval::{
-                Evaluator, Ratio, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator,
+                Evaluator, Ratio,
+                hce::{self, HceEvaluator},
+                nn::NNEvaluator,
+                playout::PlayoutEvaluator,
             },
             nn::{CheckModelHealthError, LoadNNError, Model},
             node::Tree,
@@ -200,6 +203,7 @@ impl<B: Backend> NNParts<B> {
 pub struct HceParts {
     alpha: f32,
     epsilon: Ratio,
+    eval_params: hce::Params,
 }
 
 impl MctsParts for HceParts {
@@ -225,6 +229,9 @@ impl MctsParts for HceParts {
 pub enum CreateHcePartsError {
     #[error("Unhealthy epsilon: {0}")]
     BadEpsilon(String),
+
+    #[error("Error while creating hce-parts: {0}")]
+    Misc(String),
 }
 
 impl TryFrom<&Configuration> for HceParts {
@@ -236,19 +243,21 @@ impl TryFrom<&Configuration> for HceParts {
         let epsilon = Ratio::new(config.dirichlet_epsilon());
         epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
 
-        Ok(Self::new(alpha, epsilon))
+        let eval_params = hce::Params::try_from(config).map_err(Self::Error::Misc)?;
+
+        Ok(Self::new(alpha, epsilon, eval_params))
     }
 }
 
 impl Default for HceParts {
     fn default() -> Self {
-        Self::new(0.3, Ratio::new(0.25))
+        Self::new(0.3, Ratio::new(0.25), hce::Params::default())
     }
 }
 
 impl HceParts {
-    pub fn new(alpha: f32, epsilon: Ratio) -> Self {
-        Self { alpha, epsilon }
+    pub fn new(alpha: f32, epsilon: Ratio, eval_params: hce::Params) -> Self {
+        Self { alpha, epsilon, eval_params }
     }
 }
 

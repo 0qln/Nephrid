@@ -4,11 +4,13 @@ use std::{
     cmp::{Reverse, min},
     marker::PhantomData,
     ops,
+    rc::Rc,
 };
 
 use crate::core::{
     bitboard::Bitboard,
     color::{Perspective, perspectives},
+    config::Configuration,
     coordinates::{EpTargetSquare, File, Rank, files, pawn_utils::single_step, ranks},
     move_iter::{
         bishop::Bishop, fold_legal_captures, fold_legal_moves, king, knight, pawn, queen::Queen,
@@ -1021,6 +1023,26 @@ impl PolicyInput {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct Params {
+    policy_temp: f32,
+}
+
+impl TryFrom<&Configuration> for Params {
+    type Error = String;
+
+    fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
+        let policy_temp = config.eval_policy_temperature();
+        Ok(Self { policy_temp })
+    }
+}
+
+impl Default for Params {
+    fn default() -> Self {
+        Self { policy_temp: 20.0 }
+    }
+}
+
 pub struct EvalInfo<Moves: AsRef<[Move]>> {
     /// The to-be-evaluated that this eval info is for.
     moves: Moves,
@@ -1039,10 +1061,13 @@ pub struct EvalInfo<Moves: AsRef<[Move]>> {
 
     /// State info of the position after quieting it.
     quality: Cp,
+
+    // tunables
+    params: Rc<Params>,
 }
 
 impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
-    pub fn new(moves: Moves, pos: &mut Position) -> Self {
+    pub fn new(moves: Moves, pos: &mut Position, params: Rc<Params>) -> Self {
         let quality: Cp = match pos.get_turn().v() {
             colors::WHITE_C => {
                 qsearch::<perspectives::White>(pos, Score::NEG_INF, Score::POS_INF).into()
@@ -1059,6 +1084,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             phase: TaperValue::from_position(pos.piece_info()),
             moves,
             turn: pos.get_turn(),
+            params,
         }
     }
 
@@ -1096,19 +1122,21 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             logits.push(score as f32);
         }
 
-        Policy::from_logits(Logits(logits), 20., buf)
+        Policy::from_logits(Logits(logits), self.params.policy_temp, buf)
     }
 }
 
 #[derive(Debug, Default, Clone)]
 pub struct HceEvaluator {
     policy_buf: Box<List<{ MAX_LEGAL_MOVES }, f32>>,
+    params: Rc<Params>,
 }
 
 impl HceEvaluator {
-    pub fn new() -> Self {
+    pub fn new(params: Rc<Params>) -> Self {
         Self {
             policy_buf: Box::new(List::new()),
+            params,
         }
     }
 }
@@ -1122,8 +1150,13 @@ impl Evaluator for HceEvaluator {
         tree: &Tree,
         pos: &mut Position,
     ) -> Self::TraceData {
-        node.try_into::<Branching>()
-            .map(|node| EvalInfo::new(tree.branches(node).iter().map(|b| b.mov()).collect(), pos))
+        node.try_into::<Branching>().map(|node| {
+            EvalInfo::new(
+                tree.branches(node).iter().map(|b| b.mov()).collect(),
+                pos,
+                self.params.clone(),
+            )
+        })
     }
 
     fn eval_batch(

@@ -230,6 +230,9 @@ pub struct Configuration {
     /// Whether to enable ponder mode (i.e., keep searching on the opponent's
     /// time until the opponent actually moves).
     ponder: ConfigOption<Check>,
+
+    /// Evaluation policy temperature. In percent.
+    eval_policy_temperature: ConfigOption<Spin>,
 }
 
 impl Default for Configuration {
@@ -244,6 +247,10 @@ impl Default for Configuration {
             game_tree_caching: ConfigOption::new("game-tree-caching", Check::new(true)),
             gui_lag: ConfigOption::new("gui-lag", Spin::new(100, 1, 10_000)),
             ponder: ConfigOption::new("ponder", Check::new(true)),
+            eval_policy_temperature: ConfigOption::new(
+                "eval-policy-temperature",
+                Spin::new(2000, 1, 10000),
+            ),
         }
     }
 }
@@ -283,6 +290,10 @@ impl Configuration {
         self.ponder.value
     }
 
+    pub fn eval_policy_temperature(&self) -> f32 {
+        self.eval_policy_temperature.value as f32 / 100.
+    }
+
     // Setter
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -302,6 +313,7 @@ impl Configuration {
             "game-tree-caching" => self.game_tree_caching.set(value),
             "gui-lag" => self.gui_lag.set(value),
             "ponder" => self.ponder.set(value),
+            "eval-policy-temperature" => self.eval_policy_temperature.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -316,6 +328,7 @@ impl Configuration {
         println!("{}", self.game_tree_caching);
         println!("{}", self.gui_lag);
         println!("{}", self.ponder);
+        println!("{}", self.eval_policy_temperature);
     }
 }
 
