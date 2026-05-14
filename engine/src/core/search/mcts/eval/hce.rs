@@ -1044,15 +1044,27 @@ impl PolicyInput {
 }
 
 #[cfg(feature = "tunable")]
+pub type Params = TunableParams;
+#[cfg(feature = "tunable")]
+pub type ParamsRef = Rc<TunableParams>;
+#[cfg(feature = "tunable")]
+pub type CreateParamsError = CreateTunableParamsError;
+
+#[cfg(not(feature = "tunable"))]
+pub type Params = ConcreteParams;
+#[cfg(not(feature = "tunable"))]
+pub type ParamsRef = ConcreteParams;
+#[cfg(not(feature = "tunable"))]
+pub type CreateParamsError = CreateConcreteParamsError;
+
 #[derive(Debug, Clone)]
-pub struct Params {
+pub struct TunableParams {
     policy_temp: f32,
     futility_margin: i32,
     delta_pruning_threshold: TaperValue,
 }
 
-#[cfg(feature = "tunable")]
-impl Params {
+impl TunableParams {
     pub fn new(
         policy_temp: f32,
         futility_margin: i32,
@@ -1066,8 +1078,7 @@ impl Params {
     }
 }
 
-#[cfg(feature = "tunable")]
-impl QSearchParams for Rc<Params> {
+impl QSearchParams for Rc<TunableParams> {
     fn futility_margin(&self) -> i32 {
         self.futility_margin
     }
@@ -1076,17 +1087,32 @@ impl QSearchParams for Rc<Params> {
     }
 }
 
-#[cfg(feature = "tunable")]
-impl PolicyParams for Rc<Params> {
+impl PolicyParams for Rc<TunableParams> {
     #[inline(always)]
     fn policy_temperature(&self) -> f32 {
         self.policy_temp
     }
 }
 
-#[cfg(feature = "tunable")]
-impl TryFrom<&Configuration> for Params {
-    type Error = CreateParamsError;
+impl IParams for TunableParams {
+    type Ref = Rc<TunableParams>;
+    fn shared(self) -> Rc<TunableParams> {
+        Rc::new(self)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum CreateTunableParamsError {
+    #[error("invalid policy temperature: {0}")]
+    InvalidPolicyTemperature(String),
+    #[error("invalid futility margin: {0}")]
+    InvalidFutilityMargin(String),
+    #[error("invalid delta pruning threshold: {0}")]
+    InvalidDeltaPruningThreshold(String),
+}
+
+impl TryFrom<&Configuration> for TunableParams {
+    type Error = CreateTunableParamsError;
 
     fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
         let policy_temp = config.eval_policy_temperature();
@@ -1100,23 +1126,10 @@ impl TryFrom<&Configuration> for Params {
     }
 }
 
-#[cfg(feature = "tunable")]
-#[derive(Debug, thiserror::Error)]
-pub enum CreateParamsError {
-    #[error("invalid policy temperature: {0}")]
-    InvalidPolicyTemperature(String),
-    #[error("invalid futility margin: {0}")]
-    InvalidFutilityMargin(String),
-    #[error("invalid delta pruning threshold: {0}")]
-    InvalidDeltaPruningThreshold(String),
-}
-
-#[cfg(not(feature = "tunable"))]
 #[derive(Debug, Clone)]
-pub struct Params;
+pub struct ConcreteParams;
 
-#[cfg(not(feature = "tunable"))]
-impl QSearchParams for Rc<Params> {
+impl QSearchParams for ConcreteParams {
     #[inline(always)]
     fn futility_margin(&self) -> i32 {
         200
@@ -1128,25 +1141,34 @@ impl QSearchParams for Rc<Params> {
     }
 }
 
-#[cfg(not(feature = "tunable"))]
-impl PolicyParams for Rc<Params> {
+impl PolicyParams for ConcreteParams {
     #[inline(always)]
     fn policy_temperature(&self) -> f32 {
         21.26
     }
 }
 
-#[cfg(not(feature = "tunable"))]
+impl IParams for ConcreteParams {
+    type Ref = Self;
+    fn shared(self) -> Self::Ref {
+        self
+    }
+}
+
 #[allow(clippy::infallible_try_from)]
-impl TryFrom<&Configuration> for Params {
-    type Error = CreateParamsError;
+impl TryFrom<&Configuration> for ConcreteParams {
+    type Error = CreateConcreteParamsError;
     fn try_from(_: &Configuration) -> Result<Self, Self::Error> {
         Ok(Self)
     }
 }
 
-#[cfg(not(feature = "tunable"))]
-pub type CreateParamsError = std::convert::Infallible;
+pub type CreateConcreteParamsError = std::convert::Infallible;
+
+pub trait IParams {
+    type Ref: ?Sized;
+    fn shared(self) -> Self::Ref;
+}
 
 pub struct EvalInfo<Moves: AsRef<[Move]>> {
     /// The to-be-evaluated that this eval info is for.
@@ -1168,11 +1190,11 @@ pub struct EvalInfo<Moves: AsRef<[Move]>> {
     quality: Cp,
 
     // tunables
-    params: Rc<Params>,
+    params: ParamsRef,
 }
 
 impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
-    pub fn new(moves: Moves, pos: &mut Position, params: Rc<Params>) -> Self {
+    pub fn new(moves: Moves, pos: &mut Position, params: ParamsRef) -> Self {
         let quality: Cp = match pos.get_turn().v() {
             colors::WHITE_C => qsearch::<perspectives::White, _>(
                 pos,
@@ -1246,11 +1268,11 @@ pub trait PolicyParams {
 #[derive(Debug, Clone)]
 pub struct HceEvaluator {
     policy_buf: Box<List<{ MAX_LEGAL_MOVES }, f32>>,
-    params: Rc<Params>,
+    params: ParamsRef,
 }
 
 impl HceEvaluator {
-    pub fn new(params: Rc<Params>) -> Self {
+    pub fn new(params: ParamsRef) -> Self {
         Self {
             policy_buf: Box::new(List::new()),
             params,

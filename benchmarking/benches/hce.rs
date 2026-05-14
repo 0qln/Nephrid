@@ -1,7 +1,11 @@
 use engine::core::{
-    config::Configuration, r#move::MoveList, move_iter::sliding_piece::magics, search::mcts::eval::{Ratio, hce}, zobrist
+    config::Configuration,
+    r#move::MoveList,
+    move_iter::sliding_piece::magics,
+    search::mcts::eval::{Ratio, hce::{self, IParams}},
+    zobrist,
 };
-use std::{hint::black_box, rc::Rc, time::Duration};
+use std::{hint::black_box, time::Duration};
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use engine::{
@@ -27,8 +31,8 @@ pub fn policy(c: &mut Criterion) {
 
     let moves = pos.collect_moves(MoveList::new());
     let config = Configuration::default();
-    let params = Rc::new(hce::Params::try_from(&config).unwrap());
-    let eval = EvalInfo::new(moves, &mut pos, params);
+    let params = hce::Params::try_from(&config).unwrap();
+    let eval = EvalInfo::new(moves, &mut pos, params.shared());
 
     let mut buf = List::<{ MAX_LEGAL_MOVES }, f32>::new();
 

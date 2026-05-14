@@ -1,6 +1,7 @@
-#[cfg(feature = "tunable")]
-use crate::core::search::mcts::eval::hce::TaperValue;
-use crate::misc::{InvalidValueError, ValueOutOfRangeError};
+use crate::{
+    core::search::mcts::eval::hce::TaperValue,
+    misc::{InvalidValueError, ValueOutOfRangeError},
+};
 use std::{
     fmt,
     ops::{Deref, DerefMut},
@@ -234,15 +235,12 @@ pub struct Configuration {
     ponder: ConfigOption<Check>,
 
     /// Evaluation policy temperature. In percent.
-    #[cfg(feature = "tunable")]
     eval_policy_temperature: ConfigOption<Spin>,
 
     /// Margin for futility pruning. In centipawns.
-    #[cfg(feature = "tunable")]
     eval_futility_margin: ConfigOption<Spin>,
 
     /// Margin for delta pruning. A tapervalue.
-    #[cfg(feature = "tunable")]
     eval_delta_pruning_threshold: ConfigOption<Spin>,
 
     /// Cpuct constant for selection. In percent.
@@ -261,17 +259,14 @@ impl Default for Configuration {
             game_tree_caching: ConfigOption::new("game-tree-caching", Check::new(true)),
             gui_lag: ConfigOption::new("gui-lag", Spin::new(100, 1, 10_000)),
             ponder: ConfigOption::new("ponder", Check::new(true)),
-            #[cfg(feature = "tunable")]
             eval_policy_temperature: ConfigOption::new(
                 "eval-policy-temperature",
                 Spin::new(2126, 1, 10000),
             ),
-            #[cfg(feature = "tunable")]
             eval_futility_margin: ConfigOption::new(
                 "eval-futility-margin",
                 Spin::new(200, 100, 300),
             ),
-            #[cfg(feature = "tunable")]
             eval_delta_pruning_threshold: ConfigOption::new(
                 "eval-delta-pruning-threshold",
                 Spin::new(16, 0, 24),
@@ -316,17 +311,14 @@ impl Configuration {
         self.ponder.value
     }
 
-    #[cfg(feature = "tunable")]
     pub fn eval_policy_temperature(&self) -> f32 {
         self.eval_policy_temperature.value as f32 / 100.
     }
 
-    #[cfg(feature = "tunable")]
     pub fn eval_futility_margin(&self) -> i32 {
         self.eval_futility_margin.value
     }
 
-    #[cfg(feature = "tunable")]
     pub fn eval_delta_pruning_threshold(&self) -> TaperValue {
         TaperValue::new(self.eval_delta_pruning_threshold.value as u32)
     }

@@ -10,7 +10,7 @@ use crate::{
         search::mcts::{
             eval::{
                 Evaluator, Ratio,
-                hce::{self, HceEvaluator},
+                hce::{self, HceEvaluator, IParams},
                 nn::NNEvaluator,
                 playout::PlayoutEvaluator,
             },
@@ -217,7 +217,7 @@ impl MctsParts for HceParts {
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        HceEvaluator::new(Rc::new(self.eval_params.clone()))
+        HceEvaluator::new(self.eval_params.clone().shared())
     }
 
     fn noiser(&self) -> Self::Noiser {

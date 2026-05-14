@@ -1,6 +1,5 @@
 use search::mode::Mode;
 use std::{
-    rc::Rc,
     sync::{Arc, Mutex},
     thread, time,
 };
@@ -23,7 +22,7 @@ use crate::{
             mcts::{
                 eval::{
                     self, Cp,
-                    hce::{self},
+                    hce::{self, IParams},
                 },
                 node::WinRate,
             },
@@ -350,8 +349,8 @@ pub fn execute_uci(
             let config = engine.config.lock().expect("Config dead :(");
             let moves = pos.collect_moves(MoveList::new());
             let config = &config.clone();
-            let params = Rc::new(hce::Params::try_from(config)?);
-            let eval = hce::EvalInfo::new(moves.clone(), &mut pos, params);
+            let params = hce::Params::try_from(config)?;
+            let eval = hce::EvalInfo::new(moves.clone(), &mut pos, params.shared());
 
             if matches!(cmd, None | Some("centipawns")) {
                 let quality = eval.quality();
