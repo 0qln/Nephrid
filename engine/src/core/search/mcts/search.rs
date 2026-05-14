@@ -11,6 +11,7 @@ use crate::core::{
     color::{Perspective, colors, perspectives},
     depth::Depth,
     r#move::Move,
+    params::ParamsRef,
     search::mcts::{
         back::{self},
         eval::{Evaluation, Evaluator, Guess, eval_terminal},
@@ -214,6 +215,10 @@ impl<T> Selection<T> {
     }
 }
 
+pub trait SearchParams {
+    fn proven_loss_visit_threshold(&self) -> VisitCount;
+}
+
 /// # Tree searcher
 pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector, N: Noiser> {
     position: &'pos mut Position,
@@ -223,12 +228,19 @@ pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector
     selection: Selection<E::TraceData>,
     tt: Box<TranspositionTable<{ 2 << 10 }, TTData>>,
     ss: SearchStack,
+    params: ParamsRef,
 }
 
 impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
     TreeSearcher<'pos, BATCH, E, S, N>
 {
-    pub fn new(position: &'pos mut Position, selector: S, evaluator: E, noiser: N) -> Self {
+    pub fn new(
+        params: ParamsRef,
+        position: &'pos mut Position,
+        selector: S,
+        evaluator: E,
+        noiser: N,
+    ) -> Self {
         Self {
             position,
             selector,
@@ -237,6 +249,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             selection: Default::default(),
             tt: Default::default(),
             ss: SearchStack::new(),
+            params,
         }
     }
 
@@ -386,7 +399,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         let killer_move = ss_entry.and_then(|entry| entry.killer_move);
         let killer_exploitation = ss_entry.and_then(|entry| entry.killer_exploitation);
 
-        let visit_threshold = VisitCount(4); // todo: fine-tune
+        let visit_threshold = self.params.proven_loss_visit_threshold();
 
         let sel = &self.selector;
         const MIN: select::Score = select::Score(f32::NEG_INFINITY);

@@ -4,18 +4,17 @@ use std::{
     cmp::{Reverse, min},
     marker::PhantomData,
     ops,
-    rc::Rc,
 };
 
 use crate::core::{
     bitboard::Bitboard,
     color::{Perspective, perspectives},
-    config::Configuration,
     coordinates::{EpTargetSquare, File, Rank, files, pawn_utils::single_step, ranks},
     move_iter::{
         bishop::Bishop, fold_legal_captures, fold_legal_moves, king, knight, pawn, queen::Queen,
         rook::Rook, sliding_piece::SlidingAttacks,
     },
+    params::ParamsRef,
     piece::PromoPieceType,
     position::CheckState,
     turn::Turn,
@@ -343,13 +342,8 @@ impl<P: Perspective> From<Score<P>> for Cp {
 }
 
 pub trait QSearchParams {
-    fn futility_margin(&self) -> i32 {
-        200
-    }
-
-    fn delta_pruning_threshold(&self) -> TaperValue {
-        TaperValue(16)
-    }
+    fn futility_margin(&self) -> i32;
+    fn delta_pruning_threshold(&self) -> TaperValue;
 }
 
 /// # Q-Search
@@ -1045,133 +1039,6 @@ impl PolicyInput {
         // todo: give bonus for promotions etc.
         0
     }
-}
-
-#[cfg(feature = "tunable")]
-pub type Params = TunableParams;
-#[cfg(feature = "tunable")]
-pub type ParamsRef = Rc<TunableParams>;
-#[cfg(feature = "tunable")]
-pub type CreateParamsError = CreateTunableParamsError;
-
-#[cfg(not(feature = "tunable"))]
-pub type Params = ConcreteParams;
-#[cfg(not(feature = "tunable"))]
-pub type ParamsRef = ConcreteParams;
-#[cfg(not(feature = "tunable"))]
-pub type CreateParamsError = CreateConcreteParamsError;
-
-#[derive(Debug, Clone)]
-pub struct TunableParams {
-    policy_temp: f32,
-    futility_margin: i32,
-    delta_pruning_threshold: TaperValue,
-}
-
-impl TunableParams {
-    pub fn new(
-        policy_temp: f32,
-        futility_margin: i32,
-        delta_pruning_threshold: TaperValue,
-    ) -> Self {
-        Self {
-            policy_temp,
-            futility_margin,
-            delta_pruning_threshold,
-        }
-    }
-}
-
-impl QSearchParams for Rc<TunableParams> {
-    fn futility_margin(&self) -> i32 {
-        self.futility_margin
-    }
-    fn delta_pruning_threshold(&self) -> TaperValue {
-        self.delta_pruning_threshold
-    }
-}
-
-impl PolicyParams for Rc<TunableParams> {
-    #[inline(always)]
-    fn policy_temperature(&self) -> f32 {
-        self.policy_temp
-    }
-}
-
-impl IParams for TunableParams {
-    type Ref = Rc<TunableParams>;
-    fn shared(self) -> Rc<TunableParams> {
-        Rc::new(self)
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum CreateTunableParamsError {
-    #[error("invalid policy temperature: {0}")]
-    InvalidPolicyTemperature(String),
-    #[error("invalid futility margin: {0}")]
-    InvalidFutilityMargin(String),
-    #[error("invalid delta pruning threshold: {0}")]
-    InvalidDeltaPruningThreshold(String),
-}
-
-impl TryFrom<&Configuration> for TunableParams {
-    type Error = CreateTunableParamsError;
-
-    fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
-        let policy_temp = config.eval_policy_temperature();
-        let futility_margin = config.eval_futility_margin();
-        let delta_pruning_threshold = config.eval_delta_pruning_threshold();
-        Ok(Self {
-            policy_temp,
-            futility_margin,
-            delta_pruning_threshold,
-        })
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ConcreteParams;
-
-impl QSearchParams for ConcreteParams {
-    #[inline(always)]
-    fn futility_margin(&self) -> i32 {
-        201
-    }
-
-    #[inline(always)]
-    fn delta_pruning_threshold(&self) -> TaperValue {
-        TaperValue(16)
-    }
-}
-
-impl PolicyParams for ConcreteParams {
-    #[inline(always)]
-    fn policy_temperature(&self) -> f32 {
-        21.26
-    }
-}
-
-impl IParams for ConcreteParams {
-    type Ref = Self;
-    fn shared(self) -> Self::Ref {
-        self
-    }
-}
-
-#[allow(clippy::infallible_try_from)]
-impl TryFrom<&Configuration> for ConcreteParams {
-    type Error = CreateConcreteParamsError;
-    fn try_from(_: &Configuration) -> Result<Self, Self::Error> {
-        Ok(Self)
-    }
-}
-
-pub type CreateConcreteParamsError = std::convert::Infallible;
-
-pub trait IParams {
-    type Ref: ?Sized;
-    fn shared(self) -> Self::Ref;
 }
 
 pub struct EvalInfo<Moves: AsRef<[Move]>> {

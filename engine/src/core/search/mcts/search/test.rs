@@ -1,6 +1,7 @@
 use crate::core::{
     config::Configuration,
     move_iter::sliding_piece::magics,
+    params::ConcreteParams,
     position::Position,
     search::mcts::{
         HceParts, MctsParts, NullNoiser, node::Tree, search::TreeSearcher,
@@ -27,6 +28,7 @@ fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts:
             let parts = &parts;
 
             let mut searcher = TreeSearcher::<X, _, _, _>::new(
+                ConcreteParams,
                 &mut pos_clone,
                 parts.selector(),
                 parts.evaluator(),

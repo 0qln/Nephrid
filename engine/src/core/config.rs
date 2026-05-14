@@ -1,7 +1,12 @@
 use crate::{
-    core::search::mcts::{
-        eval::hce::{self, PolicyParams, QSearchParams, TaperValue},
-        select::puct::PuctSelector,
+    core::{
+        params::ConcreteParams,
+        search::mcts::{
+            eval::hce::{PolicyParams, QSearchParams, TaperValue},
+            node::VisitCount,
+            search::SearchParams,
+            select::puct::PuctSelector,
+        },
     },
     misc::{InvalidValueError, ValueOutOfRangeError},
 };
@@ -248,6 +253,9 @@ pub struct Configuration {
 
     /// Cpuct constant for selection. In percent.
     select_cpuct: ConfigOption<Spin>,
+
+    /// Visit threshold for proven loss cutoff in mcts. In visits.
+    mcts_proven_loss_visit_threshold: ConfigOption<Spin>,
 }
 
 impl Default for Configuration {
@@ -265,26 +273,30 @@ impl Default for Configuration {
             eval_policy_temperature: ConfigOption::new(
                 "eval-policy-temperature",
                 Spin::new(
-                    (hce::ConcreteParams.policy_temperature() * 100.) as i32,
+                    (ConcreteParams.policy_temperature() * 100.) as i32,
                     1,
                     10000,
                 ),
             ),
             eval_futility_margin: ConfigOption::new(
                 "eval-futility-margin",
-                Spin::new(hce::ConcreteParams.futility_margin(), 100, 300),
+                Spin::new(ConcreteParams.futility_margin(), 100, 300),
             ),
             eval_delta_pruning_threshold: ConfigOption::new(
                 "eval-delta-pruning-threshold",
-                Spin::new(
-                    hce::ConcreteParams.delta_pruning_threshold().v() as i32,
-                    0,
-                    24,
-                ),
+                Spin::new(ConcreteParams.delta_pruning_threshold().v() as i32, 0, 24),
             ),
             select_cpuct: ConfigOption::new(
                 "select-cpuct",
                 Spin::new((PuctSelector::default().c() * 100.) as i32, 1, 5000),
+            ),
+            mcts_proven_loss_visit_threshold: ConfigOption::new(
+                "mcts-proven-loss-visit-threshold",
+                Spin::new(
+                    ConcreteParams.proven_loss_visit_threshold().0 as i32,
+                    1,
+                    100,
+                ),
             ),
         }
     }
@@ -341,6 +353,10 @@ impl Configuration {
         self.select_cpuct.value as f32 / 100.
     }
 
+    pub fn mcts_proven_loss_visit_threshold(&self) -> VisitCount {
+        VisitCount(self.mcts_proven_loss_visit_threshold.value as u32)
+    }
+
     // Setter
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -368,6 +384,8 @@ impl Configuration {
             "eval-delta-pruning-threshold" => self.eval_delta_pruning_threshold.set(value),
             #[cfg(feature = "tunable")]
             "select-cpuct" => self.select_cpuct.set(value),
+            #[cfg(feature = "tunable")]
+            "mcts-proven-loss-visit-threshold" => self.mcts_proven_loss_visit_threshold.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -390,6 +408,8 @@ impl Configuration {
         println!("{}", self.eval_delta_pruning_threshold);
         #[cfg(feature = "tunable")]
         println!("{}", self.select_cpuct);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.mcts_proven_loss_visit_threshold);
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::core::params::{ConcreteParams, IParams};
 use burn::prelude::Backend;
 use rand::{SeedableRng, rngs::SmallRng};
 use thiserror::Error;
@@ -6,13 +7,11 @@ use crate::{
     core::{
         config::Configuration,
         r#move::Move,
+        params::{CreateParamsError, Params},
         position::Position,
         search::mcts::{
             eval::{
-                Evaluator, Ratio,
-                hce::{self, HceEvaluator, IParams},
-                nn::NNEvaluator,
-                playout::PlayoutEvaluator,
+                Evaluator, Ratio, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator,
             },
             nn::{CheckModelHealthError, LoadNNError, Model},
             node::Tree,
@@ -51,6 +50,7 @@ pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState>(
     strat.start(tree, pos);
 
     let mut searcher = TreeSearcher::<{ MPV }, _, _, _>::new(
+        ConcreteParams,
         pos,
         parts.selector(),
         parts.evaluator(),
@@ -203,7 +203,7 @@ impl<B: Backend> NNParts<B> {
 pub struct HceParts {
     alpha: f32,
     epsilon: Ratio,
-    eval_params: hce::Params,
+    params: Params,
     cpuct: f32,
 }
 
@@ -217,7 +217,7 @@ impl MctsParts for HceParts {
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        HceEvaluator::new(self.eval_params.clone().shared())
+        HceEvaluator::new(self.params.clone().shared())
     }
 
     fn noiser(&self) -> Self::Noiser {
@@ -232,7 +232,7 @@ pub enum CreateHcePartsError {
     BadEpsilon(String),
 
     #[error("Error while creating evaluator params: {0}")]
-    EvalParams(#[from] hce::CreateParamsError),
+    EvalParams(#[from] CreateParamsError),
 }
 
 impl TryFrom<&Configuration> for HceParts {
@@ -244,7 +244,7 @@ impl TryFrom<&Configuration> for HceParts {
         let epsilon = Ratio::new(config.dirichlet_epsilon());
         epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
 
-        let eval_params = hce::Params::try_from(config)?;
+        let eval_params = Params::try_from(config)?;
 
         let select_cpuct = config.select_cpuct();
 
@@ -260,13 +260,8 @@ impl Default for HceParts {
 }
 
 impl HceParts {
-    pub fn new(alpha: f32, epsilon: Ratio, cpuct: f32, eval_params: hce::Params) -> Self {
-        Self {
-            alpha,
-            epsilon,
-            cpuct,
-            eval_params,
-        }
+    pub fn new(alpha: f32, epsilon: Ratio, cpuct: f32, params: Params) -> Self {
+        Self { alpha, epsilon, cpuct, params }
     }
 }
 
