@@ -1074,12 +1074,6 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
         let state = &self.state;
         let color = self.turn;
 
-        // let mut logits = unsafe {
-        //     let pointer = &mut policy.0 as *mut List<{ MAX_LEGAL_MOVES },
-        // Probability>;     let logits = ptr::read(pointer.cast::<List<_,
-        // f32>>());     ManuallyDrop::new(logits)
-        // };
-
         let mut logits = List::new();
 
         for &mov in self.moves.as_ref().iter() {
@@ -1096,8 +1090,6 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             logits.push(score as f32);
         }
 
-        // todo: setting the temperature to 20 showed a huge improvement in commit
-        // 8646dd8d554d
         Policy::from_logits(Logits(logits), 10., buf)
     }
 }

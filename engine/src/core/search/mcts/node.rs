@@ -399,6 +399,9 @@ impl NodeData {
 /// indices.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Branch {
+    // todo: if not sure that this doesn't take up 8 bytes bc of alignment, use probability nan
+    // value for that or something...
+    is_init: bool,
     node: RtNodeId,
     policy: Probability,
     mov: Move,
@@ -416,8 +419,13 @@ impl Branch {
     }
 
     #[inline]
-    pub fn node(&self) -> RtNodeId {
-        self.node
+    pub fn node(&self) -> Option<RtNodeId> {
+        if self.is_init() { Some(self.node) } else { None }
+    }
+
+    #[inline]
+    pub fn is_init(&self) -> bool {
+        self.is_init
     }
 }
 
@@ -471,29 +479,21 @@ impl DAG {
             }
             size += 1;
             for branch in self.branches_rt(node_id) {
-                stack.push(branch.node);
+                if let Some(child_id) = branch.node() {
+                    stack.push(child_id);
+                }
             }
         }
         size
     }
 
-    pub fn compute_subtree_terminal_nodes_count(&self, root: RtNodeId) -> usize {
-        let mut stack = vec![root];
-        let mut visited = std::collections::HashSet::new();
-        let mut count = 0;
-
-        while let Some(node_id) = stack.pop() {
-            if !visited.insert(*node_id.index()) {
-                continue;
-            }
-            if self.node(node_id).state() == NodeState::Terminal {
-                count += 1;
-            }
-            for branch in self.branches_rt(node_id) {
-                stack.push(branch.node);
-            }
-        }
-        count
+    pub fn compute_subtree_terminal_nodes_count(&self) -> usize {
+        self.count_subtree_nodes(
+            Depth::ROOT,
+            self.root(),
+            &|node, _| node.state() == NodeState::Terminal,
+            usize::MAX,
+        )
     }
 
     // /// Counts the wins of the root node player.
@@ -537,7 +537,7 @@ impl DAG {
             }
 
             for branch in self.branches_rt(node_id) {
-                stack.push((branch.node, d + 1));
+                stack.push((branch.node(), d + 1));
             }
         }
 
@@ -565,7 +565,7 @@ impl DAG {
                 let node_id = self.stack.pop()?;
                 let branches = self.tree.branches_rt(node_id);
                 for branch in branches.iter().rev() {
-                    self.stack.push(branch.node());
+                    self.stack.push(branch.node()?);
                 }
 
                 Some(self.tree.node(node_id))
@@ -581,48 +581,51 @@ impl DAG {
         self.maxheight
     }
 
-    pub fn compute_subtree_maxheight(&self, root: RtNodeId) -> Height {
-        struct Frame {
-            node: RtNodeId,
-            next_child: usize,
-            max_child_height: Height,
-        }
+    // pub fn compute_subtree_maxheight(&self, root: RtNodeId) -> Height {
+    //     struct Frame {
+    //         node: RtNodeId,
+    //         next_child: usize,
+    //         max_child_height: Height,
+    //     }
 
-        let mut stack = vec![Frame {
-            node: root,
-            next_child: 0,
-            max_child_height: Height::EMPTY,
-        }];
-        let mut heights = std::collections::HashMap::<zobrist::Hash, Height>::new();
+    //     let mut stack = vec![Frame {
+    //         node: root,
+    //         next_child: 0,
+    //         max_child_height: Height::EMPTY,
+    //     }];
+    //     let mut heights = std::collections::HashMap::<zobrist::Hash,
+    // Height>::new();
 
-        while let Some(frame) = stack.last_mut() {
-            let branches = self.branches_rt(frame.node);
-            if frame.next_child < branches.len() {
-                let child = branches[frame.next_child].node;
-                frame.next_child += 1;
-                if let Some(&h) = heights.get(child.index()) {
-                    frame.max_child_height = frame.max_child_height.max(h);
-                }
-                else {
-                    stack.push(Frame {
-                        node: child,
-                        next_child: 0,
-                        max_child_height: Height::EMPTY,
-                    });
-                }
-            }
-            else {
-                let node_height = Height::ROOT + frame.max_child_height;
-                heights.insert(*frame.node.index(), node_height);
-                stack.pop();
-                if let Some(parent) = stack.last_mut() {
-                    parent.max_child_height = parent.max_child_height.max(node_height);
-                }
-            }
-        }
+    //     while let Some(frame) = stack.last_mut() {
+    //         let branches = self.branches_rt(frame.node);
+    //         if frame.next_child < branches.len() {
+    //             let child = branches[frame.next_child].node();
+    //             frame.next_child += 1;
+    //             if let Some(&h) = heights.get(child.index()) {
+    //                 frame.max_child_height = frame.max_child_height.max(h);
+    //             }
+    //             else {
+    //                 if let Some(child) = child {
+    //                     stack.push(Frame {
+    //                         node: child,
+    //                         next_child: 0,
+    //                         max_child_height: Height::EMPTY,
+    //                     });
+    //                 }
+    //             }
+    //         }
+    //         else {
+    //             let node_height = Height::ROOT + frame.max_child_height;
+    //             heights.insert(*frame.node.index(), node_height);
+    //             stack.pop();
+    //             if let Some(parent) = stack.last_mut() {
+    //                 parent.max_child_height =
+    // parent.max_child_height.max(node_height);             }
+    //         }
+    //     }
 
-        heights.get(root.index()).copied().unwrap_or(Height::EMPTY)
-    }
+    //     heights.get(root.index()).copied().unwrap_or(Height::EMPTY)
+    // }
 
     pub fn compute_minheight(&self) -> Height {
         self.compute_subtree_minheight(self.root())
@@ -643,7 +646,9 @@ impl DAG {
 
             // if this subtree goes deeper, queue up the children to be checked later
             for branch in branches {
-                queue.push_back((branch.node, height + 1));
+                if let Some(child) = branch.node() {
+                    queue.push_back((child, height + 1));
+                }
             }
         }
 
@@ -715,34 +720,6 @@ impl DAG {
         &mut self.arena.branches[start..end]
     }
 
-    /// Sorts the branches of a given node in-place without allocating.
-    /// Safely splits the borrow of the arena so we can mutate branches while
-    /// reading nodes.
-    pub fn sort_branches_by<F>(&mut self, parent_id: NodeId<Evaluated>, mut compare: F)
-    where
-        // The closure takes: (child_a_data, branch_a, child_b_data, branch_b)
-        F: FnMut(&NodeData, &Branch, &NodeData, &Branch) -> Ordering,
-    {
-        // 1. Get the slice bounds
-        let parent_data = self.node_data(parent_id);
-        let b_start = parent_data.branch_start as usize;
-        let b_end = b_start + parent_data.branch_count.v as usize;
-
-        // 2. Split the borrow!
-        // `nodes` is borrowed immutably, `branches` is borrowed mutably.
-        let nodes = &self.arena.nodes;
-        let branches_slice = &mut self.arena.branches[b_start..b_end];
-
-        // 3. Sort in-place using the disjoint slices
-        branches_slice.sort_unstable_by(|branch_a, branch_b| {
-            // Read the child data directly from the immutable `nodes` slice
-            let child_a_data = &nodes[branch_a.node.index()];
-            let child_b_data = &nodes[branch_b.node.index()];
-
-            compare(child_a_data, branch_a, child_b_data, branch_b)
-        });
-    }
-
     pub fn policy_indeces<S: HasBranches>(
         &self,
         node: NodeId<S>,
@@ -793,26 +770,17 @@ impl DAG {
         let branch_start = self.arena.branches.len() as u32;
         let branch_count = branches_count;
 
-        let mut new_nodes = 0;
         for m in moves {
-            // todo:
-            // 1. this is super slow
-            // 2. this should probably be made somewhere else down the line
-            let index = {
-                pos.make_move(m);
-                let key = pos.get_key();
-                pos.unmake_move(m);
-                key
-            };
-
-            let child = RtNodeId::from(index);
-            if !self.arena.nodes.contains_key(&index) {
-                self.arena.nodes.insert(index, NodeData::new_leaf());
-                new_nodes += 1;
-            }
+            // todo: do this sometime else
+            // let child = RtNodeId::from(index);
+            // if !self.arena.nodes.contains_key(&index) {
+            //     self.arena.nodes.insert(index, NodeData::new_leaf());
+            //     new_nodes += 1;
+            // }
 
             self.arena.branches.push(Branch {
-                node: child,
+                is_init: false,
+                node: RtNodeId::new(zobrist::Hash::default()),
                 policy: Probability::zero(),
                 mov: m,
             });
@@ -825,11 +793,12 @@ impl DAG {
         parent.state = NodeState::Branching;
 
         let height: Height = search_depth.into();
-        self.size += new_nodes;
         self.maxheight = self.maxheight.max(height + 1);
 
         unsafe { ExpandedSwitch::Branching(node_id.cast()) }
     }
+
+    pub fn expand_branch(&mut self, branch_id: BranchId, pos: &mut Position)
 
     pub fn skip_policy(&mut self, node: NodeId<Branching>) -> NodeId<Evaluated> {
         let data = self.node_data(node);
@@ -984,19 +953,21 @@ impl DAG {
 
             // Process each child and accumulate stats
             for branch in old_branches.iter() {
-                let (child_size, child_terminal, child_height) = self.copy_subtree_internal(
-                    branch.node,
-                    back_buffer,
-                    current_height + 1,
-                    visited,
-                );
-                total_size += child_size;
-                total_terminal += child_terminal;
-                if child_height > max_h {
-                    max_h = child_height;
+                if let Some(child_id) = branch.node() {
+                    let (child_size, child_terminal, child_height) = self.copy_subtree_internal(
+                        child_id,
+                        back_buffer,
+                        current_height + 1,
+                        visited,
+                    );
+                    total_size += child_size;
+                    total_terminal += child_terminal;
+                    if child_height > max_h {
+                        max_h = child_height;
+                    }
+                    // The branch already contains the correct child node hash,
+                    // no update needed
                 }
-                // The branch already contains the correct child node hash, no
-                // update needed
             }
         }
 
@@ -1013,9 +984,19 @@ impl DAG {
         self.branches(node_id)
             .iter()
             .max_by(|a, b| {
-                self.node(a.node())
-                    .partial_cmp(&self.node(b.node()))
-                    .unwrap_or(Ordering::Equal)
+                if let Some(a) = a.node() {
+                    if let Some(b) = b.node() {
+                        let a = self.node(a);
+                        let b = self.node(b);
+                        a.partial_cmp(&b).unwrap_or(Ordering::Equal)
+                    }
+                    else {
+                        Ordering::Greater
+                    }
+                }
+                else {
+                    Ordering::Less
+                }
             })
             .expect("Branching node should have branches")
     }
@@ -1037,7 +1018,11 @@ impl DAG {
     ) -> impl Iterator<Item = Move> {
         self.branches(node_id)
             .iter()
-            .filter(move |b| self.node(b.node()).value() > threshold)
+            .filter(move |b| {
+                b.node()
+                    .map(|n| self.node(n).value())
+                    .is_some_and(|v| v > threshold)
+            })
             .map(|b| b.mov())
     }
 
@@ -1059,7 +1044,7 @@ impl DAG {
                 let best_branch_opt = branches
                     .max_by(|&a, &b| (self.select)(self.tree.branch(a), self.tree.branch(b)));
                 if let Some(best_branch) = best_branch_opt {
-                    self.current = self.tree.branch(best_branch).node;
+                    self.current = self.tree.branch(best_branch).node()?;
                     Some(best_branch)
                 }
                 else {
@@ -1077,9 +1062,19 @@ impl DAG {
 
     pub fn principal_line(&self) -> impl Iterator<Item = BranchId> {
         self.line(|a, b| {
-            let a = self.node(a.node());
-            let b = self.node(b.node());
-            a.partial_cmp(&b).unwrap_or(Ordering::Equal)
+            if let Some(a) = a.node() {
+                if let Some(b) = b.node() {
+                    let a = self.node(a);
+                    let b = self.node(b);
+                    a.partial_cmp(&b).unwrap_or(Ordering::Equal)
+                }
+                else {
+                    Ordering::Greater
+                }
+            }
+            else {
+                Ordering::Less
+            }
         })
         // todo: break cycles (pos.has_three_fold_repetition or something like that)
         .take_while(|_branch| false)

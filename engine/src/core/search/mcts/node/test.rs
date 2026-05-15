@@ -324,17 +324,20 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
 
     // Root branches
     tree.arena.branches.push(Branch {
+        is_init: true,
         node: RtNodeId::from(sibling_hash),
         policy: Probability::new(0.1),
         mov: Move::new(squares::A1, squares::A2, move_flags::QUIET),
     });
     tree.arena.branches.push(Branch {
+        is_init: true,
         node: RtNodeId::from(target_hash),
         policy: Probability::new(0.9),
         mov: Move::new(squares::A1, squares::B1, move_flags::QUIET),
     });
     // Target branches
     tree.arena.branches.push(Branch {
+        is_init: true,
         node: RtNodeId::from(grandchild_hash),
         policy: Probability::new(1.0),
         mov: Move::new(squares::B1, squares::B2, move_flags::QUIET),
@@ -361,7 +364,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
     assert_eq!(branches.len(), 1);
 
     // Assert Retained Child (formerly Grandchild)
-    let child = tree.node(branches[0].node());
+    let child = tree.node(branches[0].node().unwrap());
     assert_eq!(child.visits(), VisitCount(5));
     assert_eq!(child.value(), Value(2.0));
     assert_eq!(child.state(), NodeState::Leaf);
@@ -400,6 +403,7 @@ fn test_advance_to_leaf_node_resets_tree_size_and_height() {
     );
 
     tree.arena.branches.push(Branch {
+        is_init: true,
         node: RtNodeId::from(leaf_hash),
         policy: Probability::new(1.0),
         mov: Move::new(squares::E2, squares::E4, move_flags::QUIET),
