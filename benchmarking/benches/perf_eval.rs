@@ -176,7 +176,7 @@ impl PerfRunner for MctsHceRunner {
         Solution {
             best_move: result,
             score: strat
-                .determine_score(tree, pv.len())
+                .determine_score(tree, pv.count())
                 .expect("root node should be evaluated after the search"),
             diagnostic: MctsDiagnostic {
                 visits: root.visits(),
