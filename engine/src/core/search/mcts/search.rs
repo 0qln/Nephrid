@@ -503,14 +503,14 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         let turn = self.position.get_turn();
 
         // shortcut node selection using twofold repetition
-        if depth > Depth::ROOT && self.position.has_twofold_repetition() {
-            self.position.unmake_move_for::<P>(mov);
-            return self.select_shortcut(tree, parent_sel_id, node);
-        }
 
         match tree.node_switch(node) {
             Switch::Branching(node) => self.select_branching(tree, parent_sel_id, node, depth),
             Switch::Evaluated(node) => {
+                if depth > Depth::ROOT && self.position.has_twofold_repetition() {
+                    self.position.unmake_move_for::<P>(mov);
+                    return self.select_shortcut(tree, parent_sel_id, node.down_cast());
+                }
                 let val = NodeView::new(tree, node).value();
                 // skip further selection of proven_win/loss nodes.
                 if val.is_proven_win() {
@@ -539,6 +539,10 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                 }
             }
             Switch::Leaf(node) => {
+                if depth > Depth::ROOT && self.position.has_twofold_repetition() {
+                    self.position.unmake_move_for::<P>(mov);
+                    return self.select_shortcut(tree, parent_sel_id, node.down_cast());
+                }
                 // otherwise select this leaf for evaluation in the next phase
                 self.select_leaf(tree, parent_sel_id, node, depth)
             }
@@ -605,12 +609,18 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
     ) {
         self.selection
             .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
-        self.selection.terminals.push(TerminalItem {
-            parent,
-            eval: eval_terminal(node, tree, depth, self.position),
-            node,
-            sel_data: SelData { turn: self.position.get_turn() },
-        })
+        if let Some(game_result) = eval_terminal(node, tree, depth, self.position) {
+            self.selection.terminals.push(TerminalItem {
+                parent,
+                eval: game_result,
+                node,
+                sel_data: SelData { turn: self.position.get_turn() },
+            })
+        }
+        else {
+            // zobrist hash collision, ignore
+            return;
+        }
     }
 
     #[inline]

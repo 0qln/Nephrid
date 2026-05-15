@@ -35,9 +35,13 @@ pub fn eval_terminal(
     _tree: &DAG,
     depth: Depth,
     pos: &Position,
-) -> GameResult {
+) -> Option<GameResult> {
     let game_result = pos.search_result(depth);
-    game_result.expect("Input is a terminal node and thus there has to be a search result.")
+    // we expect: Input is a terminal node and thus there has to be a search result.
+    // however: due to zobrist hash collisions, it can happen that a position with a
+    // non-terminal state is misidentified with the node of a different terminal
+    // node. so we cannot be 100% sure that the <Terminal> contract is upheld.
+    game_result
 }
 
 pub trait Evaluator {
