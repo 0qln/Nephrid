@@ -154,31 +154,31 @@ pub struct HceParams;
 impl mcts::select::puct::PuctParams for HceParams {
     #[inline(always)]
     fn select_cpuct(&self) -> f32 {
-        1.12
+        0.77
     }
 }
 
 impl mcts::search::SearchParams for HceParams {
     #[inline(always)]
     fn proven_loss_visit_threshold(&self) -> mcts::node::VisitCount {
-        VisitCount(4)
+        VisitCount(5)
     }
 
     #[inline(always)]
     fn killer_exploitation(&self) -> f32 {
-        1.0
+        0.27
     }
 
     #[inline(always)]
     fn tt_best_move(&self) -> f32 {
-        2.0
+        1.65
     }
 }
 
 impl QSearchParams for HceParams {
     #[inline(always)]
     fn futility_margin(&self) -> i32 {
-        201
+        166
     }
 
     #[inline(always)]
@@ -190,7 +190,7 @@ impl QSearchParams for HceParams {
 impl PolicyParams for HceParams {
     #[inline(always)]
     fn policy_temperature(&self) -> f32 {
-        21.26
+        24.58
     }
 }
 
