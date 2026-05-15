@@ -377,6 +377,12 @@ pub struct Position {
     state: StateStack,
 }
 
+impl std::hash::Hash for Position {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_u64(self.get_key().v());
+    }
+}
+
 impl Default for Position {
     /// Returns an empty position.
     fn default() -> Self {

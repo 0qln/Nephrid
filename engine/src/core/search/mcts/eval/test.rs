@@ -11,20 +11,21 @@ use crate::core::{
             hce::{piece_score, see},
         },
         node::{
-            Tree,
+            DAG,
             node_state::{Leaf, Terminal},
         },
     },
     zobrist,
 };
 
-fn test(pos: Position, expected_result: Option<GameResult>) {
-    let mut tree = Tree::new();
+fn test(mut pos: Position, expected_result: Option<GameResult>) {
+    let mut tree = DAG::default();
 
+    let depth = pos.ply().into();
     let node = tree.expand_node(
         tree.node_switch(tree.root()).get::<Leaf>().unwrap(),
-        &pos,
-        pos.ply().into(),
+        &mut pos,
+        depth,
     );
 
     assert_eq!(

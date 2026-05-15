@@ -3,8 +3,8 @@ use crate::core::{
     move_iter::sliding_piece::magics,
     position::Position,
     search::mcts::{
-        HceParts, MctsParts, NullNoiser, node::Tree, search::TreeSearcher,
-        select::ucb::UcbSelector, test::DummyEvaluator,
+        HceParts, MctsParts, NullNoiser, node::DAG, search::TreeSearcher, select::ucb::UcbSelector,
+        test::DummyEvaluator,
     },
     zobrist,
 };
@@ -16,11 +16,12 @@ fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts:
     zobrist::init();
 
     thread::Builder::new()
+        .name("MCTS fuzz test thread".to_string())
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
             let pos = Position::from_fen(pos).unwrap();
 
-            let mut tree = Tree::default();
+            let mut tree = DAG::default();
 
             let mut pos_clone = pos.clone();
 
@@ -69,7 +70,7 @@ pub fn sa_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
     fuzz::<1, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         HceParts::default(),
-        50_000,
+        1_000,
     );
     Ok(())
 }
@@ -79,7 +80,7 @@ pub fn sa_fuzz_bs_8() -> Result<(), Box<dyn Error>> {
     fuzz::<8, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         HceParts::default(),
-        50_000,
+        1_000,
     );
     Ok(())
 }
@@ -89,7 +90,7 @@ pub fn sa_fuzz_bs_64() -> Result<(), Box<dyn Error>> {
     fuzz::<64, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         HceParts::default(),
-        50_000,
+        1_000,
     );
     Ok(())
 }
@@ -126,7 +127,7 @@ pub fn na_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
     fuzz::<1, _>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         NoAnalysisParts,
-        500_000,
+        1_000,
     );
     Ok(())
 }

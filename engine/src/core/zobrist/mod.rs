@@ -137,3 +137,42 @@ impl Hasher {
         self.stm = rng.next_u64();
     }
 }
+
+use std::hash::{BuildHasher, Hasher as StdHasher};
+
+#[derive(Default)]
+pub struct NoopHasher {
+    hash: u64,
+}
+
+impl StdHasher for NoopHasher {
+    #[inline]
+    fn finish(&self) -> u64 {
+        self.hash
+    }
+
+    #[inline]
+    fn write_u64(&mut self, key: u64) {
+        self.hash = key;
+    }
+
+    #[inline]
+    fn write(&mut self, _bytes: &[u8]) {
+        unimplemented!()
+        // for &byte in bytes {
+        //     self.hash = self.hash.rotate_left(8) ^ u64::from(byte);
+        // }
+    }
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct ZobristBuildHasher;
+
+impl BuildHasher for ZobristBuildHasher {
+    type Hasher = NoopHasher;
+
+    #[inline]
+    fn build_hasher(&self) -> Self::Hasher {
+        NoopHasher::default()
+    }
+}

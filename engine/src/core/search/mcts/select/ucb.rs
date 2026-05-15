@@ -1,4 +1,4 @@
-use crate::core::search::mcts::node::{BranchId, Tree, VisitCount};
+use crate::core::search::mcts::node::{BranchId, DAG, VisitCount};
 
 use super::*;
 
@@ -21,7 +21,7 @@ impl Default for UcbSelector {
 impl Selector for UcbSelector {
     fn exploitation(
         &self,
-        tree: &Tree,
+        tree: &DAG,
         branch_id: BranchId,
         _parent_id: NodeId<Evaluated>,
     ) -> Score {
@@ -38,7 +38,7 @@ impl Selector for UcbSelector {
         }
     }
 
-    fn exploration(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+    fn exploration(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
 

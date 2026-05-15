@@ -12,7 +12,7 @@ use crate::{
                 Evaluator, Ratio, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator,
             },
             nn::{CheckModelHealthError, LoadNNError, Model},
-            node::Tree,
+            node::DAG,
             noise::{DirichletNoiser, Noiser, NullNoiser},
             search::TreeSearcher,
             select::{Selector, puct::PuctSelector, ucb::UcbSelector},
@@ -83,7 +83,7 @@ pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
 }
 
 pub trait MctsState {
-    fn tree(&mut self) -> &mut Tree;
+    fn tree(&mut self) -> &mut DAG;
 }
 
 /// # The search state.
@@ -96,8 +96,8 @@ pub trait MctsState {
 #[derive(Default)]
 pub struct SearchState {
     /// The game tree.
-    pub tree: Tree,
-    pub back_buffer: Tree,
+    pub tree: DAG,
+    pub back_buffer: DAG,
 }
 
 impl SearchState {
@@ -112,7 +112,7 @@ impl SearchState {
 }
 
 impl MctsState for SearchState {
-    fn tree(&mut self) -> &mut Tree {
+    fn tree(&mut self) -> &mut DAG {
         &mut self.tree
     }
 }

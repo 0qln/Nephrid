@@ -21,12 +21,12 @@ use super::*;
 fn test_dirichlet_noise_basic() {
     let mut rng = SmallRng::seed_from_u64(42);
 
-    let mut tree = Tree::new();
+    let mut tree = DAG::default();
 
-    let pos = Position::start_position();
+    let mut pos = Position::start_position();
     let _node = tree.expand_node(
         tree.node_switch(tree.root()).get::<Leaf>().unwrap(),
-        &pos,
+        &mut pos,
         Depth::ROOT,
     );
     let node = tree.node_switch(tree.root()).get::<Branching>().unwrap();

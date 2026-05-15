@@ -59,7 +59,7 @@ use engine::{
                 BOARD_INPUT_HISTORY, BoardInputFloats, Model, StateInputFloats, board_input,
                 state_input,
             },
-            node::Tree,
+            node::DAG,
             strategy::{MctsFindBest, MctsStrategy},
         },
     },
@@ -457,7 +457,7 @@ impl MctsStrategy for MctsTrainStrategy {
     type Result = (<MctsFindBest as MctsStrategy>::Result,);
     type Step = (<MctsFindBest as MctsStrategy>::Step,);
 
-    fn start(&mut self, tree: &mut Tree, pos: &Position) {
+    fn start(&mut self, tree: &mut DAG, pos: &Position) {
         self.infer.start(tree, pos);
         self.nodes_begin = tree.size() as u64;
         self.terminal_nodes_begin = tree.terminal_nodes() as u64;
@@ -465,13 +465,13 @@ impl MctsStrategy for MctsTrainStrategy {
         self.start_time = Some(Instant::now());
     }
 
-    fn step(&mut self, tree: &mut Tree) -> Self::Step {
+    fn step(&mut self, tree: &mut DAG) -> Self::Step {
         self.iterations += 1;
         let step = self.infer.step(tree);
         (step,)
     }
 
-    fn should_stop(&mut self, tree: &Tree) -> bool {
+    fn should_stop(&mut self, tree: &DAG) -> bool {
         // check limits
         if self.limit.is_reached(
             tree.size() as u64 - self.nodes_begin,
@@ -491,7 +491,7 @@ impl MctsStrategy for MctsTrainStrategy {
         false
     }
 
-    fn result(&mut self, tree: &mut Tree) -> Self::Result {
+    fn result(&mut self, tree: &mut DAG) -> Self::Result {
         let inference_result = self.infer.result(tree);
         let iters = self.iterations;
         let nodes = tree.size() as u64 - self.nodes_begin;
@@ -517,7 +517,7 @@ pub struct Input {
     pub state_in: StateInputFloats,
 }
 
-pub trait Target: for<'a> From<&'a Tree> {
+pub trait Target: for<'a> From<&'a DAG> {
     fn from_visit_counts(visit_counts: VisitCounts) -> Self;
 }
 
@@ -791,7 +791,7 @@ impl Default for MctsTrainSelector {
 
 impl Selector for MctsTrainSelector {
     #[inline]
-    fn exploration(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+    fn exploration(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
         let parent = tree.node(parent_id);
@@ -811,12 +811,7 @@ impl Selector for MctsTrainSelector {
     }
 
     #[inline]
-    fn exploitation(
-        &self,
-        tree: &Tree,
-        branch_id: BranchId,
-        parent_id: NodeId<Evaluated>,
-    ) -> Score {
+    fn exploitation(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
         let parent = tree.node(parent_id);
@@ -1068,7 +1063,7 @@ impl Evaluator for BatchedNNEvaluator {
     fn trace<S: HasBranches>(
         &self,
         _node: node::NodeId<S>,
-        _tree: &Tree,
+        _tree: &DAG,
         pos: &mut Position,
     ) -> Self::TraceData {
         TraceInfo::new(pos)
@@ -1076,7 +1071,7 @@ impl Evaluator for BatchedNNEvaluator {
 
     fn eval_batch(
         &mut self,
-        tree: &Tree,
+        tree: &DAG,
         selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Guess> {

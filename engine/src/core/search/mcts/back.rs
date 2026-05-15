@@ -4,7 +4,7 @@ use crate::core::{
     color::Color,
     search::mcts::{
         eval::{self, Evaluation, GameResult, Guess},
-        node::{NodeId, Tree, node_state::*, proven},
+        node::{DAG, NodeId, node_state::*, proven},
     },
     turn::Turn,
 };
@@ -37,7 +37,7 @@ impl RelativeValue for Guess {
 }
 
 pub fn update_branching(
-    tree: &mut Tree,
+    tree: &mut DAG,
     node: NodeId<Branching>,
     turn: Turn,
     guess: &Guess,
@@ -49,7 +49,7 @@ pub fn update_branching(
 }
 
 pub fn update_terminal(
-    tree: &mut Tree,
+    tree: &mut DAG,
     node: NodeId<Terminal>,
     turn: Turn,
     game_result: GameResult,
@@ -72,7 +72,7 @@ pub fn update_terminal(
 }
 
 pub fn update_shortcut(
-    tree: &mut Tree,
+    tree: &mut DAG,
     node: NodeId<Leaf>,
     weight: f32,
 ) -> impl RelativeValue + Copy + use<> {
@@ -89,7 +89,7 @@ pub fn update_shortcut(
 }
 
 pub fn update_skip(
-    tree: &mut Tree,
+    tree: &mut DAG,
     node: NodeId<Evaluated>,
     turn: Turn,
     eval: &Evaluation,
@@ -103,7 +103,7 @@ pub fn update_skip(
 }
 
 pub fn update_parent(
-    tree: &mut Tree,
+    tree: &mut DAG,
     node: NodeId<Evaluated>,
     turn: Turn,
     child_value: &impl RelativeValue,
@@ -112,7 +112,7 @@ pub fn update_parent(
     tree.update_node(node, child_value.relative_to(!turn), weight);
 }
 
-pub fn try_prove_parent(tree: &mut Tree, node: NodeId<Evaluated>, weight: f32) {
+pub fn try_prove_parent(tree: &mut DAG, node: NodeId<Evaluated>, weight: f32) {
     let branches = tree.branches(node);
     if branches
         .iter()
@@ -129,7 +129,7 @@ pub fn try_prove_parent(tree: &mut Tree, node: NodeId<Evaluated>, weight: f32) {
 }
 
 pub fn backpropagate_up(
-    tree: &mut Tree,
+    tree: &mut DAG,
     path: impl IntoIterator<Item = (NodeId<Evaluated>, Turn)>,
     leaf_value: &impl RelativeValue,
     weight: f32,

@@ -1,5 +1,5 @@
 use crate::core::search::mcts::{
-    node::{BranchId, NodeId, Tree, node_state::Evaluated},
+    node::{BranchId, DAG, NodeId, node_state::Evaluated},
     select::{Score, Selector},
 };
 
@@ -14,7 +14,7 @@ impl PuctSelector {
     }
 
     #[inline]
-    pub fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+    pub fn score(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let exploitation = self.exploitation(tree, branch_id, parent_id);
         let exploration = self.exploration(tree, branch_id, parent_id);
         exploitation + exploration
@@ -29,7 +29,7 @@ impl Default for PuctSelector {
 
 impl super::Selector for PuctSelector {
     #[inline]
-    fn exploration(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
+    fn exploration(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
         let parent = tree.node(parent_id);
@@ -43,12 +43,7 @@ impl super::Selector for PuctSelector {
     }
 
     #[inline]
-    fn exploitation(
-        &self,
-        tree: &Tree,
-        branch_id: BranchId,
-        parent_id: NodeId<Evaluated>,
-    ) -> Score {
+    fn exploitation(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
         let parent = tree.node(parent_id);

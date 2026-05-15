@@ -7,7 +7,7 @@ use crate::{
         search::mcts::{
             nn::{POLICY_OUTPUTS, PolicyHeadIndex, RawLogits},
             node::{
-                NodeId, Tree, VisitCount, WinRate,
+                DAG, NodeId, VisitCount, WinRate,
                 node_state::{HasBranches, Terminal, Valid},
             },
             search::{BatchItem, Selection},
@@ -32,7 +32,7 @@ pub mod playout;
 /// evaluation, else return None.
 pub fn eval_terminal(
     _node: NodeId<Terminal>,
-    _tree: &Tree,
+    _tree: &DAG,
     depth: Depth,
     pos: &Position,
 ) -> GameResult {
@@ -49,13 +49,13 @@ pub trait Evaluator {
     fn trace<S: const Valid + HasBranches>(
         &self,
         node: NodeId<S>,
-        tree: &Tree,
+        tree: &DAG,
         pos: &mut Position,
     ) -> Self::TraceData;
 
     fn eval_batch(
         &mut self,
-        tree: &Tree,
+        tree: &DAG,
         selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Guess>;

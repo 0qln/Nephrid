@@ -2,7 +2,7 @@ use crate::{
     core::search::mcts::{
         eval::Policy,
         nn::RawLogits,
-        node::{NodeId, Tree, node_state::HasBranches},
+        node::{DAG, NodeId, node_state::HasBranches},
         search::{BatchItem, Selection},
     },
     misc::List,
@@ -52,7 +52,7 @@ impl Evaluator for DummyEvaluator {
     fn trace<S: HasBranches>(
         &self,
         _node: NodeId<S>,
-        _tree: &Tree,
+        _tree: &DAG,
         pos: &mut Position,
     ) -> Self::TraceData {
         DummyTraceData { turn: pos.get_turn() }
@@ -60,7 +60,7 @@ impl Evaluator for DummyEvaluator {
 
     fn eval_batch(
         &mut self,
-        tree: &Tree,
+        tree: &DAG,
         _selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Guess> {

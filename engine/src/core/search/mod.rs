@@ -10,7 +10,7 @@ use crate::{
                 MctsConfig, MctsParts,
                 eval::Cp,
                 node::{
-                    Tree, WinRate,
+                    DAG, WinRate,
                     node_state::{Evaluated, Switch},
                 },
                 select::Selector,
@@ -69,7 +69,7 @@ pub struct IdWorker; // todo
 pub struct MctsWorker<const MPV: usize, C: MctsConfig> {
     mcts_parts: Option<C::Parts>,
     mcts_state: mcts::SearchState,
-    backup_tree: Option<Tree>,
+    backup_tree: Option<DAG>,
 }
 
 impl<const MPV: usize, C: MctsConfig> Default for MctsWorker<MPV, C> {
@@ -163,12 +163,12 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                     self.mcts_state.advance_to(mov);
                 }
                 else {
-                    self.mcts_state.tree = Tree::default();
+                    self.mcts_state.tree = DAG::default();
                 }
                 Ok(())
             }
             Command::ResetState => {
-                self.mcts_state.tree = Tree::default();
+                self.mcts_state.tree = DAG::default();
                 Ok(())
             }
             Command::Debug => {

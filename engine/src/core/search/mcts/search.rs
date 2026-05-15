@@ -14,7 +14,7 @@ use crate::core::{
     search::mcts::{
         back::{self},
         eval::{Evaluation, Evaluator, Guess, eval_terminal},
-        node::{BranchId, NodeId, NodeView, RtNodeId, Tree, VisitCount, node_state::*},
+        node::{BranchId, DAG, NodeId, NodeView, RtNodeId, VisitCount, node_state::*},
         noise::Noiser,
         select::{self, Selector},
     },
@@ -192,13 +192,13 @@ impl<T> Selection<T> {
         IterUp { arena, current }.map(|item| item.0)
     }
 
-    fn revert_virtual_loss(&self, tree: &mut Tree) {
+    fn revert_virtual_loss(&self, tree: &mut DAG) {
         for &(node, loss) in self.virtual_loss.iter() {
             tree.revert_virtual_loss(node, loss);
         }
     }
 
-    fn apply_virtual_loss(&mut self, tree: &mut Tree, node: RtNodeId, loss: u32) {
+    fn apply_virtual_loss(&mut self, tree: &mut DAG, node: RtNodeId, loss: u32) {
         tree.apply_virtual_loss(node, loss);
         self.virtual_loss.push((node, loss));
     }
@@ -241,7 +241,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
     }
 
     /// Prepares the root node for search (expand, evaluate, apply noise).
-    pub fn init_root(&mut self, tree: &mut Tree) {
+    pub fn init_root(&mut self, tree: &mut DAG) {
         loop {
             match tree.node_switch(tree.root()) {
                 Switch::Leaf(node) => {
@@ -274,7 +274,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         }
     }
 
-    pub fn grow(&mut self, tree: &mut Tree) {
+    pub fn grow(&mut self, tree: &mut DAG) {
         self.selection.clear();
         self.select_lines(tree);
         self.eval_batched(tree);
@@ -282,11 +282,11 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         self.backup_evals(tree);
     }
 
-    fn revert_virtual_loss(&mut self, tree: &mut Tree) {
+    fn revert_virtual_loss(&mut self, tree: &mut DAG) {
         self.selection.revert_virtual_loss(tree)
     }
 
-    fn select_lines(&mut self, tree: &mut Tree) {
+    fn select_lines(&mut self, tree: &mut DAG) {
         match self.position.get_turn() {
             colors::WHITE => self.select_lines_for::<perspectives::White>(tree),
             colors::BLACK => self.select_lines_for::<perspectives::Black>(tree),
@@ -294,7 +294,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         }
     }
 
-    fn select_lines_for<P: Perspective>(&mut self, tree: &mut Tree) {
+    fn select_lines_for<P: Perspective>(&mut self, tree: &mut DAG) {
         let root_id = tree.root();
         let root = match tree.node_switch(root_id) {
             Switch::Evaluated(n) => n,
@@ -373,7 +373,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         &mut self,
         depth: Depth,
         parent_node_id: NodeId<Evaluated>,
-        tree: &mut Tree,
+        tree: &mut DAG,
         sel_node_id: ParentNodeId,
     ) {
         let key = self.position.get_key();
@@ -486,7 +486,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         &mut self,
         depth: Depth,
         branch: BranchId,
-        tree: &mut Tree,
+        tree: &mut DAG,
         parent_sel_id: ParentNodeId,
     ) {
         let (mov, node) = {
@@ -551,7 +551,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
     #[inline]
     fn select_skip(
         &mut self,
-        tree: &mut Tree,
+        tree: &mut DAG,
         parent_id: ParentNodeId,
         node: NodeId<Evaluated>,
         eval: Evaluation,
@@ -570,7 +570,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
     #[inline]
     fn select_leaf(
         &mut self,
-        tree: &mut Tree,
+        tree: &mut DAG,
         parent_sel_id: ParentNodeId,
         node: NodeId<Leaf>,
         depth: Depth,
@@ -589,7 +589,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
 
     /// Select a shortcut to a node that can be considered terminal.
     #[inline]
-    fn select_shortcut(&mut self, tree: &mut Tree, parent: ParentNodeId, node: NodeId<Leaf>) {
+    fn select_shortcut(&mut self, tree: &mut DAG, parent: ParentNodeId, node: NodeId<Leaf>) {
         self.selection
             .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
         self.selection.shortcuts.push(ShortcutItem { parent, node })
@@ -598,7 +598,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
     #[inline]
     fn select_terminal(
         &mut self,
-        tree: &mut Tree,
+        tree: &mut DAG,
         parent: ParentNodeId,
         node: NodeId<Terminal>,
         depth: Depth,
@@ -616,7 +616,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
     #[inline]
     fn select_branching(
         &mut self,
-        tree: &mut Tree,
+        tree: &mut DAG,
         parent: ParentNodeId,
         node: NodeId<Branching>,
         depth: Depth,
@@ -646,7 +646,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         };
     }
 
-    fn eval_batched(&mut self, tree: &Tree) {
+    fn eval_batched(&mut self, tree: &DAG) {
         // todo: clean this up
         let batch = self.selection.batched.iter().collect_vec();
 
@@ -670,7 +670,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         }
     }
 
-    fn backup_evals(&mut self, tree: &mut Tree) {
+    fn backup_evals(&mut self, tree: &mut DAG) {
         for &TerminalItem { parent, eval, node, sel_data } in &self.selection.terminals {
             back::update_terminal(tree, node, sel_data.turn, eval, 1.0);
             let path = self

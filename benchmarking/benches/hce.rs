@@ -11,7 +11,7 @@ use engine::{
         search::mcts::{
             HceParts, MctsParts,
             eval::{Probability, hce::EvalInfo},
-            node::{Height, Tree, VisitCount, node_state::Evaluated},
+            node::{DAG, Height, VisitCount, node_state::Evaluated},
             search::TreeSearcher,
             select::puct::PuctSelector,
         },
@@ -42,7 +42,7 @@ pub fn puct(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(20));
 
     let mut pos = Position::start_position();
-    let mut tree = Tree::new();
+    let mut tree = DAG::new();
     let parts = HceParts::default();
     let mut searcher = TreeSearcher::<1, _, _, _>::new(
         &mut pos,

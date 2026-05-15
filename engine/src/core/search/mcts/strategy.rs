@@ -11,7 +11,7 @@ use crate::{
             PonderToken,
             limit::UciLimit,
             mcts::{
-                Tree,
+                DAG,
                 eval::Cp,
                 node::{self, WinRate, node_state::Evaluated},
             },
@@ -24,10 +24,10 @@ pub trait MctsStrategy {
     type Result;
     type Step;
 
-    fn start(&mut self, tree: &mut Tree, pos: &Position);
-    fn result(&mut self, tree: &mut Tree) -> Self::Result;
-    fn step(&mut self, tree: &mut Tree) -> Self::Step;
-    fn should_stop(&mut self, tree: &Tree) -> bool;
+    fn start(&mut self, tree: &mut DAG, pos: &Position);
+    fn result(&mut self, tree: &mut DAG) -> Self::Result;
+    fn step(&mut self, tree: &mut DAG) -> Self::Step;
+    fn should_stop(&mut self, tree: &DAG) -> bool;
 }
 
 #[derive(Default, Debug)]
@@ -39,12 +39,12 @@ impl MctsStrategy for MctsFindBest {
     type Result = Option<Move>;
     type Step = Option<Move>;
 
-    fn result(&mut self, tree: &mut Tree) -> Self::Result {
+    fn result(&mut self, tree: &mut DAG) -> Self::Result {
         self.last_best_move
             .or_else(|| tree.maybe_best_move(tree.root()))
     }
 
-    fn step(&mut self, tree: &mut Tree) -> Self::Step {
+    fn step(&mut self, tree: &mut DAG) -> Self::Step {
         let curr_best_move = tree.maybe_best_move(tree.root());
         if self.last_best_move != curr_best_move
             && let Some(mov) = curr_best_move
@@ -55,9 +55,9 @@ impl MctsStrategy for MctsFindBest {
         None
     }
 
-    fn start(&mut self, _tree: &mut Tree, _pos: &Position) {}
+    fn start(&mut self, _tree: &mut DAG, _pos: &Position) {}
 
-    fn should_stop(&mut self, _tree: &Tree) -> bool {
+    fn should_stop(&mut self, _tree: &DAG) -> bool {
         false
     }
 }
@@ -241,7 +241,7 @@ impl MctsUci {
 
     /// Determine score in centipawns / mate-in-x, etc.
     /// Returns `None` if the root node is not evaluated or unproven.
-    pub fn determine_score(&self, tree: &Tree, pv_len: usize) -> Option<UciScore> {
+    pub fn determine_score(&self, tree: &DAG, pv_len: usize) -> Option<UciScore> {
         let root = tree.node(tree.root());
         let root_value = root.value();
 
@@ -273,7 +273,7 @@ impl MctsUci {
     /// # uci_info
     ///
     /// Send the [UCI info command](https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L248).
-    fn uci_info(&self, tree: &Tree, mov: Move) {
+    fn uci_info(&self, tree: &DAG, mov: Move) {
         let tree_size = tree.size();
         let pv = tree.principal_line();
         let new_nodes = tree_size - self.nodes_begin as usize;
@@ -294,7 +294,7 @@ impl MctsUci {
     /// # uci_bestmove
     ///
     /// Send the [UCI bestmove command](https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L207).
-    fn uci_bestmove(&self, tree: &Tree, mov: Move) {
+    fn uci_bestmove(&self, tree: &DAG, mov: Move) {
         let pv = tree.principal_line();
         let best_move = UciArg::Some(mov);
         let ponder_move = UciArg::from(pv.0.get(1).map(|b| UciPondermove(b.mov())));
@@ -320,7 +320,7 @@ impl MctsStrategy for MctsUci {
     type Result = <MctsFindBest as MctsStrategy>::Result;
     type Step = <MctsFindBest as MctsStrategy>::Step;
 
-    fn start(&mut self, tree: &mut Tree, pos: &Position) {
+    fn start(&mut self, tree: &mut DAG, pos: &Position) {
         self.search_start = Some(Instant::now());
         self.nodes_begin = tree.size() as u64;
         self.terminal_nodes_begin = tree.terminal_nodes() as u64;
@@ -331,7 +331,7 @@ impl MctsStrategy for MctsUci {
         self.is_not_pondering = self.pt.is_none();
     }
 
-    fn step(&mut self, tree: &mut Tree) -> Self::Step {
+    fn step(&mut self, tree: &mut DAG) -> Self::Step {
         self.iterations += 1;
         let step = self.find_best.step(tree);
         let now = Instant::now();
@@ -345,7 +345,7 @@ impl MctsStrategy for MctsUci {
         step
     }
 
-    fn should_stop(&mut self, tree: &Tree) -> bool {
+    fn should_stop(&mut self, tree: &DAG) -> bool {
         // 1. User typed "stop" (GUI interrupt)
         // We ALWAYS respect this, whether pondering or not.
         if self.ct.is_cancelled() {
@@ -392,7 +392,7 @@ impl MctsStrategy for MctsUci {
         false
     }
 
-    fn result(&mut self, tree: &mut Tree) -> Self::Result {
+    fn result(&mut self, tree: &mut DAG) -> Self::Result {
         let result = self.find_best.result(tree);
         if let Some(mov) = result {
             self.uci_info(tree, mov);
@@ -413,21 +413,21 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
     type Result = (<I as MctsStrategy>::Result, u64);
     type Step = (<I as MctsStrategy>::Step, u64);
 
-    fn result(&mut self, tree: &mut Tree) -> Self::Result {
+    fn result(&mut self, tree: &mut DAG) -> Self::Result {
         (self.inner.result(tree), self.iteration)
     }
 
-    fn step(&mut self, tree: &mut Tree) -> Self::Step {
+    fn step(&mut self, tree: &mut DAG) -> Self::Step {
         let step = (self.inner.step(tree), self.iteration);
         self.iteration += 1;
         step
     }
 
-    fn start(&mut self, tree: &mut Tree, pos: &Position) {
+    fn start(&mut self, tree: &mut DAG, pos: &Position) {
         self.inner.start(tree, pos);
     }
 
-    fn should_stop(&mut self, tree: &Tree) -> bool {
+    fn should_stop(&mut self, tree: &DAG) -> bool {
         self.inner.should_stop(tree)
     }
 }

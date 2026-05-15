@@ -11,7 +11,9 @@ use engine::{
     core::search::mcts::{
         eval::{RawPolicy, normalize_visits},
         nn::{
-            BoardInputTensor, CheckTensorHealthError, Model, POLICY_OUTPUT_TENSOR_DIM, POLICY_OUTPUTS, PolicyHeadIndex, STATE_INPUT_TENSOR_DIM, StateInputTensor, VALUE_OUTPUT_TENSOR_DIM, board_history_input
+            BoardInputTensor, CheckTensorHealthError, Model, POLICY_OUTPUT_TENSOR_DIM,
+            POLICY_OUTPUTS, PolicyHeadIndex, STATE_INPUT_TENSOR_DIM, StateInputTensor,
+            VALUE_OUTPUT_TENSOR_DIM, board_history_input,
         },
         node::{VisitCount, node_state::Evaluated},
     },
@@ -20,7 +22,7 @@ use engine::{
 
 use burn::tensor::{Tensor, backend::Backend};
 
-use engine::core::search::mcts::node::Tree;
+use engine::core::search::mcts::node::DAG;
 use itertools::Itertools;
 use thiserror::Error;
 
@@ -122,8 +124,8 @@ pub struct ExactLossTarget {
     visit_counts: VisitCounts,
 }
 
-impl From<&Tree> for ExactLossTarget {
-    fn from(tree: &Tree) -> Self {
+impl From<&DAG> for ExactLossTarget {
+    fn from(tree: &DAG) -> Self {
         Self {
             visit_counts: {
                 let root_id = tree.root();
@@ -143,7 +145,10 @@ impl From<&Tree> for ExactLossTarget {
                             .map(|branch| {
                                 let child_node = tree.node(branch.node());
                                 let is_winning_move = child_node.value().is_proven_win();
-                                (branch.mov(), VisitCount(if is_winning_move { 1 } else { 0 }))
+                                (
+                                    branch.mov(),
+                                    VisitCount(if is_winning_move { 1 } else { 0 }),
+                                )
                             })
                             .collect_vec(),
                     )

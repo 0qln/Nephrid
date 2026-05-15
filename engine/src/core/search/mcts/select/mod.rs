@@ -1,7 +1,7 @@
 use core::fmt;
 use std::ops;
 
-use crate::core::search::mcts::node::{BranchId, NodeId, Tree, node_state::Evaluated};
+use crate::core::search::mcts::node::{BranchId, DAG, NodeId, node_state::Evaluated};
 
 pub mod puct;
 pub mod ucb;
@@ -12,9 +12,8 @@ pub trait Selector {
     // different parents. same reason that we have different struct for node and
     // branch.
 
-    fn exploitation(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>)
-    -> Score;
-    fn exploration(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
+    fn exploitation(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
+    fn exploration(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
 
     fn virtual_loss(&self) -> u32 {
         1

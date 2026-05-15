@@ -123,7 +123,7 @@ impl<B: Backend> Evaluator for NNEvaluator<B> {
     fn trace<S: HasBranches>(
         &self,
         _node: NodeId<S>,
-        _tree: &Tree,
+        _tree: &DAG,
         pos: &mut Position,
     ) -> Self::TraceData {
         TraceInfo::new(pos)
@@ -131,7 +131,7 @@ impl<B: Backend> Evaluator for NNEvaluator<B> {
 
     fn eval_batch(
         &mut self,
-        tree: &Tree,
+        tree: &DAG,
         selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Guess> {
@@ -187,7 +187,12 @@ impl<B: Backend> Evaluator for NNEvaluator<B> {
                     quality: Quality::new(value[0]),
                     // todo: might wanna instanciate the list further up (but this is just a stack
                     // allocation anyways so does that even matter?)
-                    policy: Policy::from_raw_logits(&raw_logits, p_idxs, 1., &mut Box::new(List::new())),
+                    policy: Policy::from_raw_logits(
+                        &raw_logits,
+                        p_idxs,
+                        1.,
+                        &mut Box::new(List::new()),
+                    ),
                 }
             })
             .collect_vec()

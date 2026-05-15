@@ -4,11 +4,11 @@ use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_ma
 use engine::core::{
     move_iter::sliding_piece::magics,
     position::Position,
-    search::mcts::{HceParts, MctsParts, node::Tree, search::TreeSearcher},
+    search::mcts::{HceParts, MctsParts, node::DAG, search::TreeSearcher},
     zobrist,
 };
 
-fn bench_mcts<const B: usize, P: MctsParts>(mut pos: Position, mut tree: Tree, parts: P) {
+fn bench_mcts<const B: usize, P: MctsParts>(mut pos: Position, mut tree: DAG, parts: P) {
     let mut searcher = TreeSearcher::<B, _, _, _>::new(
         &mut pos,
         parts.selector(),
@@ -58,7 +58,7 @@ pub fn mcts_benches(c: &mut Criterion) {
                         || {
                             (
                                 Position::from_fen(fen).unwrap(),
-                                Tree::default(),
+                                DAG::default(),
                                 HceParts::default(),
                             )
                         },
@@ -79,7 +79,7 @@ pub fn mcts_benches(c: &mut Criterion) {
                         || {
                             (
                                 Position::from_fen(fen).unwrap(),
-                                Tree::default(),
+                                DAG::default(),
                                 HceParts::default(),
                             )
                         },
@@ -100,7 +100,7 @@ pub fn mcts_benches(c: &mut Criterion) {
                         || {
                             (
                                 Position::from_fen(fen).unwrap(),
-                                Tree::default(),
+                                DAG::default(),
                                 HceParts::default(),
                             )
                         },
@@ -121,7 +121,7 @@ pub fn mcts_benches(c: &mut Criterion) {
                         || {
                             (
                                 Position::from_fen(fen).unwrap(),
-                                Tree::default(),
+                                DAG::default(),
                                 HceParts::default(),
                             )
                         },

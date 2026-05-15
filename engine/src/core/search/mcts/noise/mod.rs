@@ -8,7 +8,7 @@ use crate::{
         r#move::MAX_LEGAL_MOVES,
         search::mcts::{
             eval::{Policy, Probability, Ratio},
-            node::{NodeId, Tree, node_state::Evaluated},
+            node::{DAG, NodeId, node_state::Evaluated},
         },
     },
     misc::List,
@@ -21,7 +21,7 @@ pub trait Noiser {
     type Error: std::error::Error;
 
     /// Apply noise to the polices of this node.
-    fn apply_noise(&mut self, node: NodeId<Evaluated>, tree: &mut Tree) -> Result<(), Self::Error>;
+    fn apply_noise(&mut self, node: NodeId<Evaluated>, tree: &mut DAG) -> Result<(), Self::Error>;
 }
 
 #[derive(Debug, Clone)]
@@ -54,7 +54,7 @@ pub enum DirichletNoiseError {
 impl Noiser for DirichletNoiser {
     type Error = DirichletNoiseError;
 
-    fn apply_noise(&mut self, node: NodeId<Evaluated>, tree: &mut Tree) -> Result<(), Self::Error> {
+    fn apply_noise(&mut self, node: NodeId<Evaluated>, tree: &mut DAG) -> Result<(), Self::Error> {
         // Generate noise
         let noise = {
             let node = tree.node(node);
@@ -94,7 +94,7 @@ impl Noiser for NullNoiser {
     fn apply_noise(
         &mut self,
         _node: NodeId<Evaluated>,
-        _tree: &mut Tree,
+        _tree: &mut DAG,
     ) -> Result<(), Self::Error> {
         Ok(())
     }

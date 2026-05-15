@@ -72,7 +72,7 @@ impl Evaluator for PlayoutEvaluator {
     fn trace<S: const Valid + HasBranches>(
         &self,
         node: NodeId<S>,
-        _tree: &Tree,
+        _tree: &DAG,
         pos: &mut Position,
     ) -> Self::TraceData {
         node.try_into::<Branching>()
@@ -82,7 +82,7 @@ impl Evaluator for PlayoutEvaluator {
     /// Runs playouts for all collected leaves in the batch.
     fn eval_batch(
         &mut self,
-        _tree: &Tree,
+        _tree: &DAG,
         _selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Guess> {

@@ -7,13 +7,14 @@ use crate::{
             nn::PolicyHeadIndex,
             node::node_state::{ExpandedSwitch, HasBranches, HasValue, NodeState, Switch},
         },
+        zobrist::{self, ZobristBuildHasher},
     },
     impl_variants,
 };
 use itertools::Itertools;
 use std::{
     cmp::Ordering,
-    collections::VecDeque,
+    collections::{HashMap, HashSet, VecDeque},
     fmt,
     marker::PhantomData,
     ops::{self, Deref},
@@ -366,22 +367,16 @@ impl fmt::Display for Path {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Architecture: Double-Buffered Flat Arena MCTS Tree
-// -----------------------------------------------------------------------------
-
-/// The fundamental unit of storage, containing perfectly packed contiguous
-/// arrays. Entirely private to encapsulate the DOD architecture.
 #[derive(Clone, Default)]
 struct ArenaBuffer {
-    nodes: Vec<NodeData>,
+    nodes: HashMap<zobrist::Hash, NodeData, ZobristBuildHasher>,
     branches: Vec<Branch>,
 }
 
 impl ArenaBuffer {
     fn new(node_cap: usize, branch_cap: usize) -> Self {
         Self {
-            nodes: Vec::with_capacity(node_cap),
+            nodes: HashMap::with_capacity_and_hasher(node_cap, ZobristBuildHasher::default()),
             branches: Vec::with_capacity(branch_cap),
         }
     }
@@ -449,30 +444,31 @@ impl Branch {
 /// The unified container encapsulating the active arena and tracking global
 /// stats.
 #[derive(Clone)]
-pub struct Tree {
+pub struct DAG {
     arena: ArenaBuffer,
     size: usize,
     maxheight: Height,
     terminal_nodes: usize,
+    root: RtNodeId,
 }
 
-impl Default for Tree {
+impl Default for DAG {
     fn default() -> Self {
-        Self::new()
+        Self::new(&Position::default())
     }
 }
 
-impl Tree {
-    const ROOT_IDX: RtNodeId = RtNodeId::new(0);
-
-    pub fn new() -> Self {
-        let mut arena = ArenaBuffer::new(10000, 30000); // Sensible pre-alloc defaults
-        arena.nodes.push(NodeData::new_leaf());
+impl DAG {
+    pub fn new(pos: &Position) -> Self {
+        let mut arena = ArenaBuffer::new(10000, 30000);
+        let root_index = pos.get_key();
+        arena.nodes.insert(root_index, NodeData::new_leaf());
         Self {
             arena,
             size: 1,
             terminal_nodes: 0,
             maxheight: Height::ROOT,
+            root: RtNodeId::from(root_index),
         }
     }
 
@@ -484,24 +480,40 @@ impl Tree {
         self.terminal_nodes
     }
 
-    pub fn compute_subtree_size(&self, node_id: RtNodeId) -> usize {
-        1 + self
-            .branches_rt(node_id)
-            .iter()
-            .map(|b| self.compute_subtree_size(b.node))
-            .sum::<usize>()
+    pub fn compute_subtree_size(&self, root: RtNodeId) -> usize {
+        let mut stack = vec![root];
+        let mut visited = std::collections::HashSet::new();
+        let mut size = 0;
+
+        while let Some(node_id) = stack.pop() {
+            if !visited.insert(*node_id.index()) {
+                continue;
+            }
+            size += 1;
+            for branch in self.branches_rt(node_id) {
+                stack.push(branch.node);
+            }
+        }
+        size
     }
 
-    pub fn compute_subtree_terminal_nodes_count(&self, node_id: RtNodeId) -> usize {
-        // todo: benchmark if using the fn below is slower, if not use that.
-        let node = self.node(node_id);
-        let terminal_node = if node.state() == NodeState::Terminal { 1 } else { 0 };
-        terminal_node
-            + self
-                .branches_rt(node_id)
-                .iter()
-                .map(|b| self.compute_subtree_terminal_nodes_count(b.node))
-                .sum::<usize>()
+    pub fn compute_subtree_terminal_nodes_count(&self, root: RtNodeId) -> usize {
+        let mut stack = vec![root];
+        let mut visited = std::collections::HashSet::new();
+        let mut count = 0;
+
+        while let Some(node_id) = stack.pop() {
+            if !visited.insert(*node_id.index()) {
+                continue;
+            }
+            if self.node(node_id).state() == NodeState::Terminal {
+                count += 1;
+            }
+            for branch in self.branches_rt(node_id) {
+                stack.push(branch.node);
+            }
+        }
+        count
     }
 
     // /// Counts the wins of the root node player.
@@ -514,7 +526,7 @@ impl Tree {
         pred: &impl Fn(NodeView<node_state::Unknown>, Depth) -> bool,
         max: usize,
     ) -> usize {
-        self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, pred, max)
+        self.count_subtree_nodes(Depth::ROOT, self.root(), pred, max)
     }
 
     pub fn count_subtree_nodes(
@@ -552,7 +564,7 @@ impl Tree {
         // caller in some contexts.
 
         struct TreeIter<'a, 'b> {
-            tree: &'a Tree,
+            tree: &'a DAG,
             stack: &'b mut Vec<RtNodeId>,
         }
 
@@ -579,14 +591,47 @@ impl Tree {
         self.maxheight
     }
 
-    pub fn compute_subtree_maxheight(&self, node: RtNodeId) -> Height {
-        Height::ROOT
-            + self
-                .branches_rt(node)
-                .iter()
-                .map(|b| self.compute_subtree_maxheight(b.node))
-                .max()
-                .unwrap_or(Height::EMPTY)
+    pub fn compute_subtree_maxheight(&self, root: RtNodeId) -> Height {
+        struct Frame {
+            node: RtNodeId,
+            next_child: usize,
+            max_child_height: Height,
+        }
+
+        let mut stack = vec![Frame {
+            node: root,
+            next_child: 0,
+            max_child_height: Height::EMPTY,
+        }];
+        let mut heights = std::collections::HashMap::<zobrist::Hash, Height>::new();
+
+        while let Some(frame) = stack.last_mut() {
+            let branches = self.branches_rt(frame.node);
+            if frame.next_child < branches.len() {
+                let child = branches[frame.next_child].node;
+                frame.next_child += 1;
+                if let Some(&h) = heights.get(child.index()) {
+                    frame.max_child_height = frame.max_child_height.max(h);
+                }
+                else {
+                    stack.push(Frame {
+                        node: child,
+                        next_child: 0,
+                        max_child_height: Height::EMPTY,
+                    });
+                }
+            }
+            else {
+                let node_height = Height::ROOT + frame.max_child_height;
+                heights.insert(*frame.node.index(), node_height);
+                stack.pop();
+                if let Some(parent) = stack.last_mut() {
+                    parent.max_child_height = parent.max_child_height.max(node_height);
+                }
+            }
+        }
+
+        heights.get(root.index()).copied().unwrap_or(Height::EMPTY)
     }
 
     pub fn compute_minheight(&self) -> Height {
@@ -621,7 +666,7 @@ impl Tree {
     }
 
     pub fn root(&self) -> RtNodeId {
-        Self::ROOT_IDX
+        self.root
     }
 
     #[inline]
@@ -665,7 +710,7 @@ impl Tree {
     /// ArenaBuffer arrays.
     #[inline]
     pub fn branches_mut<S: HasBranches>(&mut self, node_id: NodeId<S>) -> &mut [Branch] {
-        let data = &self.arena.nodes[node_id.index as usize];
+        let data = self.node_data(node_id);
         let start = data.branch_start as usize;
         let end = start + data.branch_count.v as usize;
         &mut self.arena.branches[start..end]
@@ -680,7 +725,7 @@ impl Tree {
         F: FnMut(&NodeData, &Branch, &NodeData, &Branch) -> Ordering,
     {
         // 1. Get the slice bounds
-        let parent_data = &self.arena.nodes[parent_id.index as usize];
+        let parent_data = self.node_data(parent_id);
         let b_start = parent_data.branch_start as usize;
         let b_end = b_start + parent_data.branch_count.v as usize;
 
@@ -710,11 +755,11 @@ impl Tree {
 
     /// Backpropagation exclusively mutates the tree sequentially using a
     /// recorded path slice.
-    pub fn backpropagate(&mut self, path: &[u32], final_value: eval::Value) {
+    pub fn backpropagate(&mut self, path: &[RtNodeId], final_value: eval::Value) {
         for &idx in path {
-            let node = &mut self.arena.nodes[idx as usize];
-            node.visits.0 += 1;
-            node.value += final_value;
+            let data = self.node_data_mut(idx);
+            data.visits.0 += 1;
+            data.value += final_value;
         }
     }
 
@@ -723,11 +768,11 @@ impl Tree {
     pub fn expand_node(
         &mut self,
         node_id: NodeId<Leaf>,
-        pos: &Position,
+        pos: &mut Position,
         search_depth: Depth,
     ) -> ExpandedSwitch {
         if pos.game_result().is_some() {
-            self.arena.nodes[node_id.index as usize].state = NodeState::Terminal;
+            self.node_data_mut(node_id).state = NodeState::Terminal;
             self.terminal_nodes += 1;
             unsafe {
                 return ExpandedSwitch::Terminal(node_id.cast());
@@ -749,9 +794,23 @@ impl Tree {
         let branch_start = self.arena.branches.len() as u32;
         let branch_count = branches_count;
 
+        let mut new_nodes = 0;
         for m in moves {
-            let child = RtNodeId::from(self.arena.nodes.len());
-            self.arena.nodes.push(NodeData::new_leaf());
+            // todo:
+            // 1. this is super slow
+            // 2. this should probably be made somewhere else down the line
+            let index = {
+                pos.make_move(m);
+                let key = pos.get_key();
+                pos.unmake_move(m);
+                key
+            };
+
+            let child = RtNodeId::from(index);
+            if !self.arena.nodes.contains_key(&index) {
+                self.arena.nodes.insert(index, NodeData::new_leaf());
+                new_nodes += 1;
+            }
 
             self.arena.branches.push(Branch {
                 node: child,
@@ -761,20 +820,20 @@ impl Tree {
         }
 
         // Link parent to branches
-        let parent = &mut self.arena.nodes[node_id.index as usize];
+        let parent = self.node_data_mut(node_id);
         parent.branch_start = branch_start;
         parent.branch_count = branch_count;
         parent.state = NodeState::Branching;
 
         let height: Height = search_depth.into();
-        self.size += branches_count.v as usize;
+        self.size += new_nodes;
         self.maxheight = self.maxheight.max(height + 1);
 
         unsafe { ExpandedSwitch::Branching(node_id.cast()) }
     }
 
     pub fn skip_policy(&mut self, node: NodeId<Branching>) -> NodeId<Evaluated> {
-        let data = &self.arena.nodes[node.index as usize];
+        let data = self.node_data(node);
         let start = data.branch_start as usize;
         let count = data.branch_count.v as usize;
 
@@ -783,12 +842,12 @@ impl Tree {
             branch.policy = even_prob;
         }
 
-        self.arena.nodes[node.index as usize].state = NodeState::Evaluated;
+        self.node_data_mut(node).state = NodeState::Evaluated;
         unsafe { node.cast() }
     }
 
     pub fn set_policy(&mut self, node: NodeId<Branching>, policy: &Policy) -> NodeId<Evaluated> {
-        let data = &self.arena.nodes[node.index as usize];
+        let data = self.node_data(node);
         let start = data.branch_start as usize;
         let count = data.branch_count.v as usize;
 
@@ -805,12 +864,12 @@ impl Tree {
             branch.policy = p;
         }
 
-        self.arena.nodes[node.index as usize].state = NodeState::Evaluated;
+        self.node_data_mut(node).state = NodeState::Evaluated;
         unsafe { node.cast() }
     }
 
     pub fn apply_policy_noise(&mut self, node: NodeId<Evaluated>, noise: &Policy, eps: Ratio) {
-        let data = &self.arena.nodes[node.index as usize];
+        let data = self.node_data(node);
         let start = data.branch_start as usize;
         let count = data.branch_count.v as usize;
 
@@ -827,81 +886,123 @@ impl Tree {
     }
 
     pub fn update_node<S: HasValue>(&mut self, node: NodeId<S>, value: eval::Value, weight: f32) {
-        self.arena.nodes[node.index as usize].visits += weight as u32;
-        self.arena.nodes[node.index as usize].value += value.v() * weight;
+        self.node_data_mut(node).visits += weight as u32;
+        self.node_data_mut(node).value += value.v() * weight;
     }
 
     pub fn set_proven<S: HasValue>(&mut self, node: NodeId<S>, state: Proven, weight: f32) {
-        self.arena.nodes[node.index as usize].visits += weight as u32;
-        self.arena.nodes[node.index as usize].value = Value::from(state);
+        self.node_data_mut(node).visits += weight as u32;
+        self.node_data_mut(node).value = Value::from(state);
     }
 
     pub fn apply_virtual_loss(&mut self, node: RtNodeId, amount: u32) {
-        self.arena.nodes[node.index as usize].visits += amount;
+        self.node_data_mut(node).visits += amount;
+    }
+
+    fn node_data<S: node_state::Any>(&self, node: NodeId<S>) -> &NodeData {
+        self.arena
+            .nodes
+            .get(node.index())
+            .expect("Node ID should be valid")
+    }
+
+    fn node_data_mut<S: node_state::Any>(&mut self, node: NodeId<S>) -> &mut NodeData {
+        self.arena
+            .nodes
+            .get_mut(node.index())
+            .expect("Node ID should be valid")
     }
 
     pub fn revert_virtual_loss(&mut self, node: RtNodeId, amount: u32) {
-        self.arena.nodes[node.index as usize].visits -= amount;
+        self.node_data_mut(node).visits -= amount;
     }
 
     /// Double-buffering Garbage Collection implementation.
     /// Discards dead branches and retains only the subtree of the committed
     /// move.
-    pub fn advance_to(&mut self, back_buffer: &mut Tree, new_root_index: RtNodeId) {
+    pub fn advance_to(&mut self, back_buffer: &mut DAG, new_root_index: RtNodeId) {
         back_buffer.arena.clear();
-        let (_, new_size, terminal_nodes, new_height) =
+        let (new_size, terminal_nodes, new_height) =
             self.copy_subtree(new_root_index, &mut back_buffer.arena, 1);
-
         std::mem::swap(&mut self.arena, &mut back_buffer.arena);
-
         self.size = new_size;
         self.terminal_nodes = terminal_nodes;
         self.maxheight = new_height;
+        self.root = new_root_index;
     }
 
+    // todo: this gc is not needed anymore when we use a fixed size arena/tt-table
+    // instead for a dynamically sized hashmap
     fn copy_subtree(
         &self,
         old_idx: RtNodeId,
         back_buffer: &mut ArenaBuffer,
         current_height: u16,
-    ) -> (u32, usize, usize, Height) {
-        let old_node = &self.arena.nodes[old_idx.index as usize];
-        let new_idx = back_buffer.nodes.len() as u32;
+    ) -> (usize, usize, Height) {
+        let mut visited = HashSet::new();
+        self.copy_subtree_internal(old_idx, back_buffer, current_height, &mut visited)
+    }
 
-        back_buffer.nodes.push(old_node.clone());
+    fn copy_subtree_internal(
+        &self,
+        old_idx: RtNodeId,
+        back_buffer: &mut ArenaBuffer,
+        current_height: u16,
+        visited: &mut HashSet<zobrist::Hash>,
+    ) -> (usize, usize, Height) {
+        let key = *old_idx.index();
+
+        // If already copied, skip (shared node in DAG)
+        if visited.contains(&key) {
+            return (0, 0, Height(0));
+        }
+        visited.insert(key);
+
+        let old_node = &self.arena.nodes[&key];
+        let is_terminal = old_node.state == NodeState::Terminal;
 
         let mut total_size = 1;
-        let mut total_terminal_nodes = if old_node.state == NodeState::Terminal { 1 } else { 0 };
-        let mut max_h = current_height;
+        let mut total_terminal = if is_terminal { 1 } else { 0 };
+        let mut max_h = Height(current_height);
 
-        if old_node.branch_count > MoveIndex::from(0) {
-            let branch_start = old_node.branch_start as usize;
-            let branch_end = branch_start + old_node.branch_count.v as usize;
-            let new_branch_start = back_buffer.branches.len() as u32;
+        // Copy branches if any
+        let branch_start_old = old_node.branch_start as usize;
+        let branch_count = old_node.branch_count.v as usize;
+        let new_branch_start = back_buffer.branches.len() as u32;
 
-            for branch_idx in branch_start..branch_end {
-                let mut b = self.arena.branches[branch_idx].clone();
-                b.node.index = 0;
-                back_buffer.branches.push(b);
-            }
+        // Reserve space for the new branches
+        if branch_count > 0 {
+            // Extend with clones of the original branches (will be updated with child
+            // results later)
+            let old_branches =
+                &self.arena.branches[branch_start_old..branch_start_old + branch_count];
+            back_buffer.branches.extend(old_branches.iter().cloned());
 
-            back_buffer.nodes[new_idx as usize].branch_start = new_branch_start;
-
-            for (i, branch_idx) in (branch_start..branch_end).enumerate() {
-                let old_branch = &self.arena.branches[branch_idx];
-                let (child_new_idx, sub_size, sub_terminal_nodes, sub_height) =
-                    self.copy_subtree(old_branch.node, back_buffer, current_height + 1);
-                total_size += sub_size;
-                total_terminal_nodes += sub_terminal_nodes;
-                max_h = max_h.max(sub_height.0);
-
-                back_buffer.branches[(new_branch_start as usize) + i]
-                    .node
-                    .index = child_new_idx;
+            // Process each child and accumulate stats
+            for branch in old_branches.iter() {
+                let (child_size, child_terminal, child_height) = self.copy_subtree_internal(
+                    branch.node,
+                    back_buffer,
+                    current_height + 1,
+                    visited,
+                );
+                total_size += child_size;
+                total_terminal += child_terminal;
+                if child_height > max_h {
+                    max_h = child_height;
+                }
+                // The branch already contains the correct child node hash, no
+                // update needed
             }
         }
 
-        (new_idx, total_size, total_terminal_nodes, Height(max_h))
+        // Create new NodeData pointing to the freshly copied branches
+        let mut new_node = old_node.clone();
+        new_node.branch_start = new_branch_start;
+        new_node.branch_count = MoveIndex::from(branch_count as u8);
+        back_buffer.nodes.insert(key, new_node);
+
+        (total_size, total_terminal, max_h)
     }
 
     pub fn best_branch(&self, node_id: NodeId<Evaluated>) -> &Branch {
@@ -938,7 +1039,7 @@ impl Tree {
 
     pub fn line(&self, mut cmp: impl FnMut(&Branch, &Branch) -> Ordering) -> Path {
         let mut buf = Vec::new();
-        let mut current = Self::ROOT_IDX;
+        let mut current = self.root();
 
         loop {
             let best_branch_opt = self.branches_rt(current).iter().max_by(|a, b| cmp(a, b));
@@ -964,7 +1065,7 @@ impl Tree {
     }
 
     pub fn node_switch(&self, node_id: RtNodeId) -> Switch {
-        let rt_state = self.arena.nodes[node_id.index as usize].state;
+        let rt_state = self.node(node_id).state();
         Switch::new(node_id, rt_state)
     }
 
@@ -1017,21 +1118,23 @@ impl BranchId {
 
 pub type RtNodeId = NodeId<node_state::Unknown>;
 
+pub type TNodeId = zobrist::Hash;
+
 /// The Typestate ID is just a zero-cost wrapper around a `u32` index.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NodeId<S: node_state::Any> {
-    pub index: u32,
+    pub index: TNodeId,
     _marker: PhantomData<S>,
 }
 
-impl From<usize> for NodeId<node_state::Unknown> {
-    fn from(value: usize) -> Self {
-        NodeId::new(value as u32)
+impl From<TNodeId> for NodeId<node_state::Unknown> {
+    fn from(value: TNodeId) -> Self {
+        NodeId::new(value)
     }
 }
 
 impl<S: node_state::Any> NodeId<S> {
-    pub const fn new(index: u32) -> Self {
+    pub const fn new(index: TNodeId) -> Self {
         Self { index, _marker: PhantomData }
     }
 
@@ -1047,8 +1150,8 @@ impl<S: node_state::Any> NodeId<S> {
         RtNodeId::new(self.index)
     }
 
-    pub fn index(&self) -> usize {
-        self.index as usize
+    pub fn index(&self) -> &TNodeId {
+        &self.index
     }
 }
 
@@ -1084,7 +1187,7 @@ impl<S: node_state::Any> fmt::Debug for NodeId<S> {
 
 #[derive(Clone, Copy)]
 pub struct NodeView<'a, S: node_state::Any> {
-    pub tree: &'a Tree,
+    pub tree: &'a DAG,
     pub id: NodeId<S>,
 }
 
@@ -1117,7 +1220,7 @@ impl<S: node_state::Any> PartialOrd for NodeView<'_, S> {
 }
 
 impl<'a, S: node_state::Any> NodeView<'a, S> {
-    pub fn new(tree: &'a Tree, id: NodeId<S>) -> Self {
+    pub fn new(tree: &'a DAG, id: NodeId<S>) -> Self {
         Self { tree, id }
     }
 
@@ -1128,7 +1231,12 @@ impl<'a, S: node_state::Any> NodeView<'a, S> {
 
     #[inline]
     fn data(&self) -> &NodeData {
-        &self.tree.arena.nodes[self.id.index as usize]
+        &self
+            .tree
+            .arena
+            .nodes
+            .get(self.id.index())
+            .expect("NodeId should always point to a valid node")
     }
 
     #[inline]
