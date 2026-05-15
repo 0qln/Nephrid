@@ -1,6 +1,8 @@
 use core::fmt;
 use std::time::{Duration, Instant};
 
+use itertools::Itertools;
+
 use crate::{
     core::{
         Move,
@@ -13,7 +15,7 @@ use crate::{
             mcts::{
                 DAG,
                 eval::Cp,
-                node::{self, WinRate, node_state::Evaluated},
+                node::{Branch, WinRate, node_state::Evaluated},
             },
         },
     },
@@ -135,11 +137,12 @@ impl fmt::Display for UciSeldepth {
     }
 }
 
-pub struct UciPv(node::Path);
+pub struct UciPv(Vec<Branch>);
 
 impl fmt::Display for UciPv {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "pv {}", self.0)
+        let mut moves = self.0.iter().map(|x| x.mov().to_string());
+        write!(f, "pv {}", moves.join(" "))
     }
 }
 
@@ -275,7 +278,11 @@ impl MctsUci {
     /// Send the [UCI info command](https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L248).
     fn uci_info(&self, tree: &DAG, mov: Move) {
         let tree_size = tree.size();
-        let pv = tree.principal_line();
+        let pv = tree
+            .principal_line()
+            .map(|b| tree.branch(b))
+            .cloned()
+            .collect_vec();
         let new_nodes = tree_size - self.nodes_begin as usize;
 
         let currmove = UciArg::Some(UciCurrmove(mov));
@@ -295,9 +302,9 @@ impl MctsUci {
     ///
     /// Send the [UCI bestmove command](https://gist.github.com/DOBRO/2592c6dad754ba67e6dcaec8c90165bf#file-uci-protocol-specification-txt-L207).
     fn uci_bestmove(&self, tree: &DAG, mov: Move) {
-        let pv = tree.principal_line();
+        let mut pv = tree.principal_line();
         let best_move = UciArg::Some(mov);
-        let ponder_move = UciArg::from(pv.0.get(1).map(|b| UciPondermove(b.mov())));
+        let ponder_move = UciArg::from(pv.nth(1).map(|b| UciPondermove(tree.branch(b).mov())));
 
         println!("bestmove{best_move}{ponder_move}");
     }

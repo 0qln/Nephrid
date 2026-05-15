@@ -4,7 +4,7 @@ use crate::core::{
     color::Color,
     search::mcts::{
         eval::{self, Evaluation, GameResult, Guess},
-        node::{DAG, NodeId, node_state::*, proven},
+        node::{DAG, NodeId, RtNodeId, node_state::*, proven},
     },
     turn::Turn,
 };
@@ -73,7 +73,7 @@ pub fn update_terminal(
 
 pub fn update_shortcut(
     tree: &mut DAG,
-    node: NodeId<Leaf>,
+    node: RtNodeId,
     weight: f32,
 ) -> impl RelativeValue + Copy + use<> {
     #[derive(Copy, Clone)]

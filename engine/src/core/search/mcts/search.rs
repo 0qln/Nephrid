@@ -106,7 +106,7 @@ pub struct TerminalItem {
 
 pub struct ShortcutItem {
     parent: ParentNodeId,
-    node: NodeId<Leaf>,
+    node: RtNodeId,
 }
 
 pub struct SkipItem {
@@ -498,9 +498,15 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         // let depth = Depth::new(self.selection.iter_path_up(parent_sel_id).count() as
         // u8);
 
-        self.position.make_move_for::<P>(mov);
         let depth = depth + 1;
+        self.position.make_move_for::<P>(mov);
         let turn = self.position.get_turn();
+
+        // shortcut node selection using twofold repetition
+        if depth > Depth::ROOT && self.position.has_twofold_repetition() {
+            self.position.unmake_move_for::<P>(mov);
+            return self.select_shortcut(tree, parent_sel_id, node);
+        }
 
         match tree.node_switch(node) {
             Switch::Branching(node) => self.select_branching(tree, parent_sel_id, node, depth),
@@ -533,14 +539,8 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                 }
             }
             Switch::Leaf(node) => {
-                // shortcut leaf selection using twofold repetition
-                if depth > Depth::ROOT && self.position.has_twofold_repetition() {
-                    self.select_shortcut(tree, parent_sel_id, node)
-                }
                 // otherwise select this leaf for evaluation in the next phase
-                else {
-                    self.select_leaf(tree, parent_sel_id, node, depth)
-                }
+                self.select_leaf(tree, parent_sel_id, node, depth)
             }
             Switch::Terminal(node) => self.select_terminal(tree, parent_sel_id, node, depth),
         };
@@ -589,7 +589,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
 
     /// Select a shortcut to a node that can be considered terminal.
     #[inline]
-    fn select_shortcut(&mut self, tree: &mut DAG, parent: ParentNodeId, node: NodeId<Leaf>) {
+    fn select_shortcut(&mut self, tree: &mut DAG, parent: ParentNodeId, node: RtNodeId) {
         self.selection
             .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
         self.selection.shortcuts.push(ShortcutItem { parent, node })

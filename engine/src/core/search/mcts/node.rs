@@ -11,7 +11,6 @@ use crate::{
     },
     impl_variants,
 };
-use itertools::Itertools;
 use std::{
     cmp::Ordering,
     collections::{HashMap, HashSet, VecDeque},
@@ -348,25 +347,6 @@ pub mod node_state {
     impl Any for Unknown {}
 }
 
-pub struct Path(pub Vec<Branch>);
-
-impl Path {
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl fmt::Display for Path {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut moves = self.0.iter().map(|x| x.mov().to_string());
-        f.write_str(&moves.join(" "))
-    }
-}
-
 #[derive(Clone, Default)]
 struct ArenaBuffer {
     nodes: HashMap<zobrist::Hash, NodeData, ZobristBuildHasher>,
@@ -679,6 +659,15 @@ impl DAG {
     }
 
     #[inline]
+    pub fn branch_ids_rt(&self, node_id: RtNodeId) -> impl Iterator<Item = BranchId> {
+        let node = self.node(node_id);
+        let data = node.data();
+        let start = data.branch_start as usize;
+        let end = start + data.branch_count.v as usize;
+        (start..end).map(|i| BranchId::new(i as u32))
+    }
+
+    #[inline]
     pub fn branches<S: HasBranches>(&self, node_id: NodeId<S>) -> &[Branch] {
         let node = self.node(node_id);
         let data = node.data();
@@ -885,7 +874,12 @@ impl DAG {
         // here, but i would like this to be explicit.
     }
 
-    pub fn update_node<S: HasValue>(&mut self, node: NodeId<S>, value: eval::Value, weight: f32) {
+    pub fn update_node<S: node_state::Any>(
+        &mut self,
+        node: NodeId<S>,
+        value: eval::Value,
+        weight: f32,
+    ) {
         self.node_data_mut(node).visits += weight as u32;
         self.node_data_mut(node).value += value.v() * weight;
     }
@@ -1037,31 +1031,48 @@ impl DAG {
             .map(|b| b.mov())
     }
 
-    pub fn line(&self, mut cmp: impl FnMut(&Branch, &Branch) -> Ordering) -> Path {
-        let mut buf = Vec::new();
-        let mut current = self.root();
+    pub fn line<'a>(
+        &'a self,
+        cmp: impl FnMut(&Branch, &Branch) -> Ordering + 'a,
+    ) -> impl Iterator<Item = BranchId> + 'a {
+        struct LineIterator<'aa, F: FnMut(&Branch, &Branch) -> Ordering> {
+            tree: &'aa DAG,
+            current: RtNodeId,
+            select: F,
+        }
 
-        loop {
-            let best_branch_opt = self.branches_rt(current).iter().max_by(|a, b| cmp(a, b));
+        impl<'aa, F: FnMut(&Branch, &Branch) -> Ordering> Iterator for LineIterator<'aa, F> {
+            type Item = BranchId;
 
-            if let Some(branch) = best_branch_opt {
-                buf.push(branch.clone());
-                current = branch.node;
-            }
-            else {
-                break;
+            fn next(&mut self) -> Option<Self::Item> {
+                let branches = self.tree.branch_ids_rt(self.current);
+                let best_branch_opt = branches
+                    .max_by(|&a, &b| (self.select)(self.tree.branch(a), self.tree.branch(b)));
+                if let Some(best_branch) = best_branch_opt {
+                    self.current = self.tree.branch(best_branch).node;
+                    Some(best_branch)
+                }
+                else {
+                    None
+                }
             }
         }
 
-        Path(buf)
+        LineIterator {
+            tree: self,
+            select: cmp,
+            current: self.root(),
+        }
     }
 
-    pub fn principal_line(&self) -> Path {
+    pub fn principal_line(&self) -> impl Iterator<Item = BranchId> {
         self.line(|a, b| {
             let a = self.node(a.node());
             let b = self.node(b.node());
             a.partial_cmp(&b).unwrap_or(Ordering::Equal)
         })
+        // todo: break cycles (pos.has_three_fold_repetition or something like that)
+        .take_while(|_branch| false)
     }
 
     pub fn node_switch(&self, node_id: RtNodeId) -> Switch {

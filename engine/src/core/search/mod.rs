@@ -95,8 +95,9 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
     fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
         match cmd {
             Command::PrintPv(pos) => {
-                let pv = self.mcts_state.tree.principal_line();
-                let continuation = pv.0.into_iter().map(|b| b.mov());
+                let tree = &self.mcts_state.tree;
+                let pv = tree.principal_line();
+                let continuation = pv.map(|b| tree.branch(b).mov());
                 let game = Game::from_moves(pos, continuation);
                 let pgn = game.to_pgn();
                 println!("Principal Variation:\n{pgn}");
