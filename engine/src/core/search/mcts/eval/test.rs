@@ -41,7 +41,7 @@ fn test(mut pos: Position, expected_result: Option<GameResult>) {
             .get::<Terminal>()
             .expect("if we have a result, the node should be terminal");
         let result = eval::eval_terminal(node, &tree, pos.ply().into(), &pos);
-        assert_eq!(result, expected_result);
+        assert_eq!(result, Some(expected_result));
     }
 }
 

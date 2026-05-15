@@ -168,7 +168,7 @@ fn test_tree_advance_to_specific_move() {
 fn test_tree_principal_variation_from_leaf() {
     let tree = DAG::default();
     let pv = tree.principal_line();
-    assert!(pv.is_empty());
+    assert!(pv.count() == 0);
 }
 
 // #[test]
