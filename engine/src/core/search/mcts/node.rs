@@ -520,15 +520,25 @@ impl DAG {
             return 0;
         }
 
-        let node = self.node(node_id);
-        let mut total = if pred(node, depth) { 1 } else { 0 };
+        let mut stack = vec![(node_id, depth)];
+        let mut visited = std::collections::HashSet::new();
+        let mut total = 0;
 
-        for b in self.branches_rt(node_id) {
-            if total >= max {
-                break;
+        while let Some((node_id, d)) = stack.pop() {
+            if !visited.insert(*node_id.index()) {
+                continue;
             }
 
-            total += self.count_subtree_nodes(depth + 1, b.node, pred, max - total);
+            if pred(self.node(node_id), d) {
+                total += 1;
+                if total >= max {
+                    break;
+                }
+            }
+
+            for branch in self.branches_rt(node_id) {
+                stack.push((branch.node, d + 1));
+            }
         }
 
         total
