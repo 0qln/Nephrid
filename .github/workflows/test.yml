@@ -16,7 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
+
+      - name: Pull LFS objects that are required for testing
+        run:
+          git lfs pull --include="benchmarking/resources/*"
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
