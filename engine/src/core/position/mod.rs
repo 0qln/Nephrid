@@ -649,6 +649,51 @@ impl Position {
         self.piece_info.move_piece(from, to)
     }
 
+    /// Whether the move is a checking move
+    pub fn does_check(&self, mov: Move) -> bool {
+        let (from, to, _) = mov.into();
+
+        // negated bc we want to look at the position after having done the move
+        let stm = !self.get_turn();
+        let nstm = !stm;
+
+        // make the move on the board
+        let mut pieces = self.piece_info().clone();
+        pieces.move_piece(from, to);
+
+        let allies = pieces.get_color_bb(stm);
+        let enemies = pieces.get_color_bb(nstm);
+        let kings = pieces.get_piece_bb(piece_type::KING);
+
+        if let Some(king_sq) = (allies & kings).lsb() {
+            let occupancy = pieces.get_occupancy();
+            let pawns = pieces.get_piece_bb(piece_type::PAWN) & enemies;
+            let knights = pieces.get_piece_bb(piece_type::KNIGHT) & enemies;
+            let queens = pieces.get_piece_bb(piece_type::QUEEN) & enemies;
+            let r_n_q = (pieces.get_piece_bb(piece_type::ROOK) | queens) & enemies;
+            let b_n_q = (pieces.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
+
+            let checkers = {
+                Bitboard::empty()
+                    | (pawn::lookup_attacks(king_sq, stm) & pawns)
+                    | (knight::lookup_attacks(king_sq) & knights)
+                    | (Bishop::lookup_attacks(king_sq, occupancy) & b_n_q)
+                    | (Rook::lookup_attacks(king_sq, occupancy) & r_n_q)
+            };
+
+            let check_state = match checkers.pop_cnt() {
+                1 => CheckState::Single,
+                2 => CheckState::Double,
+                _ => CheckState::None,
+            };
+
+            check_state != CheckState::None
+        }
+        else {
+            false
+        }
+    }
+
     /// Makes a move on the board.
     pub fn make_move(&mut self, m: Move) {
         if self.get_turn() == colors::WHITE {

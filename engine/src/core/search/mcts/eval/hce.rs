@@ -364,6 +364,7 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
     pos: &mut Position,
     mut alpha: Score<P>,
     beta: Score<P>,
+    depth: Depth,
     params: X,
 ) -> Score<P> {
     let in_check = pos.get_check_state() != CheckState::None;
@@ -401,10 +402,20 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
         });
     }
     else {
-        _ = fold_legal_captures::<_, _, _>(pos, (), |_, m| {
-            move_list.push((m, 0));
-            ControlFlow::Continue::<(), ()>(())
-        });
+        if depth < Depth::new(3) {
+            _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
+                if m.get_flag().is_capture() || pos.does_check(m) {
+                    move_list.push((m, 0));
+                }
+                ControlFlow::Continue::<(), ()>(())
+            });
+        }
+        else {
+            _ = fold_legal_captures::<_, _, _>(pos, (), |_, m| {
+                move_list.push((m, 0));
+                ControlFlow::Continue::<(), ()>(())
+            });
+        }
     };
 
     /*\                                             /*\
@@ -450,7 +461,7 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
 
         pos.make_move_for::<P>(m);
 
-        let score = !qsearch(pos, !beta, !alpha, params.clone());
+        let score = !qsearch(pos, !beta, !alpha, depth + 1, params.clone());
 
         pos.unmake_move_for::<P>(m);
 
@@ -1080,6 +1091,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
+                Depth::ROOT,
                 params.clone(),
             )
             .into(),
@@ -1087,6 +1099,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
+                Depth::ROOT,
                 params.clone(),
             )
             .into(),
