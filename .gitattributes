@@ -5,3 +5,4 @@
 *.csv filter=lfs diff=lfs merge=lfs -text
 
 benchmarking/resources/* -filter
+nephrid/tests/* -filter
