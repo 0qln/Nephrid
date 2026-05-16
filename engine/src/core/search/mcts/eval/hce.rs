@@ -1059,6 +1059,10 @@ impl PolicyInput {
         // todo: give bonus for promotions etc.
         0
     }
+
+    pub fn check_bonus(pos: &PieceInfo, turn: Turn, mov: Move) -> i32 {
+        if pos.does_check(turn, mov) { 50 } else { 0 }
+    }
 }
 
 pub struct EvalInfo<Moves: AsRef<[Move]>> {
@@ -1139,6 +1143,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             let piece = pos.get_piece(from).piece_type();
             let score = PolicyInput::psqt(phase, piece, from, to, color)
                 + see(pos, mov, color)
+                + PolicyInput::check_bonus(pos, color, mov)
                 + PolicyInput::meta(pos, mov, state);
 
             logits.push(score as f32);
