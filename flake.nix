@@ -91,13 +91,16 @@
           };
 
           devShells.default = pkgs.mkShell {
-            packages =
+            packages = let
+              # python packages for weather-factory-pkgs
+              weather-factory-pkgs = ps: with ps; [matplotlib];
+            in
               (with pkgs; [
                 cutechess
                 bacon
                 perf
                 act
-                python3
+                (python3.withPackages (ps: weather-factory-pkgs ps))
                 gnuplot
               ])
               ++ (with pkgs-cuda; [

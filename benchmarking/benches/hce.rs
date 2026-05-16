@@ -1,5 +1,10 @@
 use engine::core::{
-    r#move::MoveList, move_iter::sliding_piece::magics, search::mcts::eval::Ratio, zobrist,
+    config::Configuration,
+    r#move::MoveList,
+    move_iter::sliding_piece::magics,
+    params::{IParams, Params},
+    search::mcts::eval::Ratio,
+    zobrist,
 };
 use std::{hint::black_box, time::Duration};
 
@@ -26,7 +31,9 @@ pub fn policy(c: &mut Criterion) {
     let mut pos = Position::start_position();
 
     let moves = pos.collect_moves(MoveList::new());
-    let eval = EvalInfo::new(moves, &mut pos);
+    let config = Configuration::default();
+    let params = Params::try_from(&config).unwrap();
+    let eval = EvalInfo::new(moves, &mut pos, params.shared());
 
     let mut buf = List::<{ MAX_LEGAL_MOVES }, f32>::new();
 
@@ -46,6 +53,7 @@ pub fn puct(c: &mut Criterion) {
     let parts = HceParts::default();
     let mut searcher = TreeSearcher::<1, _, _, _>::new(
         &mut pos,
+        Params::default().shared(),
         PuctSelector::default(),
         parts.evaluator(),
         parts.noiser(),

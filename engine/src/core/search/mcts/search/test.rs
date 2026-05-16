@@ -1,6 +1,7 @@
 use crate::core::{
     config::Configuration,
     move_iter::sliding_piece::magics,
+    params::{IParams, Params, ParamsRef},
     position::Position,
     search::mcts::{
         HceParts, MctsParts, NullNoiser, node::Tree, search::TreeSearcher,
@@ -11,7 +12,7 @@ use crate::core::{
 
 use std::{error::Error, thread};
 
-fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts: P, rounds: usize) {
+fn fuzz<const X: usize, P: MctsParts + Default>(pos: &'static str, rounds: usize) {
     magics::init();
     zobrist::init();
 
@@ -24,10 +25,11 @@ fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts:
 
             let mut pos_clone = pos.clone();
 
-            let parts = &parts;
+            let parts = P::default();
 
             let mut searcher = TreeSearcher::<X, _, _, _>::new(
                 &mut pos_clone,
+                Params::default().shared(),
                 parts.selector(),
                 parts.evaluator(),
                 parts.noiser(),
@@ -66,9 +68,8 @@ fn fuzz<const X: usize, P: MctsParts + Send + 'static>(pos: &'static str, parts:
 
 #[test]
 pub fn sa_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
-    fuzz::<1, _>(
+    fuzz::<1, HceParts>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        HceParts::default(),
         50_000,
     );
     Ok(())
@@ -76,9 +77,8 @@ pub fn sa_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
 
 #[test]
 pub fn sa_fuzz_bs_8() -> Result<(), Box<dyn Error>> {
-    fuzz::<8, _>(
+    fuzz::<8, HceParts>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        HceParts::default(),
         50_000,
     );
     Ok(())
@@ -86,9 +86,8 @@ pub fn sa_fuzz_bs_8() -> Result<(), Box<dyn Error>> {
 
 #[test]
 pub fn sa_fuzz_bs_64() -> Result<(), Box<dyn Error>> {
-    fuzz::<64, _>(
+    fuzz::<64, HceParts>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        HceParts::default(),
         50_000,
     );
     Ok(())
@@ -101,6 +100,10 @@ impl MctsParts for NoAnalysisParts {
     type Selector = UcbSelector;
     type Evaluator = DummyEvaluator;
     type Noiser = NullNoiser;
+
+    fn params(&self) -> ParamsRef {
+        Default::default()
+    }
 
     fn selector(&self) -> Self::Selector {
         Default::default()
@@ -123,9 +126,8 @@ impl From<&Configuration> for NoAnalysisParts {
 
 #[test]
 pub fn na_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
-    fuzz::<1, _>(
+    fuzz::<1, NoAnalysisParts>(
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        NoAnalysisParts,
         500_000,
     );
     Ok(())

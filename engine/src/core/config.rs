@@ -1,4 +1,15 @@
-use crate::misc::{InvalidValueError, ValueOutOfRangeError};
+use crate::{
+    core::{
+        params::HceParams,
+        search::mcts::{
+            eval::hce::{PolicyParams, QSearchParams, TaperValue},
+            node::VisitCount,
+            search::SearchParams,
+            select::puct::PuctParams,
+        },
+    },
+    misc::{InvalidValueError, ValueOutOfRangeError},
+};
 use std::{
     fmt,
     ops::{Deref, DerefMut},
@@ -230,6 +241,27 @@ pub struct Configuration {
     /// Whether to enable ponder mode (i.e., keep searching on the opponent's
     /// time until the opponent actually moves).
     ponder: ConfigOption<Check>,
+
+    /// Evaluation policy temperature. In percent.
+    eval_policy_temperature: ConfigOption<Spin>,
+
+    /// Margin for futility pruning. In centipawns.
+    eval_futility_margin: ConfigOption<Spin>,
+
+    /// Margin for delta pruning. A tapervalue.
+    eval_delta_pruning_threshold: ConfigOption<Spin>,
+
+    /// Cpuct constant for selection. In percent.
+    select_cpuct: ConfigOption<Spin>,
+
+    /// Visit threshold for proven loss cutoff in mcts. In visits.
+    mcts_proven_loss_visit_threshold: ConfigOption<Spin>,
+
+    /// Killer exploitation factor for mcts. In percent.
+    mcts_killer_exploitation: ConfigOption<Spin>,
+
+    /// Bonus for tt best move in mcts. In percent.
+    mcts_tt_best_move: ConfigOption<Spin>,
 }
 
 impl Default for Configuration {
@@ -244,6 +276,34 @@ impl Default for Configuration {
             game_tree_caching: ConfigOption::new("game-tree-caching", Check::new(true)),
             gui_lag: ConfigOption::new("gui-lag", Spin::new(100, 1, 10_000)),
             ponder: ConfigOption::new("ponder", Check::new(true)),
+            eval_policy_temperature: ConfigOption::new(
+                "eval-policy-temperature",
+                Spin::new((HceParams.policy_temperature() * 100.) as i32, 1, 10000),
+            ),
+            eval_futility_margin: ConfigOption::new(
+                "eval-futility-margin",
+                Spin::new(HceParams.futility_margin(), 100, 300),
+            ),
+            eval_delta_pruning_threshold: ConfigOption::new(
+                "eval-delta-pruning-threshold",
+                Spin::new(HceParams.delta_pruning_threshold().v() as i32, 0, 24),
+            ),
+            select_cpuct: ConfigOption::new(
+                "select-cpuct",
+                Spin::new((HceParams.select_cpuct() * 100.) as i32, 1, 5000),
+            ),
+            mcts_proven_loss_visit_threshold: ConfigOption::new(
+                "mcts-proven-loss-visit-threshold",
+                Spin::new(HceParams.proven_loss_visit_threshold().0 as i32, 1, 100),
+            ),
+            mcts_killer_exploitation: ConfigOption::new(
+                "mcts-killer-exploitation",
+                Spin::new((HceParams.killer_exploitation() * 100.) as i32, 0, 5000),
+            ),
+            mcts_tt_best_move: ConfigOption::new(
+                "mcts-tt-best-move",
+                Spin::new((HceParams.tt_best_move() * 100.) as i32, 0, 5000),
+            ),
         }
     }
 }
@@ -283,6 +343,34 @@ impl Configuration {
         self.ponder.value
     }
 
+    pub fn eval_policy_temperature(&self) -> f32 {
+        self.eval_policy_temperature.value as f32 / 100.
+    }
+
+    pub fn eval_futility_margin(&self) -> i32 {
+        self.eval_futility_margin.value
+    }
+
+    pub fn eval_delta_pruning_threshold(&self) -> TaperValue {
+        TaperValue::new(self.eval_delta_pruning_threshold.value as u32)
+    }
+
+    pub fn select_cpuct(&self) -> f32 {
+        self.select_cpuct.value as f32 / 100.
+    }
+
+    pub fn mcts_proven_loss_visit_threshold(&self) -> VisitCount {
+        VisitCount(self.mcts_proven_loss_visit_threshold.value as u32)
+    }
+
+    pub fn mcts_killer_exploitation(&self) -> f32 {
+        self.mcts_killer_exploitation.value as f32 / 100.
+    }
+
+    pub fn mcts_tt_best_move(&self) -> f32 {
+        self.mcts_tt_best_move.value as f32 / 100.
+    }
+
     // Setter
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -302,6 +390,20 @@ impl Configuration {
             "game-tree-caching" => self.game_tree_caching.set(value),
             "gui-lag" => self.gui_lag.set(value),
             "ponder" => self.ponder.set(value),
+            #[cfg(feature = "tunable")]
+            "eval-policy-temperature" => self.eval_policy_temperature.set(value),
+            #[cfg(feature = "tunable")]
+            "eval-futility-margin" => self.eval_futility_margin.set(value),
+            #[cfg(feature = "tunable")]
+            "eval-delta-pruning-threshold" => self.eval_delta_pruning_threshold.set(value),
+            #[cfg(feature = "tunable")]
+            "select-cpuct" => self.select_cpuct.set(value),
+            #[cfg(feature = "tunable")]
+            "mcts-proven-loss-visit-threshold" => self.mcts_proven_loss_visit_threshold.set(value),
+            #[cfg(feature = "tunable")]
+            "mcts-killer-exploitation" => self.mcts_killer_exploitation.set(value),
+            #[cfg(feature = "tunable")]
+            "mcts-tt-best-move" => self.mcts_tt_best_move.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -316,6 +418,20 @@ impl Configuration {
         println!("{}", self.game_tree_caching);
         println!("{}", self.gui_lag);
         println!("{}", self.ponder);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.eval_policy_temperature);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.eval_futility_margin);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.eval_delta_pruning_threshold);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.select_cpuct);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.mcts_proven_loss_visit_threshold);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.mcts_killer_exploitation);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.mcts_tt_best_move);
     }
 }
 

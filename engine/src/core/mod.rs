@@ -7,16 +7,10 @@ use thiserror::Error;
 
 use crate::{
     core::{
-        color::colors,
-        config::Configuration,
-        depth::Depth,
-        r#move::{Move, MoveList, SanParseError},
-        piece::piece_type,
-        position::{
+        color::colors, config::Configuration, depth::Depth, r#move::{Move, MoveList, SanParseError}, params::{IParams, Params}, piece::piece_type, position::{
             EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError,
             PgnImport, PgnImportError, Position, ReducedPgn,
-        },
-        search::{
+        }, search::{
             Command, PonderToken, SearchThread, SearchWorker,
             limit::UciLimit,
             mcts::{
@@ -26,7 +20,7 @@ use crate::{
                 },
                 node::WinRate,
             },
-        },
+        }
     },
     misc::{CancellationToken, DebugMode, List, trim_newline},
     uci::{UciError, tokens::Tokenizer},
@@ -47,6 +41,7 @@ pub mod position;
 pub mod search;
 pub mod turn;
 pub mod zobrist;
+pub mod params;
 
 #[derive(Debug, Default, Clone)]
 pub struct Game {
@@ -346,8 +341,11 @@ pub fn execute_uci(
                 println!("Passed Pawns:   {passed_pawns_w:>16} - {passed_pawns_b:<16}");
             }
 
+            let config = engine.config.lock().expect("Config dead :(");
             let moves = pos.collect_moves(MoveList::new());
-            let eval = hce::EvalInfo::new(moves.clone(), &mut pos);
+            let config = &config.clone();
+            let params = Params::try_from(config)?;
+            let eval = hce::EvalInfo::new(moves.clone(), &mut pos, params.shared());
 
             if matches!(cmd, None | Some("centipawns")) {
                 let quality = eval.quality();

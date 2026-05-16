@@ -14,6 +14,7 @@ use crate::core::{
         bishop::Bishop, fold_legal_captures, fold_legal_moves, king, knight, pawn, queen::Queen,
         rook::Rook, sliding_piece::SlidingAttacks,
     },
+    params::ParamsRef,
     piece::PromoPieceType,
     position::CheckState,
     turn::Turn,
@@ -217,6 +218,11 @@ const PIECE_PHASES: [PiecePhase; piece_type::N_VARIANTS] = {
 pub struct TaperValue(u32);
 
 impl TaperValue {
+    pub fn new(val: u32) -> Self {
+        debug_assert!(val <= piece_phases::TOTAL_C);
+        Self(val)
+    }
+
     pub fn from_position(pos: &PieceInfo) -> Self {
         let inv_phase = (piece_type::PAWN..piece_type::KING)
             .map(|p| pos.get_piece_bb(p).pop_cnt() * PIECE_PHASES[p.v() as usize].v())
@@ -229,6 +235,10 @@ impl TaperValue {
         let phase = self.0 as i32;
         let total = piece_phases::TOTAL_C as i32;
         ((mg_eval * (total - phase)) + (eg_eval * phase)) / total
+    }
+
+    pub const fn v(&self) -> u32 {
+        self.0
     }
 }
 
@@ -331,12 +341,22 @@ impl<P: Perspective> From<Score<P>> for Cp {
     }
 }
 
+pub trait QSearchParams {
+    fn futility_margin(&self) -> i32;
+    fn delta_pruning_threshold(&self) -> TaperValue;
+}
+
 /// # Q-Search
 ///
 /// Make the position quiet.
 ///
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
-fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<P>) -> Score<P> {
+fn qsearch<P: Perspective, X: QSearchParams + Clone>(
+    pos: &mut Position,
+    mut alpha: Score<P>,
+    beta: Score<P>,
+    params: X,
+) -> Score<P> {
     let in_check = pos.get_check_state() != CheckState::None;
 
     let mut best_value = Score::NEG_INF;
@@ -398,7 +418,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
     // recurse
     for &(m, _) in move_list.iter() {
         // delta pruning
-        if !in_check && phase < TaperValue(16) {
+        if !in_check && phase < params.delta_pruning_threshold() {
             let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {
                 piece_score(promo.into()) - piece_score(piece_type::PAWN)
             }
@@ -411,7 +431,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
             let captured_piece = pos.get_piece(capture_square);
             let captured_value = piece_score(captured_piece.piece_type());
 
-            let futility_margin = 200;
+            let futility_margin = params.futility_margin();
             let futility_score = captured_value + value_bonus + futility_margin;
 
             if best_value + Score::new(futility_score) < alpha {
@@ -421,7 +441,7 @@ fn qsearch<P: Perspective>(pos: &mut Position, mut alpha: Score<P>, beta: Score<
 
         pos.make_move_for::<P>(m);
 
-        let score = !qsearch(pos, !beta, !alpha);
+        let score = !qsearch(pos, !beta, !alpha, params.clone());
 
         pos.unmake_move_for::<P>(m);
 
@@ -1039,17 +1059,28 @@ pub struct EvalInfo<Moves: AsRef<[Move]>> {
 
     /// State info of the position after quieting it.
     quality: Cp,
+
+    // tunables
+    params: ParamsRef,
 }
 
 impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
-    pub fn new(moves: Moves, pos: &mut Position) -> Self {
+    pub fn new(moves: Moves, pos: &mut Position, params: ParamsRef) -> Self {
         let quality: Cp = match pos.get_turn().v() {
-            colors::WHITE_C => {
-                qsearch::<perspectives::White>(pos, Score::NEG_INF, Score::POS_INF).into()
-            }
-            colors::BLACK_C => {
-                qsearch::<perspectives::Black>(pos, Score::NEG_INF, Score::POS_INF).into()
-            }
+            colors::WHITE_C => qsearch::<perspectives::White, _>(
+                pos,
+                Score::NEG_INF,
+                Score::POS_INF,
+                params.clone(),
+            )
+            .into(),
+            colors::BLACK_C => qsearch::<perspectives::Black, _>(
+                pos,
+                Score::NEG_INF,
+                Score::POS_INF,
+                params.clone(),
+            )
+            .into(),
             _ => unreachable!(),
         };
         Self {
@@ -1059,6 +1090,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             phase: TaperValue::from_position(pos.piece_info()),
             moves,
             turn: pos.get_turn(),
+            params,
         }
     }
 
@@ -1073,12 +1105,6 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
         let phase = self.phase;
         let state = &self.state;
         let color = self.turn;
-
-        // let mut logits = unsafe {
-        //     let pointer = &mut policy.0 as *mut List<{ MAX_LEGAL_MOVES },
-        // Probability>;     let logits = ptr::read(pointer.cast::<List<_,
-        // f32>>());     ManuallyDrop::new(logits)
-        // };
 
         let mut logits = List::new();
 
@@ -1096,21 +1122,25 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             logits.push(score as f32);
         }
 
-        // todo: setting the temperature to 20 showed a huge improvement in commit
-        // 8646dd8d554d
-        Policy::from_logits(Logits(logits), 10., buf)
+        Policy::from_logits(Logits(logits), self.params.policy_temperature(), buf)
     }
 }
 
-#[derive(Debug, Default, Clone)]
+pub trait PolicyParams {
+    fn policy_temperature(&self) -> f32;
+}
+
+#[derive(Debug, Clone)]
 pub struct HceEvaluator {
     policy_buf: Box<List<{ MAX_LEGAL_MOVES }, f32>>,
+    params: ParamsRef,
 }
 
 impl HceEvaluator {
-    pub fn new() -> Self {
+    pub fn new(params: ParamsRef) -> Self {
         Self {
             policy_buf: Box::new(List::new()),
+            params,
         }
     }
 }
@@ -1124,8 +1154,13 @@ impl Evaluator for HceEvaluator {
         tree: &Tree,
         pos: &mut Position,
     ) -> Self::TraceData {
-        node.try_into::<Branching>()
-            .map(|node| EvalInfo::new(tree.branches(node).iter().map(|b| b.mov()).collect(), pos))
+        node.try_into::<Branching>().map(|node| {
+            EvalInfo::new(
+                tree.branches(node).iter().map(|b| b.mov()).collect(),
+                pos,
+                self.params.clone(),
+            )
+        })
     }
 
     fn eval_batch(
