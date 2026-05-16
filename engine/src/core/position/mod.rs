@@ -328,7 +328,7 @@ impl PieceInfo {
         unsafe { self.piece_counts.get_unchecked_mut(piece.v() as usize) }
     }
 
-    pub fn remove_piece(&mut self, sq: Square) {
+    pub fn remove_piece(&mut self, sq: Square) -> Piece {
         let target = Bitboard::from(sq);
         let piece = self.get_piece(sq);
         debug_assert_ne!(piece, Piece::default(), "No piece at {sq}");
@@ -336,6 +336,7 @@ impl PieceInfo {
         *self.get_color_bb_mut(piece.color()) ^= target;
         *self.get_piece_mut(sq) = Piece::default();
         *self.get_piece_count_mut(piece) -= 1;
+        piece
     }
 
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
@@ -371,31 +372,33 @@ impl PieceInfo {
     }
 
     /// Whether the move is a checking move
-    pub fn does_check(&self, stm: Turn, mov: Move) -> bool {
+    pub fn does_check(&mut self, stm: Turn, mov: Move) -> bool {
         let (from, to, _) = mov.into();
 
         // make the move on the board
-        let mut pieces = self.clone();
-        if let Some(capt_sq) = mov.get_capture_sq() {
-            pieces.remove_piece(capt_sq);
+        let captured = if let Some(capt_sq) = mov.get_capture_sq() {
+            Some(self.remove_piece(capt_sq))
         }
-        pieces.move_piece(from, to);
+        else {
+            None
+        };
+        self.move_piece(from, to);
 
         // a move has been made, so stm is inverted now.
         let stm = !stm;
         let nstm = !stm;
 
-        let allies = pieces.get_color_bb(stm);
-        let enemies = pieces.get_color_bb(nstm);
-        let kings = pieces.get_piece_bb(piece_type::KING);
+        let allies = self.get_color_bb(stm);
+        let enemies = self.get_color_bb(nstm);
+        let kings = self.get_piece_bb(piece_type::KING);
 
-        if let Some(king_sq) = (allies & kings).lsb() {
-            let occupancy = pieces.get_occupancy();
-            let pawns = pieces.get_piece_bb(piece_type::PAWN) & enemies;
-            let knights = pieces.get_piece_bb(piece_type::KNIGHT) & enemies;
-            let queens = pieces.get_piece_bb(piece_type::QUEEN) & enemies;
-            let r_n_q = (pieces.get_piece_bb(piece_type::ROOK) | queens) & enemies;
-            let b_n_q = (pieces.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
+        let result = if let Some(king_sq) = (allies & kings).lsb() {
+            let occupancy = self.get_occupancy();
+            let pawns = self.get_piece_bb(piece_type::PAWN) & enemies;
+            let knights = self.get_piece_bb(piece_type::KNIGHT) & enemies;
+            let queens = self.get_piece_bb(piece_type::QUEEN) & enemies;
+            let r_n_q = (self.get_piece_bb(piece_type::ROOK) | queens) & enemies;
+            let b_n_q = (self.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
 
             let checkers = {
                 Bitboard::empty()
@@ -415,7 +418,14 @@ impl PieceInfo {
         }
         else {
             false
+        };
+
+        self.move_piece(to, from);
+        if let Some(captured) = captured {
+            self.put_piece(to, captured);
         }
+
+        result
     }
 }
 
@@ -563,11 +573,6 @@ impl Position {
     }
 
     #[inline]
-    pub fn does_check(&self, mov: Move) -> bool {
-        self.piece_info.does_check(self.get_turn(), mov)
-    }
-
-    #[inline]
     pub fn is_insufficient_material(&self) -> bool {
         self.piece_info.piece_counts.iter().sum::<i8>() <= 2
     }
@@ -689,7 +694,7 @@ impl Position {
     /// This pub, because it is used for benchmarking.
     #[inline]
     pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) {
-        self.piece_info.remove_piece(sq)
+        self.piece_info.remove_piece(sq);
     }
 
     /// # Safety

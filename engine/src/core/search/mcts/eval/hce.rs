@@ -403,8 +403,9 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
     }
     else {
         if depth < Depth::new(3) {
+            let mut pieces = pos.piece_info().clone();
             _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-                if m.get_flag().is_capture() || pos.does_check(m) {
+                if m.get_flag().is_capture() || pieces.does_check(P::COLOR, m) {
                     move_list.push((m, 0));
                 }
                 ControlFlow::Continue::<(), ()>(())
