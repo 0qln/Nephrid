@@ -402,13 +402,11 @@ impl PieceInfo {
                     | (Rook::lookup_attacks(king_sq, occupancy) & r_n_q)
             };
 
-            let check_state = match checkers.pop_cnt() {
+            match checkers.pop_cnt() {
                 1 => CheckState::Single,
                 2 => CheckState::Double,
                 _ => CheckState::None,
-            };
-
-            check_state
+            }
         }
         else {
             CheckState::None
