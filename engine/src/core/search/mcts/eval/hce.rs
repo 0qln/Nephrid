@@ -1062,11 +1062,12 @@ impl PolicyInput {
 
     pub fn check_bonus(_phase: TaperValue, pos: &PieceInfo, turn: Turn, mov: Move) -> i32 {
         let check = pos.does_check(turn, mov);
-        match check {
+        let score = match check {
             CheckState::None => 0,
             CheckState::Single => 50,
             CheckState::Double => 100,
-        }
+        };
+        _phase.weighted_eval(0, score)
     }
 }
 
