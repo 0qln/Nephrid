@@ -1,7 +1,7 @@
 use std::ops::Try;
 
 use crate::core::{
-    bitboard::Bitboard, coordinates::Square, r#move::Move, piece::IPieceType, position::Position,
+    bitboard::Bitboard, coordinates::Square, r#move::Move, move_iter::GenType, piece::IPieceType, position::Position
 };
 
 use super::{FoldMoves, NoDoubleCheck, map_captures, map_quiets, pin_mask};
@@ -15,7 +15,7 @@ pub trait SlidingAttacks {
 
 pub trait SlidingPieceType: SlidingAttacks + IPieceType {}
 
-impl<const Q: bool, C, T> FoldMoves<C, Q> for T
+impl<Gen: GenType, C, T> FoldMoves<C, Q> for T
 where
     C: NoDoubleCheck,
     T: SlidingPieceType,
@@ -35,7 +35,7 @@ where
                 let attacks = T::lookup_attacks(piece, occupancy);
                 let legal_attacks = attacks & pin_mask(pos, piece);
 
-                let legal_quiets = legal_attacks & C::quiets_mask::<{ Q }>(pos, color);
+                let legal_quiets = legal_attacks & C::quiets_mask::<Gen>(pos, color);
                 let legal_captures = legal_attacks & C::captures_mask(pos, color);
 
                 acc = map_captures(legal_captures, piece).try_fold(acc, &mut f)?;

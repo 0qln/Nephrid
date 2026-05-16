@@ -7,7 +7,7 @@ use pawn::Pawn;
 use queen::Queen;
 use rook::Rook;
 
-use crate::{core::r#move::move_flags};
+use crate::core::r#move::move_flags;
 
 use super::{
     bitboard::Bitboard,
@@ -28,6 +28,11 @@ pub mod sliding_piece;
 
 #[cfg(test)]
 mod test;
+
+pub const trait GenType {
+    fn quiets() -> bool;
+    fn checks() -> bool;
+}
 
 pub trait FoldMoves<Check, const GEN_QUIETS: bool> {
     fn fold_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
@@ -50,8 +55,8 @@ trait NoDoubleCheck {
     fn captures_mask(pos: &Position, color: Color) -> Bitboard;
 
     #[inline(always)]
-    fn quiets_mask<const GEN_QUIETS: bool>(pos: &Position, color: Color) -> Bitboard {
-        if !GEN_QUIETS {
+    fn quiets_mask<Gen: GenType>(pos: &Position, color: Color) -> Bitboard {
+        if !Gen::quiets() {
             Bitboard::empty()
         }
         else {
@@ -62,7 +67,7 @@ trait NoDoubleCheck {
 
 pub struct NoCheck;
 impl NoDoubleCheck for NoCheck {
-    fn raw_quiets_mask(pos: &Position, _: Color) -> Bitboard {
+    fn raw_quiets_mask<Gen: GenType>(pos: &Position, _: Color) -> Bitboard {
         !pos.get_occupancy()
     }
 
