@@ -364,6 +364,7 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
     pos: &mut Position,
     mut alpha: Score<P>,
     beta: Score<P>,
+    depth: Depth,
     params: X,
 ) -> Score<P> {
     let in_check = pos.get_check_state() != CheckState::None;
@@ -401,10 +402,20 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
         });
     }
     else {
-        _ = fold_legal_captures::<_, _, _>(pos, (), |_, m| {
-            move_list.push((m, 0));
-            ControlFlow::Continue::<(), ()>(())
-        });
+        if depth < Depth::new(3) {
+            _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
+                if m.get_flag().is_capture() || pos.does_check(m) {
+                    move_list.push((m, 0));
+                }
+                ControlFlow::Continue::<(), ()>(())
+            });
+        }
+        else {
+            _ = fold_legal_captures::<_, _, _>(pos, (), |_, m| {
+                move_list.push((m, 0));
+                ControlFlow::Continue::<(), ()>(())
+            });
+        }
     };
 
     /*\                                             /*\
@@ -428,17 +439,15 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
     for &(m, _) in move_list.iter() {
         // delta pruning
         if !in_check && phase < params.delta_pruning_threshold() {
-            let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {
-                piece_score(promo.into()) - piece_score(piece_type::PAWN)
-            }
-            else {
-                0
-            };
+            let value_bonus = PromoPieceType::try_from(m.get_flag())
+                .ok()
+                .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
+                .unwrap_or(0);
 
-            // SAFETY: we know this is a capture move.
-            let capture_square = unsafe { m.get_capture_sq().unwrap_unchecked() };
-            let captured_piece = pos.get_piece(capture_square);
-            let captured_value = piece_score(captured_piece.piece_type());
+            let captured_value = m
+                .get_capture_sq()
+                .map(|capt_sq| piece_score(pos.get_piece(capt_sq).piece_type()))
+                .unwrap_or(0);
 
             let futility_margin = params.futility_margin();
             let futility_score = captured_value + value_bonus + futility_margin;
@@ -450,7 +459,7 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
 
         pos.make_move_for::<P>(m);
 
-        let score = !qsearch(pos, !beta, !alpha, params.clone());
+        let score = !qsearch(pos, !beta, !alpha, depth + 1, params.clone());
 
         pos.unmake_move_for::<P>(m);
 
@@ -1080,6 +1089,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
+                Depth::ROOT,
                 params.clone(),
             )
             .into(),
@@ -1087,6 +1097,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
+                Depth::ROOT,
                 params.clone(),
             )
             .into(),

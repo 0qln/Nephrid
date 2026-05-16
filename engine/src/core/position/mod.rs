@@ -369,6 +369,54 @@ impl PieceInfo {
         *self.get_piece_mut(from) = Piece::default();
         *self.get_piece_mut(to) = piece;
     }
+
+    /// Whether the move is a checking move
+    pub fn does_check(&self, stm: Turn, mov: Move) -> bool {
+        let (from, to, _) = mov.into();
+
+        // make the move on the board
+        let mut pieces = self.clone();
+        if let Some(capt_sq) = mov.get_capture_sq() {
+            pieces.remove_piece(capt_sq);
+        }
+        pieces.move_piece(from, to);
+
+        // a move has been made, so stm is inverted now.
+        let stm = !stm;
+        let nstm = !stm;
+
+        let allies = pieces.get_color_bb(stm);
+        let enemies = pieces.get_color_bb(nstm);
+        let kings = pieces.get_piece_bb(piece_type::KING);
+
+        if let Some(king_sq) = (allies & kings).lsb() {
+            let occupancy = pieces.get_occupancy();
+            let pawns = pieces.get_piece_bb(piece_type::PAWN) & enemies;
+            let knights = pieces.get_piece_bb(piece_type::KNIGHT) & enemies;
+            let queens = pieces.get_piece_bb(piece_type::QUEEN) & enemies;
+            let r_n_q = (pieces.get_piece_bb(piece_type::ROOK) | queens) & enemies;
+            let b_n_q = (pieces.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
+
+            let checkers = {
+                Bitboard::empty()
+                    | (pawn::lookup_attacks(king_sq, stm) & pawns)
+                    | (knight::lookup_attacks(king_sq) & knights)
+                    | (Bishop::lookup_attacks(king_sq, occupancy) & b_n_q)
+                    | (Rook::lookup_attacks(king_sq, occupancy) & r_n_q)
+            };
+
+            let check_state = match checkers.pop_cnt() {
+                1 => CheckState::Single,
+                2 => CheckState::Double,
+                _ => CheckState::None,
+            };
+
+            check_state != CheckState::None
+        }
+        else {
+            false
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -512,6 +560,11 @@ impl Position {
             i += 2;
         }
         false
+    }
+
+    #[inline]
+    pub fn does_check(&self, mov: Move) -> bool {
+        self.piece_info.does_check(self.get_turn(), mov)
     }
 
     #[inline]
