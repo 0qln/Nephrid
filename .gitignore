@@ -30,4 +30,5 @@ perf.data*
 flamegraph.svg
 
 # ccbench
-ccbench
+ccbench/out
+ccbench/in/builds

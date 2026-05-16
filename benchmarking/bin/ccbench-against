@@ -9,7 +9,7 @@ if [[ "$1" == "-h" || "$1" == "--help" ]]; then
     exit 0
 fi
 
-mkdir -p ccbench/in ccbench/out
+mkdir -p ccbench/in/builds ccbench/out
 
 # Determine the base commit reference (branch, tag, or hash)
 BASE_REF="${1:-main}"
@@ -31,8 +31,8 @@ echo "Feature commit: $FEAT_HASH"
 echo "Base commit ($BASE_REF): $BASE_HASH"
 
 # Binary paths
-FEAT_BIN="ccbench/in/nephrid-${FEAT_HASH}"
-BASE_BIN="ccbench/in/nephrid-${BASE_HASH}"
+FEAT_BIN="ccbench/in/builds/nephrid-${FEAT_HASH}"
+BASE_BIN="ccbench/in/builds/nephrid-${BASE_HASH}"
 
 need_base=false
 need_feat=false
@@ -77,5 +77,5 @@ echo "Executing ccbench..."
 ccbench \
     "$FEAT_BIN" \
     "$BASE_BIN" \
-    benchmarking/resources/popularpos_lichess_v3.epd \
+    ccbench/in/books/popularpos_lichess_v3.epd \
     ccbench/out/games.pgn
