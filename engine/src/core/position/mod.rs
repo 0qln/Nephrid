@@ -376,6 +376,7 @@ impl PieceInfo {
 
         // make the move on the board
         let mut pieces = self.clone();
+        pieces.remove_piece(to);
         pieces.move_piece(from, to);
 
         // a move has been made, so stm is inverted now.
