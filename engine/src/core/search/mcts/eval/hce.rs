@@ -277,6 +277,15 @@ impl<P: Perspective, Rhs: Into<Score<P>>> ops::Add<Rhs> for Score<P> {
     }
 }
 
+impl<P: Perspective> ops::Div<i32> for Score<P> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn div(self, rhs: i32) -> Self::Output {
+        Self(self.0 / rhs, PhantomData)
+    }
+}
+
 impl<P: Perspective> Eq for Score<P> {}
 
 impl<P: Perspective> Ord for Score<P> {
