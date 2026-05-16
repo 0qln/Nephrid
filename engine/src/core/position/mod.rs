@@ -371,7 +371,7 @@ impl PieceInfo {
     }
 
     /// Whether the move is a checking move
-    pub fn does_check(&self, stm: Turn, mov: Move) -> bool {
+    pub fn does_check(&self, stm: Turn, mov: Move) -> CheckState {
         let (from, to, _) = mov.into();
 
         // make the move on the board
@@ -408,10 +408,10 @@ impl PieceInfo {
                 _ => CheckState::None,
             };
 
-            check_state != CheckState::None
+            check_state
         }
         else {
-            false
+            CheckState::None
         }
     }
 }
@@ -560,7 +560,7 @@ impl Position {
     }
 
     #[inline]
-    pub fn does_check(&self, mov: Move) -> bool {
+    pub fn does_check(&self, mov: Move) -> CheckState {
         self.piece_info.does_check(self.get_turn(), mov)
     }
 

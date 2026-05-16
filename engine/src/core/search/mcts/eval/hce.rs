@@ -404,7 +404,7 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
     else {
         if depth < Depth::new(3) {
             _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-                if m.get_flag().is_capture() || pos.does_check(m) {
+                if m.get_flag().is_capture() || pos.does_check(m) != CheckState::None {
                     move_list.push((m, 0));
                 }
                 ControlFlow::Continue::<(), ()>(())
@@ -1060,8 +1060,13 @@ impl PolicyInput {
         0
     }
 
-    pub fn check_bonus(pos: &PieceInfo, turn: Turn, mov: Move) -> i32 {
-        if pos.does_check(turn, mov) { 50 } else { 0 }
+    pub fn check_bonus(_phase: TaperValue, pos: &PieceInfo, turn: Turn, mov: Move) -> i32 {
+        let check = pos.does_check(turn, mov);
+        match check {
+            CheckState::None => 0,
+            CheckState::Single => 50,
+            CheckState::Double => 100,
+        }
     }
 }
 
@@ -1143,7 +1148,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             let piece = pos.get_piece(from).piece_type();
             let score = PolicyInput::psqt(phase, piece, from, to, color)
                 + see(pos, mov, color)
-                + PolicyInput::check_bonus(pos, color, mov)
+                + PolicyInput::check_bonus(phase, pos, color, mov)
                 + PolicyInput::meta(pos, mov, state);
 
             logits.push(score as f32);
