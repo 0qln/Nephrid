@@ -350,10 +350,6 @@ where
     if !safe_pawns.is_empty() {
         type P = PawnMoves<variants::Unpinned>;
 
-        if O::gen_promos() {
-            acc = apply!(acc, safe_pawns, (), P::promo::<C, T>);
-        }
-
         acc = apply!(
             acc,
             safe_pawns,
@@ -365,6 +361,10 @@ where
             P::promo_capture::<C, { compass_rose::WEST_C }, T>,
             P::promo_capture::<C, { compass_rose::EAST_C }, T>
         );
+
+        if O::gen_promos() {
+            acc = apply!(acc, safe_pawns, (), P::promo::<C, T>);
+        }
 
         if O::gen_quiets() {
             acc = apply!(
@@ -380,10 +380,6 @@ where
     if !pinned_pawns.is_empty() {
         type P<'a> = PawnMoves<variants::Pinned<'a>>;
 
-        if O::gen_promos() {
-            acc = apply!(acc, pinned_pawns, pos, P::promo::<C, T>);
-        }
-
         acc = apply!(
             acc,
             pinned_pawns,
@@ -395,6 +391,11 @@ where
             P::promo_capture::<C, { compass_rose::WEST_C }, T>,
             P::promo_capture::<C, { compass_rose::EAST_C }, T>
         );
+
+        // todo: pinned pawns cannot make a quiet promoting move, no?
+        if O::gen_promos() {
+            acc = apply!(acc, pinned_pawns, pos, P::promo::<C, T>);
+        }
 
         if O::gen_quiets() {
             acc = apply!(
