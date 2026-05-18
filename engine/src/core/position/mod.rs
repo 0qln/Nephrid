@@ -670,23 +670,21 @@ impl Position {
         // These might change across leafes on the same depth, so the
         // need to be reinitialized for each leaf.
         let curr_state = self.state.get_current();
-        next_state.castling = curr_state.castling;
-        next_state.plys50 = curr_state.plys50 + 1;
-        next_state.ep_capture_square = EpCaptureSquare::default();
-        next_state.key = curr_state.key;
-        next_state
-            .key
-            .toggle_ep_square(curr_state.ep_capture_square);
-        next_state.key.toggle_turn();
-        next_state.captured_piece = Piece::default();
+        let next_state = {
+            let s = next_state;
+            s.castling = curr_state.castling;
+            s.plys50 = curr_state.plys50 + 1;
+            s.ep_capture_square = EpCaptureSquare::default();
+            s.key = curr_state.key;
+            s.key.toggle_ep_square(curr_state.ep_capture_square);
+            s.key.toggle_turn();
+            s.captured_piece = Piece::default();
 
-        // castling
-        next_state
-            .castling
-            .apply_mask(CastlingRights::MASKS[from.index()]);
-        next_state
-            .castling
-            .apply_mask(CastlingRights::MASKS[to.index()]);
+            // castling
+            s.castling.apply_mask(CastlingRights::get_mask(from));
+            s.castling.apply_mask(CastlingRights::get_mask(to));
+            s
+        };
 
         // captures
         if flag.is_capture() {

@@ -4,7 +4,7 @@ use core::fmt;
 use crate::{
     core::{
         color::{Color, colors::*},
-        coordinates::{files, squares},
+        coordinates::{Square, files, squares},
         piece::piece_type,
     },
     impl_variants,
@@ -95,6 +95,11 @@ impl fmt::Display for CastlingRights {
 
 impl CastlingRights {
     #[inline]
+    pub const unsafe fn from_v(v: u8) -> Self {
+        Self { v }
+    }
+
+    #[inline]
     pub const fn set_false(&mut self, side: CastlingSide, color: Color) {
         self.v &= !(1 << Self::to_index(side, color));
     }
@@ -137,7 +142,7 @@ impl CastlingRights {
 
     #[inline]
     pub const fn full() -> Self {
-        Self { v: 0xFF }
+        Self { v: 0xF }
     }
 
     #[inline]
@@ -147,35 +152,36 @@ impl CastlingRights {
         color.v() | (side.v & 0b10)
     }
 
-    /// Precomputed masks for all 64 squares.
-    /// Applying the mask for a square clears rights if a King or Rook
-    /// moves from or is captured on that square.
-    pub const MASKS: [Self; 64] = Self::init_masks();
+    #[inline]
+    pub fn get_mask(sq: Square) -> Self {
+        const MASKS: [CastlingRights; squares::N_VARIANTS] = {
+            // Initialize all 64 squares to 0xFF (all bits 1, meaning "keep all rights")
+            let mut masks = [CastlingRights::full(); squares::N_VARIANTS];
 
-    const fn init_masks() -> [Self; 64] {
-        // Initialize all 64 squares to 0xFF (all bits 1, meaning "keep all rights")
-        let mut masks = [Self::full(); 64];
+            // A1 (index 0): clears White Queen-side
+            masks[squares::A1.index()].set_false(QUEEN_SIDE, WHITE);
 
-        // A1 (index 0): clears White Queen-side
-        masks[squares::A1.index()].set_false(QUEEN_SIDE, WHITE);
+            // H1 (index 7): clears White King-side
+            masks[squares::H1.index()].set_false(KING_SIDE, WHITE);
 
-        // H1 (index 7): clears White King-side
-        masks[squares::H1.index()].set_false(KING_SIDE, WHITE);
+            // E1 (index 4): clears both White King-side and Queen-side
+            masks[squares::E1.index()].set_false(QUEEN_SIDE, WHITE);
+            masks[squares::E1.index()].set_false(KING_SIDE, WHITE);
 
-        // E1 (index 4): clears both White King-side and Queen-side
-        masks[squares::E1.index()].set_false(QUEEN_SIDE, WHITE);
-        masks[squares::E1.index()].set_false(KING_SIDE, WHITE);
+            // A8 (index 56): clears Black Queen-side
+            masks[squares::A8.index()].set_false(QUEEN_SIDE, BLACK);
 
-        // A8 (index 56): clears Black Queen-side
-        masks[squares::A8.index()].set_false(QUEEN_SIDE, BLACK);
+            // H8 (index 63): clears Black King-side
+            masks[squares::H8.index()].set_false(KING_SIDE, BLACK);
 
-        // H8 (index 63): clears Black King-side
-        masks[squares::H8.index()].set_false(KING_SIDE, BLACK);
+            // E8 (index 60): clears both Black King-side and Queen-side
+            masks[squares::E8.index()].set_false(QUEEN_SIDE, BLACK);
+            masks[squares::E8.index()].set_false(KING_SIDE, BLACK);
 
-        // E8 (index 60): clears both Black King-side and Queen-side
-        masks[squares::E8.index()].set_false(QUEEN_SIDE, BLACK);
-        masks[squares::E8.index()].set_false(KING_SIDE, BLACK);
+            masks
+        };
 
-        masks
+        // SAFETY: The index is guaranteed to be in bounds since `sq` is a valid square.
+        unsafe { *MASKS.get_unchecked(sq.index()) }
     }
 }
