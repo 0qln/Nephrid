@@ -56,6 +56,7 @@ fn captures_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard 
 
 pub const trait Options {
     fn gen_quiets() -> bool;
+    fn gen_promos() -> bool;
 }
 
 pub trait FoldMoves<Check, O: Options> {
@@ -168,12 +169,22 @@ pub mod opt {
         fn gen_quiets() -> bool {
             true
         }
+
+        #[inline(always)]
+        fn gen_promos() -> bool {
+            true
+        }
     }
 
     pub struct Captures;
     impl Options for Captures {
         #[inline(always)]
         fn gen_quiets() -> bool {
+            false
+        }
+
+        #[inline(always)]
+        fn gen_promos() -> bool {
             false
         }
     }
