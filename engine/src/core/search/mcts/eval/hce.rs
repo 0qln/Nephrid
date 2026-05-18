@@ -401,7 +401,7 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
 
             #[inline(always)]
             fn gen_promos() -> bool {
-                true
+                false
             }
         }
 
