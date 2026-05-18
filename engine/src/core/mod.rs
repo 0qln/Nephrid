@@ -7,10 +7,17 @@ use thiserror::Error;
 
 use crate::{
     core::{
-        color::colors, config::Configuration, depth::Depth, r#move::{Move, MoveList, SanParseError}, params::{IParams, Params}, piece::piece_type, position::{
+        color::colors,
+        config::Configuration,
+        depth::Depth,
+        r#move::{Move, MoveList, SanParseError},
+        params::{IParams, Params},
+        piece::piece_type,
+        position::{
             EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError,
             PgnImport, PgnImportError, Position, ReducedPgn,
-        }, search::{
+        },
+        search::{
             Command, PonderToken, SearchThread, SearchWorker,
             limit::UciLimit,
             mcts::{
@@ -20,7 +27,7 @@ use crate::{
                 },
                 node::WinRate,
             },
-        }
+        },
     },
     misc::{CancellationToken, DebugMode, List, trim_newline},
     uci::{UciError, tokens::Tokenizer},
@@ -35,13 +42,13 @@ pub mod coordinates;
 pub mod depth;
 pub mod r#move;
 pub mod move_iter;
+pub mod params;
 pub mod piece;
 pub mod ply;
 pub mod position;
 pub mod search;
 pub mod turn;
 pub mod zobrist;
-pub mod params;
 
 #[derive(Debug, Default, Clone)]
 pub struct Game {
@@ -230,7 +237,8 @@ pub fn execute_uci(
 
                 while let Some(token) = tokenizer.next_token() {
                     match token {
-                        "perft" => mode = Mode::Perft,
+                        "perft" => mode = Mode::Perft { captures_only: false },
+                        "captures" => mode = Mode::Perft { captures_only: true },
                         "ponder" => mode = Mode::Ponder,
                         "wtime" => collect_and_parse!(limit.wtime),
                         "btime" => collect_and_parse!(limit.btime),
@@ -268,7 +276,9 @@ pub fn execute_uci(
                     ponder_hit.start_ponder();
                     Command::Ponder(position, limit, token, debug, ponder_hit)
                 }
-                Mode::Perft => Command::Perft(position, limit, token, debug),
+                Mode::Perft { captures_only } => {
+                    Command::Perft(position, limit, token, debug, captures_only)
+                }
             };
 
             engine.search_t.tx.send(cmd)?;
