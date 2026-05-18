@@ -2,9 +2,7 @@ use thiserror::Error;
 
 use crate::{
     core::{
-        Game, Move,
-        config::Configuration,
-        search::{
+        Game, Move, config::Configuration, move_iter::opt, search::{
             limit::UciLimit,
             mcts::{
                 MctsConfig, MctsParts,
@@ -15,7 +13,7 @@ use crate::{
                 },
                 select::Selector,
             },
-        },
+        }
     },
     misc::CancellationToken,
 };
@@ -107,7 +105,7 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                 Ok(())
             }
             Command::Perft(mut pos, limit, ct, debug) => {
-                perft::<true>(&mut pos, &limit, ct, debug);
+                perft::<opt::All>(&mut pos, &limit, ct, debug);
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {

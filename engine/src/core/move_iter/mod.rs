@@ -1,4 +1,4 @@
-use std::ops::Try;
+use std::{hint::unreachable_unchecked, ops::Try};
 
 use bishop::Bishop;
 use king::King;
@@ -7,15 +7,10 @@ use pawn::Pawn;
 use queen::Queen;
 use rook::Rook;
 
-use crate::{core::r#move::move_flags};
+use crate::core::{r#move::move_flags, piece::IPieceType, position};
 
 use super::{
-    bitboard::Bitboard,
-    color::Color,
-    coordinates::Square,
-    r#move::Move,
-    piece::IPieceType,
-    position::{CheckState, Position},
+    bitboard::Bitboard, color::Color, coordinates::Square, r#move::Move, position::Position,
 };
 
 pub mod bishop;
@@ -29,136 +24,158 @@ pub mod sliding_piece;
 #[cfg(test)]
 mod test;
 
-pub trait FoldMoves<Check, const GEN_QUIETS: bool> {
-    fn fold_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
-    where
-        F: FnMut(B, Move) -> R,
-        R: Try<Output = B>;
-}
-
-pub trait FoldMovesHelper<Check, const GEN_QUIETS: bool> {
-    fn fold_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
-    where
-        F: FnMut(B, Move) -> R,
-        R: Try<Output = B>;
-}
-
-trait SomeCheck {}
-
-trait NoDoubleCheck {
-    fn raw_quiets_mask(pos: &Position, color: Color) -> Bitboard;
-    fn captures_mask(pos: &Position, color: Color) -> Bitboard;
-
-    #[inline(always)]
-    fn quiets_mask<const GEN_QUIETS: bool>(pos: &Position, color: Color) -> Bitboard {
-        if !GEN_QUIETS {
-            Bitboard::empty()
+/// To squares for quiet moves
+#[inline(always)]
+fn quiets_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard {
+    match C::check_state() {
+        RtCheckState::None => !pos.get_occupancy(),
+        RtCheckState::Single => {
+            let king_bb = pos.get_bitboard(King::ID, color);
+            Bitboard::between(
+                // Safety: there is a check, so there has to be a king.
+                unsafe { king_bb.lsb().unwrap_unchecked() },
+                // Safety: there is a single checker.
+                unsafe { pos.get_checkers().lsb().unwrap_unchecked() },
+            )
         }
-        else {
-            Self::raw_quiets_mask(pos, color)
-        }
+        // Safety: there is no double check, so this case is unreachable.
+        RtCheckState::Double => unsafe { unreachable_unchecked() },
     }
 }
+
+/// To squares for captures
+#[inline(always)]
+fn captures_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard {
+    match C::check_state() {
+        RtCheckState::None => pos.get_color_bb(!color),
+        RtCheckState::Single => pos.get_checkers(),
+        // Safety: there is no double check, so this case is unreachable.
+        RtCheckState::Double => unsafe { unreachable_unchecked() },
+    }
+}
+
+pub const trait Options {
+    fn gen_quiets() -> bool;
+}
+
+pub trait FoldMoves<Check, O: Options> {
+    fn fold_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
+    where
+        F: FnMut(B, Move) -> R,
+        R: Try<Output = B>;
+}
+
+use position::CheckState as RtCheckState;
+
+const trait CheckState {
+    fn check_state() -> RtCheckState;
+}
+trait SomeCheck {}
+trait NoDoubleCheck: CheckState {}
 
 pub struct NoCheck;
-impl NoDoubleCheck for NoCheck {
-    fn raw_quiets_mask(pos: &Position, _: Color) -> Bitboard {
-        !pos.get_occupancy()
-    }
-
-    fn captures_mask(pos: &Position, color: Color) -> Bitboard {
-        pos.get_color_bb(!color)
+impl CheckState for NoCheck {
+    #[inline(always)]
+    fn check_state() -> RtCheckState {
+        RtCheckState::None
     }
 }
+impl NoDoubleCheck for NoCheck {}
 
 pub struct SingleCheck;
-impl SomeCheck for SingleCheck {}
-impl NoDoubleCheck for SingleCheck {
-    fn raw_quiets_mask(pos: &Position, color: Color) -> Bitboard {
-        let king_bb = pos.get_bitboard(King::ID, color);
-        Bitboard::between(
-            // Safety: there is a check, so there has to be a king.
-            unsafe { king_bb.lsb().unwrap_unchecked() },
-            // Safety: there is a single checker.
-            unsafe { pos.get_checkers().lsb().unwrap_unchecked() },
-        )
-    }
-
-    fn captures_mask(pos: &Position, _: Color) -> Bitboard {
-        pos.get_checkers()
+impl CheckState for SingleCheck {
+    #[inline(always)]
+    fn check_state() -> RtCheckState {
+        RtCheckState::Single
     }
 }
+impl SomeCheck for SingleCheck {}
+impl NoDoubleCheck for SingleCheck {}
 
 struct DoubleCheck;
+impl CheckState for DoubleCheck {
+    #[inline(always)]
+    fn check_state() -> RtCheckState {
+        RtCheckState::Double
+    }
+}
 impl SomeCheck for DoubleCheck {}
 
-impl<C, const Q: bool> FoldMovesHelper<C, { Q }> for C
-where
-    C: NoDoubleCheck,
-    King: FoldMoves<C, { Q }>,
-{
-    fn fold_moves<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+impl NoCheck {
+    #[inline(always)]
+    fn fold_moves<O: Options, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        init = <Rook as FoldMoves<C, Q>>::fold_moves(pos, init, &mut f)?;
-        init = <Bishop as FoldMoves<C, Q>>::fold_moves(pos, init, &mut f)?;
-        init = <Queen as FoldMoves<C, Q>>::fold_moves(pos, init, &mut f)?;
-        init = <King as FoldMoves<C, Q>>::fold_moves(pos, init, &mut f)?;
-        init = <Knight as FoldMoves<C, Q>>::fold_moves(pos, init, &mut f)?;
-        init = <Pawn as FoldMoves<C, Q>>::fold_moves(pos, init, &mut f)?;
+        init = <Rook as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <Bishop as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <Queen as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <King as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <Knight as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <Pawn as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
         try { init }
     }
 }
 
-impl<const Q: bool> FoldMoves<Self, { Q }> for SingleCheck {
+impl SingleCheck {
     #[inline(always)]
-    fn fold_moves<B, F, R>(pos: &Position, init: B, mut f: F) -> R
+    fn fold_moves<O: Options, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        <Self as FoldMovesHelper<SingleCheck, Q>>::fold_moves(pos, init, &mut f)
+        init = <Rook as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <Bishop as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <Queen as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <King as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <Knight as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <Pawn as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
+        try { init }
     }
 }
 
-impl<const Q: bool> FoldMoves<Self, { Q }> for NoCheck {
+impl DoubleCheck {
     #[inline(always)]
-    fn fold_moves<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+    fn fold_moves<O: Options, B, F, R>(pos: &Position, init: B, f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        if Q {
-            init = king::fold_legal_castling(pos, init, &mut f)?;
-        }
-        <Self as FoldMovesHelper<NoCheck, Q>>::fold_moves(pos, init, &mut f)
-    }
-}
-
-impl<const Q: bool> FoldMoves<Self, { Q }> for DoubleCheck {
-    #[inline(always)]
-    fn fold_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
-    where
-        F: FnMut(B, Move) -> R,
-        R: Try<Output = B>,
-    {
-        <King as FoldMoves<DoubleCheck, { Q }>>::fold_moves(pos, init, f)
+        <King as FoldMoves<DoubleCheck, O>>::fold_moves(pos, init, f)
     }
 }
 
 #[inline]
-pub fn fold_legals<const Q: bool, B, F, R>(pos: &Position, init: B, f: F) -> R
+pub fn fold_legals<O: Options, B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    use CheckState::*;
     match pos.get_check_state() {
-        None => <NoCheck as FoldMoves<_, { Q }>>::fold_moves(pos, init, f),
-        Single => <SingleCheck as FoldMoves<_, { Q }>>::fold_moves(pos, init, f),
-        Double => <DoubleCheck as FoldMoves<_, { Q }>>::fold_moves(pos, init, f),
+        RtCheckState::None => NoCheck::fold_moves::<O, _, _, _>(pos, init, f),
+        RtCheckState::Single => SingleCheck::fold_moves::<O, _, _, _>(pos, init, f),
+        RtCheckState::Double => DoubleCheck::fold_moves::<O, _, _, _>(pos, init, f),
+    }
+}
+
+pub mod opt {
+    use super::Options;
+
+    pub struct All;
+    impl Options for All {
+        #[inline(always)]
+        fn gen_quiets() -> bool {
+            true
+        }
+    }
+
+    pub struct Captures;
+    impl Options for Captures {
+        #[inline(always)]
+        fn gen_quiets() -> bool {
+            false
+        }
     }
 }
 
@@ -168,7 +185,7 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    fold_legals::<true, B, F, R>(pos, init, f)
+    fold_legals::<opt::All, B, F, R>(pos, init, f)
 }
 
 #[inline]
@@ -177,27 +194,19 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    fold_legals::<false, B, F, R>(pos, init, f)
+    fold_legals::<opt::Captures, B, F, R>(pos, init, f)
 }
 
 #[inline]
-pub fn is_blocker(pos: &Position, piece: Square) -> bool {
+pub fn is_blocker(blockers: Bitboard, piece: Square) -> bool {
     let piece_bb = Bitboard::from(piece);
-    let blockers = pos.get_blockers();
     !(blockers & piece_bb).is_empty()
 }
 
 #[inline]
-pub fn pin_mask(pos: &Position, piece: Square) -> Bitboard {
-    if is_blocker(pos, piece) {
-        let color = pos.get_turn();
-
-        // todo: safely remove branching
-        let bb = pos.get_bitboard(King::ID, color)?;
-
-        // Safety: We check whether the bb is empty.
-        let king = unsafe { bb.lsb().unwrap_unchecked() };
-        Bitboard::ray(piece, king)
+pub fn pin_mask(piece: Square, blockers: Bitboard, our_king: Square) -> Bitboard {
+    if is_blocker(blockers, piece) {
+        Bitboard::ray(piece, our_king)
     }
     else {
         Bitboard::full()

@@ -10,7 +10,7 @@ use thiserror::Error;
 
 use crate::{
     core::{
-        bitboard::{Bitboard, BitboardIteratorExt},
+        bitboard::Bitboard,
         castling::{CastlingRights, CastlingSideTokenizationError},
         color::{Color, ColorTokenizationError, Perspective, colors, perspectives},
         coordinates::{
@@ -22,7 +22,6 @@ use crate::{
         move_iter::{
             bishop::{self, Bishop},
             fold_legal_moves,
-            king::{self},
             knight::{self},
             pawn,
             rook::{self, Rook},
@@ -59,7 +58,6 @@ pub struct StateInfo {
     // Memoized state
     pub checkers: Bitboard,
     pub blockers: Bitboard,
-    pub nstm_attacks: Bitboard,
     pub check_state: CheckState,
 
     // Game history
@@ -92,18 +90,6 @@ impl StateInfo {
         let kings = pieces.get_piece_bb(piece_type::KING);
         let r_n_q = (pieces.get_piece_bb(piece_type::ROOK) | queens) & enemies;
         let b_n_q = (pieces.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
-
-        let bishop_attacks = |sq| Bishop::lookup_attacks(sq, occupancy);
-        let rook_attacks = |sq| Rook::lookup_attacks(sq, occupancy);
-
-        self.nstm_attacks = {
-            let king = enemies & kings;
-            pawn::compute_attacks(pawns, nstm)
-                | knights.into_iter().map(knight::lookup_attacks).aggregate()
-                | b_n_q.into_iter().map(bishop_attacks).aggregate()
-                | r_n_q.into_iter().map(rook_attacks).aggregate()
-                | king.lsb().map(king::lookup_attacks).unwrap_or_default()
-        };
 
         if let Some(king_sq) = (allies & kings).lsb() {
             // Normal checkers
@@ -454,11 +440,6 @@ impl Position {
     #[inline]
     pub fn get_checkers(&self) -> Bitboard {
         self.state.get_current().checkers
-    }
-
-    #[inline]
-    pub fn get_nstm_attacks(&self) -> Bitboard {
-        self.state.get_current().nstm_attacks
     }
 
     #[inline]

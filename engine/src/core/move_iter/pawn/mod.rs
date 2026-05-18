@@ -10,6 +10,7 @@ use crate::core::{
         pawn_utils::*, squares,
     },
     r#move::{Move, MoveFlag, move_flags},
+    move_iter::{Options, captures_targets, quiets_targets},
     piece::{IPieceType, piece_type},
     position::Position,
 };
@@ -80,7 +81,7 @@ impl<V: Variant> PawnMoves<V> {
     }
 
     #[inline(always)]
-    fn single_step<const Q: bool, const C: TColor, T: NoDoubleCheck>(
+    fn single_step<const C: TColor, T: NoDoubleCheck>(
         pos: &Position,
         pawns: Bitboard,
         v_data: V::Data,
@@ -89,7 +90,7 @@ impl<V: Variant> PawnMoves<V> {
         let color = unsafe { Color::from_v(C) };
         let non_promo_pawns = pawns & !Bitboard::from(promo_rank(color));
         let pieces = pos.get_occupancy();
-        let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
+        let tabu_squares = !quiets_targets::<T>(pos, color) | pieces;
         let single_step_tabus = backward(tabu_squares, single_step(color));
         let from = non_promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
@@ -97,7 +98,7 @@ impl<V: Variant> PawnMoves<V> {
     }
 
     #[inline(always)]
-    fn double_step<const Q: bool, const C: TColor, T: NoDoubleCheck>(
+    fn double_step<const C: TColor, T: NoDoubleCheck>(
         pos: &Position,
         pawns: Bitboard,
         v_data: V::Data,
@@ -105,7 +106,7 @@ impl<V: Variant> PawnMoves<V> {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let pieces = pos.get_occupancy();
-        let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
+        let tabu_squares = !quiets_targets::<T>(pos, color) | pieces;
         let single_step_tabus = backward(pieces, single_step(color));
         let double_step_tabus = backward(tabu_squares, double_step(color)) | single_step_tabus;
         let double_step_pawns = pawns & Bitboard::from(start_rank(color));
@@ -125,7 +126,7 @@ impl<V: Variant> PawnMoves<V> {
         let capture_dir = capture(color, CompassRose::new(DIR));
         let non_promo_pawns = pawns & !Bitboard::from(promo_rank(color));
         let capturing_pawns = non_promo_pawns & !Bitboard::from(File::edge::<DIR>());
-        let to = forward(capturing_pawns, capture_dir) & T::captures_mask(pos, color);
+        let to = forward(capturing_pawns, capture_dir) & captures_targets::<T>(pos, color);
         let from = backward(to, capture_dir);
         Self::new(from, to, move_flags::CAPTURE, v_data)
     }
@@ -182,7 +183,7 @@ impl<V: Variant> PawnMoves<V> {
     }
 
     #[inline(always)]
-    fn promo<const Q: bool, const C: TColor, T: NoDoubleCheck>(
+    fn promo<const C: TColor, T: NoDoubleCheck>(
         pos: &Position,
         pawns: Bitboard,
         v_data: <<V as Variant>::Promo as Variant>::Data,
@@ -190,7 +191,7 @@ impl<V: Variant> PawnMoves<V> {
         Color::assert_variant(C); // Safety
         let color = unsafe { Color::from_v(C) };
         let pieces = pos.get_occupancy();
-        let tabu_squares = !T::quiets_mask::<Q>(pos, color) | pieces;
+        let tabu_squares = !quiets_targets::<T>(pos, color) | pieces;
         let single_step_tabus = backward(tabu_squares, single_step(color));
         let promo_pawns = pawns & Bitboard::from(promo_rank(color));
         let from = promo_pawns & !single_step_tabus;
@@ -210,7 +211,7 @@ impl<V: Variant> PawnMoves<V> {
         let capture_dir = capture(color, CompassRose::new(DIR));
         let promo_pawns = pawns & Bitboard::from(promo_rank(color));
         let capture_west_pawns = promo_pawns & !Bitboard::from(File::edge::<DIR>());
-        let to = forward(capture_west_pawns, capture_dir) & T::captures_mask(pos, color);
+        let to = forward(capture_west_pawns, capture_dir) & captures_targets::<T>(pos, color);
         let from = backward(to, capture_dir);
         let flag_base = move_flags::CAPTURE_PROMOTION_KNIGHT;
         PawnMoves::<V::Promo>::new(from, to, flag_base, v_data)
@@ -230,7 +231,13 @@ impl Iterator for PawnMoves<variants::Pinned<'_>> {
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
 
             // Check if the pawn is pinned and the move is valid.
-            let pin_mask = pin_mask(self.v_data, from);
+            let blockers = self.v_data.get_blockers();
+            let pin_mask = self
+                .v_data
+                .get_bitboard(piece_type::KING, self.v_data.get_turn())
+                .lsb()
+                .map(|our_king| pin_mask(from, blockers, our_king))
+                .unwrap_or_default();
             if (pin_mask & Bitboard::from(to)).is_empty() {
                 continue;
             }
@@ -286,7 +293,13 @@ impl PawnMoves<variants::PromoPinned<'_>> {
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
 
             // verify the pin mask for pinned promotions
-            let pin_mask = pin_mask(self.v_data, from);
+            let blockers = self.v_data.get_blockers();
+            let pin_mask = self
+                .v_data
+                .get_bitboard(piece_type::KING, self.v_data.get_turn())
+                .lsb()
+                .map(|our_king| pin_mask(from, blockers, our_king))
+                .unwrap_or_default();
             if (pin_mask & Bitboard::from(to)).is_empty() {
                 continue;
             }
@@ -303,7 +316,7 @@ impl PawnMoves<variants::PromoPinned<'_>> {
 }
 
 #[inline]
-fn fold_moves<const Q: bool, const C: TColor, T: NoDoubleCheck, B, F, R>(
+fn fold_moves_for<O: Options, const C: TColor, T: NoDoubleCheck, B, F, R>(
     pos: &'_ Position,
     init: B,
     mut f: F,
@@ -334,7 +347,6 @@ where
 
     let mut acc = init;
 
-    // 3. THE FAST PATH (Branchless, executes 99% of the time)
     if !safe_pawns.is_empty() {
         type P = PawnMoves<variants::Unpinned>;
 
@@ -342,32 +354,48 @@ where
             acc,
             safe_pawns,
             (),
-            P::single_step::<Q, C, T>,
-            P::double_step::<Q, C, T>,
             P::capture::<C, { compass_rose::WEST_C }, T>,
             P::capture::<C, { compass_rose::EAST_C }, T>,
             P::ep::<C, { compass_rose::WEST_C }, T>,
             P::ep::<C, { compass_rose::EAST_C }, T>,
-            P::promo::<Q, C, T>,
             P::promo_capture::<C, { compass_rose::WEST_C }, T>,
             P::promo_capture::<C, { compass_rose::EAST_C }, T>
         );
+
+        if O::gen_quiets() {
+            acc = apply!(
+                acc,
+                safe_pawns,
+                (),
+                P::single_step::<C, T>,
+                P::double_step::<C, T>,
+                P::promo::<C, T>
+            );
+        }
     }
 
     if !pinned_pawns.is_empty() {
         type P<'a> = PawnMoves<variants::Pinned<'a>>;
 
+        if O::gen_quiets() {
+            acc = apply!(
+                acc,
+                pinned_pawns,
+                pos,
+                P::single_step::<C, T>,
+                P::double_step::<C, T>,
+                P::promo::<C, T>
+            );
+        }
+
         acc = apply!(
             acc,
             pinned_pawns,
             pos,
-            P::single_step::<Q, C, T>,
-            P::double_step::<Q, C, T>,
             P::capture::<C, { compass_rose::WEST_C }, T>,
             P::capture::<C, { compass_rose::EAST_C }, T>,
             P::ep::<C, { compass_rose::WEST_C }, T>,
             P::ep::<C, { compass_rose::EAST_C }, T>,
-            P::promo::<Q, C, T>,
             P::promo_capture::<C, { compass_rose::WEST_C }, T>,
             P::promo_capture::<C, { compass_rose::EAST_C }, T>
         );
@@ -376,7 +404,7 @@ where
     try { acc }
 }
 
-impl<const Q: bool, C: NoDoubleCheck> FoldMoves<C, Q> for Pawn {
+impl<O: Options, C: NoDoubleCheck> FoldMoves<C, O> for Pawn {
     #[inline(always)]
     fn fold_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
     where
@@ -384,8 +412,8 @@ impl<const Q: bool, C: NoDoubleCheck> FoldMoves<C, Q> for Pawn {
         R: Try<Output = B>,
     {
         match pos.get_turn() {
-            colors::WHITE => fold_moves::<Q, { colors::WHITE_C }, C, _, _, _>(pos, init, f),
-            colors::BLACK => fold_moves::<Q, { colors::BLACK_C }, C, _, _, _>(pos, init, f),
+            colors::WHITE => fold_moves_for::<O, { colors::WHITE_C }, C, _, _, _>(pos, init, f),
+            colors::BLACK => fold_moves_for::<O, { colors::BLACK_C }, C, _, _, _>(pos, init, f),
             _ => unreachable!(),
         }
     }

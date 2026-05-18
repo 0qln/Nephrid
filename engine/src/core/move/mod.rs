@@ -18,7 +18,7 @@ use crate::{
         },
         move_iter::{
             bishop::Bishop,
-            fold_legal_moves, fold_legals,
+            fold_legal_moves,
             king::{self},
             knight,
             rook::Rook,
@@ -559,7 +559,7 @@ impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
 
         // Disambiguation
         let mut moves = MoveList::new();
-        _ = fold_legals::<true, _, _, _>(pos, (), |_, m| {
+        _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
             let m_flag = m.get_flag();
             let m_from = m.get_from();
             let m_piece = pos.get_piece(m.get_from());
