@@ -34,11 +34,11 @@ impl<O: Options> FoldMoves<NoCheck, O> for King {
 
         let king_bb = pos.get_bitboard(King::ID, color);
         if let Some(king) = king_bb.lsb() {
-            if O::gen_quiets() {
-                init = king::fold_legal_castling(pos, init, &mut f)?;
-            }
-
             let enemy_attacks = nstm_attacks(pos, pos.get_occupancy());
+
+            if O::gen_quiets() {
+                init = king::fold_legal_castling(pos, init, &mut f, enemy_attacks)?;
+            }
 
             let attacks = lookup_attacks(king);
             let legal_attacks = attacks & !enemy_attacks;
@@ -121,7 +121,12 @@ fn nstm_attacks(pos: &Position, occupancy: Bitboard) -> Bitboard {
         | king.lsb().map(self::lookup_attacks).unwrap_or_default()
 }
 
-pub fn fold_legal_castling<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+pub fn fold_legal_castling<B, F, R>(
+    pos: &Position,
+    mut init: B,
+    mut f: F,
+    enemy_attacks: Bitboard,
+) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
@@ -131,11 +136,7 @@ where
     let rank = color * ranks::_8;
     let from = Square::from((files::E, rank));
     let castling = pos.get_castling();
-
-    // todo: this is computed twice, fix this
-    let king_bb = pos.get_bitboard(King::ID, color);
-    let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
-    let nstm_attacks = nstm_attacks(pos, occupancy_after_king_move);
+    let nstm_attacks = enemy_attacks;
 
     if castling.is_true(castling_sides::KING_SIDE, color) {
         const TABU_MASK: [Bitboard; 2] = [Bitboard { v: 0x60_u64 }, Bitboard { v: 0x60_u64 << 56 }];
