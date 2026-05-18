@@ -398,10 +398,10 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
             fn gen_quiets() -> bool {
                 false
             }
+
             #[inline(always)]
             fn gen_promos() -> bool {
-                // todo: or true?
-                false
+                true
             }
         }
 
