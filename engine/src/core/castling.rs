@@ -94,6 +94,8 @@ impl fmt::Display for CastlingRights {
 }
 
 impl CastlingRights {
+    /// # Safety
+    /// The caller must ensure that `v` is a valid castling rights bitmask.
     #[inline]
     pub const unsafe fn from_v(v: u8) -> Self {
         Self { v }
