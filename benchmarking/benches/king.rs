@@ -5,7 +5,10 @@ use engine::core::{
     coordinates::squares,
     r#move::Move,
     move_iter::{
-        FoldMoves, NoCheck, SingleCheck, king::{self, King, compute_attacks, lookup_attacks}, opt, sliding_piece::magics
+        FoldMoves, NoCheck, SingleCheck,
+        king::{self, King, compute_attacks, lookup_attacks},
+        opt,
+        sliding_piece::magics,
     },
     position::Position,
     zobrist,
@@ -84,6 +87,7 @@ pub fn king_move_iter_castling(c: &mut Criterion) {
                         black_box(|acc, m: Move| {
                             ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())
                         }),
+                        king::nstm_attacks(pos, pos.get_occupancy()),
                     )
                 })
             },

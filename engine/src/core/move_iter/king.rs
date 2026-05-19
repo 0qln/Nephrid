@@ -98,7 +98,7 @@ impl<O: Options, C: SomeCheck> FoldMoves<C, O> for King {
     }
 }
 
-fn nstm_attacks(pos: &Position, occupancy: Bitboard) -> Bitboard {
+pub fn nstm_attacks(pos: &Position, occupancy: Bitboard) -> Bitboard {
     let stm = pos.get_turn();
     let nstm = !stm;
 
