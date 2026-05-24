@@ -36,6 +36,8 @@ strip = "none"
 inherits = "release"
 strip = "none"
 debug = true
+debug-assertions = false
+overflow-checks = false
 
 [workspace.lints.clippy]
 blocks_in_conditions = "allow"

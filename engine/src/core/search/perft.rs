@@ -3,7 +3,7 @@ use crate::{
         Depth, Move, UciLimit,
         color::{Perspective, colors, perspectives},
         r#move::MoveList,
-        move_iter::fold_legals,
+        move_iter::{Options, fold_legals},
         position::Position,
     },
     misc::{CancellationToken, DebugMode},
@@ -13,7 +13,7 @@ use std::ops::ControlFlow;
 #[cfg(test)]
 pub mod test;
 
-pub fn perft<const Q: bool>(
+pub fn perft<Opt: Options>(
     pos: &mut Position,
     limit: &UciLimit,
     ct: CancellationToken,
@@ -35,7 +35,7 @@ pub fn perft<const Q: bool>(
             }
         },
         |pos, list| {
-            _ = fold_legals::<Q, _, _, _>(pos, (), |_, m| {
+            _ = fold_legals::<Opt, _, _, _>(pos, (), |_, m| {
                 list.push(m);
                 ControlFlow::Continue::<(), _>(())
             });
