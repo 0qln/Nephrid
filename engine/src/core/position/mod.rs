@@ -362,12 +362,7 @@ impl PieceInfo {
         let (from, to, _) = mov.into();
 
         // make the move on the board
-        let captured = if let Some(capt_sq) = mov.get_capture_sq() {
-            Some(self.remove_piece(capt_sq))
-        }
-        else {
-            None
-        };
+        let captured = mov.get_capture_sq().map(|sq| self.remove_piece(sq));
         self.move_piece(from, to);
 
         // a move has been made, so stm is inverted now.
