@@ -211,6 +211,24 @@ impl Move {
         }
     }
 
+    /// Returns (from, to) for rook move of castling.
+    #[inline]
+    pub const fn rook_castling(flag: MoveFlag, rank: Rank) -> Option<(Square, Square)> {
+        match flag {
+            move_flags::KING_CASTLE => {
+                let rook_from = Square::from((files::H, rank));
+                let rook_to = Square::from((files::F, rank));
+                Some((rook_from, rook_to))
+            }
+            move_flags::QUEEN_CASTLE => {
+                let rook_from = Square::from((files::A, rank));
+                let rook_to = Square::from((files::D, rank));
+                Some((rook_from, rook_to))
+            }
+            _ => None,
+        }
+    }
+
     /// If this move is a capture, returns the square on which the captured
     /// piece will be removed.
     pub fn get_capture_sq(&self) -> Option<Square> {

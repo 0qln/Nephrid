@@ -1116,7 +1116,7 @@ impl PolicyInput {
         0
     }
 
-    pub fn check_bonus(_phase: TaperValue, pos: &mut PieceInfo, turn: Turn, mov: Move) -> i32 {
+    pub fn check_bonus(_phase: TaperValue, pos: &PieceInfo, turn: Turn, mov: Move) -> i32 {
         let check = pos.does_check(turn, mov);
         let score = match check {
             CheckState::None => 0,
@@ -1187,7 +1187,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
     }
 
     pub fn policy(&self, buf: &mut List<218 /* inlined MAX_LEGAL_MOVES */, f32>) -> Policy {
-        let pos = &mut self.pos.clone();
+        let pos = &self.pos;
         let phase = self.phase;
         let state = &self.state;
         let color = self.turn;
