@@ -5,8 +5,9 @@ use engine::core::{
     coordinates::squares,
     r#move::Move,
     move_iter::{
-        FoldMoves, NoCheck, SingleCheck, king,
-        king::{King, compute_attacks, lookup_attacks},
+        FoldMoves, NoCheck, SingleCheck,
+        king::{self, King, compute_attacks, lookup_attacks},
+        opt,
         sliding_piece::magics,
     },
     position::Position,
@@ -36,7 +37,7 @@ pub fn king_move_iter_check_none(c: &mut Criterion) {
 
     c.bench_function("king::move_iter::check_none", |b| {
         b.iter(|| {
-            <King as FoldMoves<NoCheck, true>>::fold_moves(
+            <King as FoldMoves<NoCheck, opt::All>>::fold_moves(
                 black_box(&pos),
                 black_box(0),
                 black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
@@ -54,7 +55,7 @@ pub fn king_move_iter_check_some(c: &mut Criterion) {
 
     c.bench_function("king::move_iter::check_some", |b| {
         b.iter(|| {
-            <King as FoldMoves<SingleCheck, true>>::fold_moves(
+            <King as FoldMoves<SingleCheck, opt::All>>::fold_moves(
                 black_box(&pos),
                 black_box(0),
                 black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
@@ -86,6 +87,7 @@ pub fn king_move_iter_castling(c: &mut Criterion) {
                         black_box(|acc, m: Move| {
                             ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())
                         }),
+                        king::nstm_attacks(pos, pos.get_occupancy()),
                     )
                 })
             },

@@ -11,7 +11,7 @@ use crate::core::{
     color::{Perspective, perspectives},
     coordinates::{EpTargetSquare, File, Rank, files, pawn_utils::single_step, ranks},
     move_iter::{
-        bishop::Bishop, fold_legal_captures, fold_legal_moves, king, knight, pawn, queen::Queen,
+        self, bishop::Bishop, fold_legal_moves, fold_legals, king, knight, pawn, queen::Queen,
         rook::Rook, sliding_piece::SlidingAttacks,
     },
     params::ParamsRef,
@@ -393,7 +393,7 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
         }
     }
 
-    // consider captures (and quiets if in check)
+    // move gen
     let mut move_list = List::<{ MAX_LEGAL_MOVES }, (Move, i32)>::new();
     if in_check {
         _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
@@ -402,21 +402,23 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
         });
     }
     else {
-        if depth < Depth::new(3) {
-            let mut pieces = pos.piece_info().clone();
-            _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-                if m.get_flag().is_capture() || pieces.does_check(P::COLOR, m) {
-                    move_list.push((m, 0));
-                }
-                ControlFlow::Continue::<(), ()>(())
-            });
+        struct MoveGenOpt;
+        impl const move_iter::Options for MoveGenOpt {
+            #[inline(always)]
+            fn gen_quiets() -> bool {
+                false
+            }
+
+            #[inline(always)]
+            fn gen_promos() -> bool {
+                false
+            }
         }
-        else {
-            _ = fold_legal_captures::<_, _, _>(pos, (), |_, m| {
-                move_list.push((m, 0));
-                ControlFlow::Continue::<(), ()>(())
-            });
-        }
+
+        _ = fold_legals::<MoveGenOpt, _, _, _>(pos, (), |_, m| {
+            move_list.push((m, 0));
+            ControlFlow::Continue::<(), ()>(())
+        });
     };
 
     /*\                                             /*\

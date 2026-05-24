@@ -1,7 +1,12 @@
 use std::ops::Try;
 
 use crate::core::{
-    bitboard::Bitboard, coordinates::Square, r#move::Move, move_iter::GenType, piece::IPieceType, position::Position
+    bitboard::Bitboard,
+    coordinates::Square,
+    r#move::Move,
+    move_iter::{Options, captures_targets, quiets_targets},
+    piece::{IPieceType, piece_type},
+    position::Position,
 };
 
 use super::{FoldMoves, NoDoubleCheck, map_captures, map_quiets, pin_mask};
@@ -15,7 +20,7 @@ pub trait SlidingAttacks {
 
 pub trait SlidingPieceType: SlidingAttacks + IPieceType {}
 
-impl<Gen: GenType, C, T> FoldMoves<C, Q> for T
+impl<O: Options, C, T> FoldMoves<C, O> for T
 where
     C: NoDoubleCheck,
     T: SlidingPieceType,
@@ -27,19 +32,27 @@ where
         R: Try<Output = B>,
     {
         let color = pos.get_turn();
+        let blockers = pos.get_blockers();
+        let our_king = pos.get_bitboard(piece_type::KING, color).lsb();
 
-        // Safety: there is a single checker.
         pos.get_bitboard(T::ID, color)
             .try_fold(init, move |mut acc, piece| {
                 let occupancy = pos.get_occupancy();
                 let attacks = T::lookup_attacks(piece, occupancy);
-                let legal_attacks = attacks & pin_mask(pos, piece);
+                let pin_mask = our_king
+                    .map(|k| pin_mask(piece, blockers, k))
+                    .unwrap_or(Bitboard::full());
+                let legal_attacks = attacks & pin_mask;
 
-                let legal_quiets = legal_attacks & C::quiets_mask::<Gen>(pos, color);
-                let legal_captures = legal_attacks & C::captures_mask(pos, color);
-
+                let legal_captures = legal_attacks & captures_targets::<C>(pos, color);
                 acc = map_captures(legal_captures, piece).try_fold(acc, &mut f)?;
-                map_quiets(legal_quiets, piece).try_fold(acc, &mut f)
+
+                if O::gen_quiets() {
+                    let legal_quiets = legal_attacks & quiets_targets::<C>(pos, color);
+                    acc = map_quiets(legal_quiets, piece).try_fold(acc, &mut f)?;
+                }
+
+                try { acc }
             })
     }
 }
