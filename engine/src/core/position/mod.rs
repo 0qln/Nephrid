@@ -358,55 +358,78 @@ impl PieceInfo {
     }
 
     /// Whether the move is a checking move
-    pub fn does_check(&mut self, stm: Turn, mov: Move) -> bool {
-        let (from, to, _) = mov.into();
+    pub fn does_check(&self, stm: Turn, mov: Move) -> CheckState {
+        let (from, to, flag) = mov.into();
+        let from_bb = Bitboard::from(from);
+        let to_bb = Bitboard::from(to);
 
-        // make the move on the board
-        let captured = mov.get_capture_sq().map(|sq| self.remove_piece(sq));
-        self.move_piece(from, to);
+        let moving_pt = self.get_piece(from).piece_type();
 
-        // a move has been made, so stm is inverted now.
-        let stm = !stm;
-        let nstm = !stm;
-
-        let allies = self.get_color_bb(stm);
-        let enemies = self.get_color_bb(nstm);
-        let kings = self.get_piece_bb(piece_type::KING);
-
-        let result = if let Some(king_sq) = (allies & kings).lsb() {
-            let occupancy = self.get_occupancy();
-            let pawns = self.get_piece_bb(piece_type::PAWN) & enemies;
-            let knights = self.get_piece_bb(piece_type::KNIGHT) & enemies;
-            let queens = self.get_piece_bb(piece_type::QUEEN) & enemies;
-            let r_n_q = (self.get_piece_bb(piece_type::ROOK) | queens) & enemies;
-            let b_n_q = (self.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
-
-            let checkers = {
-                Bitboard::empty()
-                    | (pawn::lookup_attacks(king_sq, stm) & pawns)
-                    | (knight::lookup_attacks(king_sq) & knights)
-                    | (Bishop::lookup_attacks(king_sq, occupancy) & b_n_q)
-                    | (Rook::lookup_attacks(king_sq, occupancy) & r_n_q)
-            };
-
-            let check_state = match checkers.pop_cnt() {
-                1 => CheckState::Single,
-                2 => CheckState::Double,
-                _ => CheckState::None,
-            };
-
-            check_state != CheckState::None
+        // for promotions, the landing piece type differs from the moving piece type.
+        let landing_pt = if flag.is_promo() {
+            // Safety: we check above
+            PieceType::from(unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() })
         }
         else {
-            false
+            moving_pt
         };
 
-        self.move_piece(to, from);
-        if let Some(captured) = captured {
-            self.put_piece(to, captured);
-        }
+        // rook castling squares, if this is a castling move.
+        let castling_rook = Move::rook_castling(flag, castling_rank(stm));
 
-        result
+        // occupancy after the move, accounting for captures and castling rook movement.
+        let occ_after = {
+            let mut occ = self.get_occupancy();
+            if let Some(sq) = mov.get_capture_sq() {
+                occ &= !Bitboard::from(sq);
+            }
+            occ ^= from_bb | to_bb;
+            if let Some((r_from, r_to)) = castling_rook {
+                occ ^= Bitboard::from(r_from) | Bitboard::from(r_to);
+            }
+            occ
+        };
+
+        let nstm = !stm;
+
+        // find the opponent's king square. their king was not touched by this move.
+        let king_sq = match (self.get_color_bb(nstm) & self.get_piece_bb(piece_type::KING)).lsb() {
+            Some(sq) => sq,
+            None => return CheckState::None,
+        };
+
+        let attacker_color = self.get_color_bb(stm);
+        let attacker_pt_bb = |pt: PieceType| -> Bitboard {
+            let mut bb = self.get_piece_bb(pt) & attacker_color;
+            if moving_pt == pt {
+                bb &= !from_bb;
+            }
+            if landing_pt == pt {
+                bb |= to_bb;
+            }
+            if let Some((r_from, r_to)) = castling_rook {
+                if pt == piece_type::ROOK {
+                    bb ^= Bitboard::from(r_from) | Bitboard::from(r_to);
+                }
+            }
+            bb
+        };
+
+        let queens = attacker_pt_bb(piece_type::QUEEN);
+        let r_n_q = attacker_pt_bb(piece_type::ROOK) | queens;
+        let b_n_q = attacker_pt_bb(piece_type::BISHOP) | queens;
+
+        let checkers = Bitboard::empty()
+            | (pawn::lookup_attacks(king_sq, nstm) & attacker_pt_bb(piece_type::PAWN))
+            | (knight::lookup_attacks(king_sq) & attacker_pt_bb(piece_type::KNIGHT))
+            | (Bishop::lookup_attacks(king_sq, occ_after) & b_n_q)
+            | (Rook::lookup_attacks(king_sq, occ_after) & r_n_q);
+
+        match checkers.pop_cnt() {
+            1 => CheckState::Single,
+            2 => CheckState::Double,
+            _ => CheckState::None,
+        }
     }
 }
 
@@ -549,6 +572,11 @@ impl Position {
     }
 
     #[inline]
+    pub fn does_check(&self, mov: Move) -> CheckState {
+        self.piece_info.does_check(self.get_turn(), mov)
+    }
+
+    #[inline]
     pub fn is_insufficient_material(&self) -> bool {
         self.piece_info.piece_counts.iter().sum::<i8>() <= 2
     }
@@ -685,22 +713,6 @@ impl Position {
 
     /// Makes a move on the board.
     pub fn make_move(&mut self, m: Move) {
-        // if self.get_turn() == colors::WHITE {
-        //     if m.get_flag().is_capture() {
-        //         self.make_move_for::<perspectives::White, true>(m);
-        //     }
-        //     else {
-        //         self.make_move_for::<perspectives::White, false>(m);
-        //     }
-        // }
-        // else {
-        //     if m.get_flag().is_capture() {
-        //         self.make_move_for::<perspectives::Black, true>(m);
-        //     }
-        //     else {
-        //         self.make_move_for::<perspectives::Black, false>(m);
-        //     }
-        // }
         if self.get_turn() == colors::WHITE {
             self.make_move_for::<perspectives::White>(m);
         }
@@ -783,19 +795,7 @@ impl Position {
                 // move rook if castle
                 let rank = castling_rank(P::COLOR);
                 let rook = Piece::from((P::COLOR, piece_type::ROOK));
-                if let Some((r_from, r_to)) = match flag {
-                    move_flags::KING_CASTLE => {
-                        let rook_from = Square::from((files::H, rank));
-                        let rook_to = Square::from((files::F, rank));
-                        Some((rook_from, rook_to))
-                    }
-                    move_flags::QUEEN_CASTLE => {
-                        let rook_from = Square::from((files::A, rank));
-                        let rook_to = Square::from((files::D, rank));
-                        Some((rook_from, rook_to))
-                    }
-                    _ => None,
-                } {
+                if let Some((r_from, r_to)) = Move::rook_castling(flag, rank) {
                     self.piece_info.move_piece(r_from, r_to);
                     next_state.key.move_piece_sq(r_from, r_to, rook);
                 }
