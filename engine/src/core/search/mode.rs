@@ -3,5 +3,7 @@ pub enum Mode {
     #[default]
     Normal,
     Ponder,
-    Perft,
+    Perft {
+        captures_only: bool,
+    },
 }
