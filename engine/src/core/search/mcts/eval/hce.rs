@@ -364,7 +364,6 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
     pos: &mut Position,
     mut alpha: Score<P>,
     beta: Score<P>,
-    depth: Depth,
     params: X,
 ) -> Score<P> {
     let in_check = pos.get_check_state() != CheckState::None;
@@ -462,7 +461,7 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
 
         pos.make_move_for::<P>(m);
 
-        let score = !qsearch(pos, !beta, !alpha, depth + 1, params.clone());
+        let score = !qsearch(pos, !beta, !alpha, params.clone());
 
         pos.unmake_move_for::<P>(m);
 
@@ -1092,7 +1091,6 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
-                Depth::ROOT,
                 params.clone(),
             )
             .into(),
@@ -1100,7 +1098,6 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
-                Depth::ROOT,
                 params.clone(),
             )
             .into(),
