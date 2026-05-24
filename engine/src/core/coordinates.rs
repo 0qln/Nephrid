@@ -722,3 +722,17 @@ pub mod pawn_utils {
         CompassRose::new(dir.v() + single_step(c).v())
     }
 }
+
+pub mod castling {
+    use super::*;
+    use crate::core::color::colors;
+
+    #[inline]
+    pub const fn castling_rank(c: Color) -> Rank {
+        match c {
+            colors::WHITE => ranks::_1,
+            colors::BLACK => ranks::_8,
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+}

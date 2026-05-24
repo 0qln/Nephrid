@@ -1,23 +1,21 @@
 use std::ops::Try;
 
-use crate::{
-    core::{
-        bitboard::Bitboard,
-        coordinates::{CompassRose, Square, TCompassRose, compass_rose, squares},
-        r#move::Move,
-        move_iter::{map_captures, map_quiets},
-        piece::piece_type,
-        position::Position,
-    },
+use crate::core::{
+    bitboard::Bitboard,
+    coordinates::{CompassRose, Square, TCompassRose, compass_rose, squares},
+    r#move::Move,
+    move_iter::{captures_targets, map_captures, map_quiets, quiets_targets},
+    piece::piece_type,
+    position::Position,
 };
 
 use const_for::const_for;
 
-use super::{FoldMoves, NoDoubleCheck, is_blocker};
+use super::{FoldMoves, NoDoubleCheck, Options};
 
 pub struct Knight;
 
-impl<const Q: bool, C: NoDoubleCheck> FoldMoves<C, Q> for Knight {
+impl<O: Options, C: NoDoubleCheck> FoldMoves<C, O> for Knight {
     #[inline(always)]
     fn fold_moves<B, F, R>(pos: &Position, init: B, mut f: F) -> R
     where
@@ -26,18 +24,20 @@ impl<const Q: bool, C: NoDoubleCheck> FoldMoves<C, Q> for Knight {
     {
         let color = pos.get_turn();
 
-        pos.get_bitboard(piece_type::KNIGHT, color)
-            .filter(|&piece| !is_blocker(pos, piece))
-            .map(|piece| {
-                let legal_attacks = lookup_attacks(piece);
-                let legal_quiets = legal_attacks & C::quiets_mask::<Q>(pos, color);
-                let legal_captures = legal_attacks & C::captures_mask(pos, color);
-                (legal_captures, legal_quiets, piece)
-            })
-            .try_fold(init, |mut acc, (captures, quiets, from)| {
-                acc = map_captures(captures, from).try_fold(acc, &mut f)?;
-                map_quiets(quiets, from).try_fold(acc, &mut f)
-            })
+        let knights = pos.get_bitboard(piece_type::KNIGHT, color);
+        let blockers = pos.get_blockers();
+        let mut unpinned_knights = knights & !blockers;
+
+        unpinned_knights.try_fold(init, |mut acc, piece| {
+            let attacks = lookup_attacks(piece);
+            let captures = attacks & captures_targets::<C>(pos, color);
+            acc = map_captures(captures, piece).try_fold(acc, &mut f)?;
+            if O::gen_quiets() {
+                let quiets = attacks & quiets_targets::<C>(pos, color);
+                acc = map_quiets(quiets, piece).try_fold(acc, &mut f)?;
+            }
+            try { acc }
+        })
     }
 }
 

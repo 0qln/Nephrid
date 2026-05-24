@@ -7,6 +7,7 @@ use engine::core::{
     move_iter::{
         FoldMoves, NoCheck, SingleCheck,
         knight::{Knight, compute_attacks, lookup_attacks},
+        opt,
         sliding_piece::magics,
     },
     position::Position,
@@ -43,7 +44,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
             &pos,
             |b, pos| {
                 b.iter(|| {
-                    <Knight as FoldMoves<NoCheck, true>>::fold_moves(
+                    <Knight as FoldMoves<NoCheck, opt::All>>::fold_moves(
                         black_box(pos),
                         black_box(0),
                         black_box(|acc, m: Move| {
@@ -69,7 +70,7 @@ pub fn move_iter_check_single(c: &mut Criterion) {
             &pos,
             |b, pos| {
                 b.iter(|| {
-                    <Knight as FoldMoves<SingleCheck, true>>::fold_moves(
+                    <Knight as FoldMoves<SingleCheck, opt::All>>::fold_moves(
                         black_box(pos),
                         black_box(0),
                         black_box(|acc, m: Move| {
