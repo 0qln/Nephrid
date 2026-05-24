@@ -10,19 +10,17 @@ use thiserror::Error;
 
 use crate::{
     core::{
-        bitboard::{Bitboard, BitboardIteratorExt},
+        bitboard::Bitboard,
         castling::{CastlingRights, CastlingSideTokenizationError},
         color::{Color, ColorTokenizationError, Perspective, colors, perspectives},
         coordinates::{
-            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, ranks,
-            squares,
+            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, castling::castling_rank, files, ranks, squares
         },
         depth::Depth,
         r#move::{Move, MoveList, SAN, SanParseError, move_flags},
         move_iter::{
             bishop::{self, Bishop},
             fold_legal_moves,
-            king::{self},
             knight::{self},
             pawn,
             rook::{self, Rook},
@@ -390,7 +388,7 @@ impl PieceInfo {
                     | (Rook::lookup_attacks(king_sq, occupancy) & r_n_q)
             };
 
-            let check_state = match checkers.pop_cnt() {
+            match checkers.pop_cnt() {
                 1 => CheckState::Single,
                 2 => CheckState::Double,
                 _ => CheckState::None,
@@ -549,7 +547,7 @@ impl Position {
 
     #[inline]
     pub fn does_check(&self, mov: Move) -> CheckState {
-        self.piece_info.does_check(self.get_turn(), mov)
+        self.piece_info.clone().does_check(self.get_turn(), mov)
     }
 
     #[inline]
