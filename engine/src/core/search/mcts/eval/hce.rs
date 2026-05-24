@@ -277,6 +277,15 @@ impl<P: Perspective, Rhs: Into<Score<P>>> ops::Add<Rhs> for Score<P> {
     }
 }
 
+impl<P: Perspective> ops::Div<i32> for Score<P> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn div(self, rhs: i32) -> Self::Output {
+        Self(self.0 / rhs, PhantomData)
+    }
+}
+
 impl<P: Perspective> Eq for Score<P> {}
 
 impl<P: Perspective> Ord for Score<P> {
@@ -432,17 +441,15 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
     for &(m, _) in move_list.iter() {
         // delta pruning
         if !in_check && phase < params.delta_pruning_threshold() {
-            let value_bonus = if let Ok(promo) = TryInto::<PromoPieceType>::try_into(m.get_flag()) {
-                piece_score(promo.into()) - piece_score(piece_type::PAWN)
-            }
-            else {
-                0
-            };
+            let value_bonus = PromoPieceType::try_from(m.get_flag())
+                .ok()
+                .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
+                .unwrap_or(0);
 
-            // SAFETY: we know this is a capture move.
-            let capture_square = unsafe { m.get_capture_sq().unwrap_unchecked() };
-            let captured_piece = pos.get_piece(capture_square);
-            let captured_value = piece_score(captured_piece.piece_type());
+            let captured_value = m
+                .get_capture_sq()
+                .map(|capt_sq| piece_score(pos.get_piece(capt_sq).piece_type()))
+                .unwrap_or(0);
 
             let futility_margin = params.futility_margin();
             let futility_score = captured_value + value_bonus + futility_margin;

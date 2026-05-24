@@ -314,7 +314,7 @@ impl PieceInfo {
         unsafe { self.piece_counts.get_unchecked_mut(piece.v() as usize) }
     }
 
-    pub fn remove_piece(&mut self, sq: Square) {
+    pub fn remove_piece(&mut self, sq: Square) -> Piece {
         let target = Bitboard::from(sq);
         let piece = self.get_piece(sq);
         debug_assert_ne!(piece, Piece::default(), "No piece at {sq}");
@@ -322,6 +322,7 @@ impl PieceInfo {
         *self.get_color_bb_mut(piece.color()) ^= target;
         *self.get_piece_mut(sq) = Piece::default();
         *self.get_piece_count_mut(piece) -= 1;
+        piece
     }
 
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
@@ -354,6 +355,58 @@ impl PieceInfo {
         *self.get_piece_bb_mut(piece.piece_type()) ^= from_to;
         *self.get_piece_mut(from) = Piece::default();
         *self.get_piece_mut(to) = piece;
+    }
+
+    /// Whether the move is a checking move
+    pub fn does_check(&mut self, stm: Turn, mov: Move) -> bool {
+        let (from, to, _) = mov.into();
+
+        // make the move on the board
+        let captured = mov.get_capture_sq().map(|sq| self.remove_piece(sq));
+        self.move_piece(from, to);
+
+        // a move has been made, so stm is inverted now.
+        let stm = !stm;
+        let nstm = !stm;
+
+        let allies = self.get_color_bb(stm);
+        let enemies = self.get_color_bb(nstm);
+        let kings = self.get_piece_bb(piece_type::KING);
+
+        let result = if let Some(king_sq) = (allies & kings).lsb() {
+            let occupancy = self.get_occupancy();
+            let pawns = self.get_piece_bb(piece_type::PAWN) & enemies;
+            let knights = self.get_piece_bb(piece_type::KNIGHT) & enemies;
+            let queens = self.get_piece_bb(piece_type::QUEEN) & enemies;
+            let r_n_q = (self.get_piece_bb(piece_type::ROOK) | queens) & enemies;
+            let b_n_q = (self.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
+
+            let checkers = {
+                Bitboard::empty()
+                    | (pawn::lookup_attacks(king_sq, stm) & pawns)
+                    | (knight::lookup_attacks(king_sq) & knights)
+                    | (Bishop::lookup_attacks(king_sq, occupancy) & b_n_q)
+                    | (Rook::lookup_attacks(king_sq, occupancy) & r_n_q)
+            };
+
+            let check_state = match checkers.pop_cnt() {
+                1 => CheckState::Single,
+                2 => CheckState::Double,
+                _ => CheckState::None,
+            };
+
+            check_state != CheckState::None
+        }
+        else {
+            false
+        };
+
+        self.move_piece(to, from);
+        if let Some(captured) = captured {
+            self.put_piece(to, captured);
+        }
+
+        result
     }
 }
 
@@ -617,7 +670,7 @@ impl Position {
     /// This pub, because it is used for benchmarking.
     #[inline]
     pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) {
-        self.piece_info.remove_piece(sq)
+        self.piece_info.remove_piece(sq);
     }
 
     /// # Safety
