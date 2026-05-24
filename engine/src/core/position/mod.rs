@@ -407,11 +407,10 @@ impl PieceInfo {
             if landing_pt == pt {
                 bb |= to_bb;
             }
-            if let Some((r_from, r_to)) = castling_rook {
-                if pt == piece_type::ROOK {
+            if let Some((r_from, r_to)) = castling_rook
+                && pt == piece_type::ROOK {
                     bb ^= Bitboard::from(r_from) | Bitboard::from(r_to);
                 }
-            }
             bb
         };
 
