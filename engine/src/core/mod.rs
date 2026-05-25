@@ -1,3 +1,4 @@
+use crate::core::search::{mcts::eval, score::Cp};
 use search::mode::Mode;
 use std::{
     sync::{Arc, Mutex},
@@ -21,10 +22,7 @@ use crate::{
             Command, PonderToken, SearchThread, SearchWorker,
             limit::UciLimit,
             mcts::{
-                eval::{
-                    self, Cp,
-                    hce::{self},
-                },
+                eval::hce::{self},
                 node::WinRate,
             },
         },

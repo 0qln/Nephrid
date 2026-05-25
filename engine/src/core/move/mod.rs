@@ -2,6 +2,7 @@ use core::fmt;
 use move_flags as f;
 use std::{
     fmt::Write,
+    iter,
     ops::{self, ControlFlow},
     slice,
 };
@@ -722,6 +723,11 @@ impl MoveList {
     pub fn iter(&self) -> slice::Iter<'_, Move> {
         self.inner.iter()
     }
+
+    #[inline]
+    pub fn get(&self, index: MoveIndex) -> Option<Move> {
+        self.inner.get(index.v as usize).copied()
+    }
 }
 
 impl Default for MoveList {
@@ -733,6 +739,15 @@ impl Default for MoveList {
 impl fmt::Display for MoveList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.as_slice()).finish()
+    }
+}
+
+impl<'a> IntoIterator for &'a MoveList {
+    type Item = Move;
+    type IntoIter = iter::Cloned<slice::Iter<'a, Move>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter().cloned()
     }
 }
 

@@ -11,6 +11,7 @@ nn-backend-ndarray = []
 mcts-pure = []
 mcts-nn = []
 mcts-hce = []
+id-hce = []
 
 default = ["mcts-hce"]
 
