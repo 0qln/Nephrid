@@ -45,7 +45,15 @@ fn fuzz<const X: usize, P: MctsParts + Default>(pos: &'static str, rounds: usize
             }
 
             assert_eq!(&pos, &pos_clone);
-            assert_eq!(tree.size(), tree.compute_subtree_size(tree.root()));
+            // With a transposition table, evicted nodes stay counted in
+            // tree.size() but become unreachable from root. Allow size >=
+            // subtree size; equality holds only when there are no collisions.
+            assert!(
+                tree.size() >= tree.compute_subtree_size(tree.root()),
+                "tree.size() ({}) should be >= compute_subtree_size ({}) ",
+                tree.size(),
+                tree.compute_subtree_size(tree.root())
+            );
             assert_eq!(
                 tree.terminal_nodes(),
                 tree.compute_subtree_terminal_nodes_count()

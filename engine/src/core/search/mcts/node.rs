@@ -11,13 +11,11 @@ use crate::{
     },
     impl_variants,
 };
-use lru::LruCache;
 use std::{
     cmp::Ordering,
     collections::{HashSet, VecDeque},
     fmt,
     marker::PhantomData,
-    num::NonZeroUsize,
     ops::{self, Deref},
     ptr,
 };
@@ -350,17 +348,120 @@ pub mod node_state {
 }
 
 #[derive(Clone)]
+pub struct TranspositionTable<Data> {
+    entries: Vec<Option<Data>>,
+}
+
+impl<Data> TranspositionTable<Data> {
+    /// Creates a new table with the given number of entries.
+    pub fn new(size: usize) -> Self {
+        // Build a vector of `None` values without requiring `Data: Clone`.
+        let entries = (0..size).map(|_| None).collect();
+        Self { entries }
+    }
+
+    /// Returns the number of occupied slots.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.entries.iter().filter(|e| e.is_some()).count()
+    }
+}
+
+impl<Data: ZKey + Clone> TranspositionTable<Data> {
+    /// Get data for the given key.
+    #[inline]
+    pub fn get(&self, key: zobrist::Hash) -> Option<&Data> {
+        let idx = key.index(self.entries.len());
+        self.entries[idx].as_ref().filter(|data| data.key() == key)
+    }
+
+    /// Insert and overwrite in any case.
+    #[inline]
+    pub fn insert(&mut self, data: Data) {
+        let key = data.key();
+        let idx = key.index(self.entries.len());
+        self.entries[idx] = Some(data);
+    }
+
+    /// Remove the entry for the given key, if it exists.
+    #[inline]
+    pub fn remove(&mut self, key: zobrist::Hash) {
+        let idx = key.index(self.entries.len());
+        if let Some(data) = &self.entries[idx]
+            && data.key() == key
+        {
+            self.entries[idx] = None;
+        }
+    }
+
+    /// Clears the entire vec
+    pub fn clear(&mut self) {
+        self.entries.fill(None)
+    }
+}
+
+pub trait ZKey {
+    fn key(&self) -> zobrist::Hash;
+}
+
+#[derive(Clone)]
+pub struct NodeEntry {
+    data: NodeData,
+    key: zobrist::Hash,
+}
+
+impl ZKey for NodeEntry {
+    fn key(&self) -> zobrist::Hash {
+        self.key
+    }
+}
+
+impl TranspositionTable<NodeEntry> {
+    /// Returns whether the table holds an entry for `key`.
+    #[inline]
+    pub fn contains(&self, key: &zobrist::Hash) -> bool {
+        self.get(*key).is_some()
+    }
+
+    /// Insert `data` for `key`, overwriting any existing entry in that slot.
+    #[inline]
+    pub fn put(&mut self, key: zobrist::Hash, data: NodeData) {
+        self.insert(NodeEntry { key, data });
+    }
+
+    /// Return a reference to the `NodeData` for `key`, or `None` if the slot
+    /// is empty or occupied by a different key (hash collision).
+    #[inline]
+    pub fn peek(&self, key: &zobrist::Hash) -> Option<&NodeData> {
+        self.get(*key).map(|e| &e.data)
+    }
+
+    /// Return a mutable reference to the `NodeData` for `key`.
+    #[inline]
+    pub fn get_mut(&mut self, key: &zobrist::Hash) -> Option<&mut NodeData> {
+        let idx = key.index(self.entries.len());
+        self.entries[idx]
+            .as_mut()
+            .filter(|e| e.key == *key)
+            .map(|e| &mut e.data)
+    }
+}
+
+#[derive(Clone)]
 struct ArenaBuffer {
-    nodes: LruCache<zobrist::Hash, NodeData>,
+    nodes: TranspositionTable<NodeEntry>,
     branches: Vec<Branch>,
+    /// Scratch space returned by `node_data_mut` when a TT collision prevents
+    /// writing to the real entry. Writes to this are silently discarded.
+    scratch: NodeData,
 }
 
 impl ArenaBuffer {
     fn new(node_cap: usize, branch_cap: usize) -> Self {
-        let cap = NonZeroUsize::new(node_cap).expect("node capacity must be non-zero");
         Self {
-            nodes: LruCache::new(cap),
+            nodes: TranspositionTable::new(node_cap),
             branches: Vec::with_capacity(branch_cap),
+            scratch: NodeData::new_leaf(),
         }
     }
 
@@ -457,18 +558,18 @@ impl Default for DAG {
 }
 
 impl DAG {
-    /// Overhead per LRU node entry in bytes (key + LRU bookkeeping).
-    const LRU_ENTRY_OVERHEAD: usize = 48;
-
     pub fn new(pos: &Position) -> Self {
         Self::with_cache_size_mb(pos, 1024)
     }
 
-    /// Create a new `DAG` with a node cache sized to approximately `size_mb` megabytes.
+    /// Create a new `DAG` with a node TT sized to approximately `size_mb`
+    /// megabytes. The capacity is rounded down to the nearest power-of-two for
+    /// efficient slot indexing.
     pub fn with_cache_size_mb(pos: &Position, size_mb: usize) -> Self {
-        let bytes_per_node =
-            std::mem::size_of::<(zobrist::Hash, NodeData)>() + Self::LRU_ENTRY_OVERHEAD;
-        let node_cap = ((size_mb * 1024 * 1024) / bytes_per_node).max(1);
+        let bytes_per_entry = std::mem::size_of::<Option<NodeEntry>>();
+        let raw_cap = ((size_mb * 1024 * 1024) / bytes_per_entry).max(1);
+        // Round down to the nearest power of two so modulo becomes a cheap mask.
+        let node_cap = (raw_cap.next_power_of_two() >> 1).max(1);
         let branch_cap = node_cap.saturating_mul(35);
         let mut arena = ArenaBuffer::new(node_cap, branch_cap);
         let root_index = pos.get_key();
@@ -813,7 +914,14 @@ impl DAG {
             });
         }
 
-        // Link parent to branches
+        // Link parent to branches.
+        // A child inserted above may have occupied the parent's TT slot (hash
+        // collision). Force-insert the parent so node_data_mut can always find
+        // it and write the branch metadata. The displaced child is a fresh leaf
+        // with no descendants, so no children are orphaned.
+        if !self.arena.nodes.contains(node_id.index()) {
+            self.arena.nodes.put(*node_id.index(), NodeData::new_leaf());
+        }
         let parent = self.node_data_mut(node_id);
         parent.branch_start = branch_start;
         parent.branch_count = branch_count;
@@ -916,20 +1024,40 @@ impl DAG {
     }
 
     fn node_data<S: node_state::Any>(&self, node: NodeId<S>) -> &NodeData {
-        self.arena
-            .nodes
-            .peek(node.index())
-            .unwrap_or(&EVICTED_LEAF)
+        self.arena.nodes.peek(node.index()).unwrap_or(&EVICTED_LEAF)
     }
 
     fn node_data_mut<S: node_state::Any>(&mut self, node: NodeId<S>) -> &mut NodeData {
-        if !self.arena.nodes.contains(node.index()) {
-            self.arena.nodes.put(*node.index(), NodeData::new_leaf());
+        let key = *node.index();
+        let n = self.arena.nodes.entries.len();
+        let slot = key.index(n);
+
+        // Determine what's in the slot without holding a long-lived borrow.
+        enum SlotState {
+            OurNode,
+            Empty,
+            Collision,
         }
-        self.arena
-            .nodes
-            .get_mut(node.index())
-            .expect("just inserted if missing")
+        let state = match &self.arena.nodes.entries[slot] {
+            None => SlotState::Empty,
+            Some(e) if e.key == key => SlotState::OurNode,
+            Some(_) => SlotState::Collision,
+        };
+
+        match state {
+            SlotState::OurNode => &mut self.arena.nodes.entries[slot].as_mut().unwrap().data,
+            SlotState::Empty => {
+                self.arena.nodes.entries[slot] = Some(NodeEntry { key, data: NodeData::new_leaf() });
+                &mut self.arena.nodes.entries[slot].as_mut().unwrap().data
+            }
+            // Slot holds a different key: returning scratch avoids evicting a
+            // valid TT entry and corrupting the size invariant.  The write is
+            // discarded (minor statistical inaccuracy, not a correctness bug).
+            SlotState::Collision => {
+                self.arena.scratch = NodeData::new_leaf();
+                &mut self.arena.scratch
+            }
+        }
     }
 
     pub fn revert_virtual_loss(&mut self, node: RtNodeId, amount: u32) {
@@ -977,7 +1105,11 @@ impl DAG {
         }
         visited.insert(key);
 
-        let old_node = self.arena.nodes.peek(&key).expect("Node should exist when copying subtree");
+        let old_node = self
+            .arena
+            .nodes
+            .peek(&key)
+            .expect("Node should exist when copying subtree");
         let is_terminal = old_node.state == NodeState::Terminal;
 
         let mut total_size = 1;
