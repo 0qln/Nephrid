@@ -426,17 +426,13 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
 
     let mut best_value = Score::NEG_INF;
 
+    let stm = P::COLOR;
     let piece_info = pos.piece_info();
     let phase = TaperValue::from_position(piece_info);
 
     // stand pad if not in check
     if !in_check {
-        let static_eval = static_eval(
-            piece_info,
-            pos.get_ep_target_square(),
-            pos.get_turn(),
-            phase,
-        );
+        let static_eval = static_eval(piece_info, pos.get_ep_target_square(), stm, phase);
 
         best_value = static_eval;
 
@@ -485,7 +481,11 @@ fn qsearch<P: Perspective, X: QSearchParams + Clone>(
     |*|---------------------------------------------|*|
     \*/                                             \*/
     for &mut (m, ref mut score) in move_list.as_mut_slice() {
-        *score = see(pos.piece_info(), m, P::COLOR);
+        let (from, to, _) = m.into();
+        let piece = pos.get_piece(from);
+
+        *score = see(pos.piece_info(), m, P::COLOR)
+            + PolicyInput::psqt(phase, piece.piece_type(), from, to, stm);
     }
 
     // move ordering
