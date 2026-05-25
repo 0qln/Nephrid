@@ -48,6 +48,13 @@ pub fn go(
 
     while !searcher.should_stop(&stats) {
         let best_score = searcher.search_root(pos, &mut stats, depth);
+
+        // make sure to break before messing up the order of the previous iteration with
+        // the incomplete results from this iteration.
+        if searcher.aborted {
+            break;
+        }
+
         searcher.sort_root();
 
         best_move = searcher.root_best_move();
@@ -75,6 +82,7 @@ struct Searcher {
     limit: UciLimit,
     time_limit: Instant,
     ct: CancellationToken,
+    aborted: bool,
 }
 
 impl Searcher {
@@ -94,6 +102,7 @@ impl Searcher {
             limit,
             time_limit,
             ct,
+            aborted: false,
         }
     }
 
@@ -170,6 +179,7 @@ impl Searcher {
         // check if stop is requested or we have reached a limit
         if stats.nodes % 4096 == 0 {
             if self.should_stop(stats) {
+                self.aborted = true;
                 return Score::NEG_INF;
             }
         }
@@ -241,6 +251,10 @@ impl Searcher {
 
             // recurse
             let score = !self.search::<P::Opponent, Normal>(pos, stats, depth - 1, !beta, !alpha);
+
+            if self.aborted {
+                return Score::new(0);
+            }
 
             // unmake the move
             pos.unmake_move_for::<P>(m);
