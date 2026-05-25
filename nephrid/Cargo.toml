@@ -1,6 +1,6 @@
 [package]
 name = "nephrid"
-version = "26.5.25+a346298"
+version = "26.5.25+fc61ec1"
 edition = "2024"
 
 [features]
@@ -11,8 +11,9 @@ nn-backend-ndarray = []
 mcts-pure = []
 mcts-nn = []
 mcts-hce = []
+id-hce = []
 
-default = ["mcts-hce"]
+default = ["id-hce"]
 
 [dependencies]
 engine = { version = "*", path = "../engine", default-features = false }

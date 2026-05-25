@@ -4,14 +4,14 @@ use crate::{
         color::Color,
         depth::Depth,
         r#move::MAX_LEGAL_MOVES,
-        search::mcts::{
+        search::{mcts::{
             nn::{POLICY_OUTPUTS, PolicyHeadIndex, RawLogits},
             node::{
                 NodeId, Tree, VisitCount, WinRate,
                 node_state::{HasBranches, Terminal, Valid},
             },
             search::{BatchItem, Selection},
-        },
+        }, score::{Cp, TCp}},
     },
     misc::{CheckHealth, CheckHealthResult, List},
 };
@@ -525,22 +525,6 @@ impl fmt::Display for Value {
 impl From<Quality> for Value {
     fn from(q: Quality) -> Self {
         Self::new((q.0 + 1.) / 2.)
-    }
-}
-
-/// Centi pawns
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct Cp {
-    v: TCp,
-}
-
-pub type TCp = i16;
-
-impl Cp {
-    const SCALE: f32 = 350.;
-
-    pub fn v(&self) -> TCp {
-        self.v
     }
 }
 

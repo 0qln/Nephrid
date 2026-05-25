@@ -1,3 +1,4 @@
+use crate::core::search::score::Cp;
 use thiserror::Error;
 
 use crate::{
@@ -9,12 +10,12 @@ use crate::{
             limit::UciLimit,
             mcts::{
                 MctsConfig, MctsParts,
-                eval::Cp,
                 node::{
                     Tree, WinRate,
                     node_state::{Evaluated, Switch},
                 },
                 select::Selector,
+                strategy::MctsUci,
             },
         },
     },
@@ -32,18 +33,18 @@ use std::{
 use crate::{
     core::{
         position::Position,
-        search::{
-            mcts::{mcts, strategy::MctsUci},
-            perft::perft,
-        },
+        search::{mcts::mcts, perft::perft},
     },
     misc::DebugMode,
 };
 
+pub mod id;
 pub mod limit;
 pub mod mcts;
 pub mod mode;
 pub mod perft;
+pub mod score;
+pub mod strat;
 
 pub struct SearchThread {
     pub tx: Sender<Command>,
@@ -63,8 +64,58 @@ pub trait SearchWorker: Default {
     fn exec(&mut self, cmd: Command) -> Result<(), ExecError>;
 }
 
+// todo: generic for config, so we can compile for nnue/hce
 /// Iterative deepening worker.
-pub struct IdWorker; // todo
+#[derive(Default)]
+pub struct IdWorker;
+
+impl IdWorker {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+impl SearchWorker for IdWorker {
+    fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
+        match cmd {
+            Command::Perft(mut pos, limit, ct, debug, captures_only) => {
+                if captures_only {
+                    perft::<opt::Captures>(&mut pos, &limit, ct, debug);
+                }
+                else {
+                    perft::<opt::All>(&mut pos, &limit, ct, debug);
+                }
+                Ok(())
+            }
+            Command::Normal(mut pos, limit, ct, debug) => {
+                let best_move = id::go(&mut pos, limit, &debug, ct);
+
+                if let Some(mov) = best_move {
+                    println!("bestmove {mov}");
+                }
+
+                Ok(())
+            }
+            Command::Ponder(_pos, _limit, _ct, _dbg, _ponder) => {
+                todo!()
+            }
+            Command::AdvanceState(_) => Ok(()),
+            Command::RollbackAndAdvance(_) => Ok(()),
+            Command::Configure(config) => {
+                // todo
+                let _ = config;
+                Ok(())
+            }
+            Command::ResetState => Ok(()),
+            Command::Debug => todo!(),
+            Command::IsReady => {
+                println!("readyok");
+                Ok(())
+            }
+            Command::PrintPv(_) => todo!(),
+        }
+    }
+}
 
 /// Monte Carlo Tree Search worker.
 pub struct MctsWorker<const MPV: usize, C: MctsConfig> {

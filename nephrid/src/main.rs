@@ -5,20 +5,21 @@ use engine::{
 use std::io::stdin;
 
 mod search {
-    use engine::core::search::{
-        MctsWorker,
-        mcts::{self, MctsConfig, strategy::MctsUci},
-    };
+    use engine::core::search::{self};
 
+    #[cfg(feature = "id-hce")]
+    pub type Worker = search::IdWorker;
+
+    #[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
     pub struct Config;
 
-    // todo: mcts/id (iterative deepening) feature gate
-    pub type Worker = MctsWorker<MPV, Config>;
+    #[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
+    pub type Worker = search::MctsWorker<MPV, Config>;
 
     #[cfg(feature = "mcts-hce")]
-    impl MctsConfig for Config {
-        type Parts = mcts::HceParts;
-        type Strat = MctsUci;
+    impl search::mcts::MctsConfig for Config {
+        type Parts = search::mcts::HceParts;
+        type Strat = search::mcts::strategy::MctsUci;
     }
 
     // todo: this was supposed to be inside the MctsConfig trait, but we get some

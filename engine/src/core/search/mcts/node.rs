@@ -10,7 +10,6 @@ use crate::{
     },
     impl_variants,
 };
-use itertools::Itertools;
 use std::{
     cmp::Ordering,
     collections::VecDeque,
@@ -349,6 +348,15 @@ pub mod node_state {
 
 pub struct Path(pub Vec<Branch>);
 
+impl<'a> IntoIterator for &'a Path {
+    type Item = Move;
+    type IntoIter = std::iter::Map<std::slice::Iter<'a, Branch>, fn(&Branch) -> Move>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter().map(Branch::mov)
+    }
+}
+
 impl Path {
     pub fn len(&self) -> usize {
         self.0.len()
@@ -356,13 +364,6 @@ impl Path {
 
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
-    }
-}
-
-impl fmt::Display for Path {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut moves = self.0.iter().map(|x| x.mov().to_string());
-        f.write_str(&moves.join(" "))
     }
 }
 

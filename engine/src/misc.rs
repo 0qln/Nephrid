@@ -413,6 +413,18 @@ impl<const N: usize, T> List<N, T> {
         self.as_mut_slice().iter_mut()
     }
 
+    #[inline]
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if index < self.len {
+            // SAFETY: We only access the element if `index` is less than `self.len`, which
+            // guarantees that it has been initialized via the `push` method.
+            Some(unsafe { self.items.get_unchecked(index).assume_init_ref() })
+        }
+        else {
+            None
+        }
+    }
+
     /// # Safety
     /// The caller must ensure that `T` and `T2` have the exact same size and
     /// alignment, and that the bitwise representation of `T2` is a valid
