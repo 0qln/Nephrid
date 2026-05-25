@@ -95,6 +95,7 @@ fn write_engine_line(stdin: &mut ChildStdin, line: &str) {
 
 #[test]
 #[timeout(10000)]
+#[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
 fn test_ponder_miss_outputs_ponder_move() {
     let mut child = GuardedChild(
         Command::cargo_bin("nephrid")
@@ -159,6 +160,7 @@ fn test_ponder_miss_outputs_ponder_move() {
 
 #[test]
 #[timeout(10000)]
+#[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
 fn test_ponder_miss_retains_cached_tree() {
     let mut child = GuardedChild(
         Command::cargo_bin("nephrid")
@@ -280,6 +282,7 @@ fn test_ponder_miss_retains_cached_tree() {
 
 #[test]
 #[timeout(10000)]
+#[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
 fn test_ponderhit_applies_limits_and_stops() {
     let mut child = GuardedChild(
         Command::cargo_bin("nephrid")
@@ -327,6 +330,7 @@ fn test_ponderhit_applies_limits_and_stops() {
 
 #[test]
 #[timeout(10000)]
+#[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
 fn test_ponder_miss_complete_divergence_resets_tree() {
     let mut child = GuardedChild(
         Command::cargo_bin("nephrid")
