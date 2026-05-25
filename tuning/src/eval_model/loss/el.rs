@@ -143,7 +143,7 @@ impl From<&DAG> for ExactLossTarget {
                         branches
                             .iter()
                             .map(|branch| {
-                                let child_node = tree.node(branch.node());
+                                let child_node = tree.node(branch.node().unwrap());
                                 let is_winning_move = child_node.value().is_proven_win();
                                 (
                                     branch.mov(),
@@ -158,7 +158,7 @@ impl From<&DAG> for ExactLossTarget {
                     VisitCounts(
                         branches
                             .iter()
-                            .map(|branch| (branch.mov(), tree.node(branch.node()).visits()))
+                            .map(|branch| (branch.mov(), tree.node(branch.node().unwrap()).visits()))
                             .collect_vec(),
                     )
                 }

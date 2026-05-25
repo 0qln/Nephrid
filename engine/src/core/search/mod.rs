@@ -198,7 +198,7 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                     Switch::Leaf(_node) => {}
                     Switch::Branching(node) => {
                         for branch in tree.branches(node) {
-                            let node = tree.node(branch.node());
+                            let node = tree.node(branch.node().unwrap());
                             let state = node.state();
                             println!("* ({}) {}", state, branch.mov());
                         }
@@ -208,7 +208,7 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                         let root_best_move = tree.maybe_best_move(tree.root());
                         for branch_id in tree.branch_ids(root_id) {
                             let branch = tree.branch(branch_id);
-                            let node = tree.node(branch.node());
+                            let node = tree.node(branch.node().unwrap());
                             let mov = branch.mov();
                             let state = node.state();
                             let parts = self.mcts_parts.as_ref().unwrap();

@@ -49,7 +49,7 @@ pub fn puct(c: &mut Criterion) {
     group.measurement_time(Duration::from_secs(20));
 
     let mut pos = Position::start_position();
-    let mut tree = DAG::new();
+    let mut tree = DAG::new(&Position::start_position());
     let parts = HceParts::default();
     let mut searcher = TreeSearcher::<1, _, _, _>::new(
         &mut pos,
@@ -74,7 +74,7 @@ pub fn puct(c: &mut Criterion) {
     while tree.compute_minheight() <= Height(2) {
         searcher.grow(&mut tree);
     }
-    assert!(tree.node(tree.branch(branch).node()).visits() > VisitCount(0));
+    assert!(tree.node(tree.branch(branch).node().unwrap()).visits() > VisitCount(0));
 
     group.bench_function("puct::some_visits", |b| {
         b.iter(|| sel.score(black_box(&tree), black_box(branch), black_box(root_id)))

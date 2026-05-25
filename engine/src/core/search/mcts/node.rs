@@ -537,7 +537,9 @@ impl DAG {
             }
 
             for branch in self.branches_rt(node_id) {
-                stack.push((branch.node(), d + 1));
+                if let Some(child) = branch.node() {
+                    stack.push((child, d + 1));
+                }
             }
         }
 
@@ -772,15 +774,18 @@ impl DAG {
 
         for m in moves {
             // todo: do this sometime else
-            // let child = RtNodeId::from(index);
-            // if !self.arena.nodes.contains_key(&index) {
-            //     self.arena.nodes.insert(index, NodeData::new_leaf());
-            //     new_nodes += 1;
-            // }
+            pos.make_move(m);
+            let child_key = pos.get_key();
+            pos.unmake_move(m);
+
+            if !self.arena.nodes.contains_key(&child_key) {
+                self.arena.nodes.insert(child_key, NodeData::new_leaf());
+                self.size += 1;
+            }
 
             self.arena.branches.push(Branch {
-                is_init: false,
-                node: RtNodeId::new(zobrist::Hash::default()),
+                is_init: true,
+                node: RtNodeId::new(child_key),
                 policy: Probability::zero(),
                 mov: m,
             });
@@ -798,7 +803,23 @@ impl DAG {
         unsafe { ExpandedSwitch::Branching(node_id.cast()) }
     }
 
-    pub fn expand_branch(&mut self, branch_id: BranchId, pos: &mut Position)
+    pub fn expand_branch(&mut self, branch_id: BranchId, pos: &mut Position) {
+        let branch = &self.arena.branches[branch_id.index()];
+        let mov = branch.mov;
+        pos.make_move(mov);
+        let child_key = pos.get_key();
+        pos.unmake_move(mov);
+
+        let is_new = !self.arena.nodes.contains_key(&child_key);
+        if is_new {
+            self.arena.nodes.insert(child_key, NodeData::new_leaf());
+            self.size += 1;
+        }
+
+        let branch = &mut self.arena.branches[branch_id.index()];
+        branch.node = RtNodeId::new(child_key);
+        branch.is_init = true;
+    }
 
     pub fn skip_policy(&mut self, node: NodeId<Branching>) -> NodeId<Evaluated> {
         let data = self.node_data(node);
@@ -1034,12 +1055,16 @@ impl DAG {
             tree: &'aa DAG,
             current: RtNodeId,
             select: F,
+            visited: std::collections::HashSet<zobrist::Hash>,
         }
 
         impl<'aa, F: FnMut(&Branch, &Branch) -> Ordering> Iterator for LineIterator<'aa, F> {
             type Item = BranchId;
 
             fn next(&mut self) -> Option<Self::Item> {
+                if !self.visited.insert(*self.current.index()) {
+                    return None;
+                }
                 let branches = self.tree.branch_ids_rt(self.current);
                 let best_branch_opt = branches
                     .max_by(|&a, &b| (self.select)(self.tree.branch(a), self.tree.branch(b)));
@@ -1057,6 +1082,7 @@ impl DAG {
             tree: self,
             select: cmp,
             current: self.root(),
+            visited: std::collections::HashSet::new(),
         }
     }
 
@@ -1076,8 +1102,6 @@ impl DAG {
                 Ordering::Less
             }
         })
-        // todo: break cycles (pos.has_three_fold_repetition or something like that)
-        .take_while(|_branch| false)
     }
 
     pub fn node_switch(&self, node_id: RtNodeId) -> Switch {

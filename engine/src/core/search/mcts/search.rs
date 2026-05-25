@@ -415,7 +415,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
 
             for branch_id in tree.branch_ids(parent_node_id) {
                 let branch = tree.branch(branch_id);
-                let child = tree.node(branch.node());
+                let child = tree.node(branch.node().unwrap());
                 let mov = branch.mov();
 
                 let (score, exploitation, exploration);
@@ -506,7 +506,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
     ) {
         let (mov, node) = {
             let branch = tree.branch(branch);
-            (branch.mov(), branch.node())
+            (branch.mov(), branch.node().unwrap())
         };
 
         // todo: make this a debug assertion

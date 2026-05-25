@@ -38,7 +38,7 @@ impl super::Selector for PuctSelector {
     #[inline]
     fn exploration(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
-        let node = tree.node(branch.node());
+        let node = tree.node(branch.node().unwrap());
         let parent = tree.node(parent_id);
 
         let c = self.c;
@@ -52,7 +52,7 @@ impl super::Selector for PuctSelector {
     #[inline]
     fn exploitation(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
-        let node = tree.node(branch.node());
+        let node = tree.node(branch.node().unwrap());
         let parent = tree.node(parent_id);
         let cap_n_i = parent.visits().0 as f32;
         let n_i = node.visits().0 as f32;

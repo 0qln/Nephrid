@@ -135,7 +135,7 @@ fn test_tree_advance_best_moves_root() {
     let branching = tree.node_switch(tree.root()).get::<Branching>().unwrap();
 
     // Force a high visit count on the first branch to make it "best"
-    let target_node_id = tree.branches(branching)[0].node();
+    let target_node_id = tree.branches(branching)[0].node().unwrap();
     tree.node_data_mut(target_node_id).visits = VisitCount(100);
 
     // Advance GC
@@ -157,7 +157,7 @@ fn test_tree_advance_to_specific_move() {
     tree.expand_node(leaf, &mut pos, Depth::ROOT);
 
     let branching = tree.node_switch(tree.root()).get::<Branching>().unwrap();
-    let target_node_id = tree.branches(branching)[0].node();
+    let target_node_id = tree.branches(branching)[0].node().unwrap();
 
     tree.advance_to(&mut back_buffer, target_node_id);
 
@@ -438,7 +438,7 @@ fn test_advance_to_deeper_level_updates_pointers_correctly() {
     // Grab first child and expand it -> Level 2
     let level_1_branch = tree.branches_rt(tree.root())[0].clone();
     let child_leaf = tree
-        .node_switch(level_1_branch.node())
+        .node_switch(level_1_branch.node().unwrap())
         .get::<Leaf>()
         .unwrap();
 
@@ -450,7 +450,7 @@ fn test_advance_to_deeper_level_updates_pointers_correctly() {
     let initial_size_before_gc = tree.size();
 
     // Advance to Level 1
-    tree.advance_to(&mut back_buffer, level_1_branch.node());
+    tree.advance_to(&mut back_buffer, level_1_branch.node().unwrap());
 
     // We expect the tree size to shrink drastically because we discarded 19 of the
     // 20 initial moves and only kept the 1 move we advanced to + its newly

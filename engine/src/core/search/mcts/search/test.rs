@@ -4,7 +4,7 @@ use crate::core::{
     params::{IParams, Params, ParamsRef},
     position::Position,
     search::mcts::{
-        HceParts, MctsParts, NullNoiser, node::Tree, search::TreeSearcher,
+        HceParts, MctsParts, NullNoiser, node::DAG, search::TreeSearcher,
         select::ucb::UcbSelector, test::DummyEvaluator,
     },
     zobrist,

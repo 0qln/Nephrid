@@ -116,13 +116,13 @@ pub fn try_prove_parent(tree: &mut DAG, node: NodeId<Evaluated>, weight: f32) {
     let branches = tree.branches(node);
     if branches
         .iter()
-        .all(|b| tree.node(b.node()).value().is_proven_loss())
+        .all(|b| tree.node(b.node().unwrap()).value().is_proven_loss())
     {
         tree.set_proven(node, proven::WIN, weight);
     }
     else if branches
         .iter()
-        .any(|b| tree.node(b.node()).value().is_proven_win())
+        .any(|b| tree.node(b.node().unwrap()).value().is_proven_win())
     {
         tree.set_proven(node, proven::LOSS, weight);
     }

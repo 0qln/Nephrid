@@ -26,7 +26,7 @@ impl Selector for UcbSelector {
         _parent_id: NodeId<Evaluated>,
     ) -> Score {
         let branch = tree.branch(branch_id);
-        let node = tree.node(branch.node());
+        let node = tree.node(branch.node().unwrap());
 
         match node.visits() {
             VisitCount(0) => Score(f32::INFINITY),
@@ -40,7 +40,7 @@ impl Selector for UcbSelector {
 
     fn exploration(&self, tree: &DAG, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
-        let node = tree.node(branch.node());
+        let node = tree.node(branch.node().unwrap());
 
         match node.visits() {
             VisitCount(0) => Score(f32::INFINITY),
