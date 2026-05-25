@@ -38,41 +38,27 @@ pub fn go(
     pos: &mut Position,
     limit: UciLimit,
     _debug: &DebugMode,
-    ct: &CancellationToken,
+    ct: CancellationToken,
 ) -> Option<Move> {
-    let mut searcher = Searcher::from_pos(&pos);
+    let mut searcher = Searcher::new(&pos, limit, ct);
     let mut stats = SearchStats::default();
     let mut best_move = None;
 
-    let search_start = Instant::now();
-    let time_per_move = limit.time_per_move(pos);
-    let time_limit = search_start + time_per_move;
-
-    let should_stop = |stats: &SearchStats| {
-        let now = Instant::now();
-        let nodes = stats.nodes;
-        let iters = stats.iterations;
-
-        // user requested stop
-        ct.is_cancelled()
-
-        // limit has been reached
-            || (limit.is_active() && limit.is_reached(nodes, now, time_limit, iters))
-    };
-
     let mut depth = Depth::ROOT + 1;
 
-    while !should_stop(&stats) {
-        searcher.search_root(pos, &mut stats, depth);
+    while !searcher.should_stop(&stats) {
+        let best_score = searcher.search_root(pos, &mut stats, depth);
         searcher.sort_root();
 
         best_move = searcher.root_best_move();
         if let Some(best_move) = best_move {
-            // todo cleanup
-            let best_score = searcher.root_stats.get(0).unwrap().score;
             uci_info(depth, &stats, Cp { v: best_score as i16 }, best_move);
         }
 
+        // update stats
+        stats.iterations += 1;
+
+        // increment depth for next iteration
         depth += 1;
     }
 
@@ -84,20 +70,31 @@ struct RootStats {
     mov: Move,
 }
 
-#[derive(Default)]
 struct Searcher {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
+    limit: UciLimit,
+    time_limit: Instant,
+    ct: CancellationToken,
 }
 
 impl Searcher {
-    fn from_pos(pos: &Position) -> Self {
+    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
             stats.push(RootStats { mov: m, score: 0 });
             ControlFlow::Continue::<(), ()>(())
         });
 
-        Self { root_stats: stats }
+        let search_start = Instant::now();
+        let time_per_move = limit.time_per_move(pos);
+        let time_limit = search_start + time_per_move;
+
+        Self {
+            root_stats: stats,
+            limit,
+            time_limit,
+            ct,
+        }
     }
 
     fn sort_root(&mut self) {
@@ -108,6 +105,25 @@ impl Searcher {
 
     fn root_best_move(&self) -> Option<Move> {
         self.root_stats.get(0).map(|x| x.mov)
+    }
+
+    fn should_stop(&self, stats: &SearchStats) -> bool {
+        let now = Instant::now();
+        let nodes = stats.nodes;
+        let iters = stats.iterations;
+
+        // user requested stop
+        if self.ct.is_cancelled() {
+            return true;
+        }
+
+        // limit has been reached
+        if self.limit.is_active() && self.limit.is_reached(nodes, now, self.time_limit, iters) {
+            return true;
+        }
+
+        // otherwise keep searching
+        false
     }
 
     /// returns the score relative to the current player
@@ -150,6 +166,13 @@ impl Searcher {
     ) -> Score<P> {
         // incremment stats
         stats.nodes += 1;
+
+        // check if stop is requested or we have reached a limit
+        if stats.nodes % 4096 == 0 {
+            if self.should_stop(stats) {
+                return Score::NEG_INF;
+            }
+        }
 
         // check if game is over
         if let Some(result) = pos.game_result() {
@@ -212,7 +235,7 @@ impl Searcher {
             }
         };
 
-        for m in moves.iter().copied() {
+        for (i, m) in moves.iter().copied().enumerate() {
             // make the move
             pos.make_move_for::<P>(m);
 
@@ -222,16 +245,10 @@ impl Searcher {
             // unmake the move
             pos.unmake_move_for::<P>(m);
 
-            // todo: there has to be a better way to do this
             if is_root {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
-                let idx = self
-                    .root_stats
-                    .iter()
-                    .position(|x| x.mov == m)
-                    .expect("move should be in root_moves");
-                self.root_stats.as_mut_slice()[idx].score = score.0;
+                self.root_stats.as_mut_slice()[i].score = score.0;
             }
 
             if score >= beta {

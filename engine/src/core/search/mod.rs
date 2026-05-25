@@ -88,7 +88,7 @@ impl SearchWorker for IdWorker {
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
-                let best_move = id::go(&mut pos, limit, &debug, &ct);
+                let best_move = id::go(&mut pos, limit, &debug, ct);
 
                 if let Some(mov) = best_move {
                     println!("bestmove {mov}");
