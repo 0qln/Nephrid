@@ -13,7 +13,7 @@ mcts-nn = []
 mcts-hce = []
 id-hce = []
 
-default = ["mcts-hce"]
+default = ["id-hce"]
 
 [dependencies]
 engine = { version = "*", path = "../engine", default-features = false }
