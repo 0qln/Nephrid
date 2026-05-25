@@ -7,15 +7,17 @@ use crate::{
             nn::PolicyHeadIndex,
             node::node_state::{ExpandedSwitch, HasBranches, HasValue, NodeState, Switch},
         },
-        zobrist::{self, ZobristBuildHasher},
+        zobrist,
     },
     impl_variants,
 };
+use lru::LruCache;
 use std::{
     cmp::Ordering,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashSet, VecDeque},
     fmt,
     marker::PhantomData,
+    num::NonZeroUsize,
     ops::{self, Deref},
     ptr,
 };
@@ -347,16 +349,17 @@ pub mod node_state {
     impl Any for Unknown {}
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct ArenaBuffer {
-    nodes: HashMap<zobrist::Hash, NodeData, ZobristBuildHasher>,
+    nodes: LruCache<zobrist::Hash, NodeData>,
     branches: Vec<Branch>,
 }
 
 impl ArenaBuffer {
     fn new(node_cap: usize, branch_cap: usize) -> Self {
+        let cap = NonZeroUsize::new(node_cap).expect("node capacity must be non-zero");
         Self {
-            nodes: HashMap::with_capacity_and_hasher(node_cap, ZobristBuildHasher::default()),
+            nodes: LruCache::new(cap),
             branches: Vec::with_capacity(branch_cap),
         }
     }
@@ -379,10 +382,13 @@ pub struct NodeData {
 }
 
 impl NodeData {
-    fn new_leaf() -> Self {
+    const fn new_leaf() -> Self {
         Self {
+            branch_start: 0,
+            branch_count: MoveIndex { v: 0 },
+            visits: VisitCount(0),
+            value: Value(0.0),
             state: NodeState::Leaf,
-            ..Default::default()
         }
     }
 
@@ -394,6 +400,10 @@ impl NodeData {
         self.visits
     }
 }
+
+/// A static default `NodeData` returned for nodes that have been evicted from
+/// the LRU cache. Treated as an unexplored leaf so the search re-explores it.
+static EVICTED_LEAF: NodeData = NodeData::new_leaf();
 
 /// A relational representation connecting a parent node to a child node via
 /// indices.
@@ -447,10 +457,22 @@ impl Default for DAG {
 }
 
 impl DAG {
+    /// Overhead per LRU node entry in bytes (key + LRU bookkeeping).
+    const LRU_ENTRY_OVERHEAD: usize = 48;
+
     pub fn new(pos: &Position) -> Self {
-        let mut arena = ArenaBuffer::new(10000, 30000);
+        Self::with_cache_size_mb(pos, 1024)
+    }
+
+    /// Create a new `DAG` with a node cache sized to approximately `size_mb` megabytes.
+    pub fn with_cache_size_mb(pos: &Position, size_mb: usize) -> Self {
+        let bytes_per_node =
+            std::mem::size_of::<(zobrist::Hash, NodeData)>() + Self::LRU_ENTRY_OVERHEAD;
+        let node_cap = ((size_mb * 1024 * 1024) / bytes_per_node).max(1);
+        let branch_cap = node_cap.saturating_mul(35);
+        let mut arena = ArenaBuffer::new(node_cap, branch_cap);
         let root_index = pos.get_key();
-        arena.nodes.insert(root_index, NodeData::new_leaf());
+        arena.nodes.put(root_index, NodeData::new_leaf());
         Self {
             arena,
             size: 1,
@@ -778,8 +800,8 @@ impl DAG {
             let child_key = pos.get_key();
             pos.unmake_move(m);
 
-            if !self.arena.nodes.contains_key(&child_key) {
-                self.arena.nodes.insert(child_key, NodeData::new_leaf());
+            if !self.arena.nodes.contains(&child_key) {
+                self.arena.nodes.put(child_key, NodeData::new_leaf());
                 self.size += 1;
             }
 
@@ -810,9 +832,9 @@ impl DAG {
         let child_key = pos.get_key();
         pos.unmake_move(mov);
 
-        let is_new = !self.arena.nodes.contains_key(&child_key);
+        let is_new = !self.arena.nodes.contains(&child_key);
         if is_new {
-            self.arena.nodes.insert(child_key, NodeData::new_leaf());
+            self.arena.nodes.put(child_key, NodeData::new_leaf());
             self.size += 1;
         }
 
@@ -896,15 +918,18 @@ impl DAG {
     fn node_data<S: node_state::Any>(&self, node: NodeId<S>) -> &NodeData {
         self.arena
             .nodes
-            .get(node.index())
-            .expect("Node ID should be valid")
+            .peek(node.index())
+            .unwrap_or(&EVICTED_LEAF)
     }
 
     fn node_data_mut<S: node_state::Any>(&mut self, node: NodeId<S>) -> &mut NodeData {
+        if !self.arena.nodes.contains(node.index()) {
+            self.arena.nodes.put(*node.index(), NodeData::new_leaf());
+        }
         self.arena
             .nodes
             .get_mut(node.index())
-            .expect("Node ID should be valid")
+            .expect("just inserted if missing")
     }
 
     pub fn revert_virtual_loss(&mut self, node: RtNodeId, amount: u32) {
@@ -952,7 +977,7 @@ impl DAG {
         }
         visited.insert(key);
 
-        let old_node = &self.arena.nodes[&key];
+        let old_node = self.arena.nodes.peek(&key).expect("Node should exist when copying subtree");
         let is_terminal = old_node.state == NodeState::Terminal;
 
         let mut total_size = 1;
@@ -996,7 +1021,7 @@ impl DAG {
         let mut new_node = old_node.clone();
         new_node.branch_start = new_branch_start;
         new_node.branch_count = MoveIndex::from(branch_count as u8);
-        back_buffer.nodes.insert(key, new_node);
+        back_buffer.nodes.put(key, new_node);
 
         (total_size, total_terminal, max_h)
     }
@@ -1271,12 +1296,11 @@ impl<'a, S: node_state::Any> NodeView<'a, S> {
 
     #[inline]
     fn data(&self) -> &NodeData {
-        &self
-            .tree
+        self.tree
             .arena
             .nodes
-            .get(self.id.index())
-            .expect("NodeId should always point to a valid node")
+            .peek(self.id.index())
+            .unwrap_or(&EVICTED_LEAF)
     }
 
     #[inline]

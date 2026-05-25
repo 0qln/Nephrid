@@ -245,6 +245,9 @@ pub struct Configuration {
     /// Evaluation policy temperature. In percent.
     eval_policy_temperature: ConfigOption<Spin>,
 
+    /// LRU game-tree cache size in MB.
+    lru_cache_size: ConfigOption<Spin>,
+
     /// Margin for futility pruning. In centipawns.
     eval_futility_margin: ConfigOption<Spin>,
 
@@ -280,6 +283,7 @@ impl Default for Configuration {
                 "eval-policy-temperature",
                 Spin::new((HceParams.policy_temperature() * 100.) as i32, 1, 10000),
             ),
+            lru_cache_size: ConfigOption::new("lru-cache-size", Spin::new(1024, 1, 64 * 1024)),
             eval_futility_margin: ConfigOption::new(
                 "eval-futility-margin",
                 Spin::new(HceParams.futility_margin(), 100, 300),
@@ -347,6 +351,10 @@ impl Configuration {
         self.eval_policy_temperature.value as f32 / 100.
     }
 
+    pub fn lru_cache_size_mb(&self) -> usize {
+        self.lru_cache_size.value as usize
+    }
+
     pub fn eval_futility_margin(&self) -> i32 {
         self.eval_futility_margin.value
     }
@@ -375,6 +383,7 @@ impl Configuration {
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
         match name.to_lowercase().as_str() {
+            "lru-cache-size" => self.lru_cache_size.set(value),
             "hash" => self.hash.set(value),
             "threads" => self.threads.set(value),
             "clearhash" => {
@@ -409,6 +418,7 @@ impl Configuration {
     }
 
     pub fn print_uci(&self) {
+        println!("{}", self.lru_cache_size);
         println!("{}", self.hash);
         println!("{}", self.threads);
         println!("{}", self.clear_hash);

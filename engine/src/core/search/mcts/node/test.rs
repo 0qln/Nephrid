@@ -278,7 +278,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
     let grandchild_hash = hash(3);
 
     // Node 0: Root (Evaluated)
-    tree.arena.nodes.insert(
+    tree.arena.nodes.put(
         root_hash,
         NodeData {
             branch_start: 0,
@@ -289,7 +289,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
         },
     );
     // Node 1: Sibling (Leaf)
-    tree.arena.nodes.insert(
+    tree.arena.nodes.put(
         sibling_hash,
         NodeData {
             branch_start: 0,
@@ -300,7 +300,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
         },
     );
     // Node 2: Target (Evaluated)
-    tree.arena.nodes.insert(
+    tree.arena.nodes.put(
         target_hash,
         NodeData {
             branch_start: 2, // after root's branches
@@ -311,7 +311,7 @@ fn test_advance_to_preserves_subtree_and_discards_siblings() {
         },
     );
     // Node 3: Grandchild (Leaf)
-    tree.arena.nodes.insert(
+    tree.arena.nodes.put(
         grandchild_hash,
         NodeData {
             branch_start: 0,
@@ -380,7 +380,7 @@ fn test_advance_to_leaf_node_resets_tree_size_and_height() {
     let leaf_hash = hash(1);
 
     // Node 0: Root (Evaluated)
-    tree.arena.nodes.insert(
+    tree.arena.nodes.put(
         root_hash,
         NodeData {
             branch_start: 0,
@@ -391,7 +391,7 @@ fn test_advance_to_leaf_node_resets_tree_size_and_height() {
         },
     );
     // Node 1: Leaf Target
-    tree.arena.nodes.insert(
+    tree.arena.nodes.put(
         leaf_hash,
         NodeData {
             branch_start: 0,

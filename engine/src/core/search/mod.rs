@@ -71,6 +71,7 @@ pub struct MctsWorker<const MPV: usize, C: MctsConfig> {
     mcts_parts: Option<C::Parts>,
     mcts_state: mcts::SearchState,
     backup_tree: Option<DAG>,
+    cache_size_mb: usize,
 }
 
 impl<const MPV: usize, C: MctsConfig> Default for MctsWorker<MPV, C> {
@@ -88,6 +89,7 @@ impl<const MPV: usize, C: MctsConfig> MctsWorker<MPV, C> {
             mcts_parts,
             mcts_state,
             backup_tree,
+            cache_size_mb: 1024,
         }
     }
 }
@@ -150,6 +152,8 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                     Err(_) => &Configuration::default(),
                 };
 
+                self.cache_size_mb = cfg.lru_cache_size_mb();
+
                 let mut parts = <C::Parts as TryFrom<&Configuration>>::try_from(cfg)
                     .map_err(|e| ExecError::BadConfig(e.to_string()))?;
 
@@ -170,12 +174,14 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                     self.mcts_state.advance_to(mov);
                 }
                 else {
-                    self.mcts_state.tree = DAG::default();
+                    self.mcts_state.tree =
+                        DAG::with_cache_size_mb(&Position::default(), self.cache_size_mb);
                 }
                 Ok(())
             }
             Command::ResetState => {
-                self.mcts_state.tree = DAG::default();
+                self.mcts_state.tree =
+                    DAG::with_cache_size_mb(&Position::default(), self.cache_size_mb);
                 Ok(())
             }
             Command::Debug => {
