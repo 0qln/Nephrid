@@ -11,6 +11,7 @@ use crate::{
         config::Configuration,
         depth::Depth,
         r#move::{Move, MoveList, SanParseError},
+        params::{IParams, Params},
         piece::piece_type,
         position::{
             EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError,
@@ -41,6 +42,7 @@ pub mod coordinates;
 pub mod depth;
 pub mod r#move;
 pub mod move_iter;
+pub mod params;
 pub mod piece;
 pub mod ply;
 pub mod position;
@@ -235,7 +237,8 @@ pub fn execute_uci(
 
                 while let Some(token) = tokenizer.next_token() {
                     match token {
-                        "perft" => mode = Mode::Perft,
+                        "perft" => mode = Mode::Perft { captures_only: false },
+                        "captures" => mode = Mode::Perft { captures_only: true },
                         "ponder" => mode = Mode::Ponder,
                         "wtime" => collect_and_parse!(limit.wtime),
                         "btime" => collect_and_parse!(limit.btime),
@@ -273,7 +276,9 @@ pub fn execute_uci(
                     ponder_hit.start_ponder();
                     Command::Ponder(position, limit, token, debug, ponder_hit)
                 }
-                Mode::Perft => Command::Perft(position, limit, token, debug),
+                Mode::Perft { captures_only } => {
+                    Command::Perft(position, limit, token, debug, captures_only)
+                }
             };
 
             engine.search_t.tx.send(cmd)?;
@@ -346,8 +351,11 @@ pub fn execute_uci(
                 println!("Passed Pawns:   {passed_pawns_w:>16} - {passed_pawns_b:<16}");
             }
 
+            let config = engine.config.lock().expect("Config dead :(");
             let moves = pos.collect_moves(MoveList::new());
-            let eval = hce::EvalInfo::new(moves.clone(), &mut pos);
+            let config = &config.clone();
+            let params = Params::try_from(config)?;
+            let eval = hce::EvalInfo::new(moves.clone(), &mut pos, params.shared());
 
             if matches!(cmd, None | Some("centipawns")) {
                 let quality = eval.quality();

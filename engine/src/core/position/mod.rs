@@ -10,19 +10,18 @@ use thiserror::Error;
 
 use crate::{
     core::{
-        bitboard::{Bitboard, BitboardIteratorExt},
+        bitboard::Bitboard,
         castling::{CastlingRights, CastlingSideTokenizationError},
         color::{Color, ColorTokenizationError, Perspective, colors, perspectives},
         coordinates::{
-            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, files, ranks,
-            squares,
+            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square,
+            castling::castling_rank, files, ranks, squares,
         },
         depth::Depth,
         r#move::{Move, MoveList, SAN, SanParseError, move_flags},
         move_iter::{
             bishop::{self, Bishop},
             fold_legal_moves,
-            king::{self},
             knight::{self},
             pawn,
             rook::{self, Rook},
@@ -59,7 +58,6 @@ pub struct StateInfo {
     // Memoized state
     pub checkers: Bitboard,
     pub blockers: Bitboard,
-    pub nstm_attacks: Bitboard,
     pub check_state: CheckState,
 
     // Game history
@@ -92,18 +90,6 @@ impl StateInfo {
         let kings = pieces.get_piece_bb(piece_type::KING);
         let r_n_q = (pieces.get_piece_bb(piece_type::ROOK) | queens) & enemies;
         let b_n_q = (pieces.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
-
-        let bishop_attacks = |sq| Bishop::lookup_attacks(sq, occupancy);
-        let rook_attacks = |sq| Rook::lookup_attacks(sq, occupancy);
-
-        self.nstm_attacks = {
-            let king = enemies & kings;
-            pawn::compute_attacks(pawns, nstm)
-                | knights.into_iter().map(knight::lookup_attacks).aggregate()
-                | b_n_q.into_iter().map(bishop_attacks).aggregate()
-                | r_n_q.into_iter().map(rook_attacks).aggregate()
-                | king.lsb().map(king::lookup_attacks).unwrap_or_default()
-        };
 
         if let Some(king_sq) = (allies & kings).lsb() {
             // Normal checkers
@@ -328,7 +314,7 @@ impl PieceInfo {
         unsafe { self.piece_counts.get_unchecked_mut(piece.v() as usize) }
     }
 
-    pub fn remove_piece(&mut self, sq: Square) {
+    pub fn remove_piece(&mut self, sq: Square) -> Piece {
         let target = Bitboard::from(sq);
         let piece = self.get_piece(sq);
         debug_assert_ne!(piece, Piece::default(), "No piece at {sq}");
@@ -336,6 +322,7 @@ impl PieceInfo {
         *self.get_color_bb_mut(piece.color()) ^= target;
         *self.get_piece_mut(sq) = Piece::default();
         *self.get_piece_count_mut(piece) -= 1;
+        piece
     }
 
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
@@ -368,6 +355,80 @@ impl PieceInfo {
         *self.get_piece_bb_mut(piece.piece_type()) ^= from_to;
         *self.get_piece_mut(from) = Piece::default();
         *self.get_piece_mut(to) = piece;
+    }
+
+    /// Whether the move is a checking move
+    pub fn does_check(&self, stm: Turn, mov: Move) -> CheckState {
+        let (from, to, flag) = mov.into();
+        let from_bb = Bitboard::from(from);
+        let to_bb = Bitboard::from(to);
+
+        let moving_pt = self.get_piece(from).piece_type();
+
+        // for promotions, the landing piece type differs from the moving piece type.
+        let landing_pt = if flag.is_promo() {
+            // Safety: we check above
+            PieceType::from(unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() })
+        }
+        else {
+            moving_pt
+        };
+
+        // rook castling squares, if this is a castling move.
+        let castling_rook = Move::rook_castling(flag, castling_rank(stm));
+
+        // occupancy after the move, accounting for captures and castling rook movement.
+        let occ_after = {
+            let mut occ = self.get_occupancy();
+            if let Some(sq) = mov.get_capture_sq() {
+                occ &= !Bitboard::from(sq);
+            }
+            occ ^= from_bb | to_bb;
+            if let Some((r_from, r_to)) = castling_rook {
+                occ ^= Bitboard::from(r_from) | Bitboard::from(r_to);
+            }
+            occ
+        };
+
+        let nstm = !stm;
+
+        // find the opponent's king square. their king was not touched by this move.
+        let king_sq = match (self.get_color_bb(nstm) & self.get_piece_bb(piece_type::KING)).lsb() {
+            Some(sq) => sq,
+            None => return CheckState::None,
+        };
+
+        let attacker_color = self.get_color_bb(stm);
+        let attacker_pt_bb = |pt: PieceType| -> Bitboard {
+            let mut bb = self.get_piece_bb(pt) & attacker_color;
+            if moving_pt == pt {
+                bb &= !from_bb;
+            }
+            if landing_pt == pt {
+                bb |= to_bb;
+            }
+            if let Some((r_from, r_to)) = castling_rook
+                && pt == piece_type::ROOK {
+                    bb ^= Bitboard::from(r_from) | Bitboard::from(r_to);
+                }
+            bb
+        };
+
+        let queens = attacker_pt_bb(piece_type::QUEEN);
+        let r_n_q = attacker_pt_bb(piece_type::ROOK) | queens;
+        let b_n_q = attacker_pt_bb(piece_type::BISHOP) | queens;
+
+        let checkers = Bitboard::empty()
+            | (pawn::lookup_attacks(king_sq, nstm) & attacker_pt_bb(piece_type::PAWN))
+            | (knight::lookup_attacks(king_sq) & attacker_pt_bb(piece_type::KNIGHT))
+            | (Bishop::lookup_attacks(king_sq, occ_after) & b_n_q)
+            | (Rook::lookup_attacks(king_sq, occ_after) & r_n_q);
+
+        match checkers.pop_cnt() {
+            1 => CheckState::Single,
+            2 => CheckState::Double,
+            _ => CheckState::None,
+        }
     }
 }
 
@@ -463,11 +524,6 @@ impl Position {
     }
 
     #[inline]
-    pub fn get_nstm_attacks(&self) -> Bitboard {
-        self.state.get_current().nstm_attacks
-    }
-
-    #[inline]
     pub fn get_blockers(&self) -> Bitboard {
         self.state.get_current().blockers
     }
@@ -518,6 +574,11 @@ impl Position {
             i += 2;
         }
         false
+    }
+
+    #[inline]
+    pub fn does_check(&self, mov: Move) -> CheckState {
+        self.piece_info.does_check(self.get_turn(), mov)
     }
 
     #[inline]
@@ -642,7 +703,7 @@ impl Position {
     /// This pub, because it is used for benchmarking.
     #[inline]
     pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) {
-        self.piece_info.remove_piece(sq)
+        self.piece_info.remove_piece(sq);
     }
 
     /// # Safety
@@ -675,7 +736,6 @@ impl Position {
 
         let (from, to, flag) = m.into();
         let moving_piece = self.get_piece(from);
-        let target_piece = self.get_piece(to);
 
         // Safety: During the lifetime of this pointer, no other pointer
         // reads or writes to the memory location of the next state.
@@ -695,43 +755,32 @@ impl Position {
         // These might change across leafes on the same depth, so the
         // need to be reinitialized for each leaf.
         let curr_state = self.state.get_current();
-        next_state.castling = curr_state.castling;
-        next_state.plys50 = curr_state.plys50 + 1;
-        next_state.ep_capture_square = EpCaptureSquare::default();
-        next_state.key = curr_state.key;
-        next_state
-            .key
-            .toggle_ep_square(curr_state.ep_capture_square);
-        next_state.key.toggle_turn();
-        next_state.captured_piece = Piece::default();
+        let next_state = {
+            let s = next_state;
+            s.castling = curr_state.castling;
+            s.plys50 = curr_state.plys50 + 1;
+            s.ep_capture_square = EpCaptureSquare::default();
+            s.key = curr_state.key;
+            s.key.toggle_ep_square(curr_state.ep_capture_square);
+            s.key.toggle_turn();
+            s.captured_piece = Piece::default();
 
-        // castling
-        next_state
-            .castling
-            .apply_mask(CastlingRights::MASKS[from.index()]);
-        next_state
-            .castling
-            .apply_mask(CastlingRights::MASKS[to.index()]);
+            // castling
+            s.castling.apply_mask(CastlingRights::get_mask(from));
+            s.castling.apply_mask(CastlingRights::get_mask(to));
+            s
+        };
 
         // captures
         if flag.is_capture() {
-            let captured_piece = match flag {
-                move_flags::EN_PASSANT => Piece::from((!us, piece_type::PAWN)),
-                _ => target_piece,
-            };
-
-            let captured_sq = match flag {
-                move_flags::EN_PASSANT => {
-                    // Safety:
-                    // If the move is an en passant, the `to` square is on the 3rd or 6th rank.
-                    unsafe {
-                        let target_sq = EpTargetSquare::try_from(to).unwrap_unchecked();
-                        EpCaptureSquare::from((target_sq, !us))
-                            .v()
-                            .unwrap_unchecked()
-                    }
-                }
-                _ => to,
+            let (captured_piece, captured_sq) = match flag {
+                move_flags::EN_PASSANT => (
+                    Piece::from((!us, piece_type::PAWN)),
+                    // Safety: The current move is an en passant so the current state has to have
+                    // had a valid en passant square.
+                    unsafe { curr_state.ep_capture_square.v().unwrap_unchecked() },
+                ),
+                _ => (self.get_piece(to), to),
             };
 
             self.piece_info.remove_piece(captured_sq);
@@ -741,35 +790,29 @@ impl Position {
             next_state.plys50 = Ply { v: 0 };
         }
 
-        // move the piece
-        self.piece_info.move_piece(from, to);
-        next_state.key.move_piece_sq(from, to, moving_piece);
-
         match moving_piece.piece_type() {
             // castling
-            piece_type::KING => match flag {
-                move_flags::KING_CASTLE => {
-                    let rank = Rank::from(to);
-                    let rook_from = Square::from((files::H, rank));
-                    let rook_to = Square::from((files::F, rank));
-                    let rook = self.get_piece(rook_from);
-                    self.piece_info.move_piece(rook_from, rook_to);
-                    next_state.key.move_piece_sq(rook_from, rook_to, rook);
+            piece_type::KING => {
+                // move king
+                self.piece_info.move_piece(from, to);
+                next_state.key.move_piece_sq(from, to, moving_piece);
+
+                // move rook if castle
+                let rank = castling_rank(P::COLOR);
+                let rook = Piece::from((P::COLOR, piece_type::ROOK));
+                if let Some((r_from, r_to)) = Move::rook_castling(flag, rank) {
+                    self.piece_info.move_piece(r_from, r_to);
+                    next_state.key.move_piece_sq(r_from, r_to, rook);
                 }
-                move_flags::QUEEN_CASTLE => {
-                    let rank = Rank::from(to);
-                    let rook_from = Square::from((files::A, rank));
-                    let rook_to = Square::from((files::D, rank));
-                    let rook = self.get_piece(rook_from);
-                    self.piece_info.move_piece(rook_from, rook_to);
-                    next_state.key.move_piece_sq(rook_from, rook_to, rook);
-                }
-                _ => (),
-            },
+            }
             // pawns
             piece_type::PAWN => {
                 match flag.v() {
                     move_flags::DOUBLE_PAWN_PUSH_C => {
+                        // move the pawn
+                        self.piece_info.move_piece(from, to);
+                        next_state.key.move_piece_sq(from, to, moving_piece);
+
                         // Safety: A double pawn push destination square is the definition of
                         // an en passant square.
                         next_state.ep_capture_square =
@@ -781,18 +824,26 @@ impl Position {
                     move_flags::PROMOTION_KNIGHT_C..=move_flags::CAPTURE_PROMOTION_QUEEN_C => {
                         // Safety: We just checked, that the flag is in a valid range.
                         let promo_t = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
-                        let promo = Piece::from((us, promo_t));
-                        self.piece_info.remove_piece(to);
-                        next_state.key.toggle_piece_sq(to, moving_piece);
+                        let promo = Piece::from((P::COLOR, promo_t));
+                        self.piece_info.remove_piece(from);
+                        next_state.key.toggle_piece_sq(from, moving_piece);
                         self.piece_info.put_piece(to, promo);
                         next_state.key.toggle_piece_sq(to, promo);
                     }
-                    _ => (),
+                    _ => {
+                        // move the pawn
+                        self.piece_info.move_piece(from, to);
+                        next_state.key.move_piece_sq(from, to, moving_piece);
+                    }
                 }
 
                 next_state.plys50 = Ply { v: 0 };
             }
-            _ => (),
+            _ => {
+                // move the piece
+                self.piece_info.move_piece(from, to);
+                next_state.key.move_piece_sq(from, to, moving_piece);
+            }
         }
 
         // update castling rights in the hash, if they have changed.
@@ -830,24 +881,25 @@ impl Position {
         // Safety: During the lifetime of this pointer, no other pointer
         // writes to the memory location of the popped state.
         let popped_state = unsafe { self.state.pop_current().as_ref() };
+        let curr_state = self.state.get_current();
 
         match flag.v() {
             // castling
             move_flags::KING_CASTLE_C => {
-                let rank = Rank::from(to);
+                let rank = castling_rank(P::COLOR);
                 let rook_from = Square::from((files::H, rank));
                 let rook_to = Square::from((files::F, rank));
                 self.piece_info.move_piece(rook_to, rook_from);
             }
             move_flags::QUEEN_CASTLE_C => {
-                let rank = Rank::from(to);
+                let rank = castling_rank(P::COLOR);
                 let rook_from = Square::from((files::A, rank));
                 let rook_to = Square::from((files::D, rank));
                 self.piece_info.move_piece(rook_to, rook_from);
             }
             // promotions
             move_flags::PROMOTION_KNIGHT_C..=move_flags::CAPTURE_PROMOTION_QUEEN_C => {
-                let pawn = Piece::from((us, piece_type::PAWN));
+                let pawn = Piece::from((P::COLOR, piece_type::PAWN));
                 self.piece_info.remove_piece(to);
                 self.piece_info.put_piece(to, pawn);
             }
@@ -862,14 +914,9 @@ impl Position {
         if captured_piece != Piece::default() {
             let captured_sq = match flag {
                 move_flags::EN_PASSANT => {
-                    // Safety:
-                    // If the move is an en passant, the `to` square is on the 3rd or 6th rank.
-                    unsafe {
-                        let target_sq = EpTargetSquare::try_from(to).unwrap_unchecked();
-                        EpCaptureSquare::from((target_sq, !us))
-                            .v()
-                            .unwrap_unchecked()
-                    }
+                    // Safety: The current move is an en passant so the current state has to have
+                    // had a valid en passant square.
+                    unsafe { curr_state.ep_capture_square.v().unwrap_unchecked() }
                 }
                 _ => to,
             };

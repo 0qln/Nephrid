@@ -4,6 +4,7 @@ use crate::{
     core::{
         Game, Move,
         config::Configuration,
+        move_iter::opt,
         search::{
             limit::UciLimit,
             mcts::{
@@ -107,8 +108,13 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                 println!("readyok");
                 Ok(())
             }
-            Command::Perft(mut pos, limit, ct, debug) => {
-                perft::<true>(&mut pos, &limit, ct, debug);
+            Command::Perft(mut pos, limit, ct, debug, captures_only) => {
+                if captures_only {
+                    perft::<opt::Captures>(&mut pos, &limit, ct, debug);
+                }
+                else {
+                    perft::<opt::All>(&mut pos, &limit, ct, debug);
+                }
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
@@ -255,7 +261,7 @@ pub fn init<W: SearchWorker>() -> SearchThread {
 
 #[derive(Debug, Clone)]
 pub enum Command {
-    Perft(Position, UciLimit, CancellationToken, DebugMode),
+    Perft(Position, UciLimit, CancellationToken, DebugMode, bool),
     Normal(Position, UciLimit, CancellationToken, DebugMode),
     Ponder(
         Position,

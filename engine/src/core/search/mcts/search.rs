@@ -11,6 +11,7 @@ use crate::core::{
     color::{Perspective, colors, perspectives},
     depth::Depth,
     r#move::Move,
+    params::ParamsRef,
     search::mcts::{
         back::{self},
         eval::{Evaluation, Evaluator, Guess, eval_terminal},
@@ -214,6 +215,12 @@ impl<T> Selection<T> {
     }
 }
 
+pub trait SearchParams {
+    fn proven_loss_visit_threshold(&self) -> VisitCount;
+    fn killer_exploitation(&self) -> f32;
+    fn tt_best_move(&self) -> f32;
+}
+
 /// # Tree searcher
 pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector, N: Noiser> {
     position: &'pos mut Position,
@@ -223,12 +230,19 @@ pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector
     selection: Selection<E::TraceData>,
     tt: Box<TranspositionTable<{ 2 << 10 }, TTData>>,
     ss: SearchStack,
+    params: ParamsRef,
 }
 
 impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
     TreeSearcher<'pos, BATCH, E, S, N>
 {
-    pub fn new(position: &'pos mut Position, selector: S, evaluator: E, noiser: N) -> Self {
+    pub fn new(
+        position: &'pos mut Position,
+        params: ParamsRef,
+        selector: S,
+        evaluator: E,
+        noiser: N,
+    ) -> Self {
         Self {
             position,
             selector,
@@ -237,6 +251,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
             selection: Default::default(),
             tt: Default::default(),
             ss: SearchStack::new(),
+            params,
         }
     }
 
@@ -386,7 +401,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
         let killer_move = ss_entry.and_then(|entry| entry.killer_move);
         let killer_exploitation = ss_entry.and_then(|entry| entry.killer_exploitation);
 
-        let visit_threshold = VisitCount(4); // todo: fine-tune
+        let visit_threshold = self.params.proven_loss_visit_threshold();
 
         let sel = &self.selector;
         const MIN: select::Score = select::Score(f32::NEG_INFINITY);
@@ -417,7 +432,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                         // use the exploitation score from the tt best_move as guidance in the
                         // exploration factor.
                         if tt_best_move == Some(mov) {
-                            tt_exploitation.unwrap().0 * 2.0 // todo: make this tunable
+                            tt_exploitation.unwrap().0 * self.params.tt_best_move()
                         }
                         else {
                             1.
@@ -429,7 +444,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
                         // if a quiet move from a sibling branch proved to be of high exploitation
                         // after some searching, consider that move here aswell.
                         if killer_move == Some(mov) && child.visits() <= VisitCount(2) {
-                            killer_exploitation.unwrap().0 * 1.0 // todo: make this tunable
+                            killer_exploitation.unwrap().0 * self.params.killer_exploitation()
                         }
                         else {
                             0.

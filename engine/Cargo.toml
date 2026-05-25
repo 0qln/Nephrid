@@ -1,6 +1,6 @@
 [package]
 name = "engine"
-version = "26.5.14+d38f42c"
+version = "26.5.25+a346298"
 edition = "2024"
 
 [dependencies]
@@ -20,6 +20,7 @@ rustc-hash = "2.1.2"
 
 [features]
 default = []
+tunable = []
 
 [lints]
 workspace = true

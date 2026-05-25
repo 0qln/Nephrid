@@ -2,11 +2,7 @@ use burn_cuda::Cuda;
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use engine::{
     core::{
-        config::Configuration,
-        r#move::MoveList,
-        move_iter::fold_legal_moves,
-        position::PgnResultValue,
-        search::mcts::{
+        config::Configuration, r#move::MoveList, move_iter::fold_legal_moves, params::ParamsRef, position::PgnResultValue, search::mcts::{
             self, CreateNNPartsError, MctsParts, NNParts,
             eval::{
                 self, Evaluator, Policy, Quality, Ratio,
@@ -20,8 +16,7 @@ use engine::{
             noise::DirichletNoiser,
             search::{BatchItem, Selection},
             select::{Score, Selector},
-        },
-        zobrist,
+        }, zobrist
     },
     math::entropy,
     misc::{CheckHealth, List},
@@ -718,6 +713,10 @@ impl MctsParts for MctsTrainParts {
     type Selector = MctsTrainSelector;
     type Evaluator = BatchedNNEvaluator;
     type Noiser = DirichletNoiser;
+
+    fn params(&self) -> ParamsRef {
+        todo!()
+    }
 
     fn selector(&self) -> Self::Selector {
         MctsTrainSelector::new(self.c_puct, 1., self.virtual_loss)

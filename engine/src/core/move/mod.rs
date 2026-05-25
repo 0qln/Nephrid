@@ -18,7 +18,7 @@ use crate::{
         },
         move_iter::{
             bishop::Bishop,
-            fold_legal_moves, fold_legals,
+            fold_legal_moves,
             king::{self},
             knight,
             rook::Rook,
@@ -27,7 +27,7 @@ use crate::{
         piece::{Piece, PieceType, PromoPieceTokenizationError, piece_type},
         position::{CheckState, Position},
     },
-    impl_variants_with_assertion,
+    impl_variants,
     misc::{List, ValueOutOfRangeError},
     uci::tokens::Tokenizer,
 };
@@ -71,22 +71,22 @@ pub struct MoveFlag {
 
 pub type TMoveFlag = u8;
 
-impl_variants_with_assertion! {
+impl_variants! {
     TMoveFlag as MoveFlag in move_flags {
-        QUIET,
-        DOUBLE_PAWN_PUSH,
-        PROMOTION_KNIGHT,
-        PROMOTION_BISHOP,
-        PROMOTION_ROOK,
-        PROMOTION_QUEEN,
-        CAPTURE_PROMOTION_KNIGHT,
-        CAPTURE_PROMOTION_BISHOP,
-        CAPTURE_PROMOTION_ROOK,
-        CAPTURE_PROMOTION_QUEEN,
-        KING_CASTLE,
-        QUEEN_CASTLE,
-        CAPTURE,
-        EN_PASSANT,
+        QUIET                    = 0b0000,
+        DOUBLE_PAWN_PUSH         = 0b0001,
+        PROMOTION_KNIGHT         = 0b0010,
+        PROMOTION_BISHOP         = 0b0011,
+        PROMOTION_ROOK           = 0b0100,
+        PROMOTION_QUEEN          = 0b0101,
+        CAPTURE_PROMOTION_KNIGHT = 0b0110,
+        CAPTURE_PROMOTION_BISHOP = 0b0111,
+        CAPTURE_PROMOTION_ROOK   = 0b1000,
+        CAPTURE_PROMOTION_QUEEN  = 0b1001,
+        KING_CASTLE              = 0b1010,
+        QUEEN_CASTLE             = 0b1011,
+        CAPTURE                  = 0b1100,
+        EN_PASSANT               = 0b1101,
     }
 }
 
@@ -208,6 +208,24 @@ impl Move {
         unsafe {
             let val = (self.v & Move::MASK_TO) >> Move::SHIFT_TO;
             Square::from_v(val as u8)
+        }
+    }
+
+    /// Returns (from, to) for rook move of castling.
+    #[inline]
+    pub const fn rook_castling(flag: MoveFlag, rank: Rank) -> Option<(Square, Square)> {
+        match flag {
+            move_flags::KING_CASTLE => {
+                let rook_from = Square::from((files::H, rank));
+                let rook_to = Square::from((files::F, rank));
+                Some((rook_from, rook_to))
+            }
+            move_flags::QUEEN_CASTLE => {
+                let rook_from = Square::from((files::A, rank));
+                let rook_to = Square::from((files::D, rank));
+                Some((rook_from, rook_to))
+            }
+            _ => None,
         }
     }
 
@@ -559,7 +577,7 @@ impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
 
         // Disambiguation
         let mut moves = MoveList::new();
-        _ = fold_legals::<true, _, _, _>(pos, (), |_, m| {
+        _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
             let m_flag = m.get_flag();
             let m_from = m.get_from();
             let m_piece = pos.get_piece(m.get_from());

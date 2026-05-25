@@ -3,8 +3,11 @@ use crate::core::search::mcts::{
     select::{Score, Selector},
 };
 
+pub trait PuctParams {
+    fn select_cpuct(&self) -> f32;
+}
+
 pub struct PuctSelector {
-    // todo: fine tune c. or make a uci option out of it idk
     c: f32,
 }
 
@@ -19,11 +22,15 @@ impl PuctSelector {
         let exploration = self.exploration(tree, branch_id, parent_id);
         exploitation + exploration
     }
+
+    pub const fn c(&self) -> f32 {
+        self.c
+    }
 }
 
 impl Default for PuctSelector {
     fn default() -> Self {
-        Self { c: f32::sqrt(2.0) }
+        Self { c: 1.12 }
     }
 }
 
