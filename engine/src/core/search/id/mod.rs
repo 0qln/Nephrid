@@ -40,7 +40,7 @@ pub fn go(
     _debug: &DebugMode,
     ct: CancellationToken,
 ) -> Option<Move> {
-    let mut searcher = Searcher::new(&pos, limit, ct);
+    let mut searcher = Searcher::new(pos, limit, ct);
     let mut stats = SearchStats::default();
     let mut best_move = None;
 
@@ -177,11 +177,9 @@ impl Searcher {
         stats.nodes += 1;
 
         // check if stop is requested or we have reached a limit
-        if stats.nodes % 4096 == 0 {
-            if self.should_stop(stats) {
-                self.aborted = true;
-                return Score::NEG_INF;
-            }
+        if stats.nodes.is_multiple_of(4096) && self.should_stop(stats) {
+            self.aborted = true;
+            return Score::NEG_INF;
         }
 
         // check if game is over

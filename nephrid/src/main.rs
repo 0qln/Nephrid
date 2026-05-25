@@ -7,7 +7,7 @@ use std::io::stdin;
 mod search {
     use engine::core::search::{self};
 
-    #[cfg(any(feature = "id-hce"))]
+    #[cfg(feature = "id-hce")]
     pub type Worker = search::IdWorker;
 
     #[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]

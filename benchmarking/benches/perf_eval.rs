@@ -10,8 +10,8 @@ use engine::{
             mcts::{
                 self, HceParts, MctsConfig, mcts,
                 node::{self, Branch, VisitCount, node_state},
-                strategy::{MctsUci, UciCp, UciScore},
-            },
+                strategy::MctsUci,
+            }, strat::{UciCp, UciScore},
         },
         zobrist,
     },
