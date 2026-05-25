@@ -2,8 +2,10 @@
  
 An experimental UCI-Compatible MCTS chess engine. 
 
+live on lichess: https://lichess.org/@/nephrid
 
-## 
+
+## Search
 
 ### MCTS
 
