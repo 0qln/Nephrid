@@ -46,7 +46,7 @@ impl Psqt {
 
 const PIECE_SCORES: [i32; piece_type::N_VARIANTS] = [0, 100, 300, 300, 500, 800, 0];
 
-pub fn piece_score(pt: PieceType) -> i32 {
+pub const fn piece_score(pt: PieceType) -> i32 {
     PIECE_SCORES[pt.v() as usize]
 }
 

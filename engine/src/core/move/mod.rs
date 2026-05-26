@@ -160,9 +160,15 @@ impl const From<CastlingSide> for MoveFlag {
     }
 }
 
-#[derive(Default, Copy, Clone, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Move {
     v: u16,
+}
+
+impl Default for Move {
+    fn default() -> Self {
+        Self::null()
+    }
 }
 
 impl Move {

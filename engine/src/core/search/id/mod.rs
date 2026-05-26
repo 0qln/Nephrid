@@ -10,6 +10,8 @@ use crate::{
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
         params::HceParams,
+        piece::piece_type,
+        ply::Ply,
         position::Position,
         search::{
             id::node_types::*,
@@ -81,11 +83,13 @@ struct RootStats {
 
 struct Searcher {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
+    root_ply: Ply,
     limit: UciLimit,
     time_limit: Instant,
     ct: CancellationToken,
     aborted: bool,
     tt: TranspositionTable<TTEntry>,
+    ss: SearchStack,
 }
 
 impl Searcher {
@@ -102,11 +106,13 @@ impl Searcher {
 
         Self {
             root_stats: stats,
+            root_ply: pos.ply(),
             limit,
             time_limit,
             ct,
             aborted: false,
             tt: TranspositionTable::new(1 << 20), // TODO: make this configurable
+            ss: SearchStack::new(),
         }
     }
 
@@ -202,6 +208,7 @@ impl Searcher {
         }
 
         // vars
+        let rel_ply = pos.ply() - self.root_ply;
         let piece_info = pos.piece_info();
         let phase = TaperValue::from_position(piece_info);
         let is_root = T::IS_ROOT;
@@ -210,6 +217,7 @@ impl Searcher {
         let orig_alpha = alpha;
         let tt_entry = self.tt.get(key);
         let tt_move = tt_entry.map(|e| e.mov);
+        let killer_move = self.ss.entry(rel_ply).killer_move;
 
         // tt-cutoff
         if !is_root
@@ -247,6 +255,11 @@ impl Searcher {
                 *score = if Some(m) == tt_move {
                     250_000
                 }
+                else if m == killer_move {
+                    // todo: what is the right ordering?
+                    200_000
+                }
+                // todo: killer from 2 plys ago?
                 else {
                     let (from, to, _) = m.into();
                     let piece = pos.get_piece(from);
@@ -334,6 +347,11 @@ impl Searcher {
                 alpha = score;
 
                 if score >= beta {
+                    // killer entry on a fail-high
+                    if !m.get_flag().is_capture() {
+                        self.ss.entry(rel_ply).killer_move = m;
+                    }
+
                     // fail high
                     break;
                 }
@@ -407,6 +425,35 @@ impl Bound {
             Self::Exact
         }
     }
+}
+
+#[derive(Default)]
+struct SearchStack {
+    entries: Vec<SearchEntry>,
+}
+
+impl SearchStack {
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::with_capacity(Depth::MAX.v() as usize),
+        }
+    }
+
+    /// Gets a mutable reference to the entry at ply `ply`, inserts one if not
+    /// already present.
+    pub fn entry(&mut self, ply: Ply) -> &mut SearchEntry {
+        let idx = ply.v as usize;
+        if idx >= self.entries.len() {
+            self.entries.resize(idx + 1, SearchEntry::default());
+        }
+        // Safety: We just made sure that the index is in bounds.
+        unsafe { self.entries.get_unchecked_mut(idx) }
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct SearchEntry {
+    killer_move: Move,
 }
 
 fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move) {
