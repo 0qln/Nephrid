@@ -10,7 +10,6 @@ use crate::{
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
         params::HceParams,
-        piece::piece_type,
         ply::Ply,
         position::Position,
         search::{
@@ -217,7 +216,7 @@ impl Searcher {
         let orig_alpha = alpha;
         let tt_entry = self.tt.get(key);
         let tt_move = tt_entry.map(|e| e.mov);
-        let killer_move = self.ss.entry(rel_ply).killer_move;
+        let killers = &self.ss.entry(rel_ply).killers;
 
         // tt-cutoff
         if !is_root
@@ -255,7 +254,7 @@ impl Searcher {
                 *score = if Some(m) == tt_move {
                     250_000
                 }
-                else if m == killer_move {
+                else if killers.contains(&m) {
                     // todo: what is the right ordering?
                     200_000
                 }
@@ -349,7 +348,7 @@ impl Searcher {
                 if score >= beta {
                     // killer entry on a fail-high
                     if !m.get_flag().is_capture() {
-                        self.ss.entry(rel_ply).killer_move = m;
+                        self.ss.entry(rel_ply).killers.push(m);
                     }
 
                     // fail high
@@ -453,7 +452,42 @@ impl SearchStack {
 
 #[derive(Default, Clone)]
 pub struct SearchEntry {
-    killer_move: Move,
+    killers: Rb<Move, 2>,
+}
+
+#[derive(Clone)]
+pub struct Rb<T, const N: usize> {
+    items: [T; N],
+}
+
+impl<T: const Default, const N: usize> Default for Rb<T, N> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            items: [const { T::default() }; N],
+        }
+    }
+}
+
+impl<T: Default + Copy, const N: usize> Rb<T, N> {
+    #[inline]
+    pub fn new() -> Self {
+        Self { items: [T::default(); N] }
+    }
+
+    pub fn push(&mut self, item: T) {
+        for i in (1..N).rev() {
+            self.items[i] = self.items[i - 1];
+        }
+        self.items[0] = item;
+    }
+}
+
+impl<T: Eq, const N: usize> Rb<T, N> {
+    #[inline]
+    pub fn contains(&self, item: &T) -> bool {
+        self.items.contains(item)
+    }
 }
 
 fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move) {

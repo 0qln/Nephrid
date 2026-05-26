@@ -165,7 +165,7 @@ pub struct Move {
     v: u16,
 }
 
-impl Default for Move {
+impl const Default for Move {
     fn default() -> Self {
         Self::null()
     }
