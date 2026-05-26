@@ -273,7 +273,43 @@ impl Searcher {
             pos.make_move_for::<P>(m);
 
             // recurse
-            let score = !self.search::<P::Opponent, Normal>(pos, stats, depth - 1, !beta, !alpha);
+            let score = {
+                if i == 0 {
+                    // search with a full window to get an exact score.
+                    !self.search::<P::Opponent, Normal>(pos, stats, depth - 1, !beta, !alpha)
+                }
+                else {
+                    // assume that our move ordering is good the first move will be the best one.
+                    // to prove that this move cannot improve our first move, perform a zero window
+                    // search with [a,a+1] (~ [-(a-1),-a]). we don't care by how much this move is
+                    // able to improve alpha since we assume that it cannot.
+                    let zws_score = !self.search::<P::Opponent, Normal>(
+                        pos,
+                        stats,
+                        depth - 1,
+                        !(alpha + Score::new(1)),
+                        !alpha,
+                    );
+
+                    // only if the lower_bound is better than what we already have, we have to
+                    // research to get an exact score.
+                    if zws_score > alpha
+                        // don't bother researching if this move will cause a fail-high anyway
+                        && zws_score < beta
+                    {
+                        !self.search::<P::Opponent, Normal>(
+                            pos,
+                            stats,
+                            depth - 1,
+                            !beta,
+                            !zws_score,
+                        )
+                    }
+                    else {
+                        zws_score
+                    }
+                }
+            };
 
             // unmake the move
             pos.unmake_move_for::<P>(m);
