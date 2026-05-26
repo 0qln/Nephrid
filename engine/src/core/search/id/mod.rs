@@ -209,9 +209,11 @@ impl Searcher {
         let stm = P::COLOR;
         let key = pos.get_key();
         let orig_alpha = alpha;
+        let tt_entry = self.tt.get(key);
+        let tt_move = tt_entry.map(|e| e.mov);
 
         // tt-cutoff
-        if !is_root && let Some(entry) = self.tt.get(key) {
+        if !is_root && let Some(entry) = tt_entry {
             if entry.depth >= depth
                 && ((entry.bound == Bound::Exact)
                     || (entry.bound == Bound::Lower && entry.score >= beta.0)
@@ -246,8 +248,13 @@ impl Searcher {
                 let (from, to, _) = m.into();
                 let piece = pos.get_piece(from);
 
-                *score = see(pos.piece_info(), m, P::COLOR)
-                    + PolicyInput::psqt(phase, piece.piece_type(), from, to, stm);
+                *score = if Some(m) == tt_move {
+                    250_000
+                }
+                else {
+                    see(pos.piece_info(), m, P::COLOR)
+                        + PolicyInput::psqt(phase, piece.piece_type(), from, to, stm)
+                };
             }
 
             // move ordering
@@ -260,6 +267,7 @@ impl Searcher {
             }
         };
 
+        let mut best_move = None;
         for (i, m) in moves.iter().copied().enumerate() {
             // make the move
             pos.make_move_for::<P>(m);
@@ -282,22 +290,27 @@ impl Searcher {
 
             if score >= beta {
                 best_score = score;
+                best_move = Some(m);
                 break;
             }
             if score > best_score {
                 best_score = score;
+                best_move = Some(m);
             }
             if score > alpha {
                 alpha = score;
             }
         }
 
-        self.tt.insert(TTEntry {
-            key,
-            depth,
-            score: best_score.0,
-            bound: Bound::from_scores(orig_alpha, beta, best_score),
-        });
+        if let Some(best_move) = best_move {
+            self.tt.insert(TTEntry {
+                key,
+                depth,
+                score: best_score.0,
+                bound: Bound::from_scores(orig_alpha, beta, best_score),
+                mov: best_move,
+            });
+        }
 
         best_score
     }
@@ -327,6 +340,7 @@ pub struct TTEntry {
     depth: Depth,
     score: i32,
     bound: Bound,
+    mov: Move,
 }
 
 impl tt::ZKey for TTEntry {
