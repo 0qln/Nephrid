@@ -291,8 +291,7 @@ impl Searcher {
                         !alpha,
                     );
 
-                    // only if the lower_bound is better than what we already have, we have to
-                    // research to get an exact score.
+                    // if zws_score is a lower_bound, we have to research to get an exact score.
                     if zws_score > alpha
                         // don't bother researching if this move will cause a fail-high anyway
                         && zws_score < beta
@@ -302,6 +301,7 @@ impl Searcher {
                             stats,
                             depth - 1,
                             !beta,
+                            // new lower_bound, since it was able to beat alpha
                             !zws_score,
                         )
                     }
