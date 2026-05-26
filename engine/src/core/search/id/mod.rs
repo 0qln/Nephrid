@@ -244,19 +244,20 @@ impl Searcher {
             // that it isn't computed for each comparison and we don't distrurb cache
             // locality.
             for &mut (m, ref mut score) in move_list.as_mut_slice() {
-                let (from, to, _) = m.into();
-                let piece = pos.get_piece(from);
-
                 *score = if Some(m) == tt_move {
                     250_000
                 }
                 else {
+                    let (from, to, _) = m.into();
+                    let piece = pos.get_piece(from);
+                    let piece_type = piece.piece_type();
+
                     see(pos.piece_info(), m, P::COLOR)
-                        + PolicyInput::psqt(phase, piece.piece_type(), from, to, stm)
+                        + PolicyInput::psqt(phase, piece_type, from, to, stm)
                 };
             }
 
-            // move ordering
+            // sort by score descending
             move_list
                 .as_mut_slice()
                 .sort_unstable_by_key(|&(_, score)| Reverse(score));
