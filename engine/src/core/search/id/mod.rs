@@ -23,7 +23,9 @@ use crate::{
                 UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore,
                 UciSearchtime, UciSeldepth,
             },
+            tt::{self, TranspositionTable},
         },
+        zobrist,
     },
     misc::{CancellationToken, DebugMode, List},
 };
@@ -83,6 +85,7 @@ struct Searcher {
     time_limit: Instant,
     ct: CancellationToken,
     aborted: bool,
+    tt: TranspositionTable<TTEntry>,
 }
 
 impl Searcher {
@@ -103,6 +106,7 @@ impl Searcher {
             time_limit,
             ct,
             aborted: false,
+            tt: TranspositionTable::new(1 << 20), // TODO: make this configurable
         }
     }
 
@@ -203,6 +207,20 @@ impl Searcher {
         let phase = TaperValue::from_position(piece_info);
         let is_root = T::IS_ROOT;
         let stm = P::COLOR;
+        let key = pos.get_key();
+        let orig_alpha = alpha;
+        let tt_entry = self.tt.get(key);
+        let tt_move = tt_entry.map(|e| e.mov);
+
+        // tt-cutoff
+        if !is_root && let Some(entry) = tt_entry
+            && entry.depth >= depth
+                && ((entry.bound == Bound::Exact)
+                    || (entry.bound == Bound::Lower && entry.score >= beta.0)
+                    || (entry.bound == Bound::Upper && entry.score <= alpha.0))
+            {
+                return Score::new(entry.score);
+            }
 
         // move gen
         let mut moves = MoveList::new();
@@ -229,8 +247,13 @@ impl Searcher {
                 let (from, to, _) = m.into();
                 let piece = pos.get_piece(from);
 
-                *score = see(pos.piece_info(), m, P::COLOR)
-                    + PolicyInput::psqt(phase, piece.piece_type(), from, to, stm);
+                *score = if Some(m) == tt_move {
+                    250_000
+                }
+                else {
+                    see(pos.piece_info(), m, P::COLOR)
+                        + PolicyInput::psqt(phase, piece.piece_type(), from, to, stm)
+                };
             }
 
             // move ordering
@@ -243,6 +266,7 @@ impl Searcher {
             }
         };
 
+        let mut best_move = None;
         for (i, m) in moves.iter().copied().enumerate() {
             // make the move
             pos.make_move_for::<P>(m);
@@ -250,12 +274,12 @@ impl Searcher {
             // recurse
             let score = !self.search::<P::Opponent, Normal>(pos, stats, depth - 1, !beta, !alpha);
 
+            // unmake the move
+            pos.unmake_move_for::<P>(m);
+
             if self.aborted {
                 return Score::new(0);
             }
-
-            // unmake the move
-            pos.unmake_move_for::<P>(m);
 
             if is_root {
                 // store the score for the root moves, such that we can use it for sorting in
@@ -264,14 +288,27 @@ impl Searcher {
             }
 
             if score >= beta {
-                return score;
+                best_score = score;
+                best_move = Some(m);
+                break;
             }
             if score > best_score {
                 best_score = score;
+                best_move = Some(m);
             }
             if score > alpha {
                 alpha = score;
             }
+        }
+
+        if let Some(best_move) = best_move {
+            self.tt.insert(TTEntry {
+                key,
+                depth,
+                score: best_score.0,
+                bound: Bound::from_scores(orig_alpha, beta, best_score),
+                mov: best_move,
+            });
         }
 
         best_score
@@ -293,6 +330,42 @@ mod node_types {
     pub struct Normal;
     impl NodeType for Normal {
         const IS_ROOT: bool = false;
+    }
+}
+
+#[derive(Clone)]
+pub struct TTEntry {
+    key: zobrist::Hash,
+    depth: Depth,
+    score: i32,
+    bound: Bound,
+    mov: Move,
+}
+
+impl tt::ZKey for TTEntry {
+    fn key(&self) -> zobrist::Hash {
+        self.key
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Bound {
+    Exact,
+    Lower,
+    Upper,
+}
+
+impl Bound {
+    pub fn from_scores<P: Perspective>(alpha: Score<P>, beta: Score<P>, score: Score<P>) -> Self {
+        if score <= alpha {
+            Self::Upper
+        }
+        else if score >= beta {
+            Self::Lower
+        }
+        else {
+            Self::Exact
+        }
     }
 }
 
