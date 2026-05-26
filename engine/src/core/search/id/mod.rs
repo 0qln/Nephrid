@@ -177,6 +177,8 @@ impl Searcher {
         mut alpha: Score<P>,
         beta: Score<P>,
     ) -> Score<P> {
+        debug_assert!(alpha < beta);
+
         // incremment stats
         stats.nodes += 1;
 
@@ -199,9 +201,6 @@ impl Searcher {
             return hce::qsearch(pos, alpha, beta, HceParams);
         }
 
-        // start of assuming this is a loss
-        let mut best_score = Score::NEG_INF;
-
         // vars
         let piece_info = pos.piece_info();
         let phase = TaperValue::from_position(piece_info);
@@ -213,14 +212,15 @@ impl Searcher {
         let tt_move = tt_entry.map(|e| e.mov);
 
         // tt-cutoff
-        if !is_root && let Some(entry) = tt_entry
+        if !is_root
+            && let Some(entry) = tt_entry
             && entry.depth >= depth
-                && ((entry.bound == Bound::Exact)
-                    || (entry.bound == Bound::Lower && entry.score >= beta.0)
-                    || (entry.bound == Bound::Upper && entry.score <= alpha.0))
-            {
-                return Score::new(entry.score);
-            }
+            && ((entry.bound == Bound::Exact)
+                || (entry.bound == Bound::Lower && entry.score >= beta.0)
+                || (entry.bound == Bound::Upper && entry.score <= alpha.0))
+        {
+            return Score::new(entry.score);
+        }
 
         // move gen
         let mut moves = MoveList::new();
@@ -266,7 +266,8 @@ impl Searcher {
             }
         };
 
-        let mut best_move = None;
+        let mut best_score = Score::NEG_INF;
+        let mut best_move = Move::null();
         for (i, m) in moves.iter().copied().enumerate() {
             // make the move
             pos.make_move_for::<P>(m);
@@ -287,29 +288,31 @@ impl Searcher {
                 self.root_stats.as_mut_slice()[i].score = score.0;
             }
 
-            if score >= beta {
-                best_score = score;
-                best_move = Some(m);
-                break;
-            }
             if score > best_score {
                 best_score = score;
-                best_move = Some(m);
+                best_move = m;
             }
+
             if score > alpha {
                 alpha = score;
+
+                if score >= beta {
+                    // fail high
+                    break;
+                }
+            }
+            else {
+                // fail low
             }
         }
 
-        if let Some(best_move) = best_move {
-            self.tt.insert(TTEntry {
-                key,
-                depth,
-                score: best_score.0,
-                bound: Bound::from_scores(orig_alpha, beta, best_score),
-                mov: best_move,
-            });
-        }
+        self.tt.insert(TTEntry {
+            key,
+            depth,
+            score: best_score.0,
+            bound: Bound::from_scores(orig_alpha, beta, best_score),
+            mov: best_move,
+        });
 
         best_score
     }
