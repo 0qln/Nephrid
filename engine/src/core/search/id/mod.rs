@@ -208,8 +208,8 @@ impl Searcher {
 
         // vars
         let rel_ply = pos.ply() - self.root_ply;
-        let piece_info = pos.piece_info();
-        let phase = TaperValue::from_position(piece_info);
+        let pieces = pos.piece_info();
+        let phase = TaperValue::from_position(pieces);
         let is_root = T::IS_ROOT;
         let stm = P::COLOR;
         let key = pos.get_key();
@@ -252,20 +252,40 @@ impl Searcher {
             // locality.
             for &mut (m, ref mut score) in move_list.as_mut_slice() {
                 *score = if Some(m) == tt_move {
-                    250_000
+                    300_000
                 }
-                else if killers.contains(&m) {
-                    // todo: what is the right ordering?
-                    200_000
-                }
-                // todo: killer from 2 plys ago?
                 else {
-                    let (from, to, _) = m.into();
-                    let piece = pos.get_piece(from);
-                    let piece_type = piece.piece_type();
+                    // todo: currently see for quiet moves evaluates promotion values etc. there is
+                    // probably a better way to order promotions than using see. then we can skip
+                    // see for quiets all together...
+                    //
+                    // todo: test killermoves from 2 plys ago?
 
-                    see(pos.piece_info(), m, P::COLOR)
-                        + PolicyInput::psqt(phase, piece_type, from, to, stm)
+                    let is_capture = m.get_flag().is_capture();
+
+                    if is_capture {
+                        let see = see(pieces, m, P::COLOR);
+                        if see >= 0 {
+                            // good captures (210_000..)
+                            210_000 + see
+                        }
+                        else {
+                            // bad captures (100_000..)
+                            100_000 + see
+                        }
+                    }
+                    // killers (..200_000)
+                    else if let Some(age) = killers.position(&m) {
+                        200_000 - (age as i32 * 10_000)
+                    }
+                    else {
+                        let (from, to, _) = m.into();
+                        let piece = pieces.get_piece(from);
+                        let piece_type = piece.piece_type();
+                        let see = see(pieces, m, P::COLOR);
+
+                        see + PolicyInput::psqt(phase, piece_type, from, to, stm)
+                    }
                 };
             }
 
@@ -452,15 +472,15 @@ impl SearchStack {
 
 #[derive(Default, Clone)]
 pub struct SearchEntry {
-    killers: Rb<Move, 2>,
+    killers: RbSet<Move, 2>,
 }
 
 #[derive(Clone)]
-pub struct Rb<T, const N: usize> {
+pub struct RbSet<T, const N: usize> {
     items: [T; N],
 }
 
-impl<T: const Default, const N: usize> Default for Rb<T, N> {
+impl<T: const Default, const N: usize> Default for RbSet<T, N> {
     #[inline]
     fn default() -> Self {
         Self {
@@ -469,21 +489,29 @@ impl<T: const Default, const N: usize> Default for Rb<T, N> {
     }
 }
 
-impl<T: Default + Copy, const N: usize> Rb<T, N> {
+impl<T: Default + Copy + Eq, const N: usize> RbSet<T, N> {
     #[inline]
     pub fn new() -> Self {
         Self { items: [T::default(); N] }
     }
 
     pub fn push(&mut self, item: T) {
+        // todo?
+        // if self.items[0] == item {
+        //     return;
+        // }
         for i in (1..N).rev() {
             self.items[i] = self.items[i - 1];
         }
         self.items[0] = item;
     }
+
+    pub fn position(&self, item: &T) -> Option<usize> {
+        self.items.iter().position(|x| x == item)
+    }
 }
 
-impl<T: Eq, const N: usize> Rb<T, N> {
+impl<T: Eq, const N: usize> RbSet<T, N> {
     #[inline]
     pub fn contains(&self, item: &T) -> bool {
         self.items.contains(item)
