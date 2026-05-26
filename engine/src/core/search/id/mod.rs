@@ -213,15 +213,14 @@ impl Searcher {
         let tt_move = tt_entry.map(|e| e.mov);
 
         // tt-cutoff
-        if !is_root && let Some(entry) = tt_entry {
-            if entry.depth >= depth
+        if !is_root && let Some(entry) = tt_entry
+            && entry.depth >= depth
                 && ((entry.bound == Bound::Exact)
                     || (entry.bound == Bound::Lower && entry.score >= beta.0)
                     || (entry.bound == Bound::Upper && entry.score <= alpha.0))
             {
                 return Score::new(entry.score);
             }
-        }
 
         // move gen
         let mut moves = MoveList::new();
