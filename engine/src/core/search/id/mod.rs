@@ -346,8 +346,8 @@ impl Searcher {
                 alpha = score;
 
                 if score >= beta {
-                    // killer entry on a fail-high
-                    if !m.get_flag().is_capture() {
+                    // mark quiet moves, fail-high as killer moves
+                    if !m.get_flag().is_capture() && Some(m) != tt_move {
                         self.ss.entry(rel_ply).killers.push(m);
                     }
 
