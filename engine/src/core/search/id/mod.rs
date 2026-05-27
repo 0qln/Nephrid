@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, ops::ControlFlow, time::Instant};
+use std::{cmp::Reverse, hint::assert_unchecked, ops::ControlFlow, time::Instant};
 
 use crate::{
     core::{
@@ -470,17 +470,44 @@ impl SearchStack {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug)]
 pub struct SearchEntry {
     killers: RbSet<Move, 2>,
 }
 
-#[derive(Clone)]
+/// A Ring Buffer Set of size `N`.
+///
+/// Maintains up to `N` unique elements. When an element is pushed:
+/// - If it already exists, it is promoted to the front (index 0), and the
+///   elements before its old position are shifted down.
+/// - If it is new, all elements are shifted down, evicting the oldest.
+///
+/// # Examples
+///
+/// ```
+/// # use engine::core::search::id::RbSet;
+///
+/// let mut killers = RbSet::<i32, 3>::new();
+///
+/// killers.push(10);
+/// killers.push(20);
+/// killers.push(30);
+/// assert_eq!(killers, RbSet::from([30, 20, 10]));
+///
+/// // Pushing an existing element moves it to the front (Promotes it)
+/// killers.push(20);
+/// assert_eq!(killers, RbSet::from([20, 30, 10]));
+///
+/// // Pushing a new element evicts the oldest (10 drops off)
+/// killers.push(40);
+/// assert_eq!(killers, RbSet::from([40, 20, 30]));
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RbSet<T, const N: usize> {
     items: [T; N],
 }
 
-impl<T: const Default, const N: usize> Default for RbSet<T, N> {
+impl<T: const Default, const N: usize> const Default for RbSet<T, N> {
     #[inline]
     fn default() -> Self {
         Self {
@@ -489,23 +516,38 @@ impl<T: const Default, const N: usize> Default for RbSet<T, N> {
     }
 }
 
-impl<T: Default + Copy + Eq, const N: usize> RbSet<T, N> {
-    #[inline]
-    pub fn new() -> Self {
+impl<T: const Default + Copy + Eq, const N: usize> const From<[T; N]> for RbSet<T, N> {
+    fn from(items: [T; N]) -> Self {
+        Self { items }
+    }
+}
+
+impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
+    #[inline(always)]
+    pub const fn new() -> Self {
         Self { items: [T::default(); N] }
     }
 
+    // todo: make sure this is unrolled for our N=2/3
+    // todo: this is O(n) but i don't  think this matters for our n=2 lmao
+    #[inline(always)]
     pub fn push(&mut self, item: T) {
-        // todo?
-        // if self.items[0] == item {
-        //     return;
-        // }
-        for i in (1..N).rev() {
+        let pos = self.position(&item).unwrap_or(N - 1);
+
+        // Safety: pos is either the index of the item in the set, or the last index if
+        // the item is not
+        unsafe {
+            assert_unchecked(pos < N);
+        }
+
+        for i in (1..=pos).rev() {
             self.items[i] = self.items[i - 1];
         }
+
         self.items[0] = item;
     }
 
+    #[inline(always)]
     pub fn position(&self, item: &T) -> Option<usize> {
         self.items.iter().position(|x| x == item)
     }
