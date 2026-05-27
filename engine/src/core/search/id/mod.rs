@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, hint::assert_unchecked, ops::ControlFlow, time::Instant};
+use std::{cmp::Reverse, ops::ControlFlow, time::Instant};
 
 use crate::{
     core::{
@@ -528,35 +528,54 @@ impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
         Self { items: [T::default(); N] }
     }
 
-    // todo: make sure this is unrolled for our N=2/3
-    // todo: this is O(n) but i don't  think this matters for our n=2 lmao
+    // todo: uncomment when specialization feature is implemented (i bielieve in you
+    // rust team TT o TT)
+    //
+    // // todo: make sure this is unrolled for our N=2/3
+    // // todo: this is O(n) but i don't  think this matters for our n=2 lmao
+    // #[inline(always)]
+    // pub fn push(&mut self, item: T) {
+    //     let pos = self.position(&item).unwrap_or(N - 1);
+
+    //     // Safety: pos is either the index of the item in the set, or the last
+    // index if     // the item is not
+    //     unsafe {
+    //         assert_unchecked(pos < N);
+    //     }
+
+    //     for i in (1..=pos).rev() {
+    //         self.items[i] = self.items[i - 1];
+    //     }
+
+    //     self.items[0] = item;
+    // }
+
+    // #[inline(always)]
+    // pub fn position(&self, item: &T) -> Option<usize> {
+    //     self.items.iter().position(|x| x == item)
+    // }
+}
+
+impl<T: Default + Copy + Eq> RbSet<T, 2> {
     #[inline(always)]
     pub fn push(&mut self, item: T) {
-        let pos = self.position(&item).unwrap_or(N - 1);
-
-        // Safety: pos is either the index of the item in the set, or the last index if
-        // the item is not
-        unsafe {
-            assert_unchecked(pos < N);
+        if self.items[0] != item {
+            self.items[1] = self.items[0];
+            self.items[0] = item;
         }
-
-        for i in (1..=pos).rev() {
-            self.items[i] = self.items[i - 1];
-        }
-
-        self.items[0] = item;
     }
 
     #[inline(always)]
     pub fn position(&self, item: &T) -> Option<usize> {
-        self.items.iter().position(|x| x == item)
-    }
-}
-
-impl<T: Eq, const N: usize> RbSet<T, N> {
-    #[inline]
-    pub fn contains(&self, item: &T) -> bool {
-        self.items.contains(item)
+        if self.items[0] == *item {
+            Some(0)
+        }
+        else if self.items[1] == *item {
+            Some(1)
+        }
+        else {
+            None
+        }
     }
 }
 
