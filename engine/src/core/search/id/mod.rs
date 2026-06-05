@@ -216,7 +216,8 @@ impl Searcher {
         let orig_alpha = alpha;
         let tt_entry = self.tt.get(key);
         let tt_move = tt_entry.map(|e| e.mov);
-        let killers = &self.ss.entry(rel_ply).killers;
+        let killers_t1 = &self.ss.d_entry(Depth::from(rel_ply)).killers;
+        let killers_t2 = &self.ss.d_entry(Depth::from(rel_ply - 2)).killers;
 
         // tt-cutoff
         if !is_root
@@ -258,8 +259,6 @@ impl Searcher {
                     // todo: currently see for quiet moves evaluates promotion values etc. there is
                     // probably a better way to order promotions than using see. then we can skip
                     // see for quiets all together...
-                    //
-                    // todo: test killermoves from 2 plys ago?
 
                     let is_capture = m.get_flag().is_capture();
 
@@ -274,9 +273,13 @@ impl Searcher {
                             100_000 + see
                         }
                     }
-                    // killers (..200_000)
-                    else if let Some(age) = killers.position(&m) {
+                    // T1 killers (..200_000)
+                    else if let Some(age) = killers_t1.position(&m) {
                         200_000 - (age as i32 * 10_000)
+                    }
+                    // T2 killers (..190_000)
+                    else if let Some(age) = killers_t2.position(&m) {
+                        190_000 - (age as i32 * 10_000)
                     }
                     else {
                         let (from, to, _) = m.into();
@@ -468,6 +471,12 @@ impl SearchStack {
         // Safety: We just made sure that the index is in bounds.
         unsafe { self.entries.get_unchecked_mut(idx) }
     }
+
+    pub fn d_entry(&self, ply: Depth) -> &SearchEntry {
+        let idx = ply.v() as usize;
+        // Safety: entries is atleast Depth::MAX
+        unsafe { self.entries.get_unchecked(idx) }
+    }
 }
 
 #[derive(Default, Clone, Debug)]
@@ -556,6 +565,7 @@ impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
     // }
 }
 
+// todo: revert fb241fe49f13, didn't show any elo gain
 impl<T: Default + Copy + Eq> RbSet<T, 2> {
     #[inline(always)]
     pub fn push(&mut self, item: T) {
