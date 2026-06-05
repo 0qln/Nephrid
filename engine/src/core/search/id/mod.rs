@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, ops::ControlFlow, time::Instant};
+use std::{cmp::Reverse, hint::assert_unchecked, ops::ControlFlow, time::Instant};
 
 use crate::{
     core::{
@@ -277,11 +277,11 @@ impl Searcher {
                         }
                     }
                     // T1 killers (..200_000)
-                    else if let Some(age) = killers_t1.position(&m) {
+                    else if let Some(age) = killers_t1._position(&m) {
                         200_000 - (age as i32 * 10_000)
                     }
                     // T2 killers (..190_000)
-                    else if let Some(age) = killers_t2.and_then(|k| k.position(&m)) {
+                    else if let Some(age) = killers_t2.and_then(|k| k._position(&m)) {
                         190_000 - (age as i32 * 10_000)
                     }
                     else {
@@ -374,7 +374,7 @@ impl Searcher {
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
                     if !m.get_flag().is_capture() && Some(m) != tt_move {
-                        self.ss.entry_mut(rel_ply).killers.push(m);
+                        self.ss.entry_mut(rel_ply).killers._push(m);
                     }
 
                     // fail high
@@ -535,38 +535,36 @@ impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
         Self { items: [T::default(); N] }
     }
 
-    // todo: uncomment when specialization feature is implemented (i bielieve in you
-    // rust team TT o TT)
-    //
-    // // todo: make sure this is unrolled for our N=2/3
-    // // todo: this is O(n) but i don't  think this matters for our n=2 lmao
-    // #[inline(always)]
-    // pub fn push(&mut self, item: T) {
-    //     let pos = self.position(&item).unwrap_or(N - 1);
-
-    //     // Safety: pos is either the index of the item in the set, or the last
-    // index if     // the item is not
-    //     unsafe {
-    //         assert_unchecked(pos < N);
-    //     }
-
-    //     for i in (1..=pos).rev() {
-    //         self.items[i] = self.items[i - 1];
-    //     }
-
-    //     self.items[0] = item;
-    // }
-
-    // #[inline(always)]
-    // pub fn position(&self, item: &T) -> Option<usize> {
-    //     self.items.iter().position(|x| x == item)
-    // }
-}
-
-// todo: revert fb241fe49f13, didn't show any elo gain
-impl<T: Default + Copy + Eq> RbSet<T, 2> {
+    // todo: make sure this is unrolled for our N=2/3
+    // todo: this is O(n) but i don't  think this matters for our n=2 lmao
     #[inline(always)]
     pub fn push(&mut self, item: T) {
+        let pos = self.position(&item).unwrap_or(N - 1);
+
+        // Safety: pos is either the index of the item in the set, or the last index if
+        // the item is not
+        unsafe {
+            assert_unchecked(pos < N);
+        }
+
+        for i in (1..=pos).rev() {
+            self.items[i] = self.items[i - 1];
+        }
+
+        self.items[0] = item;
+    }
+
+    #[inline(always)]
+    pub fn position(&self, item: &T) -> Option<usize> {
+        self.items.iter().position(|x| x == item)
+    }
+}
+
+// todo: benchmark that this is actually faster...
+/// spezialized version of the const generic impls.
+impl<T: Default + Copy + Eq> RbSet<T, 2> {
+    #[inline(always)]
+    pub fn _push(&mut self, item: T) {
         if self.items[0] != item {
             self.items[1] = self.items[0];
             self.items[0] = item;
@@ -574,7 +572,7 @@ impl<T: Default + Copy + Eq> RbSet<T, 2> {
     }
 
     #[inline(always)]
-    pub fn position(&self, item: &T) -> Option<usize> {
+    pub fn _position(&self, item: &T) -> Option<usize> {
         if self.items[0] == *item {
             Some(0)
         }
