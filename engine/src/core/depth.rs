@@ -55,6 +55,11 @@ impl Depth {
     pub fn new(depth: u8) -> Depth {
         Depth { v: depth }
     }
+
+    #[inline]
+    pub fn checked_sub(self, rhs: u8) -> Option<Self> {
+        self.v.checked_sub(rhs).map(|v| Self { v })
+    }
 }
 
 impl Default for Depth {

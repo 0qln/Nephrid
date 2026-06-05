@@ -49,6 +49,7 @@ pub fn go(
 
     let mut depth = Depth::ROOT + 1;
 
+    // todo: cap at Depth::MAX
     while !searcher.should_stop(&stats) {
         let best_score = searcher.search_root(pos, &mut stats, depth);
 
@@ -207,7 +208,7 @@ impl Searcher {
         }
 
         // vars
-        let rel_ply = pos.ply() - self.root_ply;
+        let rel_ply: Depth = (pos.ply() - self.root_ply).into();
         let pieces = pos.piece_info();
         let phase = TaperValue::from_position(pieces);
         let is_root = T::IS_ROOT;
@@ -215,9 +216,6 @@ impl Searcher {
         let key = pos.get_key();
         let orig_alpha = alpha;
         let tt_entry = self.tt.get(key);
-        let tt_move = tt_entry.map(|e| e.mov);
-        let killers_t1 = &self.ss.d_entry(Depth::from(rel_ply)).killers;
-        let killers_t2 = &self.ss.d_entry(Depth::from(rel_ply - 2)).killers;
 
         // tt-cutoff
         if !is_root
@@ -229,6 +227,8 @@ impl Searcher {
         {
             return Score::new(entry.score);
         }
+
+        let tt_move = tt_entry.map(|e| e.mov);
 
         // move gen
         let mut moves = MoveList::new();
@@ -247,6 +247,9 @@ impl Searcher {
                 move_list.push((m, 0));
                 ControlFlow::Continue::<(), ()>(())
             });
+
+            let killers_t1 = &self.ss.entry(rel_ply).killers;
+            let killers_t2 = rel_ply.checked_sub(2).map(|d| &self.ss.entry(d).killers);
 
             // generate the see score outside of the move generation and the sorting, such
             // that it isn't computed for each comparison and we don't distrurb cache
@@ -278,7 +281,7 @@ impl Searcher {
                         200_000 - (age as i32 * 10_000)
                     }
                     // T2 killers (..190_000)
-                    else if let Some(age) = killers_t2.position(&m) {
+                    else if let Some(age) = killers_t2.and_then(|k| k.position(&m)) {
                         190_000 - (age as i32 * 10_000)
                     }
                     else {
@@ -371,7 +374,7 @@ impl Searcher {
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
                     if !m.get_flag().is_capture() && Some(m) != tt_move {
-                        self.ss.entry(rel_ply).killers.push(m);
+                        self.ss.entry_mut(rel_ply).killers.push(m);
                     }
 
                     // fail high
@@ -457,24 +460,19 @@ struct SearchStack {
 impl SearchStack {
     pub fn new() -> Self {
         Self {
-            entries: Vec::with_capacity(Depth::MAX.v() as usize),
+            entries: Vec::with_capacity(Depth::MAX.v() as usize + 1),
         }
     }
 
-    /// Gets a mutable reference to the entry at ply `ply`, inserts one if not
-    /// already present.
-    pub fn entry(&mut self, ply: Ply) -> &mut SearchEntry {
-        let idx = ply.v as usize;
-        if idx >= self.entries.len() {
-            self.entries.resize(idx + 1, SearchEntry::default());
-        }
-        // Safety: We just made sure that the index is in bounds.
+    pub fn entry_mut(&mut self, ply: Depth) -> &mut SearchEntry {
+        let idx = ply.v() as usize;
+        // Safety: entries is atleast Depth::MAX + 1
         unsafe { self.entries.get_unchecked_mut(idx) }
     }
 
-    pub fn d_entry(&self, ply: Depth) -> &SearchEntry {
+    pub fn entry(&self, ply: Depth) -> &SearchEntry {
         let idx = ply.v() as usize;
-        // Safety: entries is atleast Depth::MAX
+        // Safety: entries is atleast Depth::MAX + 1
         unsafe { self.entries.get_unchecked(idx) }
     }
 }
