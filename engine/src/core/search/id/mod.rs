@@ -460,7 +460,7 @@ struct SearchStack {
 impl SearchStack {
     pub fn new() -> Self {
         Self {
-            entries: Vec::with_capacity(Depth::MAX.v() as usize + 1),
+            entries: vec![SearchEntry::default(); Depth::MAX.v() as usize + 1],
         }
     }
 
