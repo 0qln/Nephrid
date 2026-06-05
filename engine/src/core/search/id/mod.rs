@@ -248,8 +248,7 @@ impl Searcher {
                 ControlFlow::Continue::<(), ()>(())
             });
 
-            let killers_t1 = &self.ss.entry(rel_ply).killers;
-            // let killers_t2 = rel_ply.checked_sub(2).map(|d| &self.ss.entry(d).killers);
+            let killers = &self.ss.entry(rel_ply).killers;
 
             // generate the see score outside of the move generation and the sorting, such
             // that it isn't computed for each comparison and we don't distrurb cache
@@ -277,13 +276,9 @@ impl Searcher {
                         }
                     }
                     // T1 killers (..200_000)
-                    else if let Some(age) = killers_t1._position(&m) {
+                    else if let Some(age) = killers._position(&m) {
                         200_000 - (age as i32 * 10_000)
                     }
-                    // T2 killers (..190_000)
-                    // else if let Some(age) = killers_t2.and_then(|k| k._position(&m)) {
-                    //     190_000 - (age as i32 * 10_000)
-                    // }
                     else {
                         let (from, to, _) = m.into();
                         let piece = pieces.get_piece(from);
