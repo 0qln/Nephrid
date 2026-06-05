@@ -1,4 +1,4 @@
-use std::{cmp::Reverse, ops::ControlFlow, time::Instant};
+use std::{cmp::Reverse, hint::assert_unchecked, ops::ControlFlow, time::Instant};
 
 use crate::{
     core::{
@@ -10,6 +10,7 @@ use crate::{
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
         params::HceParams,
+        ply::Ply,
         position::Position,
         search::{
             id::node_types::*,
@@ -48,6 +49,7 @@ pub fn go(
 
     let mut depth = Depth::ROOT + 1;
 
+    // todo: cap at Depth::MAX
     while !searcher.should_stop(&stats) {
         let best_score = searcher.search_root(pos, &mut stats, depth);
 
@@ -81,11 +83,13 @@ struct RootStats {
 
 struct Searcher {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
+    root_ply: Ply,
     limit: UciLimit,
     time_limit: Instant,
     ct: CancellationToken,
     aborted: bool,
     tt: TranspositionTable<TTEntry>,
+    ss: SearchStack,
 }
 
 impl Searcher {
@@ -102,11 +106,13 @@ impl Searcher {
 
         Self {
             root_stats: stats,
+            root_ply: pos.ply(),
             limit,
             time_limit,
             ct,
             aborted: false,
             tt: TranspositionTable::new(1 << 20), // TODO: make this configurable
+            ss: SearchStack::new(),
         }
     }
 
@@ -202,14 +208,14 @@ impl Searcher {
         }
 
         // vars
-        let piece_info = pos.piece_info();
-        let phase = TaperValue::from_position(piece_info);
+        let rel_ply: Depth = (pos.ply() - self.root_ply).into();
+        let pieces = pos.piece_info();
+        let phase = TaperValue::from_position(pieces);
         let is_root = T::IS_ROOT;
         let stm = P::COLOR;
         let key = pos.get_key();
         let orig_alpha = alpha;
         let tt_entry = self.tt.get(key);
-        let tt_move = tt_entry.map(|e| e.mov);
 
         // tt-cutoff
         if !is_root
@@ -221,6 +227,8 @@ impl Searcher {
         {
             return Score::new(entry.score);
         }
+
+        let tt_move = tt_entry.map(|e| e.mov);
 
         // move gen
         let mut moves = MoveList::new();
@@ -240,20 +248,45 @@ impl Searcher {
                 ControlFlow::Continue::<(), ()>(())
             });
 
+            let killers = &self.ss.entry(rel_ply).killers;
+
             // generate the see score outside of the move generation and the sorting, such
             // that it isn't computed for each comparison and we don't distrurb cache
             // locality.
             for &mut (m, ref mut score) in move_list.as_mut_slice() {
                 *score = if Some(m) == tt_move {
-                    250_000
+                    300_000
                 }
                 else {
-                    let (from, to, _) = m.into();
-                    let piece = pos.get_piece(from);
-                    let piece_type = piece.piece_type();
+                    // todo: currently see for quiet moves evaluates promotion values etc. there is
+                    // probably a better way to order promotions than using see. then we can skip
+                    // see for quiets all together...
 
-                    see(pos.piece_info(), m, P::COLOR)
-                        + PolicyInput::psqt(phase, piece_type, from, to, stm)
+                    let is_capture = m.get_flag().is_capture();
+
+                    if is_capture {
+                        let see = see(pieces, m, P::COLOR);
+                        if see >= 0 {
+                            // good captures (210_000..)
+                            210_000 + see
+                        }
+                        else {
+                            // bad captures (100_000..)
+                            100_000 + see
+                        }
+                    }
+                    // T1 killers (..200_000)
+                    else if let Some(age) = killers._position(&m) {
+                        200_000 - (age as i32 * 10_000)
+                    }
+                    else {
+                        let (from, to, _) = m.into();
+                        let piece = pieces.get_piece(from);
+                        let piece_type = piece.piece_type();
+                        let see = see(pieces, m, P::COLOR);
+
+                        see + PolicyInput::psqt(phase, piece_type, from, to, stm)
+                    }
                 };
             }
 
@@ -334,6 +367,11 @@ impl Searcher {
                 alpha = score;
 
                 if score >= beta {
+                    // mark quiet moves, fail-high as killer moves
+                    if !m.get_flag().is_capture() && Some(m) != tt_move {
+                        self.ss.entry_mut(rel_ply).killers._push(m);
+                    }
+
                     // fail high
                     break;
                 }
@@ -405,6 +443,139 @@ impl Bound {
         }
         else {
             Self::Exact
+        }
+    }
+}
+
+#[derive(Default)]
+struct SearchStack {
+    entries: Vec<SearchEntry>,
+}
+
+impl SearchStack {
+    pub fn new() -> Self {
+        Self {
+            entries: vec![SearchEntry::default(); Depth::MAX.v() as usize + 1],
+        }
+    }
+
+    pub fn entry_mut(&mut self, ply: Depth) -> &mut SearchEntry {
+        let idx = ply.v() as usize;
+        // Safety: entries is atleast Depth::MAX + 1
+        unsafe { self.entries.get_unchecked_mut(idx) }
+    }
+
+    pub fn entry(&self, ply: Depth) -> &SearchEntry {
+        let idx = ply.v() as usize;
+        // Safety: entries is atleast Depth::MAX + 1
+        unsafe { self.entries.get_unchecked(idx) }
+    }
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct SearchEntry {
+    killers: RbSet<Move, 2>,
+}
+
+/// A Ring Buffer Set of size `N`.
+///
+/// Maintains up to `N` unique elements. When an element is pushed:
+/// - If it already exists, it is promoted to the front (index 0), and the
+///   elements before its old position are shifted down.
+/// - If it is new, all elements are shifted down, evicting the oldest.
+///
+/// # Examples
+///
+/// ```
+/// # use engine::core::search::id::RbSet;
+///
+/// let mut killers = RbSet::<i32, 3>::new();
+///
+/// killers.push(10);
+/// killers.push(20);
+/// killers.push(30);
+/// assert_eq!(killers, RbSet::from([30, 20, 10]));
+///
+/// // Pushing an existing element moves it to the front (Promotes it)
+/// killers.push(20);
+/// assert_eq!(killers, RbSet::from([20, 30, 10]));
+///
+/// // Pushing a new element evicts the oldest (10 drops off)
+/// killers.push(40);
+/// assert_eq!(killers, RbSet::from([40, 20, 30]));
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RbSet<T, const N: usize> {
+    items: [T; N],
+}
+
+impl<T: const Default, const N: usize> const Default for RbSet<T, N> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            items: [const { T::default() }; N],
+        }
+    }
+}
+
+impl<T: const Default + Copy + Eq, const N: usize> const From<[T; N]> for RbSet<T, N> {
+    fn from(items: [T; N]) -> Self {
+        Self { items }
+    }
+}
+
+impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
+    #[inline(always)]
+    pub const fn new() -> Self {
+        Self { items: [T::default(); N] }
+    }
+
+    // todo: make sure this is unrolled for our N=2/3
+    // todo: this is O(n) but i don't  think this matters for our n=2 lmao
+    #[inline(always)]
+    pub fn push(&mut self, item: T) {
+        let pos = self.position(&item).unwrap_or(N - 1);
+
+        // Safety: pos is either the index of the item in the set, or the last index if
+        // the item is not
+        unsafe {
+            assert_unchecked(pos < N);
+        }
+
+        for i in (1..=pos).rev() {
+            self.items[i] = self.items[i - 1];
+        }
+
+        self.items[0] = item;
+    }
+
+    #[inline(always)]
+    pub fn position(&self, item: &T) -> Option<usize> {
+        self.items.iter().position(|x| x == item)
+    }
+}
+
+// todo: benchmark that this is actually faster...
+/// spezialized version of the const generic impls.
+impl<T: Default + Copy + Eq> RbSet<T, 2> {
+    #[inline(always)]
+    pub fn _push(&mut self, item: T) {
+        if self.items[0] != item {
+            self.items[1] = self.items[0];
+            self.items[0] = item;
+        }
+    }
+
+    #[inline(always)]
+    pub fn _position(&self, item: &T) -> Option<usize> {
+        if self.items[0] == *item {
+            Some(0)
+        }
+        else if self.items[1] == *item {
+            Some(1)
+        }
+        else {
+            None
         }
     }
 }
