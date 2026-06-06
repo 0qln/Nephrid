@@ -9,7 +9,7 @@ use uom::si::{information::byte, u64::Information};
 use crate::{
     core::{
         color::{
-            Perspective, colors,
+            Color, Perspective, colors,
             perspectives::{self},
         },
         coordinates::EpTargetSquare,
@@ -29,7 +29,7 @@ use crate::{
         search::{
             id::node_types::*,
             limit::UciLimit,
-            ordering,
+            ordering::{self, MovePicker, MoveScorer, ScoredMove},
             quiesce::qsearch,
             score::{Cp, Score},
             strat::{
@@ -129,8 +129,34 @@ pub fn go(
 }
 
 struct RootStats {
-    score: i32,
-    mov: Move,
+    mov: ScoredMove,
+}
+
+impl RootStats {
+    #[inline]
+    fn new(m: Move, score: i32) -> Self {
+        Self { mov: ScoredMove::new(m, score) }
+    }
+
+    #[inline]
+    fn mov(&self) -> Move {
+        self.mov.mov()
+    }
+
+    #[inline]
+    fn scored_move(&self) -> &ScoredMove {
+        &self.mov
+    }
+
+    #[inline]
+    fn score(&self) -> i32 {
+        self.mov.score()
+    }
+
+    #[inline]
+    fn set_score(&mut self, score: i32) {
+        self.mov.set_score(score);
+    }
 }
 
 struct Searcher {
@@ -148,7 +174,7 @@ impl Searcher {
     fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, hash_size: Information) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-            stats.push(RootStats { mov: m, score: 0 });
+            stats.push(RootStats::new(m, 0));
             ControlFlow::Continue::<(), ()>(())
         });
 
@@ -177,11 +203,11 @@ impl Searcher {
     fn sort_root(&mut self) {
         self.root_stats
             .as_mut_slice()
-            .sort_by_key(|mov| Reverse(mov.score));
+            .sort_by_key(|mov| Reverse(mov.score()));
     }
 
     fn root_best_move(&self) -> Option<Move> {
-        self.root_stats.get(0).map(|x| x.mov)
+        self.root_stats.get(0).map(|x| x.mov())
     }
 
     fn should_stop(&self, stats: &SearchStats) -> bool {
@@ -268,7 +294,6 @@ impl Searcher {
         let pieces = pos.piece_info();
         let phase = TaperValue::from_position(pieces);
         let is_root = T::IS_ROOT;
-        let stm = P::COLOR;
         let key = pos.get_key();
         let orig_alpha = alpha;
         let tt_entry = self.tt.get(key);
@@ -287,78 +312,76 @@ impl Searcher {
         let tt_move = tt_entry.map(|e| e.mov);
 
         // move gen
-        let mut moves = MoveList::new();
-        if is_root {
-            // if root node and if we have info on them, they are already ordered by the
-            // previous iteration. othewise this is the first iteration, so order them by
-            // generic move ordering (the branch below).
-            for m in self.root_stats.iter() {
-                moves.push(m.mov);
-            }
+        let mut move_picker = if is_root {
+            MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
         else {
-            // generic move ordering
-            let mut move_list = List::<{ MAX_LEGAL_MOVES }, (Move, i32)>::new();
-            _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-                move_list.push((m, 0));
-                ControlFlow::Continue::<(), ()>(())
-            });
+            struct Scorer<'a> {
+                pieces: &'a PieceInfo,
+                tt_move: Option<Move>,
+                killers: &'a RbSet<Move, 2>,
+                color: Color,
+                phase: TaperValue,
+            }
 
-            let killers = &self.ss.entry(rel_ply).killers;
-
-            // generate the see score outside of the move generation and the sorting, such
-            // that it isn't computed for each comparison and we don't distrurb cache
-            // locality.
-            for &mut (m, ref mut score) in move_list.as_mut_slice() {
-                *score = if Some(m) == tt_move {
-                    300_000
-                }
-                else {
-                    // todo: currently see for quiet moves evaluates promotion values etc. there is
-                    // probably a better way to order promotions than using see. then we can skip
-                    // see for quiets all together...
-
-                    let is_capture = m.get_flag().is_capture();
-
-                    if is_capture {
-                        let see = ordering::see(pieces, m, P::COLOR);
-                        if see >= 0 {
-                            // good captures (210_000..)
-                            210_000 + see
-                        }
-                        else {
-                            // bad captures (100_000..)
-                            100_000 + see
-                        }
-                    }
-                    // T1 killers (..200_000)
-                    else if let Some(age) = killers._position(&m) {
-                        200_000 - (age as i32 * 10_000)
+            impl MoveScorer for Scorer<'_> {
+                #[inline(always)]
+                fn score(&self, mov: Move) -> i32 {
+                    if Some(mov) == self.tt_move {
+                        300_000
                     }
                     else {
-                        let (from, to, _) = m.into();
-                        let piece = pieces.get_piece(from);
-                        let piece_type = piece.piece_type();
-                        let see = ordering::see(pieces, m, P::COLOR);
+                        // todo: currently see for quiet moves evaluates promotion values etc. there
+                        // is probably a better way to order promotions than
+                        // using see. then we can skip see for quiets all
+                        // together...
 
-                        see + ordering::psqt(phase, piece_type, from, to, stm)
+                        let is_capture = mov.get_flag().is_capture();
+
+                        if is_capture {
+                            let see = ordering::see(self.pieces, mov, self.color);
+                            if see >= 0 {
+                                // good captures (210_000..)
+                                210_000 + see
+                            }
+                            else {
+                                // bad captures (100_000..)
+                                100_000 + see
+                            }
+                        }
+                        // T1 killers (..200_000)
+                        else if let Some(age) = self.killers._position(&mov) {
+                            200_000 - (age as i32 * 10_000)
+                        }
+                        else {
+                            let (from, to, _) = mov.into();
+                            let piece = self.pieces.get_piece(from);
+                            let piece_type = piece.piece_type();
+                            let see = ordering::see(self.pieces, mov, self.color);
+
+                            see + ordering::psqt(self.phase, piece_type, from, to, self.color)
+                        }
                     }
-                };
+                }
             }
 
-            // sort by score descending
-            move_list
-                .as_mut_slice()
-                .sort_unstable_by_key(|&(_, score)| Reverse(score));
+            let scorer = Scorer {
+                pieces,
+                tt_move,
+                killers: &self.ss.entry(rel_ply).killers,
+                color: P::COLOR,
+                phase,
+            };
 
-            for &(m, _) in move_list.as_slice() {
-                moves.push(m);
-            }
+            // generic move ordering
+            MovePicker::from_position(pos, scorer)
         };
 
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
-        for (i, m) in moves.iter().copied().enumerate() {
+        while let Some(m) = move_picker.next() {
+            let curr = move_picker.curr();
+
             // make the move
             pos.make_move_for::<P>(m);
 
@@ -374,9 +397,9 @@ impl Searcher {
 
             // late move reductions
             #[allow(clippy::approx_constant)]
-            if depth >= Depth::new(3) && i > 1 {
+            if depth >= Depth::new(3) && curr > 1 {
                 let d = depth.v() as f32;
-                let m = i as f32;
+                let m = curr as f32;
                 let lmr = 0.99 + f32::ln(d) * f32::ln(m) / 3.14;
                 depth_reduction += lmr as u8;
             }
@@ -385,7 +408,7 @@ impl Searcher {
             let score = {
                 let new_depth = depth - 1 + depth_extension;
 
-                if i == 0 {
+                if curr == 0 {
                     // search with a full window to get an exact score.
                     !self.search::<P::Opponent, Normal>(pos, stats, new_depth, !beta, !alpha)
                 }
@@ -444,7 +467,7 @@ impl Searcher {
             if is_root {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
-                self.root_stats.as_mut_slice()[i].score = score.0;
+                self.root_stats.as_mut_slice()[curr].set_score(score.0);
             }
 
             if score > best_score {

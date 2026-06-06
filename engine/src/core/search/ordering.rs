@@ -1,17 +1,24 @@
-use std::cmp::min;
+use std::{
+    cmp::{Reverse, min},
+    ops::ControlFlow,
+};
 
-use crate::core::{
-    bitboard::Bitboard,
-    color::Color,
-    coordinates::{Rank, Square, ranks},
-    depth::Depth,
-    eval::hce::{TaperValue, piece_score, tapered_psqt},
-    r#move::Move,
-    move_iter::{
-        bishop::Bishop, king, knight, pawn, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks,
+use crate::{
+    core::{
+        bitboard::Bitboard,
+        color::Color,
+        coordinates::{Rank, Square, ranks},
+        depth::Depth,
+        eval::hce::{TaperValue, piece_score, tapered_psqt},
+        r#move::{MAX_LEGAL_MOVES, Move},
+        move_iter::{
+            bishop::Bishop, fold_legal_moves, king, knight, pawn, queen::Queen, rook::Rook,
+            sliding_piece::SlidingAttacks,
+        },
+        piece::{PieceType, PromoPieceType, piece_type},
+        position::{PieceInfo, Position},
     },
-    piece::{PieceType, PromoPieceType, piece_type},
-    position::PieceInfo,
+    misc::List,
 };
 
 /// Static Exchange Evaluation (SEE) for captures.
@@ -146,9 +153,105 @@ pub fn psqt(phase: TaperValue, piece: PieceType, from: Square, to: Square, color
     new_score - curr_score
 }
 
+#[derive(Debug, Clone)]
+pub struct ScoredMove {
+    score: i32,
+    mov: Move,
+}
+
+impl ScoredMove {
+    #[inline]
+    pub fn new(m: Move, score: i32) -> Self {
+        Self { score, mov: m }
+    }
+
+    #[inline]
+    pub fn mov(&self) -> Move {
+        self.mov
+    }
+
+    #[inline]
+    pub fn score(&self) -> i32 {
+        self.score
+    }
+
+    #[inline]
+    pub fn set_score(&mut self, score: i32) {
+        self.score = score;
+    }
+}
+
+pub trait MoveScorer {
+    fn score(&self, mov: Move) -> i32;
+}
+
+#[derive(Debug)]
+pub struct MovePicker {
+    moves: List<{ MAX_LEGAL_MOVES }, ScoredMove>,
+    curr: usize,
+}
+
+impl MovePicker {
+    pub fn from_scored(scored: impl Iterator<Item = ScoredMove>) -> Self {
+        let mut moves = List::new();
+
+        for item in scored {
+            moves.push(item);
+        }
+
+        Self { moves, curr: 0 }
+    }
+
+    pub fn from_position<S: MoveScorer>(pos: &Position, scorer: S) -> Self {
+        let mut moves = List::new();
+
+        // todo: pseudo legals
+        _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
+            moves.push(ScoredMove::new(m, 0));
+            ControlFlow::Continue::<(), ()>(())
+        });
+
+        // generate the see score outside of the move generation and the sorting, such
+        // that it isn't computed for each comparison and we don't distrurb cache
+        // locality.
+        for &mut ScoredMove { mov, ref mut score } in moves.as_mut_slice() {
+            *score = scorer.score(mov);
+        }
+
+        // temp //
+        // todo: remove, this is just to assert that we don't regress in performance
+        // with the refactor
+        // sort by score descending
+        moves
+            .as_mut_slice()
+            .sort_unstable_by_key(|x| Reverse(x.score()));
+        // temp //
+
+        Self { moves, curr: 0 }
+    }
+
+    #[inline(always)]
+    pub fn curr(&self) -> usize {
+        self.curr
+    }
+
+    #[inline]
+    pub fn next(&mut self) -> Option<Move> {
+        // todo: partial sort
+        // todo: return best
+
+        let x = self.moves.get(self.curr).map(|x| x.mov());
+        self.curr += 1;
+        x
+    }
+}
+
 #[cfg(test)]
 pub mod test {
-    use crate::core::{color::colors, coordinates::squares, r#move::move_flags, move_iter::sliding_piece::magics, position::Position, search::ordering, zobrist};
+    use crate::core::{
+        color::colors, coordinates::squares, r#move::move_flags, move_iter::sliding_piece::magics,
+        position::Position, search::ordering, zobrist,
+    };
 
     use super::*;
 
