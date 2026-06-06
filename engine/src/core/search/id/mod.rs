@@ -317,6 +317,7 @@ impl Searcher {
             }
 
             // late move reductions
+            #[allow(clippy::approx_constant)]
             if depth >= Depth::new(3) && i > 1 {
                 let d = depth.v() as f32;
                 let m = i as f32;
