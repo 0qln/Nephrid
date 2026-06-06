@@ -7,7 +7,7 @@ use crate::{
         coordinates::{Rank, Square, ranks},
         depth::Depth,
         eval::hce::{TaperValue, piece_score, tapered_psqt},
-        r#move::{MAX_LEGAL_MOVES, Move},
+        r#move::{MAX_UNREACHABLE_MOVES, Move},
         move_iter::{self, fold_moves},
         piece::{PieceType, PromoPieceType, piece_type},
         position::{PieceInfo, Position},
@@ -137,7 +137,7 @@ pub trait MoveScorer {
 
 #[derive(Debug)]
 pub struct MovePicker {
-    moves: List<{ MAX_LEGAL_MOVES }, ScoredMove>,
+    moves: List<{ MAX_UNREACHABLE_MOVES }, ScoredMove>,
     curr: usize,
 }
 
