@@ -1,12 +1,10 @@
 use std::hint::{self};
 
 use crate::core::{
-    color::Color,
-    search::mcts::{
-        eval::{self, Evaluation, GameResult, Guess},
+    color::Color, eval::GameResult, search::mcts::{
+        eval::{self, Evaluation, Guess},
         node::{NodeId, Tree, node_state::*, proven},
-    },
-    turn::Turn,
+    }, turn::Turn
 };
 
 pub trait RelativeValue {

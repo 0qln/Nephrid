@@ -1,12 +1,9 @@
 use crate::{
     core::{
-        params::HceParams,
-        search::mcts::{
-            eval::hce::{PolicyParams, QSearchParams, TaperValue},
-            node::VisitCount,
-            search::SearchParams,
+        eval::hce::TaperValue, params::HceParams, search::{mcts::{
+            eval::hce::PolicyParams, node::VisitCount, search::SearchParams,
             select::puct::PuctParams,
-        },
+        }, quiesce::QSearchParams}
     },
     misc::{InvalidValueError, ValueOutOfRangeError},
 };

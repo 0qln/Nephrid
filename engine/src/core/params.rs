@@ -1,12 +1,7 @@
 use std::rc::Rc;
 
 use crate::core::{
-    config::Configuration,
-    search::mcts::{
-        self,
-        eval::hce::{PolicyParams, QSearchParams, TaperValue},
-        node::VisitCount,
-    },
+    config::Configuration, eval::hce::TaperValue, search::{mcts::{self, eval::hce::PolicyParams, node::VisitCount}, quiesce::QSearchParams}
 };
 
 #[cfg(feature = "tunable")]

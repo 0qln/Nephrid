@@ -6,19 +6,24 @@ use crate::{
             Perspective, colors,
             perspectives::{self},
         },
+        coordinates::EpTargetSquare,
         depth::Depth,
+        eval::{
+            self, GameResult, hce::{
+                self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility,
+                passed_pawns,
+            }
+        },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
         params::HceParams,
         ply::Ply,
-        position::{CheckState, Position},
+        position::{CheckState, PieceInfo, Position},
         search::{
             id::node_types::*,
             limit::UciLimit,
-            mcts::eval::{
-                GameResult,
-                hce::{self, PolicyInput, TaperValue, see},
-            },
+            ordering,
+            quiesce::qsearch,
             score::{Cp, Score},
             strat::{
                 UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore,
@@ -26,10 +31,48 @@ use crate::{
             },
             tt::{self, TranspositionTable},
         },
+        turn::Turn,
         zobrist,
     },
     misc::{CancellationToken, DebugMode, List},
 };
+
+struct StaticEvaluator;
+
+impl eval::StaticEvaluator for StaticEvaluator {
+    fn eval<P: Perspective>(
+        &self,
+        pos: &PieceInfo,
+        turn: Turn,
+        ep_sq: EpTargetSquare,
+        phase: TaperValue,
+    ) -> Score<P> {
+        fn static_value<P: Perspective>(
+            pos: &PieceInfo,
+            ep_sq: EpTargetSquare,
+            phase: TaperValue,
+            turn: Turn,
+        ) -> Score<P> {
+            material::<P>(pos)
+                + mobility::<P>(pos, phase)
+                + hce::psqt::<P>(pos, phase)
+                + bishop_pair::<P>(pos)
+                + king_safety::<P>(pos, ep_sq, turn, phase)
+                + passed_pawns::<P>(pos, ep_sq, turn)
+                + hygge_king::<P>(pos, phase)
+        }
+
+        let (ep_w, ep_b) = if P::COLOR == colors::WHITE {
+            (ep_sq, EpTargetSquare::none())
+        }
+        else {
+            (EpTargetSquare::none(), ep_sq)
+        };
+        let w_q = static_value::<P>(pos, ep_w, phase, turn);
+        let b_q = static_value::<P::Opponent>(pos, ep_b, phase, turn);
+        w_q + !b_q
+    }
+}
 
 #[derive(Default)]
 struct SearchStats {
@@ -172,8 +215,6 @@ impl Searcher {
         }
     }
 
-    // todo: remove the dependency on mcts::hce and write a custom one.
-    //
     /// returns the score relative to `P`
     fn search<P: Perspective, T: NodeType>(
         &mut self,
@@ -204,7 +245,7 @@ impl Searcher {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT {
-            return hce::qsearch(pos, alpha, beta, HceParams);
+            return qsearch(pos, alpha, beta, HceParams, &StaticEvaluator);
         }
 
         // vars
@@ -265,7 +306,7 @@ impl Searcher {
                     let is_capture = m.get_flag().is_capture();
 
                     if is_capture {
-                        let see = see(pieces, m, P::COLOR);
+                        let see = ordering::see(pieces, m, P::COLOR);
                         if see >= 0 {
                             // good captures (210_000..)
                             210_000 + see
@@ -283,9 +324,9 @@ impl Searcher {
                         let (from, to, _) = m.into();
                         let piece = pieces.get_piece(from);
                         let piece_type = piece.piece_type();
-                        let see = see(pieces, m, P::COLOR);
+                        let see = ordering::see(pieces, m, P::COLOR);
 
-                        see + PolicyInput::psqt(phase, piece_type, from, to, stm)
+                        see + ordering::psqt(phase, piece_type, from, to, stm)
                     }
                 };
             }

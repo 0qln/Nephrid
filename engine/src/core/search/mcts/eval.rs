@@ -1,17 +1,16 @@
 use crate::{
     core::{
-        Position,
-        color::Color,
-        depth::Depth,
-        r#move::MAX_LEGAL_MOVES,
-        search::{mcts::{
-            nn::{POLICY_OUTPUTS, PolicyHeadIndex, RawLogits},
-            node::{
-                NodeId, Tree, VisitCount, WinRate,
-                node_state::{HasBranches, Terminal, Valid},
+        Position, color::Color, depth::Depth, eval::GameResult, r#move::MAX_LEGAL_MOVES, search::{
+            mcts::{
+                nn::{POLICY_OUTPUTS, PolicyHeadIndex, RawLogits},
+                node::{
+                    NodeId, Tree, VisitCount, WinRate,
+                    node_state::{HasBranches, Terminal, Valid},
+                },
+                search::{BatchItem, Selection},
             },
-            search::{BatchItem, Selection},
-        }, score::{Cp, TCp}},
+            score::{Cp, TCp},
+        }
     },
     misc::{CheckHealth, CheckHealthResult, List},
 };
@@ -59,12 +58,6 @@ pub trait Evaluator {
         selection: &Selection<Self::TraceData>,
         leafs: &[&BatchItem<Self::TraceData>],
     ) -> impl Iterator<Item = Guess>;
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum GameResult {
-    Win { relative_to: Color },
-    Draw,
 }
 
 #[derive(Debug, PartialEq)]

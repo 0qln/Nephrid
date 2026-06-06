@@ -6,10 +6,14 @@ use burn::{
 };
 use engine::{
     core::{
-        r#move::Move, search::mcts::{
-            eval::{GameResult, Quality},
-            nn::{CheckTensorHealthError, VALUE_OUTPUT_TENSOR_DIM}, node::VisitCount,
-        }, turn::Turn
+        eval::GameResult,
+        r#move::Move,
+        search::mcts::{
+            eval::Quality,
+            nn::{CheckTensorHealthError, VALUE_OUTPUT_TENSOR_DIM},
+            node::VisitCount,
+        },
+        turn::Turn,
     },
     misc::{CheckHealth, CheckHealthResult},
 };
