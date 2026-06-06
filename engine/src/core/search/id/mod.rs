@@ -1,6 +1,10 @@
-use std::{cmp::Reverse, hint::assert_unchecked, ops::ControlFlow, time::Instant};
-use uom::si::information::byte;
-use uom::si::u64::Information;
+use std::{
+    cmp::{Reverse, min},
+    hint::assert_unchecked,
+    ops::ControlFlow,
+    time::Instant,
+};
+use uom::si::{information::byte, u64::Information};
 
 use crate::{
     core::{
@@ -90,14 +94,16 @@ pub fn go(
     ct: CancellationToken,
     hash_size: Information,
 ) -> Option<Move> {
+    let depth_lim = min(Depth::MAX, limit.depth);
+
     let mut searcher = Searcher::new(pos, limit, ct, hash_size);
     let mut stats = SearchStats::default();
     let mut best_move = None;
 
-    let mut depth = Depth::ROOT + 1;
-
-    // todo: cap at Depth::MAX
-    while !searcher.should_stop(&stats) {
+    for depth in (Depth::ROOT + 1)..=depth_lim {
+        if searcher.should_stop(&stats) {
+            break;
+        }
         let best_score = searcher.search_root(pos, &mut stats, depth);
 
         // make sure to break before messing up the order of the previous iteration with
@@ -117,7 +123,6 @@ pub fn go(
         stats.iterations += 1;
 
         // increment depth for next iteration
-        depth += 1;
     }
 
     best_move

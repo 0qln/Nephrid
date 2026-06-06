@@ -1,10 +1,24 @@
-use std::{cmp::min, fmt, num::ParseIntError, ops, str::FromStr};
+use std::{cmp::min, fmt, iter::Step, num::ParseIntError, ops, str::FromStr};
 
 use crate::core::{ply::Ply, search::mcts::node::Height};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Depth {
     v: u8,
+}
+
+impl Step for Depth {
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
+        Step::steps_between(&start.v, &end.v)
+    }
+
+    fn forward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::forward_checked(start.v, count)?).ok()
+    }
+
+    fn backward_checked(start: Self, count: usize) -> Option<Self> {
+        Self::try_from(Step::backward_checked(start.v, count)?).ok()
+    }
 }
 
 impl fmt::Display for Depth {
@@ -54,6 +68,18 @@ impl Depth {
 
     pub fn new(depth: u8) -> Depth {
         Depth { v: depth }
+    }
+}
+
+impl TryFrom<u8> for Depth {
+    type Error = ();
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if value <= Self::MAX.v {
+            Ok(Depth { v: value })
+        }
+        else {
+            Err(())
+        }
     }
 }
 
