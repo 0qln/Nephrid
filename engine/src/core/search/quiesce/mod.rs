@@ -6,7 +6,10 @@ use crate::core::{
         hce::{TaperValue, piece_score},
     },
     r#move::Move,
-    move_iter::{self, opt::AllPseudoLegal},
+    move_iter::{
+        self,
+        opt::{self},
+    },
     piece::{PromoPieceType, piece_type},
     position::{CheckState, PieceInfo, Position},
     search::{
@@ -83,7 +86,7 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
     // if in check, we need to generate all moves, otherwise we can skip quiets and
     // promos
     let mut move_picker = if in_check {
-        MovePicker::from_position::<AllPseudoLegal, _>(pos, move_scorer)
+        MovePicker::from_position::<opt::All, _>(pos, move_scorer)
     }
     else {
         struct MoveGenOpt;
@@ -100,7 +103,7 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
 
             #[inline(always)]
             fn legal() -> bool {
-                false
+                true
             }
         }
 
@@ -109,9 +112,9 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
 
     // recurse
     while let Some((m, _)) = move_picker.next() {
-        if !pos.is_legal_for::<P>(m) {
-            continue;
-        }
+        // if !pos.is_legal_for::<P>(m) {
+        //     continue;
+        // }
 
         // delta pruning
         if !in_check && phase < params.delta_pruning_threshold() {

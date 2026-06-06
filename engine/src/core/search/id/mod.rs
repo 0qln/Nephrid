@@ -306,7 +306,7 @@ impl Searcher {
                 beta,
                 HceParams,
                 &StaticEvaluator,
-                Depth::new(30),
+                Depth::new(100),
             );
         }
 
@@ -392,15 +392,15 @@ impl Searcher {
                 phase,
             };
 
-            MovePicker::from_position::<opt::AllPseudoLegal, _>(pos, scorer)
+            MovePicker::from_position::<opt::All, _>(pos, scorer)
         };
 
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
         while let Some((m, curr)) = move_picker.next() {
-            if !pos.is_legal_for::<P>(m) {
-                continue;
-            }
+            // if !pos.is_legal_for::<P>(m) {
+            //     continue;
+            // }
 
             // make the move
             pos.make_move_for::<P>(m);
