@@ -43,6 +43,18 @@ impl fmt::Display for UciNodes {
 #[derive(Default, Debug)]
 pub struct UciNps(pub u128);
 
+impl UciNps {
+    pub fn from_nodes_and_time(nodes: u64, time: Duration) -> Self {
+        let nps = if time.as_nanos() > 0 {
+            nodes as u128 * 1_000_000_000 / time.as_nanos()
+        }
+        else {
+            0
+        };
+        Self(nps)
+    }
+}
+
 impl fmt::Display for UciNps {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "nps {}", self.0)

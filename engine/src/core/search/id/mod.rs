@@ -2,7 +2,7 @@ use std::{
     cmp::{Reverse, min},
     hint::assert_unchecked,
     ops::ControlFlow,
-    time::Instant,
+    time::{Duration, Instant},
 };
 use uom::si::{information::byte, u64::Information};
 
@@ -116,7 +116,14 @@ pub fn go(
 
         best_move = searcher.root_best_move();
         if let Some(best_move) = best_move {
-            uci_info(depth, &stats, Cp { v: best_score as i16 }, best_move);
+            let search_time = Instant::now() - searcher.time_start;
+            uci_info(
+                depth,
+                &stats,
+                Cp { v: best_score as i16 },
+                best_move,
+                search_time,
+            );
         }
 
         // update stats
@@ -163,6 +170,7 @@ struct Searcher {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
     root_ply: Ply,
     limit: UciLimit,
+    time_start: Instant,
     time_limit: Instant,
     ct: CancellationToken,
     aborted: bool,
@@ -192,6 +200,7 @@ impl Searcher {
             root_stats: stats,
             root_ply: pos.ply(),
             limit,
+            time_start: search_start,
             time_limit,
             ct,
             aborted: false,
@@ -690,14 +699,20 @@ impl<T: Default + Copy + Eq> RbSet<T, 2> {
     }
 }
 
-fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move) {
+fn uci_info(
+    depth: Depth,
+    stats: &SearchStats,
+    best_score: Cp,
+    best_move: Move,
+    search_time: Duration,
+) {
     let depth = UciArg::Some(UciDepth(depth));
     let seldepth = UciArg::<UciSeldepth>::None; // TODO
     let score = UciArg::Some(UciScore::Centipawns(UciCp(best_score)));
     let nodes = UciArg::Some(UciNodes(stats.nodes as usize));
-    let nps = UciArg::<UciNps>::None; // TODO
+    let nps = UciArg::Some(UciNps::from_nodes_and_time(stats.nodes, search_time));
     let currmove = UciArg::Some(UciCurrmove(best_move));
-    let time = UciArg::<UciSearchtime>::None; // TODO
+    let time = UciArg::Some(UciSearchtime(search_time));
     let pv = UciArg::<UciPv<MoveList>>::None; // TODO
     let string = UciArg::<String>::None;
 
