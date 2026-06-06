@@ -379,9 +379,7 @@ impl Searcher {
 
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
-        while let Some(m) = move_picker.next() {
-            let curr = move_picker.curr();
-
+        while let Some((m, curr)) = move_picker.next() {
             // make the move
             pos.make_move_for::<P>(m);
 

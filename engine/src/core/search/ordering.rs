@@ -1,7 +1,4 @@
-use std::{
-    cmp::{Reverse, min},
-    ops::ControlFlow,
-};
+use std::{cmp::min, ops::ControlFlow};
 
 use crate::{
     core::{
@@ -218,31 +215,33 @@ impl MovePicker {
             *score = scorer.score(mov);
         }
 
-        // temp //
-        // todo: remove, this is just to assert that we don't regress in performance
-        // with the refactor
-        // sort by score descending
-        moves
-            .as_mut_slice()
-            .sort_unstable_by_key(|x| Reverse(x.score()));
-        // temp //
-
         Self { moves, curr: 0 }
     }
 
-    #[inline(always)]
-    pub fn curr(&self) -> usize {
-        self.curr
-    }
-
     #[inline]
-    pub fn next(&mut self) -> Option<Move> {
-        // todo: partial sort
-        // todo: return best
+    pub fn next(&mut self) -> Option<(Move, usize)> {
+        let len = self.moves.len();
+        if self.curr >= len {
+            return None;
+        }
 
-        let x = self.moves.get(self.curr).map(|x| x.mov());
+        // Partial selection sort: find the highest-scored move in curr..len and swap it
+        // into position.
+        let slice = self.moves.as_mut_slice();
+        let mut best_idx = self.curr;
+        for i in (self.curr + 1)..len {
+            if slice[i].score() > slice[best_idx].score() {
+                best_idx = i;
+            }
+        }
+        slice.swap(self.curr, best_idx);
+
+        let i = self.curr;
+        let m = slice[i].mov();
+
         self.curr += 1;
-        x
+
+        Some((m, i))
     }
 }
 
