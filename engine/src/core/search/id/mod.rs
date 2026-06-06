@@ -44,6 +44,9 @@ use crate::{
     misc::{CancellationToken, DebugMode, List},
 };
 
+#[cfg(test)]
+pub mod test;
+
 struct StaticEvaluator;
 
 impl eval::StaticEvaluator for StaticEvaluator {
@@ -293,13 +296,20 @@ impl Searcher {
             };
         }
 
+        let rel_ply: Depth = (pos.ply() - self.root_ply).into();
+
         // qsearch at the leaf nodes
-        if depth == Depth::ROOT {
-            return qsearch(pos, alpha, beta, HceParams, &StaticEvaluator);
+        if depth == Depth::ROOT || rel_ply >= Depth::MAX {
+            return qsearch(
+                pos,
+                alpha,
+                beta,
+                HceParams,
+                &StaticEvaluator,
+                Depth::new(30),
+            );
         }
 
-        // vars
-        let rel_ply: Depth = (pos.ply() - self.root_ply).into();
         let pieces = pos.piece_info();
         let phase = TaperValue::from_position(pieces);
         let is_root = T::IS_ROOT;

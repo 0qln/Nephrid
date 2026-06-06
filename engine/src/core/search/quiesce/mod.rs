@@ -1,5 +1,6 @@
 use crate::core::{
     color::{Color, Perspective},
+    depth::Depth,
     eval::{
         StaticEvaluator,
         hce::{TaperValue, piece_score},
@@ -30,6 +31,7 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
     beta: Score<P>,
     params: X,
     static_evaluator: &S,
+    depth: Depth,
 ) -> Score<P> {
     let in_check = pos.get_check_state() != CheckState::None;
 
@@ -38,12 +40,15 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
     let stm = P::COLOR;
     let piece_info = pos.piece_info();
     let phase = TaperValue::from_position(piece_info);
+    let static_eval = || static_evaluator.eval(piece_info, stm, pos.get_ep_target_square(), phase);
+
+    if depth == Depth::new(0) {
+        return static_eval();
+    }
 
     // stand pad if not in check
     if !in_check {
-        let static_eval = static_evaluator.eval(piece_info, stm, pos.get_ep_target_square(), phase);
-
-        best_value = static_eval;
+        best_value = static_eval();
 
         if best_value >= beta {
             return best_value;
@@ -130,7 +135,14 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
 
         pos.make_move_for::<P>(m);
 
-        let score = !qsearch(pos, !beta, !alpha, params.clone(), static_evaluator);
+        let score = !qsearch(
+            pos,
+            !beta,
+            !alpha,
+            params.clone(),
+            static_evaluator,
+            depth - 1,
+        );
 
         pos.unmake_move_for::<P>(m);
 

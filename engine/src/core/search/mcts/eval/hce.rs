@@ -2,6 +2,7 @@ use crate::{
     core::{
         color::{Perspective, perspectives},
         coordinates::EpTargetSquare,
+        depth::Depth,
         eval::{
             self,
             hce::{
@@ -126,6 +127,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 Score::POS_INF,
                 params.clone(),
                 &StaticEvaluator,
+                Depth::new(30),
             )
             .into(),
             colors::BLACK_C => qsearch::<_, perspectives::Black, _>(
@@ -134,6 +136,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 Score::POS_INF,
                 params.clone(),
                 &StaticEvaluator,
+                Depth::new(30),
             )
             .into(),
             _ => unreachable!(),
