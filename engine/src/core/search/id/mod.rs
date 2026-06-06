@@ -306,12 +306,22 @@ impl Searcher {
             // make the move
             pos.make_move_for::<P>(m);
 
-            // depth extensions
+            // depth
             let mut depth_extension = 0;
+            let mut depth_reduction = 0;
+            let gives_check = pos.get_check_state() != CheckState::None;
 
             // check extensions
-            if pos.get_check_state() != CheckState::None {
+            if gives_check {
                 depth_extension += 1;
+            }
+
+            // late move reductions
+            if depth >= Depth::new(3) && i > 1 {
+                let d = depth.v() as f32;
+                let m = i as f32;
+                let lmr = 0.99 + f32::ln(d) * f32::ln(m) / 3.14;
+                depth_reduction += lmr as u8;
             }
 
             // recurse
@@ -327,13 +337,28 @@ impl Searcher {
                     // to prove that this move cannot improve our first move, perform a zero window
                     // search with [a,a+1] (~ [-(a-1),-a]). we don't care by how much this move is
                     // able to improve alpha since we assume that it cannot.
-                    let zws_score = !self.search::<P::Opponent, Normal>(
+                    let mut zws_score = !self.search::<P::Opponent, Normal>(
                         pos,
                         stats,
-                        new_depth,
+                        // scout with a reduced depth
+                        new_depth - depth_reduction,
                         !(alpha + Score::new(1)),
                         !alpha,
                     );
+
+                    // if the reduced depth search fails high, we must verify that it is actually
+                    // good and do a full depth re-search.
+                    if zws_score > alpha && depth_reduction > 0 {
+                        zws_score = !self.search::<P::Opponent, Normal>(
+                            pos,
+                            stats,
+                            // research at full depth
+                            new_depth,
+                            // still zero-window.
+                            !(alpha + Score::new(1)),
+                            !alpha,
+                        );
+                    }
 
                     // if zws_score is a lower_bound, we have to research to get an exact score.
                     if zws_score > alpha
