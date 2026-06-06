@@ -477,12 +477,14 @@ impl PieceInfo {
         let queens = self.get_piece_bb(piece_type::QUEEN);
         let r_n_q = (self.get_piece_bb(piece_type::ROOK) | queens) & pieces;
         let b_n_q = (self.get_piece_bb(piece_type::BISHOP) | queens) & pieces;
+        let kings = self.get_piece_bb(piece_type::KING) & pieces;
 
         Bitboard::empty()
             | (pawn::lookup_attacks(to, !color) & pawns)
             | (knight::lookup_attacks(to) & knights)
             | (Bishop::lookup_attacks(to, occ) & b_n_q)
             | (Rook::lookup_attacks(to, occ) & r_n_q)
+            | (king::lookup_attacks(to) & kings)
     }
 
     pub fn attackers_to_exist(&self, to: Square, color: Color, occ: Bitboard) -> bool {
