@@ -7,23 +7,14 @@ use itertools::Itertools;
 use rustc_hash::FxBuildHasher;
 
 use crate::core::{
-    Position,
-    color::{Perspective, colors, perspectives},
-    depth::Depth,
-    r#move::Move,
-    params::ParamsRef,
-    search::mcts::{
+    Position, color::{Perspective, colors, perspectives}, depth::Depth, eval::GameResult, r#move::Move, params::ParamsRef, search::mcts::{
         back::{self},
         eval::{Evaluation, Evaluator, Guess, eval_terminal},
         node::{BranchId, NodeId, NodeView, RtNodeId, Tree, VisitCount, node_state::*},
         noise::Noiser,
         select::{self, Selector},
-    },
-    turn::Turn,
-    zobrist,
+    }, turn::Turn, zobrist
 };
-
-use super::eval::GameResult;
 
 #[cfg(test)]
 pub mod test;

@@ -1,3 +1,4 @@
+use crate::core::eval::GameResult;
 use core::fmt;
 use std::{
     fmt::Write,
@@ -29,7 +30,6 @@ use crate::{
         },
         piece::{Piece, PieceParseError, PieceType, PromoPieceType, piece_type},
         ply::{FullMoveCountParseError, FullMoveCountTokenizationError, PlyTokenizationError},
-        search::mcts::eval::GameResult,
         turn::Turn,
         zobrist,
     },
@@ -408,9 +408,10 @@ impl PieceInfo {
                 bb |= to_bb;
             }
             if let Some((r_from, r_to)) = castling_rook
-                && pt == piece_type::ROOK {
-                    bb ^= Bitboard::from(r_from) | Bitboard::from(r_to);
-                }
+                && pt == piece_type::ROOK
+            {
+                bb ^= Bitboard::from(r_from) | Bitboard::from(r_to);
+            }
             bb
         };
 

@@ -1,5 +1,6 @@
 use crate::core::search::score::Cp;
 use thiserror::Error;
+use uom::si::u64::Information;
 
 use crate::{
     core::{
@@ -42,7 +43,9 @@ pub mod id;
 pub mod limit;
 pub mod mcts;
 pub mod mode;
+pub mod ordering;
 pub mod perft;
+pub mod quiesce;
 pub mod score;
 pub mod strat;
 pub mod tt;
@@ -67,12 +70,21 @@ pub trait SearchWorker: Default {
 
 // todo: generic for config, so we can compile for nnue/hce
 /// Iterative deepening worker.
-#[derive(Default)]
-pub struct IdWorker;
+pub struct IdWorker {
+    hash_size: Information,
+}
+
+impl Default for IdWorker {
+    fn default() -> Self {
+        Self {
+            hash_size: Configuration::default().hash(),
+        }
+    }
+}
 
 impl IdWorker {
     pub fn new() -> Self {
-        Self
+        Self::default()
     }
 }
 
@@ -89,7 +101,7 @@ impl SearchWorker for IdWorker {
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
-                let best_move = id::go(&mut pos, limit, &debug, ct);
+                let best_move = id::go(&mut pos, limit, &debug, ct, self.hash_size);
 
                 if let Some(mov) = best_move {
                     println!("bestmove {mov}");
@@ -103,8 +115,12 @@ impl SearchWorker for IdWorker {
             Command::AdvanceState(_) => Ok(()),
             Command::RollbackAndAdvance(_) => Ok(()),
             Command::Configure(config) => {
-                // todo
-                let _ = config;
+                let config_lock = config.lock();
+                let cfg = match config_lock {
+                    Ok(ref cfg) => cfg,
+                    Err(_) => &Configuration::default(),
+                };
+                self.hash_size = cfg.hash();
                 Ok(())
             }
             Command::ResetState => Ok(()),

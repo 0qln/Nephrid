@@ -2,7 +2,13 @@ use burn_cuda::Cuda;
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use engine::{
     core::{
-        config::Configuration, r#move::MoveList, move_iter::fold_legal_moves, params::ParamsRef, position::PgnResultValue, search::mcts::{
+        config::Configuration,
+        eval::GameResult,
+        r#move::MoveList,
+        move_iter::fold_legal_moves,
+        params::ParamsRef,
+        position::PgnResultValue,
+        search::mcts::{
             self, CreateNNPartsError, MctsParts, NNParts,
             eval::{
                 self, Evaluator, Policy, Quality, Ratio,
@@ -16,7 +22,8 @@ use engine::{
             noise::DirichletNoiser,
             search::{BatchItem, Selection},
             select::{Score, Selector},
-        }, zobrist
+        },
+        zobrist,
     },
     math::entropy,
     misc::{CheckHealth, List},
@@ -48,7 +55,7 @@ use engine::{
         position::{FenImport, Position},
         search::mcts::{
             SearchState,
-            eval::{GameResult, Guess},
+            eval::Guess,
             mcts,
             nn::{
                 BOARD_INPUT_HISTORY, BoardInputFloats, Model, StateInputFloats, board_input,

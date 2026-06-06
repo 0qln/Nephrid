@@ -1,4 +1,7 @@
-use crate::core::search::{mcts::eval, score::Cp};
+use crate::core::{
+    eval::hce::{self},
+    search::{mcts, score::Cp},
+};
 use search::mode::Mode;
 use std::{
     sync::{Arc, Mutex},
@@ -19,12 +22,7 @@ use crate::{
             PgnImport, PgnImportError, Position, ReducedPgn,
         },
         search::{
-            Command, PonderToken, SearchThread, SearchWorker,
-            limit::UciLimit,
-            mcts::{
-                eval::hce::{self},
-                node::WinRate,
-            },
+            Command, PonderToken, SearchThread, SearchWorker, limit::UciLimit, mcts::node::WinRate,
         },
     },
     misc::{CancellationToken, DebugMode, List, trim_newline},
@@ -38,6 +36,7 @@ pub mod color;
 pub mod config;
 pub mod coordinates;
 pub mod depth;
+pub mod eval;
 pub mod r#move;
 pub mod move_iter;
 pub mod params;
@@ -353,11 +352,11 @@ pub fn execute_uci(
             let moves = pos.collect_moves(MoveList::new());
             let config = &config.clone();
             let params = Params::try_from(config)?;
-            let eval = hce::EvalInfo::new(moves.clone(), &mut pos, params.shared());
+            let eval = mcts::eval::hce::EvalInfo::new(moves.clone(), &mut pos, params.shared());
 
             if matches!(cmd, None | Some("centipawns")) {
                 let quality = eval.quality();
-                let value = eval::Value::from(quality);
+                let value = mcts::eval::Value::from(quality);
                 let winrate = WinRate::from(value);
                 let centipawns = Cp::from(winrate);
                 println!("Centipawns:     {centipawns}");
@@ -365,14 +364,14 @@ pub fn execute_uci(
 
             if matches!(cmd, None | Some("winrate")) {
                 let quality = eval.quality();
-                let value = eval::Value::from(quality);
+                let value = mcts::eval::Value::from(quality);
                 let winrate = WinRate::from(value);
                 println!("Winrate:        {winrate}");
             }
 
             if matches!(cmd, None | Some("value")) {
                 let quality = eval.quality();
-                let value = eval::Value::from(quality);
+                let value = mcts::eval::Value::from(quality);
                 println!("Value:          {value}");
             }
 

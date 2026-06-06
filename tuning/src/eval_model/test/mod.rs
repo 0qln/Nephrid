@@ -17,12 +17,13 @@ use burn_cuda::{Cuda, CudaDevice};
 use engine::core::{
     color::colors,
     coordinates::squares::{A5, B5, F3, G1},
+    eval::GameResult,
     r#move::{Move, move_flags::QUIET},
     move_iter::sliding_piece::magics,
     position::Position,
     search::mcts::{
         NNParts, SearchState,
-        eval::{GameResult, Probability, Quality, Ratio, RawPolicy},
+        eval::{Probability, Quality, Ratio, RawPolicy},
         mcts,
         nn::{ModelConfig, PolicyHeadIndex},
     },

@@ -1,4 +1,10 @@
-use std::{cmp::Reverse, hint::assert_unchecked, ops::ControlFlow, time::Instant};
+use std::{
+    cmp::{Reverse, min},
+    hint::assert_unchecked,
+    ops::ControlFlow,
+    time::Instant,
+};
+use uom::si::{information::byte, u64::Information};
 
 use crate::{
     core::{
@@ -6,19 +12,25 @@ use crate::{
             Perspective, colors,
             perspectives::{self},
         },
+        coordinates::EpTargetSquare,
         depth::Depth,
+        eval::{
+            self, GameResult,
+            hce::{
+                self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility,
+                passed_pawns,
+            },
+        },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
         params::HceParams,
         ply::Ply,
-        position::{CheckState, Position},
+        position::{CheckState, PieceInfo, Position},
         search::{
             id::node_types::*,
             limit::UciLimit,
-            mcts::eval::{
-                GameResult,
-                hce::{self, PolicyInput, TaperValue, see},
-            },
+            ordering,
+            quiesce::qsearch,
             score::{Cp, Score},
             strat::{
                 UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore,
@@ -26,10 +38,48 @@ use crate::{
             },
             tt::{self, TranspositionTable},
         },
+        turn::Turn,
         zobrist,
     },
     misc::{CancellationToken, DebugMode, List},
 };
+
+struct StaticEvaluator;
+
+impl eval::StaticEvaluator for StaticEvaluator {
+    fn eval<P: Perspective>(
+        &self,
+        pos: &PieceInfo,
+        turn: Turn,
+        ep_sq: EpTargetSquare,
+        phase: TaperValue,
+    ) -> Score<P> {
+        fn static_value<P: Perspective>(
+            pos: &PieceInfo,
+            ep_sq: EpTargetSquare,
+            phase: TaperValue,
+            turn: Turn,
+        ) -> Score<P> {
+            material::<P>(pos)
+                + mobility::<P>(pos, phase)
+                + hce::psqt::<P>(pos, phase)
+                + bishop_pair::<P>(pos)
+                + king_safety::<P>(pos, ep_sq, turn, phase)
+                + passed_pawns::<P>(pos, ep_sq, turn)
+                + hygge_king::<P>(pos, phase)
+        }
+
+        let (ep_w, ep_b) = if P::COLOR == colors::WHITE {
+            (ep_sq, EpTargetSquare::none())
+        }
+        else {
+            (EpTargetSquare::none(), ep_sq)
+        };
+        let w_q = static_value::<P>(pos, ep_w, phase, turn);
+        let b_q = static_value::<P::Opponent>(pos, ep_b, phase, turn);
+        w_q + !b_q
+    }
+}
 
 #[derive(Default)]
 struct SearchStats {
@@ -42,15 +92,18 @@ pub fn go(
     limit: UciLimit,
     _debug: &DebugMode,
     ct: CancellationToken,
+    hash_size: Information,
 ) -> Option<Move> {
-    let mut searcher = Searcher::new(pos, limit, ct);
+    let depth_lim = min(Depth::MAX, limit.depth);
+
+    let mut searcher = Searcher::new(pos, limit, ct, hash_size);
     let mut stats = SearchStats::default();
     let mut best_move = None;
 
-    let mut depth = Depth::ROOT + 1;
-
-    // todo: cap at Depth::MAX
-    while !searcher.should_stop(&stats) {
+    for depth in (Depth::ROOT + 1)..=depth_lim {
+        if searcher.should_stop(&stats) {
+            break;
+        }
         let best_score = searcher.search_root(pos, &mut stats, depth);
 
         // make sure to break before messing up the order of the previous iteration with
@@ -70,7 +123,6 @@ pub fn go(
         stats.iterations += 1;
 
         // increment depth for next iteration
-        depth += 1;
     }
 
     best_move
@@ -93,7 +145,7 @@ struct Searcher {
 }
 
 impl Searcher {
-    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken) -> Self {
+    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, hash_size: Information) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
             stats.push(RootStats { mov: m, score: 0 });
@@ -104,6 +156,12 @@ impl Searcher {
         let time_per_move = limit.time_per_move(pos);
         let time_limit = search_start + time_per_move;
 
+        let tt_entries = {
+            let bytes = hash_size.get::<byte>() as usize;
+            let entry_size = std::mem::size_of::<Option<TTEntry>>();
+            (bytes / entry_size).max(1)
+        };
+
         Self {
             root_stats: stats,
             root_ply: pos.ply(),
@@ -111,7 +169,7 @@ impl Searcher {
             time_limit,
             ct,
             aborted: false,
-            tt: TranspositionTable::new(1 << 20), // TODO: make this configurable
+            tt: TranspositionTable::new(tt_entries),
             ss: SearchStack::new(),
         }
     }
@@ -172,8 +230,6 @@ impl Searcher {
         }
     }
 
-    // todo: remove the dependency on mcts::hce and write a custom one.
-    //
     /// returns the score relative to `P`
     fn search<P: Perspective, T: NodeType>(
         &mut self,
@@ -204,7 +260,7 @@ impl Searcher {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT {
-            return hce::qsearch(pos, alpha, beta, HceParams);
+            return qsearch(pos, alpha, beta, HceParams, &StaticEvaluator);
         }
 
         // vars
@@ -265,7 +321,7 @@ impl Searcher {
                     let is_capture = m.get_flag().is_capture();
 
                     if is_capture {
-                        let see = see(pieces, m, P::COLOR);
+                        let see = ordering::see(pieces, m, P::COLOR);
                         if see >= 0 {
                             // good captures (210_000..)
                             210_000 + see
@@ -283,9 +339,9 @@ impl Searcher {
                         let (from, to, _) = m.into();
                         let piece = pieces.get_piece(from);
                         let piece_type = piece.piece_type();
-                        let see = see(pieces, m, P::COLOR);
+                        let see = ordering::see(pieces, m, P::COLOR);
 
-                        see + PolicyInput::psqt(phase, piece_type, from, to, stm)
+                        see + ordering::psqt(phase, piece_type, from, to, stm)
                     }
                 };
             }
