@@ -686,8 +686,6 @@ impl fmt::Debug for MoveList {
     }
 }
 
-pub const MAX_LEGAL_MOVES: usize = 218;
-
 impl MoveList {
     pub const CAPACITY: usize = 256;
 
@@ -782,3 +780,14 @@ impl From<u8> for MoveIndex {
         Self { v: value }
     }
 }
+
+// https://lichess.org/@/Tobs40/blog/why-a-reachable-position-can-have-at-most-218-playable-moves/a5xdxeqs
+
+/// max number of legal moves in a reachable position.
+pub const MAX_LEGAL_MOVES: usize = 218;
+
+/// max number of p-legal moves in an unreachable position.
+pub const MAX_UNREACHABLE_MOVES: usize = 271;
+
+/// max number of p-legal moves in an unreachable, illegal position.
+pub const MAX_ILLEGAL_MOVES: usize = 288;
