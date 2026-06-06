@@ -11,7 +11,7 @@ use crate::{
         move_iter::fold_legal_moves,
         params::HceParams,
         ply::Ply,
-        position::Position,
+        position::{CheckState, Position},
         search::{
             id::node_types::*,
             limit::UciLimit,
@@ -306,11 +306,21 @@ impl Searcher {
             // make the move
             pos.make_move_for::<P>(m);
 
+            // depth extensions
+            let mut depth_extension = 0;
+
+            // check extensions
+            if pos.get_check_state() != CheckState::None {
+                depth_extension += 1;
+            }
+
             // recurse
             let score = {
+                let new_depth = depth - 1 + depth_extension;
+
                 if i == 0 {
                     // search with a full window to get an exact score.
-                    !self.search::<P::Opponent, Normal>(pos, stats, depth - 1, !beta, !alpha)
+                    !self.search::<P::Opponent, Normal>(pos, stats, new_depth, !beta, !alpha)
                 }
                 else {
                     // assume that our move ordering is good the first move will be the best one.
@@ -320,7 +330,7 @@ impl Searcher {
                     let zws_score = !self.search::<P::Opponent, Normal>(
                         pos,
                         stats,
-                        depth - 1,
+                        new_depth,
                         !(alpha + Score::new(1)),
                         !alpha,
                     );
@@ -331,10 +341,7 @@ impl Searcher {
                         && zws_score < beta
                     {
                         !self.search::<P::Opponent, Normal>(
-                            pos,
-                            stats,
-                            depth - 1,
-                            !beta,
+                            pos, stats, new_depth, !beta,
                             // new lower_bound, since it was able to beat alpha
                             !zws_score,
                         )
