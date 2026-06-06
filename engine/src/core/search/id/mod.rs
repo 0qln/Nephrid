@@ -1,4 +1,6 @@
 use std::{cmp::Reverse, hint::assert_unchecked, ops::ControlFlow, time::Instant};
+use uom::si::information::byte;
+use uom::si::u64::Information;
 
 use crate::{
     core::{
@@ -9,10 +11,11 @@ use crate::{
         coordinates::EpTargetSquare,
         depth::Depth,
         eval::{
-            self, GameResult, hce::{
+            self, GameResult,
+            hce::{
                 self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility,
                 passed_pawns,
-            }
+            },
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
@@ -85,8 +88,9 @@ pub fn go(
     limit: UciLimit,
     _debug: &DebugMode,
     ct: CancellationToken,
+    hash_size: Information,
 ) -> Option<Move> {
-    let mut searcher = Searcher::new(pos, limit, ct);
+    let mut searcher = Searcher::new(pos, limit, ct, hash_size);
     let mut stats = SearchStats::default();
     let mut best_move = None;
 
@@ -136,7 +140,7 @@ struct Searcher {
 }
 
 impl Searcher {
-    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken) -> Self {
+    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, hash_size: Information) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
             stats.push(RootStats { mov: m, score: 0 });
@@ -147,6 +151,12 @@ impl Searcher {
         let time_per_move = limit.time_per_move(pos);
         let time_limit = search_start + time_per_move;
 
+        let tt_entries = {
+            let bytes = hash_size.get::<byte>() as usize;
+            let entry_size = std::mem::size_of::<Option<TTEntry>>();
+            (bytes / entry_size).max(1)
+        };
+
         Self {
             root_stats: stats,
             root_ply: pos.ply(),
@@ -154,7 +164,7 @@ impl Searcher {
             time_limit,
             ct,
             aborted: false,
-            tt: TranspositionTable::new(1 << 20), // TODO: make this configurable
+            tt: TranspositionTable::new(tt_entries),
             ss: SearchStack::new(),
         }
     }

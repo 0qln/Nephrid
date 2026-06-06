@@ -12,6 +12,8 @@ use std::{
     ops::{Deref, DerefMut},
 };
 use thiserror::Error;
+use uom::si::information::mebibyte;
+use uom::si::u64::Information;
 
 #[derive(Debug, Error)]
 #[error("Unknown option: {0}")]
@@ -308,8 +310,8 @@ impl Default for Configuration {
 impl Configuration {
     // Getters
 
-    pub fn hash(&self) -> i32 {
-        self.hash.value
+    pub fn hash(&self) -> Information {
+        Information::new::<mebibyte>(self.hash.value as u64)
     }
 
     pub fn threads(&self) -> i32 {

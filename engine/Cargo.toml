@@ -17,6 +17,7 @@ ringbuf = "0.4.8"
 rand_distr = "0.5.1"
 approx = "0.5.1"
 rustc-hash = "2.1.2"
+uom = { version = "0.38.0", features = ["si", "u64"] }
 
 [features]
 default = []
