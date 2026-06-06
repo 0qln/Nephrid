@@ -22,7 +22,7 @@ use crate::{
             },
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
-        move_iter::fold_legal_moves,
+        move_iter::{fold_legal_moves, opt},
         params::HceParams,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
@@ -382,13 +382,16 @@ impl Searcher {
                 phase,
             };
 
-            // generic move ordering
-            MovePicker::from_position(pos, scorer)
+            MovePicker::from_position::<opt::AllPseudoLegal, _>(pos, scorer)
         };
 
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
         while let Some((m, curr)) = move_picker.next() {
+            if !pos.is_legal_for::<P>(m) {
+                continue;
+            }
+
             // make the move
             pos.make_move_for::<P>(m);
 

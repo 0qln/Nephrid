@@ -1,4 +1,7 @@
-use crate::core::eval::GameResult;
+use crate::core::{
+    eval::GameResult,
+    move_iter::{king, pin_mask, queen::Queen},
+};
 use core::fmt;
 use std::{
     fmt::Write,
@@ -84,8 +87,6 @@ impl StateInfo {
         let occupancy = pieces.get_occupancy();
         let enemies = pieces.get_color_bb(nstm);
         let allies = pieces.get_color_bb(stm);
-        let pawns = pieces.get_piece_bb(piece_type::PAWN) & enemies;
-        let knights = pieces.get_piece_bb(piece_type::KNIGHT) & enemies;
         let queens = pieces.get_piece_bb(piece_type::QUEEN) & enemies;
         let kings = pieces.get_piece_bb(piece_type::KING);
         let r_n_q = (pieces.get_piece_bb(piece_type::ROOK) | queens) & enemies;
@@ -93,13 +94,7 @@ impl StateInfo {
 
         if let Some(king_sq) = (allies & kings).lsb() {
             // Normal checkers
-            self.checkers = {
-                Bitboard::empty()
-                    | (pawn::lookup_attacks(king_sq, stm) & pawns)
-                    | (knight::lookup_attacks(king_sq) & knights)
-                    | (Bishop::lookup_attacks(king_sq, occupancy) & b_n_q)
-                    | (Rook::lookup_attacks(king_sq, occupancy) & r_n_q)
-            };
+            self.checkers = pieces.attackers_to(king_sq, nstm, occupancy);
 
             // The X-Ray checkers for the given king. X-Ray checkers are pieces which attack
             // a king through zero or more pieces.
@@ -431,6 +426,68 @@ impl PieceInfo {
             _ => CheckState::None,
         }
     }
+
+    /// Returns the bb of smallest piece type that attack `to` with given
+    /// occupancy `occ`.
+    pub fn smallest_attackers(&self, to: Square, us: Color, occ: Bitboard) -> Option<Bitboard> {
+        let pawns = self.get_bitboard(piece_type::PAWN, us);
+        let attacking_pawns = pawn::lookup_attacks(to, !us) & pawns & occ;
+        if !attacking_pawns.is_empty() {
+            return Some(attacking_pawns);
+        }
+
+        let knights = self.get_bitboard(piece_type::KNIGHT, us);
+        let attacking_knights = knight::lookup_attacks(to) & knights & occ;
+        if !attacking_knights.is_empty() {
+            return Some(attacking_knights);
+        }
+
+        let bishops = self.get_bitboard(piece_type::BISHOP, us);
+        let attacking_bishops = Bishop::lookup_attacks(to, occ) & bishops & occ;
+        if !attacking_bishops.is_empty() {
+            return Some(attacking_bishops);
+        }
+
+        let rooks = self.get_bitboard(piece_type::ROOK, us);
+        let attacking_rooks = Rook::lookup_attacks(to, occ) & rooks & occ;
+        if !attacking_rooks.is_empty() {
+            return Some(attacking_rooks);
+        }
+
+        let queens = self.get_bitboard(piece_type::QUEEN, us);
+        let attacking_queens = Queen::lookup_attacks(to, occ) & queens & occ;
+        if !attacking_queens.is_empty() {
+            return Some(attacking_queens);
+        }
+
+        let kings = self.get_bitboard(piece_type::KING, us);
+        let attacking_kings = king::lookup_attacks(to) & kings & occ;
+        if !attacking_kings.is_empty() {
+            return Some(attacking_kings);
+        }
+
+        None
+    }
+
+    /// Returns the bb of all pieces of color `color` that attack `to`.
+    pub fn attackers_to(&self, to: Square, color: Color, occ: Bitboard) -> Bitboard {
+        let pieces = self.get_color_bb(color);
+        let pawns = self.get_piece_bb(piece_type::PAWN) & pieces;
+        let knights = self.get_piece_bb(piece_type::KNIGHT) & pieces;
+        let queens = self.get_piece_bb(piece_type::QUEEN);
+        let r_n_q = (self.get_piece_bb(piece_type::ROOK) | queens) & pieces;
+        let b_n_q = (self.get_piece_bb(piece_type::BISHOP) | queens) & pieces;
+
+        Bitboard::empty()
+            | (pawn::lookup_attacks(to, !color) & pawns)
+            | (knight::lookup_attacks(to) & knights)
+            | (Bishop::lookup_attacks(to, occ) & b_n_q)
+            | (Rook::lookup_attacks(to, occ) & r_n_q)
+    }
+
+    pub fn attackers_to_exist(&self, to: Square, color: Color, occ: Bitboard) -> bool {
+        !self.attackers_to(to, color, occ).is_empty()
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -679,6 +736,69 @@ impl Position {
 
     pub fn has_legal_moves(&self) -> bool {
         fold_legal_moves(self, false, |_, _| ControlFlow::Break(true)).into_value()
+    }
+
+    pub fn is_legal(&self, mov: Move) -> bool {
+        match self.get_turn() {
+            colors::WHITE => self.is_legal_for::<perspectives::White>(mov),
+            colors::BLACK => self.is_legal_for::<perspectives::Black>(mov),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn is_legal_for<P: Perspective>(&self, mov: Move) -> bool {
+        let (from, to, flag) = mov.into();
+        let stm = P::COLOR;
+        let nstm = !stm;
+
+        // todo: only check block mask in pseudo-legal generation
+        // king castle cannot move through check
+        if matches!(flag, move_flags::KING_CASTLE) {
+            let check_mask = Bitboard {
+                v: unsafe { *[0x60_u64, 0x60_u64 << 56].get_unchecked(stm.v() as usize) },
+            };
+
+            let occ = self.piece_info.get_occupancy();
+            for sq in check_mask {
+                if self.piece_info.attackers_to_exist(sq, nstm, occ) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        // queen castle cannot move through check
+        else if matches!(flag, move_flags::QUEEN_CASTLE) {
+            let check_mask = Bitboard {
+                v: unsafe { *[0xC_u64, 0xC_u64 << 56].get_unchecked(stm.v() as usize) },
+            };
+
+            let occ = self.piece_info.get_occupancy();
+            for sq in check_mask {
+                if self.piece_info.attackers_to_exist(sq, nstm, occ) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        match self.get_piece(from).piece_type() {
+            // king cannot move into check
+            piece_type::KING => {
+                let occ_after_mov = self.piece_info.get_occupancy() ^ from.into();
+                !(self.piece_info.attackers_to_exist(to, nstm, occ_after_mov))
+            }
+            // pinned pieces can only move along the ray of the pin
+            _ => {
+                let piece = from;
+                let blockers = self.get_blockers();
+                let our_king = self.get_bitboard(piece_type::KING, stm).lsb();
+                let pin_mask = our_king
+                    .map(|k| pin_mask(piece, blockers, k))
+                    .unwrap_or(Bitboard::full());
+
+                !(pin_mask & to.into()).is_empty()
+            }
+        }
     }
 
     /// # Safety

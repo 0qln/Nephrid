@@ -8,10 +8,7 @@ use crate::{
         depth::Depth,
         eval::hce::{TaperValue, piece_score, tapered_psqt},
         r#move::{MAX_LEGAL_MOVES, Move},
-        move_iter::{
-            bishop::Bishop, fold_legal_moves, king, knight, pawn, queen::Queen, rook::Rook,
-            sliding_piece::SlidingAttacks,
-        },
+        move_iter::{self, fold_moves},
         piece::{PieceType, PromoPieceType, piece_type},
         position::{PieceInfo, Position},
     },
@@ -60,7 +57,9 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> i32 {
 
         occupancy ^= Bitboard::from(attacker_sq);
 
-        let next_attacker = find_smallest_attacker(pos, to, us, occupancy);
+        let next_attacker = pos
+            .smallest_attackers(to, us, occupancy)
+            .and_then(|bb| bb.lsb());
 
         match next_attacker {
             Some(sq) => {
@@ -93,52 +92,6 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> i32 {
     }
 
     gain[0]
-}
-
-fn find_smallest_attacker(pos: &PieceInfo, to: Square, us: Color, occ: Bitboard) -> Option<Square> {
-    let all_pawns = pos.get_bitboard(piece_type::PAWN, us);
-    let available_pawns = occ & all_pawns;
-    let attacking_pawns = pawn::lookup_attacks(to, !us) & available_pawns;
-    if let pawn @ Some(_) = attacking_pawns.lsb() {
-        return pawn;
-    }
-
-    let all_knights = pos.get_bitboard(piece_type::KNIGHT, us);
-    let available_knights = occ & all_knights;
-    let attacking_knights = knight::lookup_attacks(to) & available_knights;
-    if let knight @ Some(_) = attacking_knights.lsb() {
-        return knight;
-    }
-
-    let all_bishops = pos.get_bitboard(piece_type::BISHOP, us);
-    let available_bishops = occ & all_bishops;
-    let attacking_bishops = <Bishop as SlidingAttacks>::lookup_attacks(to, occ) & available_bishops;
-    if let bishop @ Some(_) = attacking_bishops.lsb() {
-        return bishop;
-    }
-
-    let all_rooks = pos.get_bitboard(piece_type::ROOK, us);
-    let available_rooks = occ & all_rooks;
-    let attacking_rooks = <Rook as SlidingAttacks>::lookup_attacks(to, occ) & available_rooks;
-    if let rook @ Some(_) = attacking_rooks.lsb() {
-        return rook;
-    }
-
-    let all_queens = pos.get_bitboard(piece_type::QUEEN, us);
-    let available_queens = occ & all_queens;
-    let attacking_queens = <Queen as SlidingAttacks>::lookup_attacks(to, occ) & available_queens;
-    if let queen @ Some(_) = attacking_queens.lsb() {
-        return queen;
-    }
-
-    let all_kings = pos.get_bitboard(piece_type::KING, us);
-    let available_kings = occ & all_kings;
-    let attacking_kings = king::lookup_attacks(to) & available_kings;
-    if let king @ Some(_) = attacking_kings.lsb() {
-        return king;
-    }
-
-    None
 }
 
 pub fn psqt(phase: TaperValue, piece: PieceType, from: Square, to: Square, color: Color) -> i32 {
@@ -199,11 +152,10 @@ impl MovePicker {
         Self { moves, curr: 0 }
     }
 
-    pub fn from_position<S: MoveScorer>(pos: &Position, scorer: S) -> Self {
+    pub fn from_position<O: move_iter::Options, S: MoveScorer>(pos: &Position, scorer: S) -> Self {
         let mut moves = List::new();
 
-        // todo: pseudo legals
-        _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
+        _ = fold_moves::<O, _, _, _>(pos, (), |_, m| {
             moves.push(ScoredMove::new(m, 0));
             ControlFlow::Continue::<(), ()>(())
         });

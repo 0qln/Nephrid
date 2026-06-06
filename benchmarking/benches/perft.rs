@@ -8,7 +8,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::{
     core::{
         depth::Depth,
-        move_iter::{Options, fold_legals, opt, sliding_piece::magics},
+        move_iter::{Options, fold_moves, opt, sliding_piece::magics},
         position::Position,
         search::{limit::UciLimit, perft::perft_inner_collect},
         zobrist,
@@ -26,7 +26,7 @@ fn bench_perft<Opt: Options>(mut pos: Position, depth: Depth) {
         &DebugMode::default(),
         |_, _, _, _| {},
         |pos, list| {
-            _ = fold_legals::<Opt, _, _, _>(pos, (), |(), m| {
+            _ = fold_moves::<Opt, _, _, _>(pos, (), |(), m| {
                 list.push(m);
                 ControlFlow::Continue::<(), ()>(())
             });

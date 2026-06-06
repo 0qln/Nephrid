@@ -24,18 +24,28 @@ impl<O: Options, C: NoDoubleCheck> FoldMoves<C, O> for Knight {
     {
         let color = pos.get_turn();
 
-        let knights = pos.get_bitboard(piece_type::KNIGHT, color);
-        let blockers = pos.get_blockers();
-        let mut unpinned_knights = knights & !blockers;
+        let mut knights = {
+            let knights = pos.get_bitboard(piece_type::KNIGHT, color);
+            if O::legal() {
+                // only unpinned knights if legal check required
+                knights & !pos.get_blockers()
+            }
+            else {
+                knights
+            }
+        };
 
-        unpinned_knights.try_fold(init, |mut acc, piece| {
+        knights.try_fold(init, |mut acc, piece| {
             let attacks = lookup_attacks(piece);
+
             let captures = attacks & captures_targets::<C>(pos, color);
             acc = map_captures(captures, piece).try_fold(acc, &mut f)?;
+
             if O::gen_quiets() {
                 let quiets = attacks & quiets_targets::<C>(pos, color);
                 acc = map_quiets(quiets, piece).try_fold(acc, &mut f)?;
             }
+
             try { acc }
         })
     }

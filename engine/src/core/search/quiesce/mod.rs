@@ -1,19 +1,17 @@
-use std::{cmp::Reverse, ops::ControlFlow};
-
-use crate::{
-    core::{
-        color::Perspective,
-        eval::{
-            StaticEvaluator,
-            hce::{TaperValue, piece_score},
-        },
-        r#move::{MAX_LEGAL_MOVES, Move},
-        move_iter::{self, fold_legal_moves, fold_legals},
-        piece::{PromoPieceType, piece_type},
-        position::{CheckState, Position},
-        search::{ordering, score::Score},
+use crate::core::{
+    color::{Color, Perspective},
+    eval::{
+        StaticEvaluator,
+        hce::{TaperValue, piece_score},
     },
-    misc::List,
+    r#move::Move,
+    move_iter::{self, opt::AllPseudoLegal},
+    piece::{PromoPieceType, piece_type},
+    position::{CheckState, PieceInfo, Position},
+    search::{
+        ordering::{self, MovePicker},
+        score::Score,
+    },
 };
 
 pub trait QSearchParams {
@@ -56,12 +54,31 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
     }
 
     // move gen
-    let mut move_list = List::<{ MAX_LEGAL_MOVES }, (Move, i32)>::new();
-    if in_check {
-        _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-            move_list.push((m, 0));
-            ControlFlow::Continue::<(), ()>(())
-        });
+    struct MoveScorer<'a> {
+        pieces: &'a PieceInfo,
+        color: Color,
+        phase: TaperValue,
+    }
+    impl ordering::MoveScorer for MoveScorer<'_> {
+        fn score(&self, mov: Move) -> i32 {
+            let (from, to, _) = mov.into();
+            let piece = self.pieces.get_piece(from);
+
+            ordering::see(self.pieces, mov, self.color)
+                + ordering::psqt(self.phase, piece.piece_type(), from, to, self.color)
+        }
+    }
+
+    let move_scorer = MoveScorer {
+        pieces: pos.piece_info(),
+        color: P::COLOR,
+        phase,
+    };
+
+    // if in check, we need to generate all moves, otherwise we can skip quiets and
+    // promos
+    let mut move_picker = if in_check {
+        MovePicker::from_position::<AllPseudoLegal, _>(pos, move_scorer)
     }
     else {
         struct MoveGenOpt;
@@ -75,38 +92,22 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
             fn gen_promos() -> bool {
                 false
             }
+
+            #[inline(always)]
+            fn legal() -> bool {
+                false
+            }
         }
 
-        _ = fold_legals::<MoveGenOpt, _, _, _>(pos, (), |_, m| {
-            move_list.push((m, 0));
-            ControlFlow::Continue::<(), ()>(())
-        });
+        MovePicker::from_position::<MoveGenOpt, _>(pos, move_scorer)
     };
 
-    /*\                                             /*\
-    |*|---------------------------------------------|*|
-    |*| generate the see score outside of the move  |*|
-    |*| generation and the sorting, such that it    |*|
-    |*| isn't computed for each comparison and when |*|
-    |*| don't break cache locality.                 |*|
-    |*|---------------------------------------------|*|
-    \*/                                             \*/
-    for &mut (m, ref mut score) in move_list.as_mut_slice() {
-        let (from, to, _) = m.into();
-        let piece = pos.get_piece(from);
-
-        // todo: use a dedicated MovePicker instead of this ...
-        *score = ordering::see(pos.piece_info(), m, P::COLOR)
-            + ordering::psqt(phase, piece.piece_type(), from, to, stm);
-    }
-
-    // move ordering
-    move_list
-        .as_mut_slice()
-        .sort_unstable_by_key(|&(_, score)| Reverse(score));
-
     // recurse
-    for &(m, _) in move_list.iter() {
+    while let Some((m, _)) = move_picker.next() {
+        if !pos.is_legal_for::<P>(m) {
+            continue;
+        }
+
         // delta pruning
         if !in_check && phase < params.delta_pruning_threshold() {
             let value_bonus = PromoPieceType::try_from(m.get_flag())

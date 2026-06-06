@@ -6,7 +6,7 @@ use crate::{
     core::{
         depth::Depth,
         r#move::MoveList,
-        move_iter::{fold_legals, opt, sliding_piece::magics},
+        move_iter::{fold_moves, opt, sliding_piece::magics},
         position::{FenExport, Position},
         search::{limit::UciLimit, perft::perft_inner_collect},
         zobrist,
@@ -28,7 +28,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
         |_, _, _, _| {},
         move |pos, list| {
             let mut list_skipped = MoveList::default();
-            fold_legals::<opt::Captures, _, _, _>(pos, (), |_, m| {
+            fold_moves::<opt::Captures, _, _, _>(pos, (), |_, m| {
                 list_skipped.push(m);
                 ControlFlow::Continue::<(), ()>(())
             })
@@ -36,7 +36,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
             .unwrap();
 
             let list_filtered = list;
-            _ = fold_legals::<opt::All, _, _, _>(pos, (), |_, m| {
+            _ = fold_moves::<opt::All, _, _, _>(pos, (), |_, m| {
                 if m.get_flag().is_capture() {
                     list_filtered.push(m);
                 }

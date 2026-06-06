@@ -3,7 +3,7 @@ use crate::{
         Depth, Move, UciLimit,
         color::{Perspective, colors, perspectives},
         r#move::MoveList,
-        move_iter::{Options, fold_legals},
+        move_iter::{Options, fold_moves},
         position::Position,
     },
     misc::{CancellationToken, DebugMode},
@@ -35,7 +35,7 @@ pub fn perft<Opt: Options>(
             }
         },
         |pos, list| {
-            _ = fold_legals::<Opt, _, _, _>(pos, (), |_, m| {
+            _ = fold_moves::<Opt, _, _, _>(pos, (), |_, m| {
                 list.push(m);
                 ControlFlow::Continue::<(), _>(())
             });

@@ -57,6 +57,12 @@ fn captures_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard 
 pub const trait Options {
     fn gen_quiets() -> bool;
     fn gen_promos() -> bool;
+
+    /// Whether to generated moves have to be legal. If false, also generates
+    /// pseudo legal moves, which's check-rules are not checked.
+    fn legal() -> bool {
+        true
+    }
 }
 
 pub trait FoldMoves<Check, O: Options> {
@@ -148,7 +154,7 @@ impl DoubleCheck {
 }
 
 #[inline]
-pub fn fold_legals<O: Options, B, F, R>(pos: &Position, init: B, f: F) -> R
+pub fn fold_moves<O: Options, B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
@@ -176,6 +182,24 @@ pub mod opt {
         }
     }
 
+    pub struct AllPseudoLegal;
+    impl Options for AllPseudoLegal {
+        #[inline(always)]
+        fn gen_quiets() -> bool {
+            true
+        }
+
+        #[inline(always)]
+        fn gen_promos() -> bool {
+            true
+        }
+
+        #[inline(always)]
+        fn legal() -> bool {
+            false
+        }
+    }
+
     pub struct Captures;
     impl Options for Captures {
         #[inline(always)]
@@ -196,7 +220,7 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    fold_legals::<opt::All, B, F, R>(pos, init, f)
+    fold_moves::<opt::All, B, F, R>(pos, init, f)
 }
 
 #[inline]
@@ -205,7 +229,16 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    fold_legals::<opt::Captures, B, F, R>(pos, init, f)
+    fold_moves::<opt::Captures, B, F, R>(pos, init, f)
+}
+
+#[inline]
+pub fn fold_pseudo_legal_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    fold_moves::<opt::AllPseudoLegal, B, F, R>(pos, init, f)
 }
 
 #[inline]
