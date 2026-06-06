@@ -1,6 +1,6 @@
 use crate::core::{
     eval::GameResult,
-    move_iter::{king, pin_mask, queen::Queen},
+    move_iter::{SingleCheck, captures_targets, king, pin_mask, queen::Queen, quiets_targets},
 };
 use core::fmt;
 use std::{
@@ -789,7 +789,6 @@ impl Position {
                 let occ_after_mov = self.piece_info.get_occupancy() ^ from.into();
                 !(self.piece_info.attackers_to_exist(to, nstm, occ_after_mov))
             }
-            // pinned pieces can only move along the ray of the pin
             _ => {
                 let piece = from;
                 let blockers = self.get_blockers();
@@ -798,7 +797,29 @@ impl Position {
                     .map(|k| pin_mask(piece, blockers, k))
                     .unwrap_or(Bitboard::full());
 
-                !(pin_mask & to.into()).is_empty()
+                // pinned pieces can only move along the ray of the pin
+                if (pin_mask & to.into()).is_empty() {
+                    return false;
+                }
+
+                // if in check, the move must also resolve the check.
+                match self.get_check_state() {
+                    CheckState::None => true,
+                    CheckState::Double => false, // only a king move can resolve a double check
+                    CheckState::Single => {
+                        // handle en passant capturing the checker
+                        if flag == move_flags::EN_PASSANT {
+                            return mov.get_capture_sq() == self.get_checkers().lsb();
+                        }
+
+                        let q_mask = quiets_targets::<SingleCheck>(self, P::COLOR);
+                        let c_mask = captures_targets::<SingleCheck>(self, P::COLOR);
+                        let resolves = q_mask | c_mask;
+
+                        // we either have to capture the checker or block the check
+                        !(resolves & to.into()).is_empty()
+                    }
+                }
             }
         }
     }

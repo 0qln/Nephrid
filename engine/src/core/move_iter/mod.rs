@@ -26,7 +26,7 @@ mod test;
 
 /// To squares for quiet moves
 #[inline(always)]
-fn quiets_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard {
+pub fn quiets_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard {
     match C::check_state() {
         RtCheckState::None => !pos.get_occupancy(),
         RtCheckState::Single => {
@@ -45,7 +45,7 @@ fn quiets_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard {
 
 /// To squares for captures
 #[inline(always)]
-fn captures_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard {
+pub fn captures_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard {
     match C::check_state() {
         RtCheckState::None => pos.get_color_bb(!color),
         RtCheckState::Single => pos.get_checkers(),
@@ -74,11 +74,11 @@ pub trait FoldMoves<Check, O: Options> {
 
 use position::CheckState as RtCheckState;
 
-const trait CheckState {
+pub const trait CheckState {
     fn check_state() -> RtCheckState;
 }
-trait SomeCheck {}
-trait NoDoubleCheck: CheckState {}
+pub trait SomeCheck {}
+pub trait NoDoubleCheck: CheckState {}
 
 pub struct NoCheck;
 impl CheckState for NoCheck {
