@@ -331,7 +331,7 @@ impl Searcher {
         let tt_move = tt_entry.map(|e| e.mov);
 
         // move gen
-        let mut move_picker = if is_root {
+        let move_picker = if is_root {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
         else {
@@ -397,7 +397,7 @@ impl Searcher {
 
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
-        while let Some((m, curr)) = move_picker.next() {
+        for (m, curr) in move_picker {
             // if !pos.is_legal_for::<P>(m) {
             //     continue;
             // }

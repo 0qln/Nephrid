@@ -169,9 +169,13 @@ impl MovePicker {
 
         Self { moves, curr: 0 }
     }
+}
+
+impl Iterator for MovePicker {
+    type Item = (Move, usize);
 
     #[inline]
-    pub fn next(&mut self) -> Option<(Move, usize)> {
+    fn next(&mut self) -> Option<Self::Item> {
         let len = self.moves.len();
         if self.curr >= len {
             return None;

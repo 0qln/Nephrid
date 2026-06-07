@@ -132,7 +132,7 @@ impl<V: Variant> PawnMoves<V> {
     }
 
     #[inline(always)]
-    fn ep<const C: TColor, const DIR: TCompassRose, T: NoDoubleCheck>(
+    fn ep<const C: TColor, const DIR: TCompassRose>(
         pos: &Position,
         pawns: Bitboard,
         v_data: V::Data,
@@ -356,8 +356,8 @@ where
             (),
             P::capture::<C, { compass_rose::WEST_C }, T>,
             P::capture::<C, { compass_rose::EAST_C }, T>,
-            P::ep::<C, { compass_rose::WEST_C }, T>,
-            P::ep::<C, { compass_rose::EAST_C }, T>,
+            P::ep::<C, { compass_rose::WEST_C }>,
+            P::ep::<C, { compass_rose::EAST_C }>,
             P::promo_capture::<C, { compass_rose::WEST_C }, T>,
             P::promo_capture::<C, { compass_rose::EAST_C }, T>
         );
@@ -386,8 +386,8 @@ where
             pos,
             P::capture::<C, { compass_rose::WEST_C }, T>,
             P::capture::<C, { compass_rose::EAST_C }, T>,
-            P::ep::<C, { compass_rose::WEST_C }, T>,
-            P::ep::<C, { compass_rose::EAST_C }, T>,
+            P::ep::<C, { compass_rose::WEST_C }>,
+            P::ep::<C, { compass_rose::EAST_C }>,
             P::promo_capture::<C, { compass_rose::WEST_C }, T>,
             P::promo_capture::<C, { compass_rose::EAST_C }, T>
         );
