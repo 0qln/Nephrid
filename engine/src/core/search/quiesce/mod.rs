@@ -6,11 +6,11 @@ use crate::core::{
         hce::{TaperValue, piece_score},
     },
     r#move::Move,
-    move_iter::{self, opt::AllLegal, staged::Stage},
     piece::{PromoPieceType, piece_type},
     position::{CheckState, Position},
     search::{
-        ordering::{self, MovePicker},
+        id::RbSet,
+        ordering::{self, MovePicker, RtStage, Stage},
         score::Score,
     },
 };
@@ -80,48 +80,51 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
     }
     impl ordering::MoveScorer for MoveScorer {
         fn score<S: Stage>(&self, pos: &Position, mov: Move) -> i32 {
-            let pieces = pos.piece_info();
+            match S::stage() {
+                ordering::RtStage::YieldHashMove => {
+                    todo!("we don't yet have a hashmove in qsearch")
+                }
+                ordering::RtStage::GenerateCapturesAndPromos
+                | ordering::RtStage::YieldGoodCapturesAndPromos
+                | ordering::RtStage::YieldBadCaptures => {
+                    let pieces = pos.piece_info();
 
-            let (from, to, _) = mov.into();
-            let piece = pieces.get_piece(from);
+                    let (from, to, _) = mov.into();
+                    let piece = pieces.get_piece(from);
 
-            ordering::see(pieces, mov, self.color)
-                + ordering::psqt(self.phase, piece.piece_type(), from, to, self.color)
+                    ordering::see(pieces, mov, self.color)
+                        + ordering::psqt(self.phase, piece.piece_type(), from, to, self.color)
+                }
+                ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
+                ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {
+                    debug_assert!(
+                        pos.get_check_state() != CheckState::None,
+                        "we should never be generating quiets in qsearch if we're not in check"
+                    );
+                    let pieces = pos.piece_info();
+                    let (from, to, _) = mov.into();
+                    let piece = pieces.get_piece(from);
+                    ordering::psqt(self.phase, piece.piece_type(), from, to, self.color)
+                }
+                ordering::RtStage::Done => todo!("why are we scoring Done??"),
+            }
         }
     }
     let scorer = MoveScorer { color: P::COLOR, phase };
 
-    let mut move_picker = MovePicker::new(None);
-
-    // if in check, we need to generate all moves, otherwise we can skip quiets and
-    // promos
-    struct NonQuietOpt;
-    impl const move_iter::Options for NonQuietOpt {
-        #[inline(always)]
-        fn gen_quiets() -> bool {
-            false
-        }
-
-        #[inline(always)]
-        fn gen_promos() -> bool {
-            false
-        }
-
-        #[inline(always)]
-        fn legal() -> bool {
-            true
-        }
-    }
-
-    // recurse
-    while let Some((m, _)) = {
+    let mut move_picker = MovePicker::new_with_max_stage(
+        Move::null(),
+        RbSet::<Move, 2>::default(),
         if IN_CHECK {
-            move_picker.next::<AllLegal>(pos, &scorer)
+            RtStage::Done
         }
         else {
-            move_picker.next::<NonQuietOpt>(pos, &scorer)
-        }
-    } {
+            RtStage::YieldBadCaptures
+        },
+    );
+
+    // recurse
+    while let Some(m,) = move_picker.next(pos, &scorer) {
         // if !pos.is_legal_for::<P>(m) {
         //     continue;
         // }

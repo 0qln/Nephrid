@@ -57,6 +57,7 @@ pub fn captures_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitbo
 
 pub const trait Options {
     fn gen_quiets() -> bool;
+    fn gen_captures() -> bool;
     fn gen_promos() -> bool;
 
     /// Whether to generated moves have to be legal. If false, also generates
@@ -82,7 +83,7 @@ pub trait SomeCheck {}
 pub trait NoDoubleCheck: CheckState {}
 
 pub struct NoCheck;
-impl CheckState for NoCheck {
+impl const CheckState for NoCheck {
     #[inline(always)]
     fn check_state() -> RtCheckState {
         RtCheckState::None
@@ -91,7 +92,7 @@ impl CheckState for NoCheck {
 impl NoDoubleCheck for NoCheck {}
 
 pub struct SingleCheck;
-impl CheckState for SingleCheck {
+impl const CheckState for SingleCheck {
     #[inline(always)]
     fn check_state() -> RtCheckState {
         RtCheckState::Single
@@ -101,7 +102,7 @@ impl SomeCheck for SingleCheck {}
 impl NoDoubleCheck for SingleCheck {}
 
 struct DoubleCheck;
-impl CheckState for DoubleCheck {
+impl const CheckState for DoubleCheck {
     #[inline(always)]
     fn check_state() -> RtCheckState {
         RtCheckState::Double
@@ -171,9 +172,14 @@ pub mod opt {
     use super::Options;
 
     pub struct AllLegal;
-    impl Options for AllLegal {
+    impl const Options for AllLegal {
         #[inline(always)]
         fn gen_quiets() -> bool {
+            true
+        }
+
+        #[inline(always)]
+        fn gen_captures() -> bool {
             true
         }
 
@@ -184,9 +190,14 @@ pub mod opt {
     }
 
     pub struct AllPseudoLegal;
-    impl Options for AllPseudoLegal {
+    impl const Options for AllPseudoLegal {
         #[inline(always)]
         fn gen_quiets() -> bool {
+            true
+        }
+
+        #[inline(always)]
+        fn gen_captures() -> bool {
             true
         }
 
@@ -202,10 +213,15 @@ pub mod opt {
     }
 
     pub struct Captures;
-    impl Options for Captures {
+    impl const Options for Captures {
         #[inline(always)]
         fn gen_quiets() -> bool {
             false
+        }
+
+        #[inline(always)]
+        fn gen_captures() -> bool {
+            true
         }
 
         #[inline(always)]

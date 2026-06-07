@@ -51,8 +51,10 @@ where
                     }
                 };
 
-                let legal_captures = attacks & captures_targets::<C>(pos, color);
-                acc = map_captures(legal_captures, piece).try_fold(acc, &mut f)?;
+                if O::gen_captures() {
+                    let legal_captures = attacks & captures_targets::<C>(pos, color);
+                    acc = map_captures(legal_captures, piece).try_fold(acc, &mut f)?;
+                }
 
                 if O::gen_quiets() {
                     let legal_quiets = attacks & quiets_targets::<C>(pos, color);

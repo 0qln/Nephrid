@@ -38,8 +38,10 @@ impl<O: Options, C: NoDoubleCheck> FoldMoves<C, O> for Knight {
         knights.try_fold(init, |mut acc, piece| {
             let attacks = lookup_attacks(piece);
 
-            let captures = attacks & captures_targets::<C>(pos, color);
-            acc = map_captures(captures, piece).try_fold(acc, &mut f)?;
+            if O::gen_captures() {
+                let captures = attacks & captures_targets::<C>(pos, color);
+                acc = map_captures(captures, piece).try_fold(acc, &mut f)?;
+            }
 
             if O::gen_quiets() {
                 let quiets = attacks & quiets_targets::<C>(pos, color);

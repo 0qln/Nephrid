@@ -53,8 +53,10 @@ impl<O: Options> FoldMoves<NoCheck, O> for King {
                 lookup_attacks(king)
             };
 
-            let legal_captures = attacks & captures_targets::<NoCheck>(pos, color);
-            init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
+            if O::gen_captures() {
+                let legal_captures = attacks & captures_targets::<NoCheck>(pos, color);
+                init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
+            }
 
             if O::gen_quiets() {
                 let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, color);
@@ -93,8 +95,10 @@ impl<O: Options, C: SomeCheck> FoldMoves<C, O> for King {
                 lookup_attacks(king)
             };
 
-            let legal_captures = attacks & captures_targets::<NoCheck>(pos, color);
-            init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
+            if O::gen_captures() {
+                let legal_captures = attacks & captures_targets::<NoCheck>(pos, color);
+                init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
+            }
 
             if O::gen_quiets() {
                 let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, color);

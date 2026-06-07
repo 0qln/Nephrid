@@ -22,18 +22,14 @@ use crate::{
             },
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
-        move_iter::{
-            fold_legal_moves,
-            opt::AllLegal,
-            staged::{RtStage, Stage},
-        },
+        move_iter::fold_legal_moves,
         params::HceParams,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
         search::{
             id::node_types::*,
             limit::UciLimit,
-            ordering::{self, MovePicker, MoveScorer, ScoredMove},
+            ordering::{self, MovePicker, MoveScorer, RtStage, ScoredMove, Stage},
             quiesce::qsearch,
             score::{Cp, Score},
             strat::{
@@ -320,6 +316,7 @@ impl Searcher {
         let key = pos.get_key();
         let orig_alpha = alpha;
         let tt_entry = self.tt.get(key);
+        let killers = self.ss.entry(rel_ply).killers.clone();
 
         // tt-cutoff
         if !is_root
@@ -332,84 +329,27 @@ impl Searcher {
             return Score::new(entry.score);
         }
 
-        let tt_move = tt_entry.map(|e| e.mov);
+        let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
 
         // move gen
         let mut move_picker = if is_root {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
         else {
-            MovePicker::new(tt_move)
+            MovePicker::new(tt_move, killers.clone())
         };
 
-        struct Scorer<'a> {
-            tt_move: Option<Move>,
-            killers: &'a RbSet<Move, 2>,
-            color: Color,
-            phase: TaperValue,
-        }
-
-        impl MoveScorer for Scorer<'_> {
-            #[inline(always)]
-            fn score<S: Stage>(&self, pos: &Position, mov: Move) -> i32 {
-                match S::stage() {
-                    RtStage::HashMove => {
-                        debug_assert_eq!(Some(mov), self.tt_move);
-                        300_000
-                    }
-                    RtStage::AllLegal => {
-                        let pieces = pos.piece_info();
-
-                        // todo: currently see for quiet moves evaluates promotion values etc.
-                        // there is probably a better way to order
-                        // promotions than using see. then we can
-                        // skip see for quiets all together...
-
-                        let is_capture = mov.get_flag().is_capture();
-
-                        if is_capture {
-                            let see = ordering::see(pieces, mov, self.color);
-                            if see >= 0 {
-                                // good captures (210_000..)
-                                210_000 + see
-                            }
-                            else {
-                                // bad captures (100_000..)
-                                100_000 + see
-                            }
-                        }
-                        // T1 killers (..200_000)
-                        else if let Some(age) = self.killers._position(&mov) {
-                            200_000 - (age as i32 * 10_000)
-                        }
-                        else {
-                            let (from, to, _) = mov.into();
-                            let piece = pieces.get_piece(from);
-                            let piece_type = piece.piece_type();
-                            let see = ordering::see(pieces, mov, self.color);
-
-                            see + ordering::psqt(self.phase, piece_type, from, to, self.color)
-                        }
-                    }
-                    RtStage::Done => unreachable!(),
-                }
-            }
-        }
+        let scorer = Scorer {
+            tt_move,
+            killers,
+            color: P::COLOR,
+            phase,
+        };
 
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
-        while let Some((m, curr)) = move_picker.next::<AllLegal>(
-            pos,
-            // todo: the scorer is constructed here bc of lifetime issues with self.ss being used
-            // in recursive calls inside the loop. one could use GhostCell or something to proof to
-            // the compiler that self.ss.entry[current ply] is not modified in recursive calls.
-            &Scorer {
-                tt_move,
-                killers: &self.ss.entry(rel_ply).killers,
-                color: P::COLOR,
-                phase,
-            },
-        ) {
+        let mut curr = 0;
+        while let Some(m) = move_picker.next(pos, &scorer) {
             // generating plegals and then filtering hasn't show to be faster, maybe
             // optimize this more and then try again.
             // if !pos.is_legal_for::<P>(m) {
@@ -514,7 +454,7 @@ impl Searcher {
 
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
-                    if !m.get_flag().is_capture() && Some(m) != tt_move {
+                    if !m.get_flag().is_capture() && m != tt_move {
                         self.ss.entry_mut(rel_ply).killers._push(m);
                     }
 
@@ -525,6 +465,8 @@ impl Searcher {
             else {
                 // fail low
             }
+
+            curr += 1;
         }
 
         self.tt.insert(TTEntry {
@@ -699,6 +641,11 @@ impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
     pub fn position(&self, item: &T) -> Option<usize> {
         self.items.iter().position(|x| x == item)
     }
+
+    #[inline(always)]
+    pub fn as_slice(&self) -> &[T] {
+        &self.items
+    }
 }
 
 // todo: benchmark that this is actually faster...
@@ -722,6 +669,64 @@ impl<T: Default + Copy + Eq> RbSet<T, 2> {
         }
         else {
             None
+        }
+    }
+}
+
+pub struct Scorer {
+    pub tt_move: Move,
+    pub killers: RbSet<Move, 2>,
+    pub color: Color,
+    pub phase: TaperValue,
+}
+
+impl MoveScorer for Scorer {
+    #[inline(always)]
+    fn score<S: Stage>(&self, pos: &Position, mov: Move) -> i32 {
+        match S::stage() {
+            // no need to score hashmove, there's only 1
+            RtStage::YieldHashMove => {
+                debug_assert!(
+                    mov == self.tt_move,
+                    "hashmove stage should only yield the tt move"
+                );
+                0
+            }
+
+            // captures and promos, ordered by see value.
+            RtStage::GenerateCapturesAndPromos
+            | RtStage::YieldGoodCapturesAndPromos
+            | RtStage::YieldBadCaptures => {
+                // todo: currently see evaluates the promo values, but we don't need a whole
+                // see for quiet promos, maybe that can be optimized...
+                ordering::see(pos.piece_info(), mov, self.color)
+            }
+
+            // score killer moves by their age
+            RtStage::YieldKillers => {
+                let age = self.killers._position(&mov);
+                debug_assert!(
+                    age.is_some(),
+                    "move in killer stage should be a killer move"
+                );
+
+                // Safety: assert above
+                let age = unsafe { age.unwrap_unchecked() };
+
+                -(age as i32 * 10_000)
+            }
+
+            // score quiet moves by psqt diff
+            RtStage::GenerateQuiets | RtStage::YieldQuiets => {
+                let (from, to, _) = mov.into();
+                let pieces = pos.piece_info();
+                let piece = pieces.get_piece(from);
+                let piece_type = piece.piece_type();
+
+                ordering::psqt(self.phase, piece_type, from, to, self.color)
+            }
+
+            RtStage::Done => 0,
         }
     }
 }

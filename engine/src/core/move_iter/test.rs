@@ -191,3 +191,5 @@ pub fn plegal_with_filter_is_same_as_legal_test_5() {
         Depth::new(5),
     )
 }
+
+// todo: test that options work (i.e. if gen_captures is false no captures will be generated)

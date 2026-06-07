@@ -19,13 +19,13 @@ use crate::{
         color::{Color, ColorTokenizationError, Perspective, colors, perspectives},
         coordinates::{
             EpTargetSquareTokenizationError, File, Rank, RankParseError, Square,
-            castling::castling_rank, files, ranks, squares,
+            castling::castling_rank, files, pawn_utils, ranks, squares,
         },
         depth::Depth,
         r#move::{Move, MoveList, SAN, SanParseError, move_flags},
         move_iter::{
             bishop::{self, Bishop},
-            fold_legal_moves,
+            fold_legal_moves, fold_pseudo_legal_moves,
             knight::{self},
             pawn,
             rook::{self, Rook},
@@ -738,6 +738,117 @@ impl Position {
 
     pub fn has_legal_moves(&self) -> bool {
         fold_legal_moves(self, false, |_, _| ControlFlow::Break(true)).into_value()
+    }
+
+    /// Tests whether a (potentially corrupt) move is pseudo-legal in the
+    /// current position. Used to validate moves coming from the transposition
+    /// table or the killer-move heuristic before they are played, since
+    /// [`Self::is_legal`] assumes the move is already pseudo-legal. Playing a
+    /// move that is geometrically plausible but flag/target inconsistent (e.g.
+    /// a `QUIET`-flagged move onto an occupied enemy square) would corrupt the
+    /// board representation in `make_move`.
+    pub fn is_pseudo_legal(&self, mov: Move) -> bool {
+        if mov == Move::null() {
+            return false;
+        }
+
+        let (from, to, flag) = mov.into();
+        let us = self.get_turn();
+
+        // Use the slower but simpler pseudo-legal generator for uncommon move
+        // types (en passant, promotions and castling), mirroring Stockfish's
+        // `MoveList` fallback.
+        if !matches!(
+            flag,
+            move_flags::QUIET | move_flags::DOUBLE_PAWN_PUSH | move_flags::CAPTURE
+        ) {
+            let found = fold_pseudo_legal_moves(self, (), |_, m| {
+                if m == mov {
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            });
+            return found.is_break();
+        }
+
+        let pc = self.get_piece(from);
+
+        // The `from` square must hold a piece belonging to the side to move.
+        if pc.piece_type() == piece_type::NONE || pc.color() != us {
+            return false;
+        }
+
+        let nstm = !us;
+        let to_bb = Bitboard::from(to);
+
+        // The destination square cannot hold a friendly piece.
+        if !(self.get_color_bb(us) & to_bb).is_empty() {
+            return false;
+        }
+
+        // The capture flag must agree with the contents of the destination
+        // square. This is the crucial check: a `QUIET` move onto an enemy
+        // square (or a `CAPTURE` onto an empty one) would desync the piece
+        // counts in `make_move`.
+        let enemy_on_to = !(self.get_color_bb(nstm) & to_bb).is_empty();
+        if flag.is_capture() != enemy_on_to {
+            return false;
+        }
+
+        if pc.piece_type() == piece_type::PAWN {
+            // Promotions are handled by the fallback above, so the destination
+            // cannot be on the last rank.
+            let last_rank = match us {
+                colors::WHITE => ranks::_8,
+                colors::BLACK => ranks::_1,
+                _ => unreachable!(),
+            };
+            if !(Bitboard::from(last_rank) & to_bb).is_empty() {
+                return false;
+            }
+
+            let from_bb = Bitboard::from(from);
+            match flag {
+                move_flags::CAPTURE => {
+                    if (pawn::lookup_attacks(from, us) & to_bb).is_empty() {
+                        return false;
+                    }
+                }
+                move_flags::QUIET => {
+                    // Single push; the destination is already known to be empty.
+                    if pawn_utils::forward(from_bb, pawn_utils::single_step(us)) != to_bb {
+                        return false;
+                    }
+                }
+                move_flags::DOUBLE_PAWN_PUSH => {
+                    let single = pawn_utils::forward(from_bb, pawn_utils::single_step(us));
+                    let double = pawn_utils::forward(from_bb, pawn_utils::double_step(us));
+                    if double != to_bb
+                        || (Bitboard::from(pawn_utils::start_rank(us)) & from_bb).is_empty()
+                        || !(self.get_occupancy() & single).is_empty()
+                    {
+                        return false;
+                    }
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            let occ = self.get_occupancy();
+            let attacks = match pc.piece_type() {
+                piece_type::KNIGHT => knight::lookup_attacks(from),
+                piece_type::BISHOP => Bishop::lookup_attacks(from, occ),
+                piece_type::ROOK => Rook::lookup_attacks(from, occ),
+                piece_type::QUEEN => Queen::lookup_attacks(from, occ),
+                piece_type::KING => king::lookup_attacks(from),
+                _ => return false,
+            };
+            if (attacks & to_bb).is_empty() {
+                return false;
+            }
+        }
+
+        true
     }
 
     pub fn is_legal(&self, mov: Move) -> bool {

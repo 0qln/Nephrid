@@ -350,17 +350,19 @@ where
     if !safe_pawns.is_empty() {
         type P = PawnMoves<variants::Unpinned>;
 
-        acc = apply!(
-            acc,
-            safe_pawns,
-            (),
-            P::capture::<C, { compass_rose::WEST_C }, T>,
-            P::capture::<C, { compass_rose::EAST_C }, T>,
-            P::ep::<C, { compass_rose::WEST_C }>,
-            P::ep::<C, { compass_rose::EAST_C }>,
-            P::promo_capture::<C, { compass_rose::WEST_C }, T>,
-            P::promo_capture::<C, { compass_rose::EAST_C }, T>
-        );
+        if O::gen_captures() {
+            acc = apply!(
+                acc,
+                safe_pawns,
+                (),
+                P::capture::<C, { compass_rose::WEST_C }, T>,
+                P::capture::<C, { compass_rose::EAST_C }, T>,
+                P::ep::<C, { compass_rose::WEST_C }>,
+                P::ep::<C, { compass_rose::EAST_C }>,
+                P::promo_capture::<C, { compass_rose::WEST_C }, T>,
+                P::promo_capture::<C, { compass_rose::EAST_C }, T>
+            );
+        }
 
         if O::gen_promos() {
             acc = apply!(acc, safe_pawns, (), P::promo::<C, T>);
@@ -380,17 +382,19 @@ where
     if !pinned_pawns.is_empty() {
         type P<'a> = PawnMoves<variants::Pinned<'a>>;
 
-        acc = apply!(
-            acc,
-            pinned_pawns,
-            pos,
-            P::capture::<C, { compass_rose::WEST_C }, T>,
-            P::capture::<C, { compass_rose::EAST_C }, T>,
-            P::ep::<C, { compass_rose::WEST_C }>,
-            P::ep::<C, { compass_rose::EAST_C }>,
-            P::promo_capture::<C, { compass_rose::WEST_C }, T>,
-            P::promo_capture::<C, { compass_rose::EAST_C }, T>
-        );
+        if O::gen_captures() {
+            acc = apply!(
+                acc,
+                pinned_pawns,
+                pos,
+                P::capture::<C, { compass_rose::WEST_C }, T>,
+                P::capture::<C, { compass_rose::EAST_C }, T>,
+                P::ep::<C, { compass_rose::WEST_C }>,
+                P::ep::<C, { compass_rose::EAST_C }>,
+                P::promo_capture::<C, { compass_rose::WEST_C }, T>,
+                P::promo_capture::<C, { compass_rose::EAST_C }, T>
+            );
+        }
 
         if O::gen_promos() {
             // not generating, because pinned pawns cannot make a quiet
