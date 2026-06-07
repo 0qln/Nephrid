@@ -22,7 +22,11 @@ use crate::{
             },
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
-        move_iter::{fold_legal_moves, opt},
+        move_iter::{
+            fold_legal_moves,
+            opt::AllLegal,
+            staged::{RtStage, Stage},
+        },
         params::HceParams,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
@@ -331,34 +335,40 @@ impl Searcher {
         let tt_move = tt_entry.map(|e| e.mov);
 
         // move gen
-        let move_picker = if is_root {
+        let mut move_picker = if is_root {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
         else {
-            struct Scorer<'a> {
-                pieces: &'a PieceInfo,
-                tt_move: Option<Move>,
-                killers: &'a RbSet<Move, 2>,
-                color: Color,
-                phase: TaperValue,
-            }
+            MovePicker::new(tt_move)
+        };
 
-            impl MoveScorer for Scorer<'_> {
-                #[inline(always)]
-                fn score(&self, mov: Move) -> i32 {
-                    if Some(mov) == self.tt_move {
+        struct Scorer<'a> {
+            tt_move: Option<Move>,
+            killers: &'a RbSet<Move, 2>,
+            color: Color,
+            phase: TaperValue,
+        }
+
+        impl MoveScorer for Scorer<'_> {
+            #[inline(always)]
+            fn score<S: Stage>(&self, pos: &Position, mov: Move) -> i32 {
+                match S::stage() {
+                    RtStage::HashMove => {
+                        debug_assert_eq!(Some(mov), self.tt_move);
                         300_000
                     }
-                    else {
-                        // todo: currently see for quiet moves evaluates promotion values etc. there
-                        // is probably a better way to order promotions than
-                        // using see. then we can skip see for quiets all
-                        // together...
+                    RtStage::AllLegal => {
+                        let pieces = pos.piece_info();
+
+                        // todo: currently see for quiet moves evaluates promotion values etc.
+                        // there is probably a better way to order
+                        // promotions than using see. then we can
+                        // skip see for quiets all together...
 
                         let is_capture = mov.get_flag().is_capture();
 
                         if is_capture {
-                            let see = ordering::see(self.pieces, mov, self.color);
+                            let see = ordering::see(pieces, mov, self.color);
                             if see >= 0 {
                                 // good captures (210_000..)
                                 210_000 + see
@@ -374,30 +384,34 @@ impl Searcher {
                         }
                         else {
                             let (from, to, _) = mov.into();
-                            let piece = self.pieces.get_piece(from);
+                            let piece = pieces.get_piece(from);
                             let piece_type = piece.piece_type();
-                            let see = ordering::see(self.pieces, mov, self.color);
+                            let see = ordering::see(pieces, mov, self.color);
 
                             see + ordering::psqt(self.phase, piece_type, from, to, self.color)
                         }
                     }
+                    RtStage::Done => unreachable!(),
                 }
             }
+        }
 
-            let scorer = Scorer {
-                pieces,
+        let mut best_score = Score::NEG_INF;
+        let mut best_move = Move::null();
+        while let Some((m, curr)) = move_picker.next::<AllLegal>(
+            pos,
+            // todo: the scorer is constructed here bc of lifetime issues with self.ss being used
+            // in recursive calls inside the loop. one could use GhostCell or something to proof to
+            // the compiler that self.ss.entry[current ply] is not modified in recursive calls.
+            &Scorer {
                 tt_move,
                 killers: &self.ss.entry(rel_ply).killers,
                 color: P::COLOR,
                 phase,
-            };
-
-            MovePicker::from_position::<opt::All, _>(pos, scorer)
-        };
-
-        let mut best_score = Score::NEG_INF;
-        let mut best_move = Move::null();
-        for (m, curr) in move_picker {
+            },
+        ) {
+            // generating plegals and then filtering hasn't show to be faster, maybe
+            // optimize this more and then try again.
             // if !pos.is_legal_for::<P>(m) {
             //     continue;
             // }

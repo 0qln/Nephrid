@@ -1,4 +1,4 @@
-use std::{cmp::min, ops::ControlFlow};
+use std::cmp::min;
 
 use crate::{
     core::{
@@ -8,7 +8,10 @@ use crate::{
         depth::Depth,
         eval::hce::{TaperValue, piece_score, tapered_psqt},
         r#move::{MAX_UNREACHABLE_MOVES, Move},
-        move_iter::{self, fold_moves},
+        move_iter::{
+            self,
+            staged::{MoveGenExhausted, MoveGenerator, RtStage, Stage},
+        },
         piece::{PieceType, PromoPieceType, piece_type},
         position::{PieceInfo, Position},
     },
@@ -105,8 +108,8 @@ pub fn psqt(phase: TaperValue, piece: PieceType, from: Square, to: Square, color
 
 #[derive(Debug, Clone)]
 pub struct ScoredMove {
-    score: i32,
-    mov: Move,
+    pub score: i32,
+    pub mov: Move,
 }
 
 impl ScoredMove {
@@ -132,11 +135,12 @@ impl ScoredMove {
 }
 
 pub trait MoveScorer {
-    fn score(&self, mov: Move) -> i32;
+    fn score<S: Stage>(&self, pos: &Position, mov: Move) -> i32;
 }
 
 #[derive(Debug)]
 pub struct MovePicker {
+    move_gen: MoveGenerator,
     moves: List<{ MAX_UNREACHABLE_MOVES }, ScoredMove>,
     curr: usize,
 }
@@ -149,56 +153,66 @@ impl MovePicker {
             moves.push(item);
         }
 
-        Self { moves, curr: 0 }
-    }
-
-    pub fn from_position<O: move_iter::Options, S: MoveScorer>(pos: &Position, scorer: S) -> Self {
-        let mut moves = List::new();
-
-        _ = fold_moves::<O, _, _, _>(pos, (), |_, m| {
-            moves.push(ScoredMove::new(m, 0));
-            ControlFlow::Continue::<(), ()>(())
-        });
-
-        // generate the see score outside of the move generation and the sorting, such
-        // that it isn't computed for each comparison and we don't distrurb cache
-        // locality.
-        for &mut ScoredMove { mov, ref mut score } in moves.as_mut_slice() {
-            *score = scorer.score(mov);
+        Self {
+            move_gen: MoveGenerator::new_in_stage(RtStage::Done),
+            moves,
+            curr: 0,
         }
-
-        Self { moves, curr: 0 }
     }
-}
 
-impl Iterator for MovePicker {
-    type Item = (Move, usize);
+    pub fn new(hash_move: Option<Move>) -> Self {
+        let moves = List::new();
+
+        Self {
+            move_gen: if let Some(hash_move) = hash_move && hash_move != Move::null() {
+                MoveGenerator::new_with_hashmove(hash_move)
+            }
+            else {
+                MoveGenerator::new_in_stage(RtStage::AllLegal)
+            },
+            moves,
+            curr: 0,
+        }
+    }
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        let len = self.moves.len();
-        if self.curr >= len {
-            return None;
-        }
-
-        // Partial selection sort: find the highest-scored move in curr..len and swap it
-        // into position.
-        let slice = self.moves.as_mut_slice();
-        let mut best_idx = self.curr;
-        for i in (self.curr + 1)..len {
-            if slice[i].score() > slice[best_idx].score() {
-                best_idx = i;
+    pub fn next<O: move_iter::Options>(
+        &mut self,
+        pos: &Position,
+        scorer: &impl MoveScorer,
+    ) -> Option<(Move, usize)> {
+        // try to generate new moves if we've exhausted the staged move gen
+        while self.curr >= self.moves.len() {
+            if let Err(MoveGenExhausted) = self.move_gen.next::<O>(pos, scorer, &mut self.moves) {
+                // move gen is done, there are no more moves
+                return None;
             }
         }
-        slice.swap(self.curr, best_idx);
+
+        let slice = self.moves.as_mut_subslice(self.curr..);
+        partial_sort_desc(slice);
 
         let i = self.curr;
-        let m = slice[i].mov();
+        let m = slice[0].mov();
 
         self.curr += 1;
 
         Some((m, i))
     }
+}
+
+/// Brings the highest score to the front of the slice
+#[inline]
+pub fn partial_sort_desc(slice: &mut [ScoredMove]) {
+    let len = slice.len();
+    let mut best_idx = 0;
+    for i in 1..len {
+        if slice[i].score() > slice[best_idx].score() {
+            best_idx = i;
+        }
+    }
+
+    slice.swap(0, best_idx);
 }
 
 #[cfg(test)]

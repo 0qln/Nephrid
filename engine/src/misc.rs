@@ -5,7 +5,7 @@ use std::{
     iter,
     marker::PhantomData,
     mem::{self, ManuallyDrop, MaybeUninit},
-    ops::{Bound, IntoBounds},
+    ops::{Bound, IntoBounds, RangeBounds},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -391,6 +391,34 @@ impl<const N: usize, T> List<N, T> {
         // SAFETY: We only cast the slice up to `self.len`, which we
         // guarantee has been initialized via the `push` method.
         unsafe { slice::from_raw_parts_mut(self.items.as_mut_ptr().cast(), self.len) }
+    }
+
+    #[inline]
+    pub fn as_mut_subslice<R: RangeBounds<usize>>(&mut self, range: R) -> &mut [T] {
+        // Resolve the exact start index
+        let start = match range.start_bound() {
+            Bound::Included(&s) => s,
+            Bound::Excluded(&s) => s + 1,
+            Bound::Unbounded => 0,
+        };
+
+        // Resolve the exact end index
+        let end = match range.end_bound() {
+            Bound::Included(&e) => e + 1,
+            Bound::Excluded(&e) => e,
+            Bound::Unbounded => self.len,
+        };
+
+        debug_assert!(start <= end, "range start must be <= end");
+        debug_assert!(end <= self.len, "range end out of bounds");
+
+        // SAFETY: The range is within [0, self.len). The pointer arithmetic yields a
+        // valid pointer to the first element, and the length is exactly the number of
+        // contiguous initialized elements.
+        unsafe {
+            let ptr = self.items.as_mut_ptr().cast::<T>().add(start);
+            slice::from_raw_parts_mut(ptr, end - start)
+        }
     }
 
     /// Returns a slice of the initialized elements.

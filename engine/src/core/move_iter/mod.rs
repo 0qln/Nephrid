@@ -20,6 +20,7 @@ pub mod pawn;
 pub mod queen;
 pub mod rook;
 pub mod sliding_piece;
+pub mod staged;
 
 #[cfg(test)]
 mod test;
@@ -169,8 +170,8 @@ where
 pub mod opt {
     use super::Options;
 
-    pub struct All;
-    impl Options for All {
+    pub struct AllLegal;
+    impl Options for AllLegal {
         #[inline(always)]
         fn gen_quiets() -> bool {
             true
@@ -220,7 +221,7 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    fold_moves::<opt::All, B, F, R>(pos, init, f)
+    fold_moves::<opt::AllLegal, B, F, R>(pos, init, f)
 }
 
 #[inline]

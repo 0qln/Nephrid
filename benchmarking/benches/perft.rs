@@ -44,11 +44,11 @@ impl<T1: Display, T2: Display> Display for Pair<T1, T2> {
 }
 
 fn perft(c: &mut Criterion) {
-    perft_benches::<opt::All>(c, "perft", include_str!("../resources/positions.csv"))
+    perft_benches::<opt::AllLegal>(c, "perft", include_str!("../resources/positions.csv"))
 }
 
 fn perft_pawn(c: &mut Criterion) {
-    perft_benches::<opt::All>(
+    perft_benches::<opt::AllLegal>(
         c,
         "perft_pawn",
         include_str!("../resources/pawn_positions.csv"),
@@ -56,7 +56,7 @@ fn perft_pawn(c: &mut Criterion) {
 }
 
 fn perft_rook(c: &mut Criterion) {
-    perft_benches::<opt::All>(
+    perft_benches::<opt::AllLegal>(
         c,
         "perft_rook",
         include_str!("../resources/rook_positions.csv"),

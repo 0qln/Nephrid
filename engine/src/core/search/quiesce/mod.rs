@@ -6,12 +6,9 @@ use crate::core::{
         hce::{TaperValue, piece_score},
     },
     r#move::Move,
-    move_iter::{
-        self,
-        opt::{self},
-    },
+    move_iter::{self, opt::AllLegal, staged::Stage},
     piece::{PromoPieceType, piece_type},
-    position::{CheckState, PieceInfo, Position},
+    position::{CheckState, Position},
     search::{
         ordering::{self, MovePicker},
         score::Score,
@@ -23,12 +20,29 @@ pub trait QSearchParams {
     fn delta_pruning_threshold(&self) -> TaperValue;
 }
 
+pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
+    pos: &mut Position,
+    alpha: Score<P>,
+    beta: Score<P>,
+    params: X,
+    static_evaluator: &S,
+    depth: Depth,
+) -> Score<P> {
+    let in_check = pos.get_check_state() != CheckState::None;
+    if in_check {
+        _qsearch::<true, _, _, _>(pos, alpha, beta, params, static_evaluator, depth)
+    }
+    else {
+        _qsearch::<false, _, _, _>(pos, alpha, beta, params, static_evaluator, depth)
+    }
+}
+
 /// # Q-Search
 ///
 /// Make the position quiet.
 ///
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
-pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
+fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
     pos: &mut Position,
     mut alpha: Score<P>,
     beta: Score<P>,
@@ -36,8 +50,6 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
     static_evaluator: &S,
     depth: Depth,
 ) -> Score<P> {
-    let in_check = pos.get_check_state() != CheckState::None;
-
     let mut best_value = Score::NEG_INF;
 
     let stm = P::COLOR;
@@ -50,7 +62,7 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
     }
 
     // stand pad if not in check
-    if !in_check {
+    if !IN_CHECK {
         best_value = static_eval();
 
         if best_value >= beta {
@@ -62,62 +74,60 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
     }
 
     // move gen
-    struct MoveScorer<'a> {
-        pieces: &'a PieceInfo,
+    struct MoveScorer {
         color: Color,
         phase: TaperValue,
     }
-    impl ordering::MoveScorer for MoveScorer<'_> {
-        fn score(&self, mov: Move) -> i32 {
-            let (from, to, _) = mov.into();
-            let piece = self.pieces.get_piece(from);
+    impl ordering::MoveScorer for MoveScorer {
+        fn score<S: Stage>(&self, pos: &Position, mov: Move) -> i32 {
+            let pieces = pos.piece_info();
 
-            ordering::see(self.pieces, mov, self.color)
+            let (from, to, _) = mov.into();
+            let piece = pieces.get_piece(from);
+
+            ordering::see(pieces, mov, self.color)
                 + ordering::psqt(self.phase, piece.piece_type(), from, to, self.color)
         }
     }
+    let scorer = MoveScorer { color: P::COLOR, phase };
 
-    let move_scorer = MoveScorer {
-        pieces: pos.piece_info(),
-        color: P::COLOR,
-        phase,
-    };
+    let mut move_picker = MovePicker::new(None);
 
     // if in check, we need to generate all moves, otherwise we can skip quiets and
     // promos
-    let move_picker = if in_check {
-        MovePicker::from_position::<opt::All, _>(pos, move_scorer)
-    }
-    else {
-        struct MoveGenOpt;
-        impl const move_iter::Options for MoveGenOpt {
-            #[inline(always)]
-            fn gen_quiets() -> bool {
-                false
-            }
-
-            #[inline(always)]
-            fn gen_promos() -> bool {
-                false
-            }
-
-            #[inline(always)]
-            fn legal() -> bool {
-                true
-            }
+    struct NonQuietOpt;
+    impl const move_iter::Options for NonQuietOpt {
+        #[inline(always)]
+        fn gen_quiets() -> bool {
+            false
         }
 
-        MovePicker::from_position::<MoveGenOpt, _>(pos, move_scorer)
-    };
+        #[inline(always)]
+        fn gen_promos() -> bool {
+            false
+        }
+
+        #[inline(always)]
+        fn legal() -> bool {
+            true
+        }
+    }
 
     // recurse
-    for (m, _) in move_picker {
+    while let Some((m, _)) = {
+        if IN_CHECK {
+            move_picker.next::<AllLegal>(pos, &scorer)
+        }
+        else {
+            move_picker.next::<NonQuietOpt>(pos, &scorer)
+        }
+    } {
         // if !pos.is_legal_for::<P>(m) {
         //     continue;
         // }
 
         // delta pruning
-        if !in_check && phase < params.delta_pruning_threshold() {
+        if !IN_CHECK && phase < params.delta_pruning_threshold() {
             let value_bonus = PromoPieceType::try_from(m.get_flag())
                 .ok()
                 .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
@@ -138,14 +148,28 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
 
         pos.make_move_for::<P>(m);
 
-        let score = !qsearch(
-            pos,
-            !beta,
-            !alpha,
-            params.clone(),
-            static_evaluator,
-            depth - 1,
-        );
+        let in_check = pos.get_check_state() != CheckState::None;
+
+        let score = if in_check {
+            !_qsearch::<true, _, _, _>(
+                pos,
+                !beta,
+                !alpha,
+                params.clone(),
+                static_evaluator,
+                depth - 1,
+            )
+        }
+        else {
+            !_qsearch::<false, _, _, _>(
+                pos,
+                !beta,
+                !alpha,
+                params.clone(),
+                static_evaluator,
+                depth - 1,
+            )
+        };
 
         pos.unmake_move_for::<P>(m);
 

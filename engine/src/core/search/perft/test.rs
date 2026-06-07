@@ -36,7 +36,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
             .unwrap();
 
             let list_filtered = list;
-            _ = fold_moves::<opt::All, _, _, _>(pos, (), |_, m| {
+            _ = fold_moves::<opt::AllLegal, _, _, _>(pos, (), |_, m| {
                 if m.get_flag().is_capture() {
                     list_filtered.push(m);
                 }

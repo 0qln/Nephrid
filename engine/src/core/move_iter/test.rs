@@ -22,7 +22,7 @@ fn test_pos(fen: &str, depth: Depth, expected: u64) {
     let limit = UciLimit { depth, ..Default::default() };
     let debug = DebugMode::default();
     let ct = CancellationToken::new();
-    let result = search::perft::perft::<opt::All>(&mut pos, &limit, ct, debug);
+    let result = search::perft::perft::<opt::AllLegal>(&mut pos, &limit, ct, debug);
     assert_eq!(expected, result);
 }
 
@@ -94,7 +94,7 @@ fn plegal_with_filter_is_same_as_legal(fen: &str, depth: Depth) {
         |_, _, _, _| {},
         move |pos, list| {
             let list_legal = list;
-            fold_moves::<opt::All, _, _, _>(pos, (), |_, m| {
+            fold_moves::<opt::AllLegal, _, _, _>(pos, (), |_, m| {
                 list_legal.push(m);
                 ControlFlow::Continue::<(), ()>(())
             })

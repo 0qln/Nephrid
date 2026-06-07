@@ -96,7 +96,7 @@ impl SearchWorker for IdWorker {
                     perft::<opt::Captures>(&mut pos, &limit, ct, debug);
                 }
                 else {
-                    perft::<opt::All>(&mut pos, &limit, ct, debug);
+                    perft::<opt::AllLegal>(&mut pos, &limit, ct, debug);
                 }
                 Ok(())
             }
@@ -180,7 +180,7 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                     perft::<opt::Captures>(&mut pos, &limit, ct, debug);
                 }
                 else {
-                    perft::<opt::All>(&mut pos, &limit, ct, debug);
+                    perft::<opt::AllLegal>(&mut pos, &limit, ct, debug);
                 }
                 Ok(())
             }
