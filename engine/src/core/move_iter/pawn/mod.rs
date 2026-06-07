@@ -392,9 +392,9 @@ where
             P::promo_capture::<C, { compass_rose::EAST_C }, T>
         );
 
-        // todo: pinned pawns cannot make a quiet promoting move, no?
         if O::gen_promos() {
-            acc = apply!(acc, pinned_pawns, pos, P::promo::<C, T>);
+            // not generating, because pinned pawns cannot make a quiet
+            // promoting move
         }
 
         if O::gen_quiets() {
