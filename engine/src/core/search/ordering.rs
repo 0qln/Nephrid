@@ -5,7 +5,7 @@ use std::ops::ControlFlow;
 use crate::{
     core::{
         bitboard::Bitboard,
-        color::Color,
+        color::{Color, Perspective, colors, perspectives},
         coordinates::{Rank, Square, ranks},
         depth::Depth,
         eval::hce::{TaperValue, piece_score, tapered_psqt},
@@ -191,6 +191,18 @@ impl MovePicker {
 
     #[inline]
     pub fn next(&mut self, pos: &Position, scorer: &impl MoveScorer) -> Option<Move> {
+        match pos.get_turn() {
+            colors::WHITE => self.next_for::<perspectives::White>(pos, scorer),
+            colors::BLACK => self.next_for::<perspectives::Black>(pos, scorer),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn next_for<P: Perspective>(
+        &mut self,
+        pos: &Position,
+        scorer: &impl MoveScorer,
+    ) -> Option<Move> {
         // try to generate new moves if we've exhausted the current slice. `curr` is an
         // absolute index into the generator's buffer.
         while self.curr >= self.slice.end {
@@ -198,7 +210,7 @@ impl MovePicker {
                 // we'd have to generate moves past the max stage
                 return None;
             }
-            match self.move_gen.next(pos, scorer) {
+            match self.move_gen.next_for::<P>(pos, scorer) {
                 Err(MoveGenExhausted) => {
                     // move gen is done, there are no more moves
                     return None;
@@ -391,7 +403,7 @@ impl MoveGenerator {
 
     /// Pushes the next stage of moves into the list. Returns the new slice that
     /// could be consumed. slice.
-    pub fn next(
+    pub fn next_for<P: Perspective>(
         &mut self,
         pos: &Position,
         scorer: &impl MoveScorer,
@@ -399,8 +411,8 @@ impl MoveGenerator {
         match self.stage {
             RtStage::YieldHashMove => {
                 if self.hash_move != Move::null()
-                    && pos.is_pseudo_legal(self.hash_move)
-                    && pos.is_legal(self.hash_move)
+                    && pos.is_pseudo_legal_for::<P>(self.hash_move)
+                    && pos.is_legal_for::<P>(self.hash_move)
                 {
                     let score = scorer.score::<stages::YieldHashMove>(pos, self.hash_move);
                     self.buf
@@ -480,7 +492,9 @@ impl MoveGenerator {
                         "Killers should not be captures"
                     );
 
-                    if killer != Move::null() && pos.is_pseudo_legal(killer) && pos.is_legal(killer)
+                    if killer != Move::null()
+                        && pos.is_pseudo_legal_for::<P>(killer)
+                        && pos.is_legal_for::<P>(killer)
                     {
                         let s = scorer.score::<stages::YieldKillers>(pos, killer);
                         self.buf.push(ScoredMove::new(killer, scores::KILLER + s));

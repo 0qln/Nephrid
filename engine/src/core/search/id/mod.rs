@@ -349,7 +349,7 @@ impl Searcher {
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
         let mut curr = 0;
-        while let Some(m) = move_picker.next(pos, &scorer) {
+        while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
             // generating plegals and then filtering hasn't show to be faster, maybe
             // optimize this more and then try again.
             // if !pos.is_legal_for::<P>(m) {

@@ -124,7 +124,7 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
     );
 
     // recurse
-    while let Some(m,) = move_picker.next(pos, &scorer) {
+    while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
         // if !pos.is_legal_for::<P>(m) {
         //     continue;
         // }
