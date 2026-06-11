@@ -1,14 +1,15 @@
 use std::{hint::black_box, time::Duration};
 
 use criterion::{
-    BatchSize, BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main, measurement::WallTime
+    BatchSize, BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main,
+    measurement::WallTime,
 };
 use engine::core::{
     color::{Perspective, colors, perspectives},
     eval::hce::TaperValue,
+    r#move::Move,
     move_iter::sliding_piece::magics,
     position::Position,
-    r#move::Move,
     search::{
         id::{RbSet, Scorer},
         ordering::{MoveGenerator, MoveScorer, RtStage},
@@ -16,11 +17,12 @@ use engine::core::{
     zobrist,
 };
 
-/// Builds a `MoveGenerator` already advanced up to (but not including) `target`,
-/// so that the next `next_for` call enters the `target` stage.
+/// Builds a `MoveGenerator` already advanced up to (but not including)
+/// `target`, so that the next `next_for` call enters the `target` stage.
 ///
 /// Each `next_for` call advances the generator by exactly one stage, so priming
-/// requires `target as u8` calls starting from the initial `YieldHashMove` stage.
+/// requires `target as u8` calls starting from the initial `YieldHashMove`
+/// stage.
 fn primed_generator<P: Perspective>(
     pos: &Position,
     scorer: &impl MoveScorer,
@@ -106,5 +108,9 @@ pub fn generate_captures_and_promos(c: &mut Criterion) {
     );
 }
 
-criterion_group!(benches, generate_captures_and_promos);
+pub fn generate_quiets(c: &mut Criterion) {
+    bench_positions(c, "generate_quiets", RtStage::GenerateQuiets);
+}
+
+criterion_group!(benches, generate_captures_and_promos, generate_quiets);
 criterion_main!(benches);

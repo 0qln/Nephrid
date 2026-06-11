@@ -441,7 +441,11 @@ impl Searcher {
             if is_root {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
-                self.root_stats.as_mut_slice()[curr].set_score(score.0.try_into().unwrap_or_else(|_| todo!("TODO: compress the eval scores into move scores")));
+                self.root_stats.as_mut_slice()[curr].set_score(
+                    score.0.try_into().unwrap_or_else(|_| {
+                        todo!("TODO: compress the eval scores into move scores")
+                    }),
+                );
             }
 
             if score > best_score {
@@ -670,6 +674,11 @@ impl<T: Default + Copy + Eq> RbSet<T, 2> {
         else {
             None
         }
+    }
+
+    #[inline(always)]
+    pub fn _is_empty(&self) -> bool {
+        self.items[0] == T::default() && self.items[1] == T::default()
     }
 }
 

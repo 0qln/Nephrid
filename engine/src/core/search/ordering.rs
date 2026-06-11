@@ -413,6 +413,22 @@ impl MoveGenerator {
         self.stage
     }
 
+    #[inline(never)]
+    fn generate_moves<const HASH: bool, const KILLERS: bool, O: move_iter::Options>(
+        &mut self,
+        pos: &Position,
+    ) {
+        _ = fold_moves::<O, _, _, _>(pos, (), |_, m| {
+            let is_hash = HASH && m == self.hash_move;
+            let is_killer = KILLERS && self.killers._position(&m).is_some();
+
+            if !is_hash && !is_killer {
+                self.buf.push(ScoredMove::new(m, 0));
+            }
+            ControlFlow::Continue::<(), _>(())
+        });
+    }
+
     /// Pushes the next stage of moves into the list. Returns the new slice that
     /// could be consumed. slice.
     pub fn next_for<P: Perspective>(
@@ -440,17 +456,15 @@ impl MoveGenerator {
             RtStage::GenerateCapturesAndPromos => {
                 let start = self.buf.len();
 
-                // todo: if the killer is Move::null() then we don't need to check inside this
-                // loop, same with the killers below
-                _ = fold_moves::<GenerateCapturesAndPromos, _, _, _>(pos, (), |_, m| {
-                    // todo: this could be slow... maybe check this somewhere else?
-                    if m != self.hash_move && self.killers._position(&m).is_none() {
-                        // todo: do not filter here, just filter before yielding and don't generate
-                        // a second time below
-                        self.buf.push(ScoredMove::new(m, 0));
-                    }
-                    ControlFlow::Continue::<(), _>(())
-                });
+                let has_hashmove = self.hash_move != Move::null();
+                let has_killers = !self.killers._is_empty();
+                type Opts = GenerateCapturesAndPromos;
+                match (has_hashmove, has_killers) {
+                    (true, true) => self.generate_moves::<true, true, Opts>(pos),
+                    (true, false) => self.generate_moves::<true, false, Opts>(pos),
+                    (false, true) => self.generate_moves::<false, true, Opts>(pos),
+                    (false, false) => self.generate_moves::<false, false, Opts>(pos),
+                }
 
                 let end = self.buf.len();
                 let num = end - start;
@@ -530,15 +544,15 @@ impl MoveGenerator {
             RtStage::GenerateQuiets => {
                 let start = self.buf.len();
 
-                _ = fold_moves::<GenerateQuiets, _, _, _>(pos, (), |_, m| {
-                    // todo: this could be slow... maybe check this somewhere else?
-                    if m != self.hash_move && self.killers._position(&m).is_none() {
-                        // todo: do not filter here, just filter before yielding and don't generate
-                        // a second time below
-                        self.buf.push(ScoredMove::new(m, 0));
-                    }
-                    ControlFlow::Continue::<(), _>(())
-                });
+                let has_hashmove = self.hash_move != Move::null();
+                let has_killers = !self.killers._is_empty();
+                type Opts = GenerateQuiets;
+                match (has_hashmove, has_killers) {
+                    (true, true) => self.generate_moves::<true, true, Opts>(pos),
+                    (true, false) => self.generate_moves::<true, false, Opts>(pos),
+                    (false, true) => self.generate_moves::<false, true, Opts>(pos),
+                    (false, false) => self.generate_moves::<false, false, Opts>(pos),
+                }
 
                 let end = self.buf.len();
 
