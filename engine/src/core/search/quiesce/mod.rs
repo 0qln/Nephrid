@@ -10,7 +10,7 @@ use crate::core::{
     position::{CheckState, Position},
     search::{
         id::RbSet,
-        ordering::{self, MovePicker, RtStage, Stage},
+        ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::Score,
     },
 };
@@ -79,7 +79,7 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
         phase: TaperValue,
     }
     impl ordering::MoveScorer for MoveScorer {
-        fn score<S: Stage>(&self, pos: &Position, mov: Move) -> i32 {
+        fn score<S: Stage>(&self, pos: &Position, mov: Move) -> MoveScore {
             match S::stage() {
                 ordering::RtStage::YieldHashMove => {
                     todo!("we don't yet have a hashmove in qsearch")

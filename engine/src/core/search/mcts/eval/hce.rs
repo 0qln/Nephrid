@@ -173,8 +173,8 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             let from = mov.get_from();
             let to = mov.get_to();
             let piece = pos.get_piece(from).piece_type();
-            let score = ordering::psqt(phase, piece, from, to, color)
-                + ordering::see(pos, mov, color)
+            let score = ordering::psqt(phase, piece, from, to, color) as i32
+                + ordering::see(pos, mov, color) as i32
                 + PolicyInput::check_bonus(phase, pos, color, mov)
                 + PolicyInput::meta(pos, mov, state);
 

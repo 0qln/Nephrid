@@ -22,7 +22,7 @@ use crate::{
 };
 
 /// Static Exchange Evaluation (SEE) for captures.
-pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> i32 {
+pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
     let to = mov.get_to();
     let from = mov.get_from();
 
@@ -98,26 +98,38 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> i32 {
     }
 
     gain[0]
+        .try_into()
+        .unwrap_or_else(|_| todo!("TODO: how to handle this"))
 }
 
-pub fn psqt(phase: TaperValue, piece: PieceType, from: Square, to: Square, color: Color) -> i32 {
+pub fn psqt(
+    phase: TaperValue,
+    piece: PieceType,
+    from: Square,
+    to: Square,
+    color: Color,
+) -> MoveScore {
     let curr_score = tapered_psqt(phase, piece, from, color);
 
     // todo: change piece type for promotions
     let new_score = tapered_psqt(phase, piece, to, color);
 
-    new_score - curr_score
+    (new_score - curr_score)
+        .try_into()
+        .unwrap_or_else(|_| todo!("TODO: prove that this diff will not exceed i16"))
 }
+
+pub type MoveScore = i16;
 
 #[derive(Debug, Clone)]
 pub struct ScoredMove {
-    pub score: i32,
+    pub score: MoveScore,
     pub mov: Move,
 }
 
 impl ScoredMove {
     #[inline]
-    pub fn new(m: Move, score: i32) -> Self {
+    pub fn new(m: Move, score: MoveScore) -> Self {
         Self { score, mov: m }
     }
 
@@ -127,18 +139,18 @@ impl ScoredMove {
     }
 
     #[inline]
-    pub fn score(&self) -> i32 {
+    pub fn score(&self) -> MoveScore {
         self.score
     }
 
     #[inline]
-    pub fn set_score(&mut self, score: i32) {
+    pub fn set_score(&mut self, score: MoveScore) {
         self.score = score;
     }
 }
 
 pub trait MoveScorer {
-    fn score<S: Stage>(&self, pos: &Position, mov: Move) -> i32;
+    fn score<S: Stage>(&self, pos: &Position, mov: Move) -> MoveScore;
 }
 
 #[derive(Debug)]
@@ -249,14 +261,6 @@ pub fn partial_sort_desc(slice: &mut [ScoredMove]) {
 
 /// If true, generates legals, if false, generates pseudo legals.
 pub const LEGAL: bool = true;
-
-mod scores {
-    pub const HASH_MOVE: i32 = 300_000;
-    pub const GOOD_CAPTURES_AND_PROMOS: i32 = 210_000; // + see
-    pub const KILLER: i32 = 200_000; // - age * 10_000
-    pub const BAD_CAPTURES_AND_PROMOS: i32 = 100_000; // + see
-    pub const QUIET: i32 = 0; // + psqt diff
-}
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -419,8 +423,7 @@ impl MoveGenerator {
                     && pos.is_legal_for::<P>(self.hash_move)
                 {
                     let score = scorer.score::<stages::YieldHashMove>(pos, self.hash_move);
-                    self.buf
-                        .push(ScoredMove::new(self.hash_move, scores::HASH_MOVE + score));
+                    self.buf.push(ScoredMove::new(self.hash_move, score));
 
                     self.stage.next();
                     Ok(0..1)
@@ -461,12 +464,12 @@ impl MoveGenerator {
                 for i in 0..num {
                     let s = scorer.score::<GenerateCapturesAndPromos>(pos, slice[i].mov);
                     if s >= 0 {
-                        slice[i].score = s + scores::GOOD_CAPTURES_AND_PROMOS;
+                        slice[i].score = s;
                         slice.swap(num_good, i);
                         num_good += 1;
                     }
                     else {
-                        slice[i].score = s + scores::BAD_CAPTURES_AND_PROMOS;
+                        slice[i].score = s;
                     }
                 }
 
@@ -497,7 +500,7 @@ impl MoveGenerator {
                         && pos.is_legal_for::<P>(killer)
                     {
                         let s = scorer.score::<stages::YieldKillers>(pos, killer);
-                        self.buf.push(ScoredMove::new(killer, scores::KILLER + s));
+                        self.buf.push(ScoredMove::new(killer, s));
                     }
                 }
 
@@ -537,7 +540,7 @@ impl MoveGenerator {
 
                 for &mut ScoredMove { mov, ref mut score } in self.buf.as_mut_subslice(start..end) {
                     let s = scorer.score::<GenerateQuiets>(pos, mov);
-                    *score = s + scores::QUIET;
+                    *score = s;
                 }
 
                 self.stage.next();
@@ -577,7 +580,7 @@ pub mod test {
 
     use super::*;
 
-    fn run_see_test(fen: &str, mov: Move, us: Color, expected: i32) {
+    fn run_see_test(fen: &str, mov: Move, us: Color, expected: MoveScore) {
         magics::init();
         zobrist::init();
 
@@ -607,7 +610,12 @@ pub mod test {
         let mov = Move::new(squares::E4, squares::D5, move_flags::CAPTURE);
 
         // Expected: Gains the pawn
-        run_see_test(fen, mov, colors::WHITE, piece_score(piece_type::PAWN));
+        run_see_test(
+            fen,
+            mov,
+            colors::WHITE,
+            piece_score(piece_type::PAWN).try_into().unwrap(),
+        );
     }
 
     #[test]
@@ -621,7 +629,9 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            piece_score(piece_type::PAWN) - piece_score(piece_type::PAWN),
+            (piece_score(piece_type::PAWN) - piece_score(piece_type::PAWN))
+                .try_into()
+                .unwrap(),
         );
     }
 
@@ -637,7 +647,9 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            -piece_score(piece_type::QUEEN) + piece_score(piece_type::PAWN),
+            (-piece_score(piece_type::QUEEN) + piece_score(piece_type::PAWN))
+                .try_into()
+                .unwrap(),
         );
     }
 
@@ -655,8 +667,10 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            piece_score(piece_type::BISHOP) - piece_score(piece_type::ROOK)
-                + piece_score(piece_type::ROOK),
+            (piece_score(piece_type::BISHOP) - piece_score(piece_type::ROOK)
+                + piece_score(piece_type::ROOK))
+            .try_into()
+            .unwrap(),
         );
     }
 
@@ -668,7 +682,12 @@ pub mod test {
         let mov = Move::new(squares::E5, squares::D6, move_flags::EN_PASSANT);
 
         // Expected: +100 for the pawn.
-        run_see_test(fen, mov, colors::WHITE, piece_score(piece_type::PAWN));
+        run_see_test(
+            fen,
+            mov,
+            colors::WHITE,
+            piece_score(piece_type::PAWN).try_into().unwrap(),
+        );
     }
 
     #[test]
@@ -690,9 +709,11 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            piece_score(piece_type::ROOK) + piece_score(piece_type::QUEEN)
+            (piece_score(piece_type::ROOK) + piece_score(piece_type::QUEEN)
                 - piece_score(piece_type::PAWN)
-                - piece_score(piece_type::QUEEN),
+                - piece_score(piece_type::QUEEN))
+            .try_into()
+            .unwrap(),
         );
     }
 
@@ -760,7 +781,7 @@ pub mod test {
                         .collect_vec();
 
                     if diff.is_empty() {
-                        format!("None, there's likely duplicates in one of the sets.")
+                        "None, there's likely duplicates in one of the sets.".to_string()
                     }
                     else {
                         format!("{diff:?}")

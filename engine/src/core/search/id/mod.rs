@@ -29,7 +29,7 @@ use crate::{
         search::{
             id::node_types::*,
             limit::UciLimit,
-            ordering::{self, MovePicker, MoveScorer, RtStage, ScoredMove, Stage},
+            ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
             quiesce::qsearch,
             score::{Cp, Score},
             strat::{
@@ -144,7 +144,7 @@ struct RootStats {
 
 impl RootStats {
     #[inline]
-    fn new(m: Move, score: i32) -> Self {
+    fn new(m: Move, score: MoveScore) -> Self {
         Self { mov: ScoredMove::new(m, score) }
     }
 
@@ -159,12 +159,12 @@ impl RootStats {
     }
 
     #[inline]
-    fn score(&self) -> i32 {
+    fn score(&self) -> MoveScore {
         self.mov.score()
     }
 
     #[inline]
-    fn set_score(&mut self, score: i32) {
+    fn set_score(&mut self, score: MoveScore) {
         self.mov.set_score(score);
     }
 }
@@ -441,7 +441,7 @@ impl Searcher {
             if is_root {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
-                self.root_stats.as_mut_slice()[curr].set_score(score.0);
+                self.root_stats.as_mut_slice()[curr].set_score(score.0.try_into().unwrap_or_else(|_| todo!("TODO: compress the eval scores into move scores")));
             }
 
             if score > best_score {
@@ -682,7 +682,7 @@ pub struct Scorer {
 
 impl MoveScorer for Scorer {
     #[inline(always)]
-    fn score<S: Stage>(&self, pos: &Position, mov: Move) -> i32 {
+    fn score<S: Stage>(&self, pos: &Position, mov: Move) -> MoveScore {
         match S::stage() {
             // no need to score hashmove, there's only 1
             RtStage::YieldHashMove => {
@@ -713,7 +713,7 @@ impl MoveScorer for Scorer {
                 // Safety: assert above
                 let age = unsafe { age.unwrap_unchecked() };
 
-                -(age as i32 * 10_000)
+                -(age as MoveScore)
             }
 
             // score quiet moves by psqt diff
