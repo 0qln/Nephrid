@@ -460,10 +460,6 @@ impl MoveGenerator {
                 let mut num_good = 0;
                 for i in 0..num {
                     let s = scorer.score::<GenerateCapturesAndPromos>(pos, slice[i].mov);
-                    // todo: maybe its faster to keep a back pointer and just insert the bad ones in
-                    // the back and the good ones in the front. that way we don't need to swap any
-                    // elements? (using this for now though because it just works and is an
-                    // improvement to the previous version...)
                     if s >= 0 {
                         slice[i].score = s + scores::GOOD_CAPTURES_AND_PROMOS;
                         slice.swap(num_good, i);
