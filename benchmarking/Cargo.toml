@@ -75,3 +75,7 @@ harness = false
 [[bench]]
 name = "id"
 harness = false
+
+[[bench]]
+name = "move_ordering"
+harness = false

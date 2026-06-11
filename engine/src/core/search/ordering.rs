@@ -401,6 +401,10 @@ impl MoveGenerator {
         }
     }
 
+    pub fn stage(&self) -> RtStage {
+        self.stage
+    }
+
     /// Pushes the next stage of moves into the list. Returns the new slice that
     /// could be consumed. slice.
     pub fn next_for<P: Perspective>(
