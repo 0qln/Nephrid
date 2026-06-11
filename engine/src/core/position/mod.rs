@@ -748,12 +748,20 @@ impl Position {
     /// a `QUIET`-flagged move onto an occupied enemy square) would corrupt the
     /// board representation in `make_move`.
     pub fn is_pseudo_legal(&self, mov: Move) -> bool {
+        match self.get_turn() {
+            colors::WHITE => self.is_pseudo_legal_for::<perspectives::White>(mov),
+            colors::BLACK => self.is_pseudo_legal_for::<perspectives::Black>(mov),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn is_pseudo_legal_for<P: Perspective>(&self, mov: Move) -> bool {
         if mov == Move::null() {
             return false;
         }
 
         let (from, to, flag) = mov.into();
-        let us = self.get_turn();
+        let us = P::COLOR;
 
         // Use the slower but simpler pseudo-legal generator for uncommon move
         // types (en passant, promotions and castling).
