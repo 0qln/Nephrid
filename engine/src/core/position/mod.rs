@@ -756,8 +756,7 @@ impl Position {
         let us = self.get_turn();
 
         // Use the slower but simpler pseudo-legal generator for uncommon move
-        // types (en passant, promotions and castling), mirroring Stockfish's
-        // `MoveList` fallback.
+        // types (en passant, promotions and castling).
         if !matches!(
             flag,
             move_flags::QUIET | move_flags::DOUBLE_PAWN_PUSH | move_flags::CAPTURE
@@ -765,7 +764,8 @@ impl Position {
             let found = fold_pseudo_legal_moves(self, (), |_, m| {
                 if m == mov {
                     ControlFlow::Break(())
-                } else {
+                }
+                else {
                     ControlFlow::Continue(())
                 }
             });
@@ -833,7 +833,8 @@ impl Position {
                 }
                 _ => unreachable!(),
             }
-        } else {
+        }
+        else {
             let occ = self.get_occupancy();
             let attacks = match pc.piece_type() {
                 piece_type::KNIGHT => knight::lookup_attacks(from),
