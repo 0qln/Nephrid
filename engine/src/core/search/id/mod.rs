@@ -723,7 +723,7 @@ impl MoveScorer for Scorer {
                 let piece = pieces.get_piece(from);
                 let piece_type = piece.piece_type();
 
-                ordering::psqt(self.phase, piece_type, from, to, self.color)
+                ordering::psqt(self.phase, piece_type, from, to, mov.get_flag(), self.color)
             }
 
             RtStage::Done => 0,

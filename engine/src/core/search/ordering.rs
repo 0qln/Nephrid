@@ -9,7 +9,7 @@ use crate::{
         coordinates::{Rank, Square, ranks},
         depth::Depth,
         eval::hce::{TaperValue, piece_score, tapered_psqt},
-        r#move::{MAX_LEGAL_MOVES, Move},
+        r#move::{MAX_LEGAL_MOVES, Move, MoveFlag},
         move_iter::{self, fold_moves},
         piece::{PieceType, PromoPieceType, piece_type},
         position::{PieceInfo, Position},
@@ -102,17 +102,21 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
         .unwrap_or_else(|_| todo!("TODO: how to handle this"))
 }
 
+/// PSQT bonus/penalty for a move.
 pub fn psqt(
     phase: TaperValue,
     piece: PieceType,
     from: Square,
     to: Square,
+    flag: MoveFlag,
     color: Color,
 ) -> MoveScore {
     let curr_score = tapered_psqt(phase, piece, from, color);
 
-    // todo: change piece type for promotions
-    let new_score = tapered_psqt(phase, piece, to, color);
+    // a promoting pawn arrives at the destination square as the promotion piece,
+    // so score the destination using the promoted piece type.
+    let to_piece = PromoPieceType::try_from(flag).map_or(piece, |p| p.v());
+    let new_score = tapered_psqt(phase, to_piece, to, color);
 
     (new_score - curr_score)
         .try_into()

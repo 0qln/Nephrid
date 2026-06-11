@@ -93,7 +93,14 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
                     let piece = pieces.get_piece(from);
 
                     ordering::see(pieces, mov, self.color)
-                        + ordering::psqt(self.phase, piece.piece_type(), from, to, self.color)
+                        + ordering::psqt(
+                            self.phase,
+                            piece.piece_type(),
+                            from,
+                            to,
+                            mov.get_flag(),
+                            self.color,
+                        )
                 }
                 ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
                 ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {
@@ -104,7 +111,7 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
                     let pieces = pos.piece_info();
                     let (from, to, _) = mov.into();
                     let piece = pieces.get_piece(from);
-                    ordering::psqt(self.phase, piece.piece_type(), from, to, self.color)
+                    ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
                 }
                 ordering::RtStage::Done => todo!("why are we scoring Done??"),
             }
