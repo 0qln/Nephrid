@@ -30,6 +30,7 @@ use crate::{
         search::{
             id::node_types::*,
             limit::UciLimit,
+            mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
             quiesce::qsearch,
             score::{Cp, Score},
@@ -42,11 +43,18 @@ use crate::{
         turn::Turn,
         zobrist,
     },
+    math::{self, NormalizedEntropy},
     misc::{CancellationToken, DebugMode, List},
 };
 
 #[cfg(test)]
 pub mod test;
+
+/// Softmax temperature applied to root-move qualities when computing the
+/// normalized root entropy used as a soft stopping target. Qualities are
+/// `tanh`-squashed into `[-1, 1]`, so a sub-1 temperature is needed for a
+/// confident position to produce a peaked (low-entropy) distribution.
+const ROOT_ENTROPY_TEMP: f32 = 0.3;
 
 struct StaticEvaluator;
 
@@ -85,13 +93,27 @@ impl eval::StaticEvaluator for StaticEvaluator {
     }
 }
 
-#[derive(Default)]
 pub struct SearchStats {
     pub nodes: u64,
     pub iterations: u64,
 
     /// Time taken for last iteration.
     pub iter_time: Duration,
+
+    /// Entropy of the last completed iteration.
+    pub root_entropy: NormalizedEntropy,
+}
+
+impl Default for SearchStats {
+    fn default() -> Self {
+        Self {
+            nodes: 0,
+            iterations: 0,
+            iter_time: Duration::ZERO,
+            // Max uncertainty until a policy is computed
+            root_entropy: NormalizedEntropy::one(),
+        }
+    }
 }
 
 pub fn go(
@@ -132,6 +154,11 @@ pub fn go(
 
         // update stats
         stats.iterations += 1;
+        stats.root_entropy = {
+            let root_logits = searcher.root_logits();
+            let root_policy = math::softmax(root_logits, ROOT_ENTROPY_TEMP, &mut List::new());
+            math::normalized_entropy(&root_policy)
+        };
 
         searcher.time_man.hint_preferred_target(&stats);
 
@@ -221,6 +248,15 @@ impl Searcher {
 
     fn root_best_move(&self) -> Option<Move> {
         self.root_stats.get(0).map(|x| x.mov())
+    }
+
+    fn root_logits(&self) -> List<{ MAX_LEGAL_MOVES }, f32> {
+        let mut root_logits = List::<{ MAX_LEGAL_MOVES }, f32>::new();
+        self.root_stats
+            .iter()
+            .map(|x| Quality::from(Cp::new(x.score())).v())
+            .collect_into(&mut root_logits);
+        root_logits
     }
 
     fn should_stop(&self, stats: &SearchStats) -> bool {

@@ -125,4 +125,8 @@ impl Cp {
     pub fn v(&self) -> TCp {
         self.v
     }
+
+    pub fn new(v: TCp) -> Self {
+        Self { v }
+    }
 }

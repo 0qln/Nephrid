@@ -11,8 +11,7 @@ use crate::{
             },
             score::{Cp, TCp},
         }
-    },
-    misc::{CheckHealth, CheckHealthResult, List},
+    }, math::softmax, misc::{CheckHealth, CheckHealthResult, List}
 };
 use core::fmt;
 use std::{
@@ -319,30 +318,6 @@ impl Policy {
     pub fn as_slice(&self) -> &[Probability] {
         self.0.as_slice()
     }
-}
-
-/// Applies the softmax without allocating a new list.
-pub fn softmax<const N: usize>(
-    mut xs: List<N, f32>,
-    temperature: f32,
-    exps: &mut List<N, f32>,
-) -> List<N, Probability> {
-    let max = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-
-    exps.clear();
-    for x in xs.iter().map(|x| ((x - max) / temperature).exp()) {
-        exps.push(x);
-    }
-
-    let sum: f32 = exps.iter().sum();
-
-    for (x, e) in xs.iter_mut().zip(exps.iter()) {
-        *x = *e / sum;
-    }
-
-    // SAFETY: Probability is the same layout as an f32 and we just mathematically
-    // transformed the array to be probabilities.
-    unsafe { List::transmute(xs) }
 }
 
 /// Construct a policy from visit counts by applying the AlphaZero

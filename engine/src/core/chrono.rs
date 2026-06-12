@@ -3,12 +3,19 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::core::{
-    color::colors,
-    position::Position,
-    search::{id, limit::UciLimit},
-    turn::Turn,
+use crate::{
+    core::{
+        color::colors,
+        position::Position,
+        search::{id, limit::UciLimit},
+        turn::Turn,
+    },
+    math::NormalizedEntropy,
 };
+
+/// Fraction of the maximum possible root entropy below which the engine is
+/// considered confident enough to stop searching early.
+const ENTROPY_TARGET: f32 = 0.6; // todo: make tunable
 
 #[derive(Debug)]
 pub struct TimeMan {
@@ -21,8 +28,14 @@ pub struct TimeMan {
     /// Soft bound
     time_target: Instant,
 
+    /// Soft bound: stop once the current root entropy drops to/below this.
+    entropy_target: NormalizedEntropy,
+
     /// Time allocated per move
     time_per_move: Duration,
+
+    /// Curr Stats
+    curr_entropy: NormalizedEntropy,
 }
 
 impl TimeMan {
@@ -34,10 +47,16 @@ impl TimeMan {
         TimeMan {
             time_start,
             time_limit,
+
             // set this to the hard limit first. it will update later when we gather stats during
             // search.
             time_target: time_limit,
+
+            entropy_target: NormalizedEntropy::zero(),
+
             time_per_move,
+
+            curr_entropy: NormalizedEntropy::one(),
         }
     }
 
@@ -74,13 +93,16 @@ impl TimeMan {
     pub fn reached_target(&self) -> bool {
         let curr_time = Instant::now();
 
-        curr_time >= self.time_target
+        curr_time >= self.time_target || self.curr_entropy.v() <= self.entropy_target.v()
     }
 
     /// Hint to the time manager that right now would be a preferred (soft) stop
     /// point.
     pub fn hint_preferred_target(&mut self, stats: &id::SearchStats) {
         self.time_target = self.time_limit - stats.iter_time;
+
+        self.entropy_target = NormalizedEntropy::new(ENTROPY_TARGET);
+        self.curr_entropy = stats.root_entropy;
     }
 
     pub fn time_start(&self) -> Instant {
