@@ -8,6 +8,7 @@ use uom::si::{information::byte, u64::Information};
 
 use crate::{
     core::{
+        chrono::TimeMan,
         color::{
             Color, Perspective, colors,
             perspectives::{self},
@@ -38,7 +39,6 @@ use crate::{
             },
             tt::{self, TranspositionTable},
         },
-        chrono::TimeMan,
         turn::Turn,
         zobrist,
     },
@@ -86,9 +86,12 @@ impl eval::StaticEvaluator for StaticEvaluator {
 }
 
 #[derive(Default)]
-struct SearchStats {
-    nodes: u64,
-    iterations: u64,
+pub struct SearchStats {
+    pub nodes: u64,
+    pub iterations: u64,
+
+    /// Time taken for last iteration.
+    pub iter_time: Duration,
 }
 
 pub fn go(
@@ -105,9 +108,6 @@ pub fn go(
     let mut best_move = None;
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
-        if searcher.should_stop(&stats) {
-            break;
-        }
         let best_score = searcher.search_root(pos, &mut stats, depth);
 
         // make sure to break before messing up the order of the previous iteration with
@@ -133,7 +133,11 @@ pub fn go(
         // update stats
         stats.iterations += 1;
 
-        // increment depth for next iteration
+        searcher.time_man.hint_preferred_target(&stats);
+
+        if searcher.should_stop(&stats) || searcher.time_man.reached_target() {
+            break;
+        }
     }
 
     best_move
@@ -230,7 +234,7 @@ impl Searcher {
 
         // time manager says we should stop or limit has been reached
         if self.limit.is_active()
-            && (self.time_man.should_stop() || self.limit.is_reached(nodes, iters))
+            && (self.time_man.reached_limit() || self.limit.is_reached(nodes, iters))
         {
             return true;
         }

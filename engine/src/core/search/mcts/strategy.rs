@@ -3,6 +3,7 @@ use std::time::{Duration, Instant};
 use crate::{
     core::{
         Move,
+        chrono::TimeMan,
         ply::Ply,
         position::Position,
         search::{
@@ -15,7 +16,6 @@ use crate::{
             score::Cp,
             strat::*,
         },
-        chrono::TimeMan,
     },
     misc::{CancellationToken, DebugMode},
 };
@@ -259,7 +259,7 @@ impl MctsStrategy for MctsUci {
             && (self
                 .limit
                 .is_reached(tree.size() as u64 - self.nodes_begin, self.iterations)
-                || matches!(self.time_man().map(|t| t.should_stop()), Some(true)))
+                || matches!(self.time_man().map(|t| t.reached_limit()), Some(true)))
         {
             return true;
         }

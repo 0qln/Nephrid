@@ -3,12 +3,25 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::core::{color::colors, position::Position, search::limit::UciLimit, turn::Turn};
+use crate::core::{
+    color::colors,
+    position::Position,
+    search::{id, limit::UciLimit},
+    turn::Turn,
+};
 
 #[derive(Debug)]
 pub struct TimeMan {
+    /// Begin of search
     time_start: Instant,
+
+    /// Hard bound
     time_limit: Instant,
+
+    /// Soft bound
+    time_target: Instant,
+
+    /// Time allocated per move
     time_per_move: Duration,
 }
 
@@ -21,6 +34,9 @@ impl TimeMan {
         TimeMan {
             time_start,
             time_limit,
+            // set this to the hard limit first. it will update later when we gather stats during
+            // search.
+            time_target: time_limit,
             time_per_move,
         }
     }
@@ -49,10 +65,22 @@ impl TimeMan {
         self.time_limit = self.time_start + duration;
     }
 
-    pub fn should_stop(&self) -> bool {
+    pub fn reached_limit(&self) -> bool {
         let curr_time = Instant::now();
 
         curr_time >= self.time_limit
+    }
+
+    pub fn reached_target(&self) -> bool {
+        let curr_time = Instant::now();
+
+        curr_time >= self.time_target
+    }
+
+    /// Hint to the time manager that right now would be a preferred (soft) stop
+    /// point.
+    pub fn hint_preferred_target(&mut self, stats: &id::SearchStats) {
+        self.time_target = self.time_limit - stats.iter_time;
     }
 
     pub fn time_start(&self) -> Instant {
