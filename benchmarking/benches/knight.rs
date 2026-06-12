@@ -44,7 +44,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
             &pos,
             |b, pos| {
                 b.iter(|| {
-                    <Knight as FoldMoves<NoCheck, opt::All>>::fold_moves(
+                    <Knight as FoldMoves<NoCheck, opt::AllLegal>>::fold_moves(
                         black_box(pos),
                         black_box(0),
                         black_box(|acc, m: Move| {
@@ -70,7 +70,7 @@ pub fn move_iter_check_single(c: &mut Criterion) {
             &pos,
             |b, pos| {
                 b.iter(|| {
-                    <Knight as FoldMoves<SingleCheck, opt::All>>::fold_moves(
+                    <Knight as FoldMoves<SingleCheck, opt::AllLegal>>::fold_moves(
                         black_box(pos),
                         black_box(0),
                         black_box(|acc, m: Move| {

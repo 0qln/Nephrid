@@ -6,10 +6,14 @@ use crate::{
         ply::Ply,
         position::Position,
         search::{
-            PonderToken, limit::UciLimit, mcts::{
+            PonderToken,
+            limit::UciLimit,
+            mcts::{
                 Tree,
                 node::{WinRate, node_state::Evaluated},
-            }, score::Cp, strat::*
+            },
+            score::Cp,
+            strat::*,
         },
     },
     misc::{CancellationToken, DebugMode},
@@ -102,10 +106,9 @@ impl MctsUci {
 
     /// Number of nodes per second since start of the search, given the current
     /// number of nodes in the search tree.
-    pub fn nps(&self, num_nodes: usize) -> Option<UciNps> {
+    pub fn nps(&self, num_nodes: u64) -> Option<UciNps> {
         self.search_time()
-            .map(|t| num_nodes as u128 * 1_000_000_000 / t.0.as_nanos())
-            .map(UciNps)
+            .map(|t| UciNps::from_nodes_and_time(num_nodes, t.0))
     }
 
     /// Determine score in centipawns / mate-in-x, etc.
@@ -145,7 +148,7 @@ impl MctsUci {
     fn uci_info(&self, tree: &Tree, mov: Move) {
         let tree_size = tree.size();
         let pv = tree.principal_line();
-        let new_nodes = tree_size - self.nodes_begin as usize;
+        let new_nodes = tree_size as u64 - self.nodes_begin;
 
         let currmove = UciArg::Some(UciCurrmove(mov));
         let score = UciArg::from(self.determine_score(tree, pv.len()));

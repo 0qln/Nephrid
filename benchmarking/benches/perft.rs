@@ -8,7 +8,7 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::{
     core::{
         depth::Depth,
-        move_iter::{Options, fold_legals, opt, sliding_piece::magics},
+        move_iter::{Options, fold_moves, opt, sliding_piece::magics},
         position::Position,
         search::{limit::UciLimit, perft::perft_inner_collect},
         zobrist,
@@ -26,7 +26,7 @@ fn bench_perft<Opt: Options>(mut pos: Position, depth: Depth) {
         &DebugMode::default(),
         |_, _, _, _| {},
         |pos, list| {
-            _ = fold_legals::<Opt, _, _, _>(pos, (), |(), m| {
+            _ = fold_moves::<Opt, _, _, _>(pos, (), |(), m| {
                 list.push(m);
                 ControlFlow::Continue::<(), ()>(())
             });
@@ -44,11 +44,11 @@ impl<T1: Display, T2: Display> Display for Pair<T1, T2> {
 }
 
 fn perft(c: &mut Criterion) {
-    perft_benches::<opt::All>(c, "perft", include_str!("../resources/positions.csv"))
+    perft_benches::<opt::AllLegal>(c, "perft", include_str!("../resources/positions.csv"))
 }
 
 fn perft_pawn(c: &mut Criterion) {
-    perft_benches::<opt::All>(
+    perft_benches::<opt::AllLegal>(
         c,
         "perft_pawn",
         include_str!("../resources/pawn_positions.csv"),
@@ -56,7 +56,7 @@ fn perft_pawn(c: &mut Criterion) {
 }
 
 fn perft_rook(c: &mut Criterion) {
-    perft_benches::<opt::All>(
+    perft_benches::<opt::AllLegal>(
         c,
         "perft_rook",
         include_str!("../resources/rook_positions.csv"),

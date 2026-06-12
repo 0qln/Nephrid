@@ -34,21 +34,32 @@ impl<O: Options> FoldMoves<NoCheck, O> for King {
 
         let king_bb = pos.get_bitboard(King::ID, color);
         if let Some(king) = king_bb.lsb() {
-            let enemy_attacks = nstm_attacks(pos, pos.get_occupancy());
-
             if O::gen_quiets() {
-                init = king::fold_legal_castling(pos, init, &mut f, enemy_attacks)?;
+                if O::legal() {
+                    // todo: enemy_attacks is computed twice...
+                    let enemy_attacks = nstm_attacks(pos, pos.get_occupancy());
+                    init = king::fold_legal_castling(pos, init, &mut f, enemy_attacks)?;
+                }
+                else {
+                    init = king::fold_pseudo_legal_castling(pos, init, &mut f)?;
+                }
             }
 
-            let attacks = lookup_attacks(king);
-            let legal_attacks = attacks & !enemy_attacks;
+            let attacks = if O::legal() {
+                let enemy_attacks = nstm_attacks(pos, pos.get_occupancy());
+                lookup_attacks(king) & !enemy_attacks
+            }
+            else {
+                lookup_attacks(king)
+            };
 
-            let legal_captures = legal_attacks & captures_targets::<NoCheck>(pos, color);
-            let legal_quiets = legal_attacks & quiets_targets::<NoCheck>(pos, color);
-
-            init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
+            if O::gen_captures() {
+                let legal_captures = attacks & captures_targets::<NoCheck>(pos, color);
+                init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
+            }
 
             if O::gen_quiets() {
+                let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, color);
                 init = map_quiets(legal_quiets, king).try_fold(init, &mut f)?;
             }
 
@@ -73,18 +84,24 @@ impl<O: Options, C: SomeCheck> FoldMoves<C, O> for King {
 
         let king_bb = pos.get_bitboard(King::ID, color);
         if let Some(king) = king_bb.lsb() {
-            // If the to square covers anything, it doesn't matter, because the king will be
-            // in check. (=> we don't need to add the to square to occupancy)
-            let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
-            let enemy_attacks = nstm_attacks(pos, occupancy_after_king_move);
-            let legal_attacks = lookup_attacks(king) & !enemy_attacks;
+            let attacks = if O::legal() {
+                // If the to square covers anything, it doesn't matter, because the king will be
+                // in check. (=> we don't need to add the to square to occupancy)
+                let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
+                let enemy_attacks = nstm_attacks(pos, occupancy_after_king_move);
+                lookup_attacks(king) & !enemy_attacks
+            }
+            else {
+                lookup_attacks(king)
+            };
 
-            let legal_captures = legal_attacks & captures_targets::<NoCheck>(pos, color);
-            let legal_quiets = legal_attacks & quiets_targets::<NoCheck>(pos, color);
-
-            init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
+            if O::gen_captures() {
+                let legal_captures = attacks & captures_targets::<NoCheck>(pos, color);
+                init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
+            }
 
             if O::gen_quiets() {
+                let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, color);
                 init = map_quiets(legal_quiets, king).try_fold(init, &mut f)?;
             }
 
@@ -102,14 +119,14 @@ pub fn nstm_attacks(pos: &Position, occupancy: Bitboard) -> Bitboard {
     let stm = pos.get_turn();
     let nstm = !stm;
 
-    let pawns = pos.get_bitboard(piece_type::PAWN, !pos.get_turn());
-    let knights = pos.get_bitboard(piece_type::KNIGHT, !pos.get_turn());
-    let bishops = pos.get_bitboard(piece_type::BISHOP, !pos.get_turn());
-    let rooks = pos.get_bitboard(piece_type::ROOK, !pos.get_turn());
-    let queens = pos.get_bitboard(piece_type::QUEEN, !pos.get_turn());
+    let pawns = pos.get_bitboard(piece_type::PAWN, nstm);
+    let knights = pos.get_bitboard(piece_type::KNIGHT, nstm);
+    let bishops = pos.get_bitboard(piece_type::BISHOP, nstm);
+    let rooks = pos.get_bitboard(piece_type::ROOK, nstm);
+    let queens = pos.get_bitboard(piece_type::QUEEN, nstm);
     let b_n_q = bishops | queens;
     let r_n_q = rooks | queens;
-    let king = pos.get_bitboard(piece_type::KING, !pos.get_turn());
+    let king = pos.get_bitboard(piece_type::KING, nstm);
 
     let bishop_attacks = |sq| Bishop::lookup_attacks(sq, occupancy);
     let rook_attacks = |sq| Rook::lookup_attacks(sq, occupancy);
@@ -119,6 +136,45 @@ pub fn nstm_attacks(pos: &Position, occupancy: Bitboard) -> Bitboard {
         | b_n_q.into_iter().map(bishop_attacks).aggregate()
         | r_n_q.into_iter().map(rook_attacks).aggregate()
         | king.lsb().map(self::lookup_attacks).unwrap_or_default()
+}
+
+pub fn fold_pseudo_legal_castling<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    let color = pos.get_turn();
+    let color_v = color.v() as usize;
+    let rank = color * ranks::_8;
+    let from = Square::from((files::E, rank));
+    let castling = pos.get_castling();
+
+    if castling.is_true(castling_sides::KING_SIDE, color) {
+        const TABU_MASK: [Bitboard; 2] = [Bitboard { v: 0x60_u64 }, Bitboard { v: 0x60_u64 << 56 }];
+        let tabus = pos.get_occupancy();
+        // Safety: Color is in range [0..2]
+        let tabu_mask = unsafe { TABU_MASK.get_unchecked(color_v) };
+        if (tabus & *tabu_mask).is_empty() {
+            // Safety: [e1|e8] + 2 < 63
+            let to = unsafe { Square::from_v(from.v() + 2) };
+            init = f(init, Move::new(from, to, move_flags::KING_CASTLE))?;
+        }
+    }
+
+    if castling.is_true(castling_sides::QUEEN_SIDE, color) {
+        const BLOCK_MASK: [Bitboard; 2] = [Bitboard { v: 0xE_u64 }, Bitboard { v: 0xE_u64 << 56 }];
+        // Safety: Color is in range [0..2]
+        let block_mask = unsafe { *BLOCK_MASK.get_unchecked(color_v) };
+        let blockers = pos.get_occupancy();
+        let blocked = block_mask & blockers;
+        if blocked.is_empty() {
+            // Safety: [e1|e8] - 2 > 0
+            let to = unsafe { Square::from_v(from.v() - 2) };
+            return f(init, Move::new(from, to, move_flags::QUEEN_CASTLE));
+        }
+    }
+
+    try { init }
 }
 
 pub fn fold_legal_castling<B, F, R>(
@@ -136,11 +192,10 @@ where
     let rank = color * ranks::_8;
     let from = Square::from((files::E, rank));
     let castling = pos.get_castling();
-    let nstm_attacks = enemy_attacks;
 
     if castling.is_true(castling_sides::KING_SIDE, color) {
         const TABU_MASK: [Bitboard; 2] = [Bitboard { v: 0x60_u64 }, Bitboard { v: 0x60_u64 << 56 }];
-        let tabus = nstm_attacks | pos.get_occupancy();
+        let tabus = enemy_attacks | pos.get_occupancy();
         // Safety: Color is in range [0..2]
         let tabu_mask = unsafe { TABU_MASK.get_unchecked(color_v) };
         if (tabus & *tabu_mask).is_empty() {
@@ -154,11 +209,11 @@ where
         const BLOCK_MASK: [Bitboard; 2] = [Bitboard { v: 0xE_u64 }, Bitboard { v: 0xE_u64 << 56 }];
         const CHECK_MASK: [Bitboard; 2] = [Bitboard { v: 0xC_u64 }, Bitboard { v: 0xC_u64 << 56 }];
         // Safety: Color is in range [0..2]
-        let block_mask = unsafe { BLOCK_MASK.get_unchecked(color_v) };
-        let check_mask = unsafe { CHECK_MASK.get_unchecked(color_v) };
+        let block_mask = unsafe { *BLOCK_MASK.get_unchecked(color_v) };
+        let check_mask = unsafe { *CHECK_MASK.get_unchecked(color_v) };
         let blockers = pos.get_occupancy();
-        let blocked = *block_mask & blockers;
-        let checked = *check_mask & nstm_attacks;
+        let blocked = block_mask & blockers;
+        let checked = check_mask & enemy_attacks;
         if (blocked | checked).is_empty() {
             // Safety: [e1|e8] - 2 > 0
             let to = unsafe { Square::from_v(from.v() - 2) };

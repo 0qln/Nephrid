@@ -41,3 +41,4 @@ overflow-checks = false
 
 [workspace.lints.clippy]
 blocks_in_conditions = "allow"
+unwrap_or_default = "allow"

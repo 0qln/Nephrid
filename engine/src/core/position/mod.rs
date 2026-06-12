@@ -1,4 +1,7 @@
-use crate::core::eval::GameResult;
+use crate::core::{
+    eval::GameResult,
+    move_iter::{SingleCheck, captures_targets, king, pin_mask, queen::Queen, quiets_targets},
+};
 use core::fmt;
 use std::{
     fmt::Write,
@@ -16,13 +19,13 @@ use crate::{
         color::{Color, ColorTokenizationError, Perspective, colors, perspectives},
         coordinates::{
             EpTargetSquareTokenizationError, File, Rank, RankParseError, Square,
-            castling::castling_rank, files, ranks, squares,
+            castling::castling_rank, files, pawn_utils, ranks, squares,
         },
         depth::Depth,
         r#move::{Move, MoveList, SAN, SanParseError, move_flags},
         move_iter::{
             bishop::{self, Bishop},
-            fold_legal_moves,
+            fold_legal_moves, fold_pseudo_legal_moves,
             knight::{self},
             pawn,
             rook::{self, Rook},
@@ -84,8 +87,6 @@ impl StateInfo {
         let occupancy = pieces.get_occupancy();
         let enemies = pieces.get_color_bb(nstm);
         let allies = pieces.get_color_bb(stm);
-        let pawns = pieces.get_piece_bb(piece_type::PAWN) & enemies;
-        let knights = pieces.get_piece_bb(piece_type::KNIGHT) & enemies;
         let queens = pieces.get_piece_bb(piece_type::QUEEN) & enemies;
         let kings = pieces.get_piece_bb(piece_type::KING);
         let r_n_q = (pieces.get_piece_bb(piece_type::ROOK) | queens) & enemies;
@@ -93,13 +94,7 @@ impl StateInfo {
 
         if let Some(king_sq) = (allies & kings).lsb() {
             // Normal checkers
-            self.checkers = {
-                Bitboard::empty()
-                    | (pawn::lookup_attacks(king_sq, stm) & pawns)
-                    | (knight::lookup_attacks(king_sq) & knights)
-                    | (Bishop::lookup_attacks(king_sq, occupancy) & b_n_q)
-                    | (Rook::lookup_attacks(king_sq, occupancy) & r_n_q)
-            };
+            self.checkers = pieces.attackers_to(king_sq, nstm, occupancy);
 
             // The X-Ray checkers for the given king. X-Ray checkers are pieces which attack
             // a king through zero or more pieces.
@@ -431,6 +426,70 @@ impl PieceInfo {
             _ => CheckState::None,
         }
     }
+
+    /// Returns the bb of smallest piece type that attack `to` with given
+    /// occupancy `occ`.
+    pub fn smallest_attackers(&self, to: Square, us: Color, occ: Bitboard) -> Option<Bitboard> {
+        let pawns = self.get_bitboard(piece_type::PAWN, us);
+        let attacking_pawns = pawn::lookup_attacks(to, !us) & pawns & occ;
+        if !attacking_pawns.is_empty() {
+            return Some(attacking_pawns);
+        }
+
+        let knights = self.get_bitboard(piece_type::KNIGHT, us);
+        let attacking_knights = knight::lookup_attacks(to) & knights & occ;
+        if !attacking_knights.is_empty() {
+            return Some(attacking_knights);
+        }
+
+        let bishops = self.get_bitboard(piece_type::BISHOP, us);
+        let attacking_bishops = Bishop::lookup_attacks(to, occ) & bishops & occ;
+        if !attacking_bishops.is_empty() {
+            return Some(attacking_bishops);
+        }
+
+        let rooks = self.get_bitboard(piece_type::ROOK, us);
+        let attacking_rooks = Rook::lookup_attacks(to, occ) & rooks & occ;
+        if !attacking_rooks.is_empty() {
+            return Some(attacking_rooks);
+        }
+
+        let queens = self.get_bitboard(piece_type::QUEEN, us);
+        let attacking_queens = Queen::lookup_attacks(to, occ) & queens & occ;
+        if !attacking_queens.is_empty() {
+            return Some(attacking_queens);
+        }
+
+        let kings = self.get_bitboard(piece_type::KING, us);
+        let attacking_kings = king::lookup_attacks(to) & kings & occ;
+        if !attacking_kings.is_empty() {
+            return Some(attacking_kings);
+        }
+
+        None
+    }
+
+    /// Returns the bb of all pieces of color `color` that attack `to`.
+    pub fn attackers_to(&self, to: Square, color: Color, occ: Bitboard) -> Bitboard {
+        let pieces = self.get_color_bb(color);
+        let pawns = self.get_piece_bb(piece_type::PAWN) & pieces;
+        let knights = self.get_piece_bb(piece_type::KNIGHT) & pieces;
+        let queens = self.get_piece_bb(piece_type::QUEEN);
+        let r_n_q = (self.get_piece_bb(piece_type::ROOK) | queens) & pieces;
+        let b_n_q = (self.get_piece_bb(piece_type::BISHOP) | queens) & pieces;
+        let kings = self.get_piece_bb(piece_type::KING) & pieces;
+
+        Bitboard::empty()
+            | (pawn::lookup_attacks(to, !color) & pawns)
+            | (knight::lookup_attacks(to) & knights)
+            | (Bishop::lookup_attacks(to, occ) & b_n_q)
+            | (Rook::lookup_attacks(to, occ) & r_n_q)
+            | (king::lookup_attacks(to) & kings)
+    }
+
+    pub fn attackers_to_exist(&self, to: Square, color: Color, occ: Bitboard) -> bool {
+        !self.attackers_to(to, color, occ).is_empty()
+    }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -679,6 +738,210 @@ impl Position {
 
     pub fn has_legal_moves(&self) -> bool {
         fold_legal_moves(self, false, |_, _| ControlFlow::Break(true)).into_value()
+    }
+
+    /// Tests whether a (potentially corrupt) move is pseudo-legal in the
+    /// current position. Used to validate moves coming from the transposition
+    /// table or the killer-move heuristic before they are played, since
+    /// [`Self::is_legal`] assumes the move is already pseudo-legal. Playing a
+    /// move that is geometrically plausible but flag/target inconsistent (e.g.
+    /// a `QUIET`-flagged move onto an occupied enemy square) would corrupt the
+    /// board representation in `make_move`.
+    pub fn is_pseudo_legal(&self, mov: Move) -> bool {
+        match self.get_turn() {
+            colors::WHITE => self.is_pseudo_legal_for::<perspectives::White>(mov),
+            colors::BLACK => self.is_pseudo_legal_for::<perspectives::Black>(mov),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn is_pseudo_legal_for<P: Perspective>(&self, mov: Move) -> bool {
+        if mov == Move::null() {
+            return false;
+        }
+
+        let (from, to, flag) = mov.into();
+        let us = P::COLOR;
+
+        // Use the slower but simpler pseudo-legal generator for uncommon move
+        // types (en passant, promotions and castling).
+        if !matches!(
+            flag,
+            move_flags::QUIET | move_flags::DOUBLE_PAWN_PUSH | move_flags::CAPTURE
+        ) {
+            let found = fold_pseudo_legal_moves(self, (), |_, m| {
+                if m == mov {
+                    ControlFlow::Break(())
+                }
+                else {
+                    ControlFlow::Continue(())
+                }
+            });
+            return found.is_break();
+        }
+
+        let pc = self.get_piece(from);
+
+        // The `from` square must hold a piece belonging to the side to move.
+        if pc.piece_type() == piece_type::NONE || pc.color() != us {
+            return false;
+        }
+
+        let nstm = !us;
+        let to_bb = Bitboard::from(to);
+
+        // The destination square cannot hold a friendly piece.
+        if !(self.get_color_bb(us) & to_bb).is_empty() {
+            return false;
+        }
+
+        // The capture flag must agree with the contents of the destination
+        // square. This is the crucial check: a `QUIET` move onto an enemy
+        // square (or a `CAPTURE` onto an empty one) would desync the piece
+        // counts in `make_move`.
+        let enemy_on_to = !(self.get_color_bb(nstm) & to_bb).is_empty();
+        if flag.is_capture() != enemy_on_to {
+            return false;
+        }
+
+        if pc.piece_type() == piece_type::PAWN {
+            // Promotions are handled by the fallback above, so the destination
+            // cannot be on the last rank.
+            let last_rank = match us {
+                colors::WHITE => ranks::_8,
+                colors::BLACK => ranks::_1,
+                _ => unreachable!(),
+            };
+            if !(Bitboard::from(last_rank) & to_bb).is_empty() {
+                return false;
+            }
+
+            let from_bb = Bitboard::from(from);
+            match flag {
+                move_flags::CAPTURE => {
+                    if (pawn::lookup_attacks(from, us) & to_bb).is_empty() {
+                        return false;
+                    }
+                }
+                move_flags::QUIET => {
+                    // Single push; the destination is already known to be empty.
+                    if pawn_utils::forward(from_bb, pawn_utils::single_step(us)) != to_bb {
+                        return false;
+                    }
+                }
+                move_flags::DOUBLE_PAWN_PUSH => {
+                    let single = pawn_utils::forward(from_bb, pawn_utils::single_step(us));
+                    let double = pawn_utils::forward(from_bb, pawn_utils::double_step(us));
+                    if double != to_bb
+                        || (Bitboard::from(pawn_utils::start_rank(us)) & from_bb).is_empty()
+                        || !(self.get_occupancy() & single).is_empty()
+                    {
+                        return false;
+                    }
+                }
+                _ => unreachable!(),
+            }
+        }
+        else {
+            let occ = self.get_occupancy();
+            let attacks = match pc.piece_type() {
+                piece_type::KNIGHT => knight::lookup_attacks(from),
+                piece_type::BISHOP => Bishop::lookup_attacks(from, occ),
+                piece_type::ROOK => Rook::lookup_attacks(from, occ),
+                piece_type::QUEEN => Queen::lookup_attacks(from, occ),
+                piece_type::KING => king::lookup_attacks(from),
+                _ => return false,
+            };
+            if (attacks & to_bb).is_empty() {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    pub fn is_legal(&self, mov: Move) -> bool {
+        match self.get_turn() {
+            colors::WHITE => self.is_legal_for::<perspectives::White>(mov),
+            colors::BLACK => self.is_legal_for::<perspectives::Black>(mov),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn is_legal_for<P: Perspective>(&self, mov: Move) -> bool {
+        let (from, to, flag) = mov.into();
+        let stm = P::COLOR;
+        let nstm = !stm;
+
+        // todo: only check block mask in pseudo-legal generation
+        // king castle cannot move through check
+        if matches!(flag, move_flags::KING_CASTLE) {
+            let check_mask = Bitboard {
+                v: unsafe { *[0x60_u64, 0x60_u64 << 56].get_unchecked(stm.v() as usize) },
+            };
+
+            let occ = self.piece_info.get_occupancy();
+            for sq in check_mask {
+                if self.piece_info.attackers_to_exist(sq, nstm, occ) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        // queen castle cannot move through check
+        else if matches!(flag, move_flags::QUEEN_CASTLE) {
+            let check_mask = Bitboard {
+                v: unsafe { *[0xC_u64, 0xC_u64 << 56].get_unchecked(stm.v() as usize) },
+            };
+
+            let occ = self.piece_info.get_occupancy();
+            for sq in check_mask {
+                if self.piece_info.attackers_to_exist(sq, nstm, occ) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        match self.get_piece(from).piece_type() {
+            // king cannot move into check
+            piece_type::KING => {
+                let occ_after_mov = self.piece_info.get_occupancy() ^ from.into();
+                !(self.piece_info.attackers_to_exist(to, nstm, occ_after_mov))
+            }
+            _ => {
+                let piece = from;
+                let blockers = self.get_blockers();
+                let our_king = self.get_bitboard(piece_type::KING, stm).lsb();
+                let pin_mask = our_king
+                    .map(|k| pin_mask(piece, blockers, k))
+                    .unwrap_or(Bitboard::full());
+
+                // pinned pieces can only move along the ray of the pin
+                if (pin_mask & to.into()).is_empty() {
+                    return false;
+                }
+
+                // if in check, the move must also resolve the check.
+                match self.get_check_state() {
+                    CheckState::None => true,
+                    CheckState::Double => false, // only a king move can resolve a double check
+                    CheckState::Single => {
+                        // handle en passant capturing the checker
+                        if flag == move_flags::EN_PASSANT {
+                            return mov.get_capture_sq() == self.get_checkers().lsb();
+                        }
+
+                        let q_mask = quiets_targets::<SingleCheck>(self, P::COLOR);
+                        let c_mask = captures_targets::<SingleCheck>(self, P::COLOR);
+                        let resolves = q_mask | c_mask;
+
+                        // we either have to capture the checker or block the check
+                        !(resolves & to.into()).is_empty()
+                    }
+                }
+            }
+        }
     }
 
     /// # Safety

@@ -2,6 +2,7 @@ use crate::{
     core::{
         color::{Perspective, perspectives},
         coordinates::EpTargetSquare,
+        depth::Depth,
         eval::{
             self,
             hce::{
@@ -126,6 +127,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 Score::POS_INF,
                 params.clone(),
                 &StaticEvaluator,
+                Depth::new(30),
             )
             .into(),
             colors::BLACK_C => qsearch::<_, perspectives::Black, _>(
@@ -134,6 +136,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 Score::POS_INF,
                 params.clone(),
                 &StaticEvaluator,
+                Depth::new(30),
             )
             .into(),
             _ => unreachable!(),
@@ -170,8 +173,8 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             let from = mov.get_from();
             let to = mov.get_to();
             let piece = pos.get_piece(from).piece_type();
-            let score = ordering::psqt(phase, piece, from, to, color)
-                + ordering::see(pos, mov, color)
+            let score = ordering::psqt(phase, piece, from, to, mov.get_flag(), color) as i32
+                + ordering::see(pos, mov, color) as i32
                 + PolicyInput::check_bonus(phase, pos, color, mov)
                 + PolicyInput::meta(pos, mov, state);
 

@@ -2,14 +2,14 @@ use std::{
     cmp::{Reverse, min},
     hint::assert_unchecked,
     ops::ControlFlow,
-    time::Instant,
+    time::{Duration, Instant},
 };
 use uom::si::{information::byte, u64::Information};
 
 use crate::{
     core::{
         color::{
-            Perspective, colors,
+            Color, Perspective, colors,
             perspectives::{self},
         },
         coordinates::EpTargetSquare,
@@ -29,7 +29,7 @@ use crate::{
         search::{
             id::node_types::*,
             limit::UciLimit,
-            ordering,
+            ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
             quiesce::qsearch,
             score::{Cp, Score},
             strat::{
@@ -43,6 +43,9 @@ use crate::{
     },
     misc::{CancellationToken, DebugMode, List},
 };
+
+#[cfg(test)]
+pub mod test;
 
 struct StaticEvaluator;
 
@@ -116,7 +119,14 @@ pub fn go(
 
         best_move = searcher.root_best_move();
         if let Some(best_move) = best_move {
-            uci_info(depth, &stats, Cp { v: best_score as i16 }, best_move);
+            let search_time = Instant::now() - searcher.time_start;
+            uci_info(
+                depth,
+                &stats,
+                Cp { v: best_score as i16 },
+                best_move,
+                search_time,
+            );
         }
 
         // update stats
@@ -129,14 +139,41 @@ pub fn go(
 }
 
 struct RootStats {
-    score: i32,
-    mov: Move,
+    mov: ScoredMove,
+}
+
+impl RootStats {
+    #[inline]
+    fn new(m: Move, score: MoveScore) -> Self {
+        Self { mov: ScoredMove::new(m, score) }
+    }
+
+    #[inline]
+    fn mov(&self) -> Move {
+        self.mov.mov()
+    }
+
+    #[inline]
+    fn scored_move(&self) -> &ScoredMove {
+        &self.mov
+    }
+
+    #[inline]
+    fn score(&self) -> MoveScore {
+        self.mov.score()
+    }
+
+    #[inline]
+    fn set_score(&mut self, score: MoveScore) {
+        self.mov.set_score(score);
+    }
 }
 
 struct Searcher {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
     root_ply: Ply,
     limit: UciLimit,
+    time_start: Instant,
     time_limit: Instant,
     ct: CancellationToken,
     aborted: bool,
@@ -148,7 +185,7 @@ impl Searcher {
     fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, hash_size: Information) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-            stats.push(RootStats { mov: m, score: 0 });
+            stats.push(RootStats::new(m, 0));
             ControlFlow::Continue::<(), ()>(())
         });
 
@@ -166,6 +203,7 @@ impl Searcher {
             root_stats: stats,
             root_ply: pos.ply(),
             limit,
+            time_start: search_start,
             time_limit,
             ct,
             aborted: false,
@@ -177,11 +215,11 @@ impl Searcher {
     fn sort_root(&mut self) {
         self.root_stats
             .as_mut_slice()
-            .sort_by_key(|mov| Reverse(mov.score));
+            .sort_by_key(|mov| Reverse(mov.score()));
     }
 
     fn root_best_move(&self) -> Option<Move> {
-        self.root_stats.get(0).map(|x| x.mov)
+        self.root_stats.get(0).map(|x| x.mov())
     }
 
     fn should_stop(&self, stats: &SearchStats) -> bool {
@@ -258,20 +296,27 @@ impl Searcher {
             };
         }
 
+        let rel_ply: Depth = (pos.ply() - self.root_ply).into();
+
         // qsearch at the leaf nodes
-        if depth == Depth::ROOT {
-            return qsearch(pos, alpha, beta, HceParams, &StaticEvaluator);
+        if depth == Depth::ROOT || rel_ply >= Depth::MAX {
+            return qsearch(
+                pos,
+                alpha,
+                beta,
+                HceParams,
+                &StaticEvaluator,
+                Depth::new(100),
+            );
         }
 
-        // vars
-        let rel_ply: Depth = (pos.ply() - self.root_ply).into();
         let pieces = pos.piece_info();
         let phase = TaperValue::from_position(pieces);
         let is_root = T::IS_ROOT;
-        let stm = P::COLOR;
         let key = pos.get_key();
         let orig_alpha = alpha;
         let tt_entry = self.tt.get(key);
+        let killers = self.ss.entry(rel_ply).killers.clone();
 
         // tt-cutoff
         if !is_root
@@ -284,81 +329,33 @@ impl Searcher {
             return Score::new(entry.score);
         }
 
-        let tt_move = tt_entry.map(|e| e.mov);
+        let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
 
         // move gen
-        let mut moves = MoveList::new();
-        if is_root {
-            // if root node and if we have info on them, they are already ordered by the
-            // previous iteration. othewise this is the first iteration, so order them by
-            // generic move ordering (the branch below).
-            for m in self.root_stats.iter() {
-                moves.push(m.mov);
-            }
+        let mut move_picker = if is_root {
+            MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
         else {
-            // generic move ordering
-            let mut move_list = List::<{ MAX_LEGAL_MOVES }, (Move, i32)>::new();
-            _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-                move_list.push((m, 0));
-                ControlFlow::Continue::<(), ()>(())
-            });
+            MovePicker::new(tt_move, killers.clone())
+        };
 
-            let killers = &self.ss.entry(rel_ply).killers;
-
-            // generate the see score outside of the move generation and the sorting, such
-            // that it isn't computed for each comparison and we don't distrurb cache
-            // locality.
-            for &mut (m, ref mut score) in move_list.as_mut_slice() {
-                *score = if Some(m) == tt_move {
-                    300_000
-                }
-                else {
-                    // todo: currently see for quiet moves evaluates promotion values etc. there is
-                    // probably a better way to order promotions than using see. then we can skip
-                    // see for quiets all together...
-
-                    let is_capture = m.get_flag().is_capture();
-
-                    if is_capture {
-                        let see = ordering::see(pieces, m, P::COLOR);
-                        if see >= 0 {
-                            // good captures (210_000..)
-                            210_000 + see
-                        }
-                        else {
-                            // bad captures (100_000..)
-                            100_000 + see
-                        }
-                    }
-                    // T1 killers (..200_000)
-                    else if let Some(age) = killers._position(&m) {
-                        200_000 - (age as i32 * 10_000)
-                    }
-                    else {
-                        let (from, to, _) = m.into();
-                        let piece = pieces.get_piece(from);
-                        let piece_type = piece.piece_type();
-                        let see = ordering::see(pieces, m, P::COLOR);
-
-                        see + ordering::psqt(phase, piece_type, from, to, stm)
-                    }
-                };
-            }
-
-            // sort by score descending
-            move_list
-                .as_mut_slice()
-                .sort_unstable_by_key(|&(_, score)| Reverse(score));
-
-            for &(m, _) in move_list.as_slice() {
-                moves.push(m);
-            }
+        let scorer = Scorer {
+            tt_move,
+            killers,
+            color: P::COLOR,
+            phase,
         };
 
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
-        for (i, m) in moves.iter().copied().enumerate() {
+        let mut curr = 0;
+        while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
+            // generating plegals and then filtering hasn't show to be faster, maybe
+            // optimize this more and then try again.
+            // if !pos.is_legal_for::<P>(m) {
+            //     continue;
+            // }
+
             // make the move
             pos.make_move_for::<P>(m);
 
@@ -374,9 +371,9 @@ impl Searcher {
 
             // late move reductions
             #[allow(clippy::approx_constant)]
-            if depth >= Depth::new(3) && i > 1 {
+            if depth >= Depth::new(3) && curr > 1 {
                 let d = depth.v() as f32;
-                let m = i as f32;
+                let m = curr as f32;
                 let lmr = 0.99 + f32::ln(d) * f32::ln(m) / 3.14;
                 depth_reduction += lmr as u8;
             }
@@ -385,7 +382,7 @@ impl Searcher {
             let score = {
                 let new_depth = depth - 1 + depth_extension;
 
-                if i == 0 {
+                if curr == 0 {
                     // search with a full window to get an exact score.
                     !self.search::<P::Opponent, Normal>(pos, stats, new_depth, !beta, !alpha)
                 }
@@ -444,7 +441,11 @@ impl Searcher {
             if is_root {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
-                self.root_stats.as_mut_slice()[i].score = score.0;
+                self.root_stats.as_mut_slice()[curr].set_score(
+                    score.0.try_into().unwrap_or_else(|_| {
+                        todo!("TODO: compress the eval scores into move scores")
+                    }),
+                );
             }
 
             if score > best_score {
@@ -457,7 +458,7 @@ impl Searcher {
 
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
-                    if !m.get_flag().is_capture() && Some(m) != tt_move {
+                    if !m.get_flag().is_capture() && m != tt_move {
                         self.ss.entry_mut(rel_ply).killers._push(m);
                     }
 
@@ -468,6 +469,8 @@ impl Searcher {
             else {
                 // fail low
             }
+
+            curr += 1;
         }
 
         self.tt.insert(TTEntry {
@@ -642,6 +645,11 @@ impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
     pub fn position(&self, item: &T) -> Option<usize> {
         self.items.iter().position(|x| x == item)
     }
+
+    #[inline(always)]
+    pub fn as_slice(&self) -> &[T] {
+        &self.items
+    }
 }
 
 // todo: benchmark that this is actually faster...
@@ -667,16 +675,85 @@ impl<T: Default + Copy + Eq> RbSet<T, 2> {
             None
         }
     }
+
+    #[inline(always)]
+    pub fn _is_empty(&self) -> bool {
+        self.items[0] == T::default() && self.items[1] == T::default()
+    }
 }
 
-fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move) {
+pub struct Scorer {
+    pub tt_move: Move,
+    pub killers: RbSet<Move, 2>,
+    pub color: Color,
+    pub phase: TaperValue,
+}
+
+impl MoveScorer for Scorer {
+    #[inline(always)]
+    fn score<S: Stage>(&self, pos: &Position, mov: Move) -> MoveScore {
+        match S::stage() {
+            // no need to score hashmove, there's only 1
+            RtStage::YieldHashMove => {
+                debug_assert!(
+                    mov == self.tt_move,
+                    "hashmove stage should only yield the tt move"
+                );
+                0
+            }
+
+            // captures and promos, ordered by see value.
+            RtStage::GenerateCapturesAndPromos
+            | RtStage::YieldGoodCapturesAndPromos
+            | RtStage::YieldBadCaptures => {
+                // todo: currently see evaluates the promo values, but we don't need a whole
+                // see for quiet promos, maybe that can be optimized...
+                ordering::see(pos.piece_info(), mov, self.color)
+            }
+
+            // score killer moves by their age
+            RtStage::YieldKillers => {
+                let age = self.killers._position(&mov);
+                debug_assert!(
+                    age.is_some(),
+                    "move in killer stage should be a killer move"
+                );
+
+                // Safety: assert above
+                let age = unsafe { age.unwrap_unchecked() };
+
+                -(age as MoveScore)
+            }
+
+            // score quiet moves by psqt diff
+            RtStage::GenerateQuiets | RtStage::YieldQuiets => {
+                let (from, to, _) = mov.into();
+                let pieces = pos.piece_info();
+                let piece = pieces.get_piece(from);
+                let piece_type = piece.piece_type();
+
+                ordering::psqt(self.phase, piece_type, from, to, mov.get_flag(), self.color)
+            }
+
+            RtStage::Done => 0,
+        }
+    }
+}
+
+fn uci_info(
+    depth: Depth,
+    stats: &SearchStats,
+    best_score: Cp,
+    best_move: Move,
+    search_time: Duration,
+) {
     let depth = UciArg::Some(UciDepth(depth));
     let seldepth = UciArg::<UciSeldepth>::None; // TODO
     let score = UciArg::Some(UciScore::Centipawns(UciCp(best_score)));
     let nodes = UciArg::Some(UciNodes(stats.nodes as usize));
-    let nps = UciArg::<UciNps>::None; // TODO
+    let nps = UciArg::Some(UciNps::from_nodes_and_time(stats.nodes, search_time));
     let currmove = UciArg::Some(UciCurrmove(best_move));
-    let time = UciArg::<UciSearchtime>::None; // TODO
+    let time = UciArg::Some(UciSearchtime(search_time));
     let pv = UciArg::<UciPv<MoveList>>::None; // TODO
     let string = UciArg::<String>::None;
 
