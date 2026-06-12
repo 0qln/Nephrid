@@ -38,6 +38,7 @@ use crate::{
             },
             tt::{self, TranspositionTable},
         },
+        chrono::TimeMan,
         turn::Turn,
         zobrist,
     },
@@ -119,7 +120,7 @@ pub fn go(
 
         best_move = searcher.root_best_move();
         if let Some(best_move) = best_move {
-            let search_time = Instant::now() - searcher.time_start;
+            let search_time = Instant::now() - searcher.time_man.time_start();
             uci_info(
                 depth,
                 &stats,
@@ -173,8 +174,7 @@ struct Searcher {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
     root_ply: Ply,
     limit: UciLimit,
-    time_start: Instant,
-    time_limit: Instant,
+    time_man: TimeMan,
     ct: CancellationToken,
     aborted: bool,
     tt: TranspositionTable<TTEntry>,
@@ -189,9 +189,7 @@ impl Searcher {
             ControlFlow::Continue::<(), ()>(())
         });
 
-        let search_start = Instant::now();
-        let time_per_move = limit.time_per_move(pos);
-        let time_limit = search_start + time_per_move;
+        let time_man = TimeMan::init(&limit, pos);
 
         let tt_entries = {
             let bytes = hash_size.get::<byte>() as usize;
@@ -203,8 +201,7 @@ impl Searcher {
             root_stats: stats,
             root_ply: pos.ply(),
             limit,
-            time_start: search_start,
-            time_limit,
+            time_man,
             ct,
             aborted: false,
             tt: TranspositionTable::new(tt_entries),
@@ -223,7 +220,6 @@ impl Searcher {
     }
 
     fn should_stop(&self, stats: &SearchStats) -> bool {
-        let now = Instant::now();
         let nodes = stats.nodes;
         let iters = stats.iterations;
 
@@ -232,8 +228,10 @@ impl Searcher {
             return true;
         }
 
-        // limit has been reached
-        if self.limit.is_active() && self.limit.is_reached(nodes, now, self.time_limit, iters) {
+        // time manager says we should stop or limit has been reached
+        if self.limit.is_active()
+            && (self.time_man.should_stop() || self.limit.is_reached(nodes, iters))
+        {
             return true;
         }
 

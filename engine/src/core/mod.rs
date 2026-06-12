@@ -44,6 +44,7 @@ pub mod piece;
 pub mod ply;
 pub mod position;
 pub mod search;
+pub mod chrono;
 pub mod turn;
 pub mod zobrist;
 

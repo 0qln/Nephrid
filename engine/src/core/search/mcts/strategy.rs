@@ -15,6 +15,7 @@ use crate::{
             score::Cp,
             strat::*,
         },
+        chrono::TimeMan,
     },
     misc::{CancellationToken, DebugMode},
 };
@@ -64,7 +65,6 @@ impl MctsStrategy for MctsFindBest {
 #[derive(Default, Debug)]
 pub struct MctsUci {
     find_best: MctsFindBest,
-    search_start: Option<Instant>,
     last_uci_out: Option<Instant>,
 
     // search control
@@ -73,8 +73,7 @@ pub struct MctsUci {
     debug: DebugMode,
 
     // runtime tracking
-    time_per_move: Duration,
-    time_limit: Option<Instant>,
+    time_man: Option<TimeMan>,
     nodes_begin: u64,
     terminal_nodes_begin: u64,
     iterations: u64,
@@ -101,7 +100,9 @@ impl MctsUci {
     }
 
     pub fn search_time(&self) -> Option<UciSearchtime> {
-        Some(UciSearchtime(Instant::now() - self.search_start?))
+        Some(UciSearchtime(
+            self.time_man.as_ref().map(|t| t.search_time())?,
+        ))
     }
 
     /// Number of nodes per second since start of the search, given the current
@@ -186,6 +187,10 @@ impl MctsUci {
     pub fn limit(&self) -> &UciLimit {
         &self.limit
     }
+
+    pub fn time_man(&self) -> Option<&TimeMan> {
+        self.time_man.as_ref()
+    }
 }
 
 impl MctsStrategy for MctsUci {
@@ -193,13 +198,11 @@ impl MctsStrategy for MctsUci {
     type Step = <MctsFindBest as MctsStrategy>::Step;
 
     fn start(&mut self, tree: &mut Tree, pos: &Position) {
-        self.search_start = Some(Instant::now());
         self.nodes_begin = tree.size() as u64;
         self.terminal_nodes_begin = tree.terminal_nodes() as u64;
         self.iterations = 0;
 
-        self.time_per_move = self.limit.time_per_move(pos);
-        self.time_limit = Some(Instant::now() + self.time_per_move);
+        self.time_man = Some(TimeMan::init(&self.limit, pos));
         self.is_not_pondering = self.pt.is_none();
     }
 
@@ -229,8 +232,10 @@ impl MctsStrategy for MctsUci {
             && !self.is_not_pondering
             && !ponder_tok.should_ponder()
         {
-            // We got a hit! Transition to normal search and set time limits.
-            self.time_limit = Some(Instant::now() + self.time_per_move);
+            // transition to normal search and set time limits.
+            if let Some(time_man) = &mut self.time_man {
+                time_man.reinit_limit();
+            }
             self.is_not_pondering = true;
         }
 
@@ -251,12 +256,10 @@ impl MctsStrategy for MctsUci {
 
         // 5. Standard time/node limits
         if self.limit.is_active()
-            && self.limit.is_reached(
-                tree.size() as u64 - self.nodes_begin,
-                Instant::now(),
-                self.time_limit.unwrap(),
-                self.iterations,
-            )
+            && (self
+                .limit
+                .is_reached(tree.size() as u64 - self.nodes_begin, self.iterations)
+                || matches!(self.time_man().map(|t| t.should_stop()), Some(true)))
         {
             return true;
         }
