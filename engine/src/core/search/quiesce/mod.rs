@@ -20,29 +20,12 @@ pub trait QSearchParams {
     fn delta_pruning_threshold(&self) -> TaperValue;
 }
 
-pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
-    pos: &mut Position,
-    alpha: Score<P>,
-    beta: Score<P>,
-    params: X,
-    static_evaluator: &S,
-    depth: Depth,
-) -> Score<P> {
-    let in_check = pos.get_check_state() != CheckState::None;
-    if in_check {
-        _qsearch::<true, _, _, _>(pos, alpha, beta, params, static_evaluator, depth)
-    }
-    else {
-        _qsearch::<false, _, _, _>(pos, alpha, beta, params, static_evaluator, depth)
-    }
-}
-
 /// # Q-Search
 ///
 /// Make the position quiet.
 ///
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
-fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
+pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
     pos: &mut Position,
     mut alpha: Score<P>,
     beta: Score<P>,
@@ -50,6 +33,8 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
     static_evaluator: &S,
     depth: Depth,
 ) -> Score<P> {
+    let in_check = pos.get_check_state() != CheckState::None;
+
     let mut best_value = Score::NEG_INF;
 
     let stm = P::COLOR;
@@ -62,7 +47,7 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
     }
 
     // stand pad if not in check
-    if !IN_CHECK {
+    if !in_check {
         best_value = static_eval();
 
         if best_value >= beta {
@@ -74,55 +59,11 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
     }
 
     // move gen
-    struct MoveScorer {
-        color: Color,
-        phase: TaperValue,
-    }
-    impl ordering::MoveScorer for MoveScorer {
-        fn score<S: Stage>(&self, pos: &Position, mov: Move) -> MoveScore {
-            match S::stage() {
-                ordering::RtStage::YieldHashMove => {
-                    todo!("we don't yet have a hashmove in qsearch")
-                }
-                ordering::RtStage::GenerateCapturesAndPromos
-                | ordering::RtStage::YieldGoodCapturesAndPromos
-                | ordering::RtStage::YieldBadCaptures => {
-                    let pieces = pos.piece_info();
-
-                    let (from, to, _) = mov.into();
-                    let piece = pieces.get_piece(from);
-
-                    ordering::see(pieces, mov, self.color)
-                        + ordering::psqt(
-                            self.phase,
-                            piece.piece_type(),
-                            from,
-                            to,
-                            mov.get_flag(),
-                            self.color,
-                        )
-                }
-                ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
-                ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {
-                    debug_assert!(
-                        pos.get_check_state() != CheckState::None,
-                        "we should never be generating quiets in qsearch if we're not in check"
-                    );
-                    let pieces = pos.piece_info();
-                    let (from, to, _) = mov.into();
-                    let piece = pieces.get_piece(from);
-                    ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
-                }
-                ordering::RtStage::Done => todo!("why are we scoring Done??"),
-            }
-        }
-    }
     let scorer = MoveScorer { color: P::COLOR, phase };
-
     let mut move_picker = MovePicker::new_with_max_stage(
         Move::null(),
         RbSet::<Move, 2>::default(),
-        if IN_CHECK {
+        if in_check {
             RtStage::Done
         }
         else {
@@ -137,7 +78,7 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
         // }
 
         // delta pruning
-        if !IN_CHECK && phase < params.delta_pruning_threshold() {
+        if !in_check && phase < params.delta_pruning_threshold() {
             let value_bonus = PromoPieceType::try_from(m.get_flag())
                 .ok()
                 .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
@@ -158,28 +99,14 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
 
         pos.make_move_for::<P>(m);
 
-        let in_check = pos.get_check_state() != CheckState::None;
-
-        let score = if in_check {
-            !_qsearch::<true, _, _, _>(
-                pos,
-                !beta,
-                !alpha,
-                params.clone(),
-                static_evaluator,
-                depth - 1,
-            )
-        }
-        else {
-            !_qsearch::<false, _, _, _>(
-                pos,
-                !beta,
-                !alpha,
-                params.clone(),
-                static_evaluator,
-                depth - 1,
-            )
-        };
+        let score = !qsearch(
+            pos,
+            !beta,
+            !alpha,
+            params.clone(),
+            static_evaluator,
+            depth - 1,
+        );
 
         pos.unmake_move_for::<P>(m);
 
@@ -195,4 +122,55 @@ fn _qsearch<const IN_CHECK: bool, S: StaticEvaluator, P: Perspective, X: QSearch
     }
 
     best_value
+}
+
+struct MoveScorer {
+    color: Color,
+    phase: TaperValue,
+}
+impl ordering::MoveScorer for MoveScorer {
+    fn score<S: Stage>(&self, pos: &Position, mov: Move) -> MoveScore {
+        match S::stage() {
+            ordering::RtStage::YieldHashMove => {
+                todo!("we don't yet have a hashmove in qsearch")
+            }
+            ordering::RtStage::GenerateCapturesAndPromos
+            | ordering::RtStage::YieldGoodCapturesAndPromos
+            | ordering::RtStage::YieldBadCaptures => {
+                let pieces = pos.piece_info();
+
+                let (from, to, _) = mov.into();
+                let piece = pieces.get_piece(from);
+
+                ordering::see(pieces, mov, self.color)
+                    + ordering::psqt(
+                        self.phase,
+                        piece.piece_type(),
+                        from,
+                        to,
+                        mov.get_flag(),
+                        self.color,
+                    )
+            }
+            ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
+            ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {
+                debug_assert!(
+                    pos.get_check_state() != CheckState::None,
+                    "we should never be generating quiets in qsearch if we're not in check"
+                );
+                let pieces = pos.piece_info();
+                let (from, to, _) = mov.into();
+                let piece = pieces.get_piece(from);
+                ordering::psqt(
+                    self.phase,
+                    piece.piece_type(),
+                    from,
+                    to,
+                    mov.get_flag(),
+                    self.color,
+                )
+            }
+            ordering::RtStage::Done => todo!("why are we scoring Done??"),
+        }
+    }
 }
