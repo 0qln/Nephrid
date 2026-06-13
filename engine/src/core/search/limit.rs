@@ -1,9 +1,4 @@
-use std::{
-    cmp::min,
-    time::{Duration, Instant},
-};
-
-use crate::core::{color::colors, depth::Depth, r#move::Move, position::Position};
+use crate::core::{depth::Depth, r#move::Move};
 
 /// A struct to hold all by the UCI defined search limits and targets.
 #[derive(Debug, Clone)]
@@ -42,39 +37,12 @@ impl UciLimit {
         }
     }
 
-    pub fn time_per_move(&self, pos: &Position) -> Duration {
-        let time = match pos.get_turn() {
-            colors::WHITE => self.wtime,
-            colors::BLACK => self.btime,
-            _ => unreachable!(),
-        };
-        let inc = match pos.get_turn() {
-            colors::WHITE => self.winc,
-            colors::BLACK => self.binc,
-            _ => unreachable!(),
-        };
-
-        let moves_to_go = min(self.movestogo, 50) as u64;
-        let time_per_move = (time / moves_to_go).saturating_add(inc);
-        let time_per_move = min(time_per_move, self.movetime);
-
-        let result = time_per_move.saturating_sub(self.lag_buf.into());
-
-        Duration::from_millis(result)
-    }
-
     pub fn is_active(&self) -> bool {
         self.is_active
     }
 
-    pub fn is_reached(
-        &self,
-        nodes: u64,
-        curr_time: Instant,
-        time_limit: Instant,
-        iterations: u64,
-    ) -> bool {
-        nodes >= self.nodes || curr_time >= time_limit || iterations >= self.iterations
+    pub fn is_reached(&self, nodes: u64, iterations: u64) -> bool {
+        nodes >= self.nodes || iterations >= self.iterations
     }
 }
 

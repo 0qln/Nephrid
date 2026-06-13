@@ -8,6 +8,7 @@ use uom::si::{information::byte, u64::Information};
 
 use crate::{
     core::{
+        chrono::TimeMan,
         color::{
             Color, Perspective, colors,
             perspectives::{self},
@@ -85,9 +86,12 @@ impl eval::StaticEvaluator for StaticEvaluator {
 }
 
 #[derive(Default)]
-struct SearchStats {
-    nodes: u64,
-    iterations: u64,
+pub struct SearchStats {
+    pub nodes: u64,
+    pub iterations: u64,
+
+    /// Time taken for last iteration.
+    pub iter_time: Duration,
 }
 
 pub fn go(
@@ -104,9 +108,6 @@ pub fn go(
     let mut best_move = None;
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
-        if searcher.should_stop(&stats) {
-            break;
-        }
         let best_score = searcher.search_root(pos, &mut stats, depth);
 
         // make sure to break before messing up the order of the previous iteration with
@@ -119,7 +120,7 @@ pub fn go(
 
         best_move = searcher.root_best_move();
         if let Some(best_move) = best_move {
-            let search_time = Instant::now() - searcher.time_start;
+            let search_time = Instant::now() - searcher.time_man.time_start();
             uci_info(
                 depth,
                 &stats,
@@ -132,7 +133,11 @@ pub fn go(
         // update stats
         stats.iterations += 1;
 
-        // increment depth for next iteration
+        searcher.time_man.hint_preferred_target(&stats);
+
+        if searcher.should_stop(&stats) || searcher.time_man.reached_target() {
+            break;
+        }
     }
 
     best_move
@@ -173,8 +178,7 @@ struct Searcher {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
     root_ply: Ply,
     limit: UciLimit,
-    time_start: Instant,
-    time_limit: Instant,
+    time_man: TimeMan,
     ct: CancellationToken,
     aborted: bool,
     tt: TranspositionTable<TTEntry>,
@@ -189,9 +193,7 @@ impl Searcher {
             ControlFlow::Continue::<(), ()>(())
         });
 
-        let search_start = Instant::now();
-        let time_per_move = limit.time_per_move(pos);
-        let time_limit = search_start + time_per_move;
+        let time_man = TimeMan::init(&limit, pos);
 
         let tt_entries = {
             let bytes = hash_size.get::<byte>() as usize;
@@ -203,8 +205,7 @@ impl Searcher {
             root_stats: stats,
             root_ply: pos.ply(),
             limit,
-            time_start: search_start,
-            time_limit,
+            time_man,
             ct,
             aborted: false,
             tt: TranspositionTable::new(tt_entries),
@@ -223,7 +224,6 @@ impl Searcher {
     }
 
     fn should_stop(&self, stats: &SearchStats) -> bool {
-        let now = Instant::now();
         let nodes = stats.nodes;
         let iters = stats.iterations;
 
@@ -232,8 +232,10 @@ impl Searcher {
             return true;
         }
 
-        // limit has been reached
-        if self.limit.is_active() && self.limit.is_reached(nodes, now, self.time_limit, iters) {
+        // time manager says we should stop or limit has been reached
+        if self.limit.is_active()
+            && (self.time_man.reached_limit() || self.limit.is_reached(nodes, iters))
+        {
             return true;
         }
 
