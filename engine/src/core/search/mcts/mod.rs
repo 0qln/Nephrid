@@ -1,5 +1,5 @@
 use crate::core::{
-    params::{IParams, MctsHceParams, ParamsRef},
+    params::{IParams, MctsHceParams, MctsNNParams, MctsPureParams},
     search::mcts::select::puct::PuctParams,
 };
 use burn::prelude::Backend;
@@ -10,7 +10,6 @@ use crate::{
     core::{
         config::Configuration,
         r#move::Move,
-        params::{CreateParamsError, Params},
         position::Position,
         search::mcts::{
             eval::{
@@ -76,11 +75,12 @@ pub trait MctsConfig {
 }
 
 pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
+    type Params: IParams;
     type Selector: Selector;
     type Evaluator: Evaluator;
     type Noiser: Noiser;
 
-    fn params(&self) -> ParamsRef;
+    fn params(&self) -> <Self::Params as IParams>::Ref;
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
     fn noiser(&self) -> Self::Noiser;
@@ -139,6 +139,7 @@ impl<B: Backend> MctsParts for NNParts<B> {
     type Selector = PuctSelector;
     type Evaluator = NNEvaluator<B>;
     type Noiser = DirichletNoiser;
+    type Params = MctsNNParams;
 
     fn params(&self) -> ParamsRef {
         todo!()
@@ -208,18 +209,18 @@ impl<B: Backend> NNParts<B> {
 
 /// Mcts parts for mcts with puct + static analysis.
 #[derive(Debug)]
-pub struct HceParts {
+pub struct HceParts<P> {
     alpha: f32,
     epsilon: Ratio,
-    params: ParamsRef,
+    params: P,
 }
 
-impl MctsParts for HceParts {
+impl<P: IParams> MctsParts for HceParts<P::Ref> {
     type Selector = PuctSelector;
     type Evaluator = HceEvaluator;
     type Noiser = DirichletNoiser;
 
-    fn params(&self) -> ParamsRef {
+    fn params(&self) -> P::Ref {
         self.params.clone()
     }
 
@@ -246,7 +247,7 @@ pub enum CreateHcePartsError {
     EvalParams(#[from] CreateParamsError),
 }
 
-impl TryFrom<&Configuration> for HceParts {
+impl<P: (for <'a> TryFrom<&'a Configuration>) + IParams> TryFrom<&Configuration> for HceParts<P::Ref> {
     type Error = CreateHcePartsError;
 
     fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
@@ -255,13 +256,13 @@ impl TryFrom<&Configuration> for HceParts {
         let epsilon = Ratio::new(config.dirichlet_epsilon());
         epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
 
-        let params = Params::try_from(config)?.shared();
+        let params = P::try_from(config)?.shared();
 
         Ok(Self::new(alpha, epsilon, params))
     }
 }
 
-impl Default for HceParts {
+impl<P> Default for HceParts<P> {
     fn default() -> Self {
         let config = Configuration::builder()
             .qsearch(&MctsHceParams)
@@ -273,8 +274,8 @@ impl Default for HceParts {
     }
 }
 
-impl HceParts {
-    pub fn new(alpha: f32, epsilon: Ratio, params: ParamsRef) -> Self {
+impl<P> HceParts<P> {
+    pub fn new(alpha: f32, epsilon: Ratio, params: P) -> Self {
         Self { alpha, epsilon, params }
     }
 }
@@ -287,8 +288,9 @@ impl MctsParts for PureParts {
     type Selector = UcbSelector;
     type Evaluator = PlayoutEvaluator;
     type Noiser = NullNoiser;
+    type Params = MctsPureParams;
 
-    fn params(&self) -> ParamsRef {
+    fn params(&self) -> {
         todo!()
     }
 

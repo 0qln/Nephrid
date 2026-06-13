@@ -16,18 +16,6 @@ use crate::{
     math::NormalizedEntropy,
 };
 
-#[cfg(feature = "tunable")]
-pub type Params = TunableParams;
-#[cfg(feature = "tunable")]
-pub type ParamsRef = Rc<TunableParams>;
-#[cfg(feature = "tunable")]
-pub type CreateParamsError = CreateTunableParamsError;
-
-#[cfg(not(feature = "tunable"))]
-pub type Params = MctsHceParams;
-#[cfg(not(feature = "tunable"))]
-pub type ParamsRef = MctsHceParams;
-
 #[derive(Debug, Clone)]
 pub struct TunableParams {
     timeman_entropy_target: NormalizedEntropy,
@@ -85,6 +73,7 @@ impl ChronoParams for Rc<TunableParams> {
 
 impl IParams for TunableParams {
     type Ref = Rc<TunableParams>;
+
     fn shared(self) -> Rc<TunableParams> {
         Rc::new(self)
     }
@@ -100,6 +89,7 @@ pub enum CreateTunableParamsError {
     InvalidDeltaPruningThreshold(String),
 }
 
+#[cfg(feature = "tunable")]
 impl TryFrom<&Configuration> for TunableParams {
     type Error = CreateTunableParamsError;
 
@@ -126,9 +116,12 @@ impl TryFrom<&Configuration> for TunableParams {
 }
 
 pub trait IParams {
-    type Ref: ?Sized;
+    type Ref: ?Sized + Clone;
     fn shared(self) -> Self::Ref;
 }
+
+// todo: tune custom params
+pub type MctsNNParams = MctsHceParams;
 
 #[derive(Debug, Default, Clone)]
 pub struct MctsHceParams;
@@ -223,5 +216,17 @@ impl QSearchParams for IdHceParams {
     #[inline(always)]
     fn delta_pruning_threshold(&self) -> TaperValue {
         TaperValue::new(16)
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct MctsPureParams;
+
+impl IParams for MctsPureParams {
+    type Ref = Self;
+
+    #[inline(always)]
+    fn shared(self) -> Self::Ref {
+        self
     }
 }
