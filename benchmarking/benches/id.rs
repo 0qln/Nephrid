@@ -8,8 +8,7 @@ use engine::{
         position::Position,
         search::{id, limit::UciLimit},
         zobrist,
-    },
-    misc::{CancellationToken, DebugMode},
+    }, math::NormalizedEntropy, misc::{CancellationToken, DebugMode}
 };
 use uom::si::{information::mebibyte, u64::Information};
 
@@ -34,7 +33,7 @@ fn search_with_node_target(pos: &mut Position) {
     let ct = CancellationToken::new();
     let hash_size = Information::new::<mebibyte>(16);
 
-    id::go(pos, limit, &debug, ct, hash_size);
+    id::go(pos, limit, &debug, ct, hash_size, NormalizedEntropy::zero());
 }
 
 pub fn id_nps(c: &mut Criterion) {

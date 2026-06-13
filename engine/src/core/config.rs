@@ -1,10 +1,16 @@
 use crate::{
     core::{
-        eval::hce::TaperValue, params::HceParams, search::{mcts::{
-            eval::hce::PolicyParams, node::VisitCount, search::SearchParams,
-            select::puct::PuctParams,
-        }, quiesce::QSearchParams}
+        chrono::ChronoParams,
+        eval::hce::TaperValue,
+        search::{
+            mcts::{
+                eval::hce::PolicyParams, node::VisitCount, search::MctsParams,
+                select::puct::PuctParams,
+            },
+            quiesce::QSearchParams,
+        },
     },
+    math::NormalizedEntropy,
     misc::{InvalidValueError, ValueOutOfRangeError},
 };
 use std::{
@@ -12,8 +18,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 use thiserror::Error;
-use uom::si::information::mebibyte;
-use uom::si::u64::Information;
+use uom::si::{information::mebibyte, u64::Information};
 
 #[derive(Debug, Error)]
 #[error("Unknown option: {0}")]
@@ -261,49 +266,135 @@ pub struct Configuration {
 
     /// Bonus for tt best move in mcts. In percent.
     mcts_tt_best_move: ConfigOption<Spin>,
+
+    /// Target entropy for time management. In percent.
+    timeman_entropy_target: ConfigOption<Spin>,
 }
 
-impl Default for Configuration {
-    fn default() -> Self {
-        Self {
-            hash: ConfigOption::new("hash", Spin::new(16, 1, 64 * 1024 * 1024)),
-            threads: ConfigOption::new("threads", Spin::new(1, 1, 1)),
-            clear_hash: ConfigOption::new("clearhash", Button::new(clear_hash_impl)),
-            dirichlet_alpha: ConfigOption::new("dirichlet-alpha", Spin::new(30, 0, 1000)),
-            dirichlet_epsilon: ConfigOption::new("dirichlet-epsilon", Spin::new(25, 0, 100)),
-            weights_path: ConfigOption::new("weights-path", StringOption::new("./weights")),
-            game_tree_caching: ConfigOption::new("game-tree-caching", Check::new(true)),
-            gui_lag: ConfigOption::new("gui-lag", Spin::new(100, 1, 10_000)),
-            ponder: ConfigOption::new("ponder", Check::new(true)),
-            eval_policy_temperature: ConfigOption::new(
-                "eval-policy-temperature",
-                Spin::new((HceParams.policy_temperature() * 100.) as i32, 1, 10000),
-            ),
-            eval_futility_margin: ConfigOption::new(
-                "eval-futility-margin",
-                Spin::new(HceParams.futility_margin(), 100, 300),
-            ),
-            eval_delta_pruning_threshold: ConfigOption::new(
-                "eval-delta-pruning-threshold",
-                Spin::new(HceParams.delta_pruning_threshold().v() as i32, 0, 24),
-            ),
-            select_cpuct: ConfigOption::new(
-                "select-cpuct",
-                Spin::new((HceParams.select_cpuct() * 100.) as i32, 1, 5000),
-            ),
-            mcts_proven_loss_visit_threshold: ConfigOption::new(
-                "mcts-proven-loss-visit-threshold",
-                Spin::new(HceParams.proven_loss_visit_threshold().0 as i32, 1, 100),
-            ),
-            mcts_killer_exploitation: ConfigOption::new(
-                "mcts-killer-exploitation",
-                Spin::new((HceParams.killer_exploitation() * 100.) as i32, 0, 5000),
-            ),
-            mcts_tt_best_move: ConfigOption::new(
-                "mcts-tt-best-move",
-                Spin::new((HceParams.tt_best_move() * 100.) as i32, 0, 5000),
-            ),
+impl Configuration {
+    /// Start building a [`Configuration`].
+    ///
+    /// The returned [`ConfigBuilder`] is seeded with baseline defaults for every
+    /// option. Use the per-trait setters (e.g. [`ConfigBuilder::qsearch`],
+    /// [`ConfigBuilder::mcts`]) to override only the option groups a given search
+    /// algorithm actually needs, so a params type only has to implement the param
+    /// traits for the options it cares about.
+    pub fn builder() -> ConfigBuilder {
+        ConfigBuilder {
+            config: Self {
+                hash: ConfigOption::new("hash", Spin::new(16, 1, 64 * 1024 * 1024)),
+                threads: ConfigOption::new("threads", Spin::new(1, 1, 1)),
+                clear_hash: ConfigOption::new("clearhash", Button::new(clear_hash_impl)),
+                dirichlet_alpha: ConfigOption::new("dirichlet-alpha", Spin::new(30, 0, 1000)),
+                dirichlet_epsilon: ConfigOption::new("dirichlet-epsilon", Spin::new(25, 0, 100)),
+                weights_path: ConfigOption::new("weights-path", StringOption::new("./weights")),
+                game_tree_caching: ConfigOption::new("game-tree-caching", Check::new(true)),
+                gui_lag: ConfigOption::new("gui-lag", Spin::new(100, 1, 10_000)),
+                ponder: ConfigOption::new("ponder", Check::new(true)),
+                eval_policy_temperature: ConfigOption::new(
+                    "eval-policy-temperature",
+                    Spin::new(2458, 1, 10000),
+                ),
+                eval_futility_margin: ConfigOption::new(
+                    "eval-futility-margin",
+                    Spin::new(166, 100, 300),
+                ),
+                eval_delta_pruning_threshold: ConfigOption::new(
+                    "eval-delta-pruning-threshold",
+                    Spin::new(16, 0, 24),
+                ),
+                select_cpuct: ConfigOption::new("select-cpuct", Spin::new(77, 1, 5000)),
+                mcts_proven_loss_visit_threshold: ConfigOption::new(
+                    "mcts-proven-loss-visit-threshold",
+                    Spin::new(5, 1, 100),
+                ),
+                mcts_killer_exploitation: ConfigOption::new(
+                    "mcts-killer-exploitation",
+                    Spin::new(27, 0, 5000),
+                ),
+                mcts_tt_best_move: ConfigOption::new("mcts-tt-best-move", Spin::new(165, 0, 5000)),
+                timeman_entropy_target: ConfigOption::new(
+                    "timeman-entropy-target",
+                    Spin::new(60, 0, 100),
+                ),
+            },
         }
+    }
+}
+
+fn seed(opt: &mut ConfigOption<Spin>, value: i32) {
+    opt.inner.value = value;
+    opt.inner.default = value;
+}
+
+/// Builder for [`Configuration`].
+///
+/// Each `with`-style setter consumes only the param trait required to seed its
+/// group of options, so the caller is never forced to satisfy a single
+/// "god trait" bound covering every option.
+#[derive(Debug, Clone)]
+pub struct ConfigBuilder {
+    config: Configuration,
+}
+
+impl ConfigBuilder {
+    /// Seed the quiescence-search options from [`QSearchParams`].
+    pub fn qsearch(mut self, params: &impl QSearchParams) -> Self {
+        seed(&mut self.config.eval_futility_margin, params.futility_margin());
+        seed(
+            &mut self.config.eval_delta_pruning_threshold,
+            params.delta_pruning_threshold().v() as i32,
+        );
+        self
+    }
+
+    /// Seed the policy options from [`PolicyParams`].
+    pub fn policy(mut self, params: &impl PolicyParams) -> Self {
+        seed(
+            &mut self.config.eval_policy_temperature,
+            (params.policy_temperature() * 100.) as i32,
+        );
+        self
+    }
+
+    /// Seed the selection options from [`PuctParams`].
+    pub fn puct(mut self, params: &impl PuctParams) -> Self {
+        seed(
+            &mut self.config.select_cpuct,
+            (params.select_cpuct() * 100.) as i32,
+        );
+        self
+    }
+
+    /// Seed the mcts options from [`MctsParams`].
+    pub fn mcts(mut self, params: &impl MctsParams) -> Self {
+        seed(
+            &mut self.config.mcts_proven_loss_visit_threshold,
+            params.proven_loss_visit_threshold().0 as i32,
+        );
+        seed(
+            &mut self.config.mcts_killer_exploitation,
+            (params.killer_exploitation() * 100.) as i32,
+        );
+        seed(
+            &mut self.config.mcts_tt_best_move,
+            (params.tt_best_move() * 100.) as i32,
+        );
+        self
+    }
+
+    /// Seed the time-management options from [`ChronoParams`].
+    pub fn chrono(mut self, params: &impl ChronoParams) -> Self {
+        seed(
+            &mut self.config.timeman_entropy_target,
+            (params.entropy_target().v() * 100.) as i32,
+        );
+        self
+    }
+
+    /// Finish building the [`Configuration`].
+    pub fn build(self) -> Configuration {
+        self.config
     }
 }
 
@@ -370,6 +461,10 @@ impl Configuration {
         self.mcts_tt_best_move.value as f32 / 100.
     }
 
+    pub fn timeman_entropy_target(&self) -> NormalizedEntropy {
+        NormalizedEntropy::new(self.timeman_entropy_target.value as f32 / 100.)
+    }
+
     // Setter
 
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -403,6 +498,8 @@ impl Configuration {
             "mcts-killer-exploitation" => self.mcts_killer_exploitation.set(value),
             #[cfg(feature = "tunable")]
             "mcts-tt-best-move" => self.mcts_tt_best_move.set(value),
+            #[cfg(feature = "tunable")]
+            "timeman-entropy-target" => self.timeman_entropy_target.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -431,6 +528,8 @@ impl Configuration {
         println!("{}", self.mcts_killer_exploitation);
         #[cfg(feature = "tunable")]
         println!("{}", self.mcts_tt_best_move);
+        #[cfg(feature = "tunable")]
+        println!("{}", self.timeman_entropy_target);
     }
 }
 

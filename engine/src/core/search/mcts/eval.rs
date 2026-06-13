@@ -1,6 +1,11 @@
 use crate::{
     core::{
-        Position, color::Color, depth::Depth, eval::GameResult, r#move::MAX_LEGAL_MOVES, search::{
+        Position,
+        color::Color,
+        depth::Depth,
+        eval::GameResult,
+        r#move::MAX_LEGAL_MOVES,
+        search::{
             mcts::{
                 nn::{POLICY_OUTPUTS, PolicyHeadIndex, RawLogits},
                 node::{
@@ -10,8 +15,10 @@ use crate::{
                 search::{BatchItem, Selection},
             },
             score::{Cp, TCp},
-        }
-    }, math::softmax, misc::{CheckHealth, CheckHealthResult, List}
+        },
+    },
+    math::softmax,
+    misc::{CheckHealth, CheckHealthResult, List},
 };
 use core::fmt;
 use std::{
@@ -562,6 +569,11 @@ impl<B: FloatBounds> Bounded<f32, B> {
             B::MAX,
             v
         );
+        Self(v, PhantomData)
+    }
+
+    #[inline(always)]
+    pub const fn new_c(v: f32) -> Self {
         Self(v, PhantomData)
     }
 

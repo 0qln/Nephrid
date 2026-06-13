@@ -13,9 +13,11 @@ use crate::{
     math::NormalizedEntropy,
 };
 
-/// Fraction of the maximum possible root entropy below which the engine is
-/// considered confident enough to stop searching early.
-const ENTROPY_TARGET: f32 = 0.6; // todo: make tunable
+pub trait ChronoParams {
+    /// Fraction of the maximum possible root entropy below which the engine is
+    /// considered confident enough to stop searching early.
+    fn entropy_target(&self) -> NormalizedEntropy;
+}
 
 #[derive(Debug)]
 pub struct TimeMan {
@@ -98,10 +100,10 @@ impl TimeMan {
 
     /// Hint to the time manager that right now would be a preferred (soft) stop
     /// point.
-    pub fn hint_preferred_target(&mut self, stats: &id::SearchStats) {
+    pub fn hint_preferred_target(&mut self, stats: &id::SearchStats, params: impl ChronoParams) {
         self.time_target = self.time_limit - stats.iter_time;
 
-        self.entropy_target = NormalizedEntropy::new(ENTROPY_TARGET);
+        self.entropy_target = params.entropy_target();
         self.curr_entropy = stats.root_entropy;
     }
 

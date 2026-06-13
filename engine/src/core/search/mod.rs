@@ -1,28 +1,33 @@
-use crate::core::search::score::Cp;
+use crate::{core::search::score::Cp, math::NormalizedEntropy};
 use thiserror::Error;
-use uom::si::u64::Information;
+use uom::si::{information::byte, u64::Information};
 
 use crate::{
     core::{
         Game, Move,
+        chrono::ChronoParams,
         config::Configuration,
         move_iter::opt,
         search::{
             limit::UciLimit,
             mcts::{
                 MctsConfig, MctsParts,
+                eval::hce::PolicyParams,
                 node::{
                     Tree, WinRate,
                     node_state::{Evaluated, Switch},
                 },
-                select::Selector,
+                search::MctsParams,
+                select::{Selector, puct::PuctParams},
                 strategy::MctsUci,
             },
+            quiesce::QSearchParams,
         },
     },
     misc::CancellationToken,
 };
 use std::{
+    marker::PhantomData,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -64,31 +69,41 @@ pub enum ExecError {
     RuntimeError(String),
 }
 
-pub trait SearchWorker: Default {
+pub trait SearchWorker {
+    /// The params type this worker derives its [`Configuration`] defaults from.
+    type Params;
+
+    fn new() -> Self;
     fn exec(&mut self, cmd: Command) -> Result<(), ExecError>;
+    fn build_config(params: &Self::Params) -> Configuration;
 }
 
-// todo: generic for config, so we can compile for nnue/hce
 /// Iterative deepening worker.
-pub struct IdWorker {
+pub struct IdWorker<P> {
+    // todo: don't store the construction information here but the tt and timeman itself
     hash_size: Information,
+    entropy_target: NormalizedEntropy,
+    params: P,
 }
 
-impl Default for IdWorker {
-    fn default() -> Self {
+impl<P: QSearchParams + ChronoParams> SearchWorker for IdWorker<P> {
+    type Params = P;
+
+    fn new() -> Self {
         Self {
-            hash_size: Configuration::default().hash(),
+            hash_size: Information::new::<byte>(0),
+            entropy_target: NormalizedEntropy::zero(),
+            params: PhantomData,
         }
     }
-}
 
-impl IdWorker {
-    pub fn new() -> Self {
-        Self::default()
+    fn build_config(params: &P) -> Configuration {
+        Configuration::builder()
+            .qsearch(params)
+            .chrono(params)
+            .build()
     }
-}
 
-impl SearchWorker for IdWorker {
     fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
         match cmd {
             Command::Perft(mut pos, limit, ct, debug, captures_only) => {
@@ -101,7 +116,14 @@ impl SearchWorker for IdWorker {
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
-                let best_move = id::go(&mut pos, limit, &debug, ct, self.hash_size);
+                let best_move = id::go(
+                    &mut pos,
+                    limit,
+                    &debug,
+                    ct,
+                    self.hash_size,
+                    self.entropy_target,
+                );
 
                 if let Some(mov) = best_move {
                     println!("bestmove {mov}");
@@ -115,12 +137,13 @@ impl SearchWorker for IdWorker {
             Command::AdvanceState(_) => Ok(()),
             Command::RollbackAndAdvance(_) => Ok(()),
             Command::Configure(config) => {
-                let config_lock = config.lock();
-                let cfg = match config_lock {
-                    Ok(ref cfg) => cfg,
-                    Err(_) => &Configuration::default(),
-                };
+                let cfg = &config
+                    .lock()
+                    .map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
+
                 self.hash_size = cfg.hash();
+                self.entropy_target = cfg.timeman_entropy_target();
+
                 Ok(())
             }
             Command::ResetState => Ok(()),
@@ -135,20 +158,30 @@ impl SearchWorker for IdWorker {
 }
 
 /// Monte Carlo Tree Search worker.
-pub struct MctsWorker<const MPV: usize, C: MctsConfig> {
+pub struct MctsWorker<const MPV: usize, C: MctsConfig, P> {
     mcts_parts: Option<C::Parts>,
     mcts_state: mcts::SearchState,
     backup_tree: Option<Tree>,
+    params: P,
 }
 
-impl<const MPV: usize, C: MctsConfig> Default for MctsWorker<MPV, C> {
-    fn default() -> Self {
-        Self::new()
+impl<const MPV: usize, C, P> SearchWorker for MctsWorker<MPV, C, P>
+where
+    C: MctsConfig<Strat = MctsUci>,
+    P: QSearchParams + PolicyParams + PuctParams + MctsParams,
+{
+    type Params = P;
+
+    fn build_config(params: &P) -> Configuration {
+        Configuration::builder()
+            .qsearch(params)
+            .policy(params)
+            .puct(params)
+            .mcts(params)
+            .build()
     }
-}
 
-impl<const MPV: usize, C: MctsConfig> MctsWorker<MPV, C> {
-    pub fn new() -> Self {
+    fn new() -> Self {
         let mcts_state = mcts::SearchState::default();
         let mcts_parts = None;
         let backup_tree = None;
@@ -156,11 +189,10 @@ impl<const MPV: usize, C: MctsConfig> MctsWorker<MPV, C> {
             mcts_parts,
             mcts_state,
             backup_tree,
+            _params: PhantomData,
         }
     }
-}
 
-impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWorker<MPV, C> {
     fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
         match cmd {
             Command::PrintPv(pos) => {
@@ -211,11 +243,9 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
                 Ok(())
             }
             Command::Configure(config) => {
-                let config_lock = config.lock();
-                let cfg = match config_lock {
-                    Ok(ref cfg) => cfg,
-                    Err(_) => &Configuration::default(),
-                };
+                let cfg = &config
+                    .lock()
+                    .map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
 
                 let mut parts = <C::Parts as TryFrom<&Configuration>>::try_from(cfg)
                     .map_err(|e| ExecError::BadConfig(e.to_string()))?;
@@ -303,12 +333,12 @@ impl<const MPV: usize, C: MctsConfig<Strat = MctsUci>> SearchWorker for MctsWork
     }
 }
 
-pub fn init<W: SearchWorker>() -> SearchThread {
+pub fn init<W: SearchWorker>(default_config: Arc<Mutex<Configuration>>) -> SearchThread {
     let (tx, rx) = channel::<Command>();
     thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
         .spawn(move || {
-            let mut worker = W::default();
+            let mut worker = W::new();
             loop {
                 let cmd = rx.recv().expect("Should be able to receive data");
                 let result = worker.exec(cmd);
@@ -319,9 +349,7 @@ pub fn init<W: SearchWorker>() -> SearchThread {
         })
         .expect("Failed to spawn search thread.");
 
-    _ = tx.send(Command::Configure(Arc::new(Mutex::new(
-        Configuration::default(),
-    ))));
+    _ = tx.send(Command::Configure(default_config));
 
     SearchThread { tx }
 }

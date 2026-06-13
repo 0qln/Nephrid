@@ -1,6 +1,9 @@
 use crate::core::{
     eval::hce::{self},
-    search::{mcts, score::Cp},
+    search::{
+        mcts::{self},
+        score::Cp,
+    },
 };
 use search::mode::Mode;
 use std::{
@@ -32,6 +35,7 @@ use std::{error::Error, process};
 
 pub mod bitboard;
 pub mod castling;
+pub mod chrono;
 pub mod color;
 pub mod config;
 pub mod coordinates;
@@ -44,7 +48,6 @@ pub mod piece;
 pub mod ply;
 pub mod position;
 pub mod search;
-pub mod chrono;
 pub mod turn;
 pub mod zobrist;
 
@@ -157,10 +160,13 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new<Searcher: SearchWorker>() -> Self {
+    pub fn new<Searcher: SearchWorker>(params: &Searcher::Params) -> Self {
+        let config = Arc::new(Mutex::new(Searcher::build_config(params)));
+        let search = search::init::<Searcher>(Arc::clone(&config));
+
         Self {
-            config: Default::default(),
-            search_t: search::init::<Searcher>(),
+            config,
+            search_t: search,
             debug: Default::default(),
             game: Default::default(),
             _pos_src: Default::default(),

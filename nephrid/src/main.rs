@@ -5,16 +5,25 @@ use engine::{
 use std::io::stdin;
 
 mod search {
-    use engine::core::search::{self};
+    use engine::core::{
+        params::{self},
+        search::{self},
+    };
 
     #[cfg(feature = "id-hce")]
-    pub type Worker = search::IdWorker;
+    pub type Worker = search::IdWorker<Params>;
+
+    #[cfg(feature = "mcts-hce")]
+    pub type Params = params::MctsHceParams;
+
+    #[cfg(feature = "id-hce")]
+    pub type Params = params::IdHceParams;
 
     #[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
     pub struct Config;
 
     #[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
-    pub type Worker = search::MctsWorker<MPV, Config>;
+    pub type Worker = search::MctsWorker<MPV, Config, Params>;
 
     #[cfg(feature = "mcts-hce")]
     impl search::mcts::MctsConfig for Config {
@@ -61,7 +70,8 @@ fn main() {
     zobrist::init();
 
     let input_stream = stdin();
-    let mut engine = Engine::new::<search::Worker>();
+    let params = search::Params::default();
+    let mut engine = Engine::new::<search::Worker>(&params);
     let mut cmd_cancellation = CancellationToken::new();
 
     execute_uci(

@@ -8,7 +8,7 @@ use uom::si::{information::byte, u64::Information};
 
 use crate::{
     core::{
-        chrono::TimeMan,
+        chrono::{ChronoParams, TimeMan},
         color::{
             Color, Perspective, colors,
             perspectives::{self},
@@ -24,7 +24,7 @@ use crate::{
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
-        params::HceParams,
+        params::IdHceParams,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
         search::{
@@ -32,7 +32,7 @@ use crate::{
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
-            quiesce::qsearch,
+            quiesce::{QSearchParams, qsearch},
             score::{Cp, Score},
             strat::{
                 UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore,
@@ -49,6 +49,8 @@ use crate::{
 
 #[cfg(test)]
 pub mod test;
+
+pub trait IdParams: ChronoParams + QSearchParams {}
 
 /// Softmax temperature applied to root-move qualities when computing the
 /// normalized root entropy used as a soft stopping target. Qualities are
@@ -122,6 +124,7 @@ pub fn go(
     _debug: &DebugMode,
     ct: CancellationToken,
     hash_size: Information,
+    params: impl IdParams + Clone,
 ) -> Option<Move> {
     let depth_lim = min(Depth::MAX, limit.depth);
 
@@ -160,7 +163,9 @@ pub fn go(
             math::normalized_entropy(&root_policy)
         };
 
-        searcher.time_man.hint_preferred_target(&stats);
+        searcher
+            .time_man
+            .hint_preferred_target(&stats, params.clone());
 
         if searcher.should_stop(&stats) || searcher.time_man.reached_target() {
             break;
@@ -342,7 +347,7 @@ impl Searcher {
                 pos,
                 alpha,
                 beta,
-                HceParams,
+                IdHceParams,
                 &StaticEvaluator,
                 Depth::new(100),
             );

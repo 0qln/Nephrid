@@ -16,8 +16,7 @@ use crate::{
             score::Cp,
             strat::*,
         },
-    },
-    misc::{CancellationToken, DebugMode},
+    }, misc::{CancellationToken, DebugMode}
 };
 
 pub trait MctsStrategy {

@@ -1,4 +1,7 @@
-use crate::core::{params::{IParams, ParamsRef}, search::mcts::select::puct::PuctParams};
+use crate::core::{
+    params::{IParams, MctsHceParams, ParamsRef},
+    search::mcts::select::puct::PuctParams,
+};
 use burn::prelude::Backend;
 use rand::{SeedableRng, rngs::SmallRng};
 use thiserror::Error;
@@ -260,7 +263,12 @@ impl TryFrom<&Configuration> for HceParts {
 
 impl Default for HceParts {
     fn default() -> Self {
-        let config = Configuration::default();
+        let config = Configuration::builder()
+            .qsearch(&MctsHceParams)
+            .policy(&MctsHceParams)
+            .puct(&MctsHceParams)
+            .mcts(&MctsHceParams)
+            .build();
         Self::try_from(&config).expect("The default config should be healthy")
     }
 }

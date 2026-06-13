@@ -1,0 +1,3 @@
+[submodule "tuning/src/params/weather-factory"]
+	path = tuning/src/params/weather-factory
+	url = https://github.com/jnlt3/weather-factory

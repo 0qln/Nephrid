@@ -1,7 +1,19 @@
 use std::rc::Rc;
 
-use crate::core::{
-    config::Configuration, eval::hce::TaperValue, search::{mcts::{self, eval::hce::PolicyParams, node::VisitCount}, quiesce::QSearchParams}
+use crate::{
+    core::{
+        chrono::ChronoParams,
+        config::Configuration,
+        eval::hce::TaperValue,
+        search::{
+            mcts::{
+                self, eval::hce::PolicyParams, node::VisitCount, search::MctsParams,
+                select::puct::PuctParams,
+            },
+            quiesce::QSearchParams,
+        },
+    },
+    math::NormalizedEntropy,
 };
 
 #[cfg(feature = "tunable")]
@@ -12,14 +24,13 @@ pub type ParamsRef = Rc<TunableParams>;
 pub type CreateParamsError = CreateTunableParamsError;
 
 #[cfg(not(feature = "tunable"))]
-pub type Params = HceParams;
+pub type Params = MctsHceParams;
 #[cfg(not(feature = "tunable"))]
-pub type ParamsRef = HceParams;
-#[cfg(not(feature = "tunable"))]
-pub type CreateParamsError = CreateConcreteParamsError;
+pub type ParamsRef = MctsHceParams;
 
 #[derive(Debug, Clone)]
 pub struct TunableParams {
+    timeman_entropy_target: NormalizedEntropy,
     hce_policy_temp: f32,
     hce_q_futility_margin: i32,
     hce_q_delta_pruning_threshold: TaperValue,
@@ -29,46 +40,13 @@ pub struct TunableParams {
     mcts_tt_best_move: f32,
 }
 
-impl TunableParams {
-    pub fn new(
-        hce_policy_temp: f32,
-        hce_q_futility_margin: i32,
-        hce_q_delta_pruning_threshold: TaperValue,
-        select_cpuct: f32,
-        mcts_proven_loss_visit_threshold: VisitCount,
-        mcts_killer_exploitation: f32,
-        mcts_tt_best_move: f32,
-    ) -> Self {
-        Self {
-            hce_policy_temp,
-            hce_q_futility_margin,
-            hce_q_delta_pruning_threshold,
-            select_cpuct,
-            mcts_proven_loss_visit_threshold,
-            mcts_killer_exploitation,
-            mcts_tt_best_move,
-        }
-    }
-
-    pub fn select_cpuct(&self) -> f32 {
-        self.select_cpuct
-    }
-}
-
-impl Default for TunableParams {
-    fn default() -> Self {
-        let config = Configuration::default();
-        Self::try_from(&config).expect("default config should contain healthy values")
-    }
-}
-
 impl mcts::select::puct::PuctParams for Rc<TunableParams> {
     fn select_cpuct(&self) -> f32 {
         self.select_cpuct
     }
 }
 
-impl mcts::search::SearchParams for Rc<TunableParams> {
+impl mcts::search::MctsParams for Rc<TunableParams> {
     fn proven_loss_visit_threshold(&self) -> mcts::node::VisitCount {
         self.mcts_proven_loss_visit_threshold
     }
@@ -98,6 +76,13 @@ impl PolicyParams for Rc<TunableParams> {
     }
 }
 
+impl ChronoParams for Rc<TunableParams> {
+    #[inline(always)]
+    fn entropy_target(&self) -> NormalizedEntropy {
+        self.timeman_entropy_target
+    }
+}
+
 impl IParams for TunableParams {
     type Ref = Rc<TunableParams>;
     fn shared(self) -> Rc<TunableParams> {
@@ -119,6 +104,7 @@ impl TryFrom<&Configuration> for TunableParams {
     type Error = CreateTunableParamsError;
 
     fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
+        let timeman_entropy_target = config.timeman_entropy_target();
         let hce_policy_temp = config.eval_policy_temperature();
         let hce_q_futility_margin = config.eval_futility_margin();
         let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
@@ -127,6 +113,7 @@ impl TryFrom<&Configuration> for TunableParams {
         let mcts_killer_exploitation = config.mcts_killer_exploitation();
         let mcts_tt_best_move = config.mcts_tt_best_move();
         Ok(Self {
+            timeman_entropy_target,
             hce_policy_temp,
             hce_q_futility_margin,
             hce_q_delta_pruning_threshold,
@@ -138,24 +125,24 @@ impl TryFrom<&Configuration> for TunableParams {
     }
 }
 
-// todo:
-// move the HceParams into the nephrid binary target.
-// these values are tuned for this specific evaluation function and are are
-// likely to have different optimal values for e.g. NNParts
+pub trait IParams {
+    type Ref: ?Sized;
+    fn shared(self) -> Self::Ref;
+}
 
 #[derive(Debug, Default, Clone)]
-pub struct HceParams;
+pub struct MctsHceParams;
 
-impl mcts::select::puct::PuctParams for HceParams {
+impl PuctParams for MctsHceParams {
     #[inline(always)]
     fn select_cpuct(&self) -> f32 {
         0.77
     }
 }
 
-impl mcts::search::SearchParams for HceParams {
+impl MctsParams for MctsHceParams {
     #[inline(always)]
-    fn proven_loss_visit_threshold(&self) -> mcts::node::VisitCount {
+    fn proven_loss_visit_threshold(&self) -> VisitCount {
         VisitCount(5)
     }
 
@@ -170,7 +157,7 @@ impl mcts::search::SearchParams for HceParams {
     }
 }
 
-impl QSearchParams for HceParams {
+impl QSearchParams for MctsHceParams {
     #[inline(always)]
     fn futility_margin(&self) -> i32 {
         166
@@ -182,14 +169,14 @@ impl QSearchParams for HceParams {
     }
 }
 
-impl PolicyParams for HceParams {
+impl PolicyParams for MctsHceParams {
     #[inline(always)]
     fn policy_temperature(&self) -> f32 {
         24.58
     }
 }
 
-impl IParams for HceParams {
+impl IParams for MctsHceParams {
     type Ref = Self;
 
     #[inline(always)]
@@ -199,8 +186,8 @@ impl IParams for HceParams {
 }
 
 #[allow(clippy::infallible_try_from)]
-impl TryFrom<&Configuration> for HceParams {
-    type Error = CreateConcreteParamsError;
+impl TryFrom<&Configuration> for MctsHceParams {
+    type Error = std::convert::Infallible;
 
     #[inline(always)]
     fn try_from(_: &Configuration) -> Result<Self, Self::Error> {
@@ -208,9 +195,33 @@ impl TryFrom<&Configuration> for HceParams {
     }
 }
 
-pub type CreateConcreteParamsError = std::convert::Infallible;
+#[derive(Debug, Default, Clone)]
+pub struct IdHceParams;
 
-pub trait IParams {
-    type Ref: ?Sized;
-    fn shared(self) -> Self::Ref;
+impl IParams for IdHceParams {
+    type Ref = Self;
+
+    #[inline(always)]
+    fn shared(self) -> Self::Ref {
+        self
+    }
+}
+
+impl ChronoParams for IdHceParams {
+    #[inline(always)]
+    fn entropy_target(&self) -> NormalizedEntropy {
+        NormalizedEntropy::new_c(0.6)
+    }
+}
+
+impl QSearchParams for IdHceParams {
+    #[inline(always)]
+    fn futility_margin(&self) -> i32 {
+        166
+    }
+
+    #[inline(always)]
+    fn delta_pruning_threshold(&self) -> TaperValue {
+        TaperValue::new(16)
+    }
 }
