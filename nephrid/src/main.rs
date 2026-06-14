@@ -11,10 +11,10 @@ mod search {
         search::{self},
     };
 
-    #[cfg(feature = "mcts-hce")]  pub type Params = params::MctsHceParams;
+    #[cfg(feature = "mcts-hce")]  pub type Params = params::C_MctsHceParams;
     #[cfg(feature = "mcts-nn")]   pub type Params = params::MctsNNParams;
-    #[cfg(feature = "mcts-pure")] pub type Params = params::MctsPureParams;
-    #[cfg(feature = "id-hce")]    pub type Params = params::IdHceParams;
+    #[cfg(feature = "mcts-pure")] pub type Params = params::C_MctsPureParams;
+    #[cfg(feature = "id-hce")]    pub type Params = params::C_IdHceParams;
 
     #[cfg(feature = "id-hce")]
     pub type Worker = search::IdWorker<Params>;

@@ -11,7 +11,7 @@ use crate::{
             },
         },
         r#move::MAX_LEGAL_MOVES,
-        params::ParamsRef,
+        params::{self},
         position::{CheckState, Position},
         search::{
             mcts::{
@@ -37,6 +37,12 @@ use crate::core::{
     position::{PieceInfo, StateInfo},
     search::mcts::node::node_state::Branching,
 };
+
+#[cfg(feature = "tunable")]
+type ParamsRef = <params::TunableParams as IParams>::Ref;
+
+#[cfg(not(feature = "tunable"))]
+type ParamsRef = params::C_MctsHceParams;
 
 struct StaticEvaluator;
 
@@ -121,7 +127,7 @@ pub struct EvalInfo<Moves: AsRef<[Move]>> {
 impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
     pub fn new(moves: Moves, pos: &mut Position, params: ParamsRef) -> Self {
         let quality: Cp = match pos.get_turn().v() {
-            colors::WHITE_C => qsearch::<_, perspectives::White, _>(
+            colors::WHITE_C => qsearch::<perspectives::White>(
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
@@ -130,7 +136,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 Depth::new(30),
             )
             .into(),
-            colors::BLACK_C => qsearch::<_, perspectives::Black, _>(
+            colors::BLACK_C => qsearch::<perspectives::Black>(
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
@@ -185,7 +191,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
     }
 }
 
-pub trait PolicyParams {
+pub const trait PolicyParams {
     fn policy_temperature(&self) -> f32;
 }
 

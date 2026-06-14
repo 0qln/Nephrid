@@ -25,12 +25,12 @@ pub const trait QSearchParams {
 /// Make the position quiet.
 ///
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
-pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
+pub fn qsearch<P: Perspective>(
     pos: &mut Position,
     mut alpha: Score<P>,
     beta: Score<P>,
-    params: X,
-    static_evaluator: &S,
+    params: impl QSearchParams + Clone,
+    static_evaluator: &impl StaticEvaluator,
     depth: Depth,
 ) -> Score<P> {
     let in_check = pos.get_check_state() != CheckState::None;

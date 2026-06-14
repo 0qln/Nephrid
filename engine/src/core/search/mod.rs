@@ -5,7 +5,6 @@ use uom::si::{information::byte, u64::Information};
 use crate::{
     core::{
         Game, Move,
-        chrono::ChronoParams,
         config::Configuration,
         move_iter::opt,
         search::{
@@ -86,14 +85,14 @@ pub struct IdWorker<P> {
     params: P,
 }
 
-impl<P: IdParams> SearchWorker for IdWorker<P> {
+impl<P: IdParams + Default> SearchWorker for IdWorker<P> {
     type Params = P;
 
     fn new() -> Self {
         Self {
             hash_size: Information::new::<byte>(0),
             entropy_target: NormalizedEntropy::zero(),
-            params: ,
+            params: P::default(),
         }
     }
 
@@ -142,6 +141,7 @@ impl<P: IdParams> SearchWorker for IdWorker<P> {
                     .map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
 
                 self.hash_size = cfg.hash();
+
                 self.entropy_target = cfg.timeman_entropy_target();
 
                 Ok(())

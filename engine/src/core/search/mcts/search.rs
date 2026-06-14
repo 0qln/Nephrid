@@ -7,7 +7,7 @@ use itertools::Itertools;
 use rustc_hash::FxBuildHasher;
 
 use crate::core::{
-    Position, color::{Perspective, colors, perspectives}, depth::Depth, eval::GameResult, r#move::Move, params::ParamsRef, search::mcts::{
+    Position, color::{Perspective, colors, perspectives}, depth::Depth, eval::GameResult, r#move::Move, params::IParams, search::mcts::{
         back::{self},
         eval::{Evaluation, Evaluator, Guess, eval_terminal},
         node::{BranchId, NodeId, NodeView, RtNodeId, Tree, VisitCount, node_state::*},
@@ -213,7 +213,14 @@ pub const trait MctsParams {
 }
 
 /// # Tree searcher
-pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector, N: Noiser> {
+pub struct TreeSearcher<
+    'pos,
+    const BATCH_SIZE: usize,
+    E: Evaluator,
+    S: Selector,
+    N: Noiser,
+    X: MctsParams + IParams,
+> {
     position: &'pos mut Position,
     selector: S,
     evaluator: E,
@@ -221,15 +228,15 @@ pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector
     selection: Selection<E::TraceData>,
     tt: Box<TranspositionTable<{ 2 << 10 }, TTData>>,
     ss: SearchStack,
-    params: ParamsRef,
+    params: X::Ref,
 }
 
-impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser>
-    TreeSearcher<'pos, BATCH, E, S, N>
+impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsParams + IParams>
+    TreeSearcher<'pos, BATCH, E, S, N, X>
 {
     pub fn new(
         position: &'pos mut Position,
-        params: ParamsRef,
+        params: X::Ref,
         selector: S,
         evaluator: E,
         noiser: N,

@@ -24,7 +24,7 @@ use crate::{
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
-        params::IdHceParams,
+        params::C_IdHceParams,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
         search::{
@@ -347,7 +347,7 @@ impl Searcher {
                 pos,
                 alpha,
                 beta,
-                IdHceParams,
+                C_IdHceParams,
                 &StaticEvaluator,
                 Depth::new(100),
             );

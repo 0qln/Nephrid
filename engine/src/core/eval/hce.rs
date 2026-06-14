@@ -266,7 +266,7 @@ const PIECE_PHASES: [PiecePhase; piece_type::N_VARIANTS] = {
 pub struct TaperValue(u32);
 
 impl TaperValue {
-    pub fn new(val: u32) -> Self {
+    pub const fn new(val: u32) -> Self {
         debug_assert!(val <= piece_phases::TOTAL_C);
         Self(val)
     }

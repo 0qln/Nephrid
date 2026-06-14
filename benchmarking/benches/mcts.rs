@@ -3,7 +3,7 @@ use std::time::Duration;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::core::{
     move_iter::sliding_piece::magics,
-    params::{IParams, MctsHceParams},
+    params::{C_MctsHceParams, IParams},
     position::Position,
     search::mcts::{HceParts, MctsParts, node::Tree, search::TreeSearcher},
     zobrist,
@@ -12,7 +12,7 @@ use engine::core::{
 fn bench_mcts<const B: usize, P: MctsParts>(mut pos: Position, mut tree: Tree, parts: P) {
     let mut searcher = TreeSearcher::<B, _, _, _>::new(
         &mut pos,
-        MctsHceParams.shared(),
+        C_MctsHceParams.shared(),
         parts.selector(),
         parts.evaluator(),
         parts.noiser(),

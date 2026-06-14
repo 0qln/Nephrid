@@ -1,6 +1,9 @@
-use crate::core::{
-    params::{IParams, MctsHceParams, MctsNNParams, MctsPureParams},
-    search::mcts::select::puct::PuctParams,
+use crate::{
+    core::{
+        params::{C_MctsHceParams, CreateParamsError, IParams, MctsHceParams},
+        search::mcts::{search::MctsParams, select::puct::PuctParams},
+    },
+    math::Ratio,
 };
 use burn::prelude::Backend;
 use rand::{SeedableRng, rngs::SmallRng};
@@ -12,9 +15,7 @@ use crate::{
         r#move::Move,
         position::Position,
         search::mcts::{
-            eval::{
-                Evaluator, Ratio, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator,
-            },
+            eval::{Evaluator, hce::HceEvaluator, nn::NNEvaluator, playout::PlayoutEvaluator},
             nn::{CheckModelHealthError, LoadNNError, Model},
             node::Tree,
             noise::{DirichletNoiser, Noiser, NullNoiser},
@@ -41,19 +42,20 @@ pub mod strategy;
 
 pub mod test;
 
-pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState>(
+pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState, P: IParams + MctsParams>(
     pos: &mut Position,
     parts: &C::Parts,
     state: &mut M,
     strat: &mut C::Strat,
+    params: P::Ref,
 ) -> <C::Strat as MctsStrategy>::Result {
     let tree = state.tree();
 
     strat.start(tree, pos);
 
-    let mut searcher = TreeSearcher::<{ MPV }, _, _, _>::new(
+    let mut searcher = TreeSearcher::<{ MPV }, _, _, _, P>::new(
         pos,
-        parts.params(),
+        params,
         parts.selector(),
         parts.evaluator(),
         parts.noiser(),
@@ -75,12 +77,10 @@ pub trait MctsConfig {
 }
 
 pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
-    type Params: IParams;
     type Selector: Selector;
     type Evaluator: Evaluator;
     type Noiser: Noiser;
 
-    fn params(&self) -> <Self::Params as IParams>::Ref;
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
     fn noiser(&self) -> Self::Noiser;
@@ -139,11 +139,6 @@ impl<B: Backend> MctsParts for NNParts<B> {
     type Selector = PuctSelector;
     type Evaluator = NNEvaluator<B>;
     type Noiser = DirichletNoiser;
-    type Params = MctsNNParams;
-
-    fn params(&self) -> ParamsRef {
-        todo!()
-    }
 
     fn selector(&self) -> Self::Selector {
         PuctSelector::default()
@@ -209,24 +204,20 @@ impl<B: Backend> NNParts<B> {
 
 /// Mcts parts for mcts with puct + static analysis.
 #[derive(Debug)]
-pub struct HceParts<P: IParams> {
+pub struct HceParts {
     alpha: f32,
     epsilon: Ratio,
-    params: P::Ref,
+    cpuct: f32,
+    params: <MctsHceParams as IParams>::Ref,
 }
 
-impl<P: IParams> MctsParts for HceParts<P> {
+impl MctsParts for HceParts {
     type Selector = PuctSelector;
     type Evaluator = HceEvaluator;
     type Noiser = DirichletNoiser;
-    type Params = P;
-
-    fn params(&self) -> P::Ref {
-        self.params.clone()
-    }
 
     fn selector(&self) -> Self::Selector {
-        PuctSelector::new(self.params.select_cpuct())
+        PuctSelector::new(self.cpuct)
     }
 
     fn evaluator(&self) -> Self::Evaluator {
@@ -248,9 +239,7 @@ pub enum CreateHcePartsError {
     EvalParams(#[from] CreateParamsError),
 }
 
-impl<P: (for<'a> TryFrom<&'a Configuration>) + IParams> TryFrom<&Configuration>
-    for HceParts<P>
-{
+impl TryFrom<&Configuration> for HceParts {
     type Error = CreateHcePartsError;
 
     fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
@@ -259,27 +248,29 @@ impl<P: (for<'a> TryFrom<&'a Configuration>) + IParams> TryFrom<&Configuration>
         let epsilon = Ratio::new(config.dirichlet_epsilon());
         epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
 
-        let params = P::try_from(config)?.shared();
+        let params = MctsHceParams::try_from(config)?.shared();
 
-        Ok(Self::new(alpha, epsilon, params))
+        let cpuct = params.select_cpuct();
+
+        Ok(Self::new(alpha, epsilon, cpuct, params))
     }
 }
 
-impl<P> Default for HceParts<P> {
+impl Default for HceParts {
     fn default() -> Self {
         let config = Configuration::builder()
-            .qsearch(&MctsHceParams)
-            .policy(&MctsHceParams)
-            .puct(&MctsHceParams)
-            .mcts(&MctsHceParams)
+            .qsearch(&C_MctsHceParams)
+            .policy(&C_MctsHceParams)
+            .puct(&C_MctsHceParams)
+            .mcts(&C_MctsHceParams)
             .build();
         Self::try_from(&config).expect("The default config should be healthy")
     }
 }
 
-impl<P> HceParts<P> {
-    pub fn new(alpha: f32, epsilon: Ratio, params: P) -> Self {
-        Self { alpha, epsilon, params }
+impl HceParts {
+    pub fn new(alpha: f32, epsilon: Ratio, cpuct: f32, params: <MctsHceParams as IParams>::Ref) -> Self {
+        Self { alpha, epsilon, cpuct, params }
     }
 }
 
@@ -291,11 +282,6 @@ impl MctsParts for PureParts {
     type Selector = UcbSelector;
     type Evaluator = PlayoutEvaluator;
     type Noiser = NullNoiser;
-    type Params = MctsPureParams;
-
-    fn params(&self) -> MctsPureParams {
-        MctsPureParams
-    }
 
     fn selector(&self) -> Self::Selector {
         Default::default()
