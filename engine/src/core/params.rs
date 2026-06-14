@@ -115,7 +115,7 @@ impl TryFrom<&Configuration> for TunableParams {
     }
 }
 
-pub trait IParams {
+pub const trait IParams {
     type Ref: ?Sized + Clone;
     fn shared(self) -> Self::Ref;
 }
@@ -126,14 +126,14 @@ pub type MctsNNParams = MctsHceParams;
 #[derive(Debug, Default, Clone)]
 pub struct MctsHceParams;
 
-impl PuctParams for MctsHceParams {
+impl const PuctParams for MctsHceParams {
     #[inline(always)]
     fn select_cpuct(&self) -> f32 {
         0.77
     }
 }
 
-impl MctsParams for MctsHceParams {
+impl const MctsParams for MctsHceParams {
     #[inline(always)]
     fn proven_loss_visit_threshold(&self) -> VisitCount {
         VisitCount(5)
@@ -150,7 +150,7 @@ impl MctsParams for MctsHceParams {
     }
 }
 
-impl QSearchParams for MctsHceParams {
+impl const QSearchParams for MctsHceParams {
     #[inline(always)]
     fn futility_margin(&self) -> i32 {
         166

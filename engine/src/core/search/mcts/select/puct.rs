@@ -3,7 +3,7 @@ use crate::core::search::mcts::{
     select::{Score, Selector},
 };
 
-pub trait PuctParams {
+pub const trait PuctParams {
     fn select_cpuct(&self) -> f32;
 }
 

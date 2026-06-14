@@ -542,16 +542,7 @@ impl Configuration {
         }
     }
 
-    #[rustfmt::skip]
     pub fn print_uci(&self) {
-        #[cfg(feature = "tunable")] println!("{}", self.eval_delta_pruning_threshold);
-        #[cfg(feature = "tunable")] println!("{}", self.eval_futility_margin);
-        #[cfg(feature = "tunable")] println!("{}", self.eval_policy_temperature);
-        #[cfg(feature = "tunable")] println!("{}", self.mcts_killer_exploitation);
-        #[cfg(feature = "tunable")] println!("{}", self.mcts_proven_loss_visit_threshold);
-        #[cfg(feature = "tunable")] println!("{}", self.mcts_tt_best_move);
-        #[cfg(feature = "tunable")] println!("{}", self.select_cpuct);
-        #[cfg(feature = "tunable")] println!("{}", self.timeman_entropy_target);
         println!("{}", self.clear_hash);
         println!("{}", self.dirichlet_alpha);
         println!("{}", self.dirichlet_epsilon);
@@ -561,6 +552,16 @@ impl Configuration {
         println!("{}", self.ponder);
         println!("{}", self.threads);
         println!("{}", self.weights_path);
+        if cfg!(feature = "tunable") {
+            println!("{}", self.eval_delta_pruning_threshold);
+            println!("{}", self.eval_futility_margin);
+            println!("{}", self.eval_policy_temperature);
+            println!("{}", self.mcts_killer_exploitation);
+            println!("{}", self.mcts_proven_loss_visit_threshold);
+            println!("{}", self.mcts_tt_best_move);
+            println!("{}", self.select_cpuct);
+            println!("{}", self.timeman_entropy_target);
+        }
     }
 }
 

@@ -206,7 +206,7 @@ impl<T> Selection<T> {
     }
 }
 
-pub trait MctsParams {
+pub const trait MctsParams {
     fn proven_loss_visit_threshold(&self) -> VisitCount;
     fn killer_exploitation(&self) -> f32;
     fn tt_best_move(&self) -> f32;

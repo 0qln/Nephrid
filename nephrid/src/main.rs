@@ -4,20 +4,20 @@ use engine::{
 };
 use std::io::stdin;
 
+#[rustfmt::skip]
 mod search {
     use engine::core::{
         params::{self},
         search::{self},
     };
 
+    #[cfg(feature = "mcts-hce")]  pub type Params = params::MctsHceParams;
+    #[cfg(feature = "mcts-nn")]   pub type Params = params::MctsNNParams;
+    #[cfg(feature = "mcts-pure")] pub type Params = params::MctsPureParams;
+    #[cfg(feature = "id-hce")]    pub type Params = params::IdHceParams;
+
     #[cfg(feature = "id-hce")]
     pub type Worker = search::IdWorker<Params>;
-
-    #[cfg(feature = "mcts-hce")]
-    pub type Params = params::MctsHceParams;
-
-    #[cfg(feature = "id-hce")]
-    pub type Params = params::IdHceParams;
 
     #[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
     pub struct Config;

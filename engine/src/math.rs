@@ -1,7 +1,6 @@
-use crate::{
-    core::search::mcts::eval::{Bounded, Bounds0to1, Probability},
-    misc::List,
-};
+use std::{fmt, marker::PhantomData, ops::Deref};
+
+use crate::misc::{CheckHealth, CheckHealthResult, List};
 
 pub fn entropy(xs: impl Iterator<Item = Probability>) -> f32 {
     -xs.filter(|x| x.v() > 0.)
@@ -70,3 +69,108 @@ pub fn softmax<const N: usize>(
     // transformed the array to be probabilities.
     unsafe { List::transmute(xs) }
 }
+
+impl<T, B: FloatBounds> Deref for Bounded<T, B> {
+    type Target = T;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl CheckHealth for Bounded<f32, Bounds0to1> {
+    type Error = String;
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        if self.0.is_nan() {
+            return Err("value was NaN".to_string());
+        }
+        if self.0.is_infinite() {
+            return Err("value was infinite".to_string());
+        }
+        if self.0 < -Self::EPS || self.0 > (1. + Self::EPS) {
+            return Err(format!("value {} was out of range [0; 1]", self.0));
+        }
+        Ok(())
+    }
+}
+
+pub trait FloatBounds {
+    const MIN: f32;
+    const MAX: f32;
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Default, PartialOrd)]
+#[repr(transparent)]
+pub struct Bounded<T, B>(T, PhantomData<B>);
+
+impl<B: FloatBounds> Bounded<f32, B> {
+    /// Allowed inaccuracy
+    const EPS: f32 = 1e-5;
+
+    #[inline(always)]
+    pub fn new(v: f32) -> Self {
+        debug_assert!(
+            v >= (B::MIN - Self::EPS) && v <= (B::MAX + Self::EPS),
+            "Value must be in range [{}; {}], but was: {}",
+            B::MIN,
+            B::MAX,
+            v
+        );
+        Self(v, PhantomData)
+    }
+
+    #[inline(always)]
+    pub const fn new_c(v: f32) -> Self {
+        Self(v, PhantomData)
+    }
+
+    #[inline(always)]
+    pub const fn v(&self) -> f32 {
+        self.0
+    }
+
+    /// Mixes the value with another value by a given ratio.
+    #[inline(always)]
+    pub fn mix(&mut self, other: Self, ratio: Ratio) {
+        self.0 = (self.0 * (1. - ratio.0)) + (other.0 * ratio.0);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bounds0to1;
+
+impl FloatBounds for Bounds0to1 {
+    const MIN: f32 = 0.0;
+    const MAX: f32 = 1.0;
+}
+
+impl Bounded<f32, Bounds0to1> {
+    #[inline(always)]
+    pub const fn zero() -> Probability {
+        Self(0., PhantomData)
+    }
+
+    #[inline(always)]
+    pub const fn one() -> Probability {
+        Self(1., PhantomData)
+    }
+
+    #[inline(always)]
+    pub const fn even() -> Probability {
+        Self(0.5, PhantomData)
+    }
+
+    #[inline(always)]
+    pub const fn inv(&self) -> Self {
+        Self(1. - self.0, PhantomData)
+    }
+}
+
+pub type Probability = Bounded<f32, Bounds0to1>;
+
+impl fmt::Display for Probability {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+pub type Ratio = Bounded<f32, Bounds0to1>;

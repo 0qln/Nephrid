@@ -15,7 +15,7 @@ use crate::core::{
     },
 };
 
-pub trait QSearchParams {
+pub const trait QSearchParams {
     fn futility_margin(&self) -> i32;
     fn delta_pruning_threshold(&self) -> TaperValue;
 }

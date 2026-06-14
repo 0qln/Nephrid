@@ -1,4 +1,4 @@
-use crate::{core::search::score::Cp, math::NormalizedEntropy};
+use crate::{core::search::{id::IdParams, score::Cp}, math::NormalizedEntropy};
 use thiserror::Error;
 use uom::si::{information::byte, u64::Information};
 
@@ -86,14 +86,14 @@ pub struct IdWorker<P> {
     params: P,
 }
 
-impl<P: QSearchParams + ChronoParams> SearchWorker for IdWorker<P> {
+impl<P: IdParams> SearchWorker for IdWorker<P> {
     type Params = P;
 
     fn new() -> Self {
         Self {
             hash_size: Information::new::<byte>(0),
             entropy_target: NormalizedEntropy::zero(),
-            params: PhantomData,
+            params: ,
         }
     }
 

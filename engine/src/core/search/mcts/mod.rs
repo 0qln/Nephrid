@@ -209,16 +209,17 @@ impl<B: Backend> NNParts<B> {
 
 /// Mcts parts for mcts with puct + static analysis.
 #[derive(Debug)]
-pub struct HceParts<P> {
+pub struct HceParts<P: IParams> {
     alpha: f32,
     epsilon: Ratio,
-    params: P,
+    params: P::Ref,
 }
 
-impl<P: IParams> MctsParts for HceParts<P::Ref> {
+impl<P: IParams> MctsParts for HceParts<P> {
     type Selector = PuctSelector;
     type Evaluator = HceEvaluator;
     type Noiser = DirichletNoiser;
+    type Params = P;
 
     fn params(&self) -> P::Ref {
         self.params.clone()
@@ -247,7 +248,9 @@ pub enum CreateHcePartsError {
     EvalParams(#[from] CreateParamsError),
 }
 
-impl<P: (for <'a> TryFrom<&'a Configuration>) + IParams> TryFrom<&Configuration> for HceParts<P::Ref> {
+impl<P: (for<'a> TryFrom<&'a Configuration>) + IParams> TryFrom<&Configuration>
+    for HceParts<P>
+{
     type Error = CreateHcePartsError;
 
     fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
@@ -290,8 +293,8 @@ impl MctsParts for PureParts {
     type Noiser = NullNoiser;
     type Params = MctsPureParams;
 
-    fn params(&self) -> {
-        todo!()
+    fn params(&self) -> MctsPureParams {
+        MctsPureParams
     }
 
     fn selector(&self) -> Self::Selector {
