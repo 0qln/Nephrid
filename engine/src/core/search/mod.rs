@@ -1,4 +1,7 @@
-use crate::{core::search::{id::IdParams, score::Cp}, math::NormalizedEntropy};
+use crate::core::{
+    params::IParams,
+    search::{id::IdParams, score::Cp},
+};
 use thiserror::Error;
 use uom::si::{information::byte, u64::Information};
 
@@ -26,7 +29,6 @@ use crate::{
     misc::CancellationToken,
 };
 use std::{
-    marker::PhantomData,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -78,25 +80,23 @@ pub trait SearchWorker {
 }
 
 /// Iterative deepening worker.
-pub struct IdWorker<P> {
+pub struct IdWorker<X: IParams> {
     // todo: don't store the construction information here but the tt and timeman itself
     hash_size: Information,
-    entropy_target: NormalizedEntropy,
-    params: P,
+    params: X::Ref,
 }
 
-impl<P: IdParams + Default> SearchWorker for IdWorker<P> {
-    type Params = P;
+impl<X: IdParams + Default + IParams> SearchWorker for IdWorker<X> {
+    type Params = X;
 
     fn new() -> Self {
         Self {
             hash_size: Information::new::<byte>(0),
-            entropy_target: NormalizedEntropy::zero(),
-            params: P::default(),
+            params: X::default().shared(),
         }
     }
 
-    fn build_config(params: &P) -> Configuration {
+    fn build_config(params: &X) -> Configuration {
         Configuration::builder()
             .qsearch(params)
             .chrono(params)
@@ -115,13 +115,13 @@ impl<P: IdParams + Default> SearchWorker for IdWorker<P> {
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
-                let best_move = id::go(
+                let best_move = id::go::<X>(
                     &mut pos,
                     limit,
                     &debug,
                     ct,
                     self.hash_size,
-                    self.entropy_target,
+                    X::Ref::clone(&self.params),
                 );
 
                 if let Some(mov) = best_move {
@@ -142,7 +142,9 @@ impl<P: IdParams + Default> SearchWorker for IdWorker<P> {
 
                 self.hash_size = cfg.hash();
 
-                self.entropy_target = cfg.timeman_entropy_target();
+                self.params = Self::Params::try_from(cfg)
+                    .map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?
+                    .shared();
 
                 Ok(())
             }
@@ -158,21 +160,21 @@ impl<P: IdParams + Default> SearchWorker for IdWorker<P> {
 }
 
 /// Monte Carlo Tree Search worker.
-pub struct MctsWorker<const MPV: usize, C: MctsConfig, P> {
+pub struct MctsWorker<const MPV: usize, C: MctsConfig, P: IParams> {
     mcts_parts: Option<C::Parts>,
     mcts_state: mcts::SearchState,
     backup_tree: Option<Tree>,
-    params: P,
+    params: P::Ref,
 }
 
-impl<const MPV: usize, C, P> SearchWorker for MctsWorker<MPV, C, P>
+impl<const MPV: usize, C, X: MctsParams + IParams + Default> SearchWorker for MctsWorker<MPV, C, X>
 where
     C: MctsConfig<Strat = MctsUci>,
-    P: QSearchParams + PolicyParams + PuctParams + MctsParams,
+    X: Default + QSearchParams + PolicyParams + PuctParams + MctsParams,
 {
-    type Params = P;
+    type Params = X;
 
-    fn build_config(params: &P) -> Configuration {
+    fn build_config(params: &X) -> Configuration {
         Configuration::builder()
             .qsearch(params)
             .policy(params)
@@ -189,7 +191,7 @@ where
             mcts_parts,
             mcts_state,
             backup_tree,
-            _params: PhantomData,
+            params: X::default().shared(),
         }
     }
 
@@ -221,7 +223,13 @@ where
                 let state = &mut self.mcts_state;
                 let strat = &mut C::Strat::new(limit, debug, ct, None);
 
-                let result = mcts::<MPV, C, _>(&mut pos, parts, state, strat);
+                let result = mcts::<MPV, C, _, X>(
+                    &mut pos,
+                    parts,
+                    state,
+                    strat,
+                    X::Ref::clone(&self.params),
+                );
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -234,7 +242,13 @@ where
                 let state = &mut self.mcts_state;
                 let strat = &mut C::Strat::new(limit, debug, ct, Some(pt));
 
-                let result = mcts::<MPV, C, _>(&mut pos, parts, state, strat);
+                let result = mcts::<MPV, C, _, X>(
+                    &mut pos,
+                    parts,
+                    state,
+                    strat,
+                    X::Ref::clone(&self.params),
+                );
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")

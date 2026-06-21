@@ -11,7 +11,7 @@ use crate::{
             },
         },
         r#move::MAX_LEGAL_MOVES,
-        params::{self},
+        params::{MctsHceParams, MctsHceParamsRef},
         position::{CheckState, Position},
         search::{
             mcts::{
@@ -37,12 +37,6 @@ use crate::core::{
     position::{PieceInfo, StateInfo},
     search::mcts::node::node_state::Branching,
 };
-
-#[cfg(feature = "tunable")]
-type ParamsRef = <params::TunableParams as IParams>::Ref;
-
-#[cfg(not(feature = "tunable"))]
-type ParamsRef = params::C_MctsHceParams;
 
 struct StaticEvaluator;
 
@@ -121,17 +115,17 @@ pub struct EvalInfo<Moves: AsRef<[Move]>> {
     quality: Cp,
 
     // tunables
-    params: ParamsRef,
+    params: MctsHceParamsRef,
 }
 
 impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
-    pub fn new(moves: Moves, pos: &mut Position, params: ParamsRef) -> Self {
+    pub fn new(moves: Moves, pos: &mut Position, params: MctsHceParamsRef) -> Self {
         let quality: Cp = match pos.get_turn().v() {
             colors::WHITE_C => qsearch::<perspectives::White>(
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
-                params.clone(),
+                MctsHceParamsRef::clone(&params),
                 &StaticEvaluator,
                 Depth::new(30),
             )
@@ -140,7 +134,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
-                params.clone(),
+                MctsHceParamsRef::clone(&params),
                 &StaticEvaluator,
                 Depth::new(30),
             )
@@ -187,7 +181,11 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             logits.push(score as f32);
         }
 
-        Policy::from_logits(Logits(logits), self.params.policy_temperature(), buf)
+        Policy::from_logits(
+            Logits(logits),
+            MctsHceParams::policy_temperature(&self.params),
+            buf,
+        )
     }
 }
 
@@ -198,11 +196,11 @@ pub const trait PolicyParams {
 #[derive(Debug, Clone)]
 pub struct HceEvaluator {
     policy_buf: Box<List<{ MAX_LEGAL_MOVES }, f32>>,
-    params: ParamsRef,
+    params: MctsHceParamsRef,
 }
 
 impl HceEvaluator {
-    pub fn new(params: ParamsRef) -> Self {
+    pub fn new(params: MctsHceParamsRef) -> Self {
         Self {
             policy_buf: Box::new(List::new()),
             params,
@@ -223,7 +221,7 @@ impl Evaluator for HceEvaluator {
             EvalInfo::new(
                 tree.branches(node).iter().map(|b| b.mov()).collect(),
                 pos,
-                self.params.clone(),
+                MctsHceParamsRef::clone(&self.params),
             )
         })
     }

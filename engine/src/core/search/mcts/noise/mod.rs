@@ -7,11 +7,10 @@ use crate::{
     core::{
         r#move::MAX_LEGAL_MOVES,
         search::mcts::{
-            eval::{Policy, Probability, Ratio},
+            eval::Policy,
             node::{NodeId, Tree, node_state::Evaluated},
         },
-    },
-    misc::List,
+    }, math::{Probability, Ratio}, misc::List
 };
 
 #[cfg(test)]

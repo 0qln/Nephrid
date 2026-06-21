@@ -1,9 +1,8 @@
 use crate::core::{
-    eval::hce::{self},
-    search::{
+    eval::hce::{self}, params::{IParams, MctsHceParams}, search::{
         mcts::{self},
         score::Cp,
-    },
+    }
 };
 use search::mode::Mode;
 use std::{
@@ -18,7 +17,6 @@ use crate::{
         config::Configuration,
         depth::Depth,
         r#move::{Move, MoveList, SanParseError},
-        params::{IParams, Params},
         piece::piece_type,
         position::{
             EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError,
@@ -358,8 +356,8 @@ pub fn execute_uci(
             let config = engine.config.lock().expect("Config dead :(");
             let moves = pos.collect_moves(MoveList::new());
             let config = &config.clone();
-            let params = Params::try_from(config)?;
-            let eval = mcts::eval::hce::EvalInfo::new(moves.clone(), &mut pos, params.shared());
+            let hce_params = MctsHceParams::shared(MctsHceParams::try_from(config)?);
+            let eval = mcts::eval::hce::EvalInfo::new(moves.clone(), &mut pos, hce_params);
 
             if matches!(cmd, None | Some("centipawns")) {
                 let quality = eval.quality();

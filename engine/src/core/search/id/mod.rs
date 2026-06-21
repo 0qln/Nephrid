@@ -24,7 +24,7 @@ use crate::{
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
-        params::C_IdHceParams,
+        params::{C_IdHceParams, IParams},
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
         search::{
@@ -118,13 +118,13 @@ impl Default for SearchStats {
     }
 }
 
-pub fn go(
+pub fn go<X: IParams + IdParams + ChronoParams>(
     pos: &mut Position,
     limit: UciLimit,
     _debug: &DebugMode,
     ct: CancellationToken,
     hash_size: Information,
-    params: impl IdParams + Clone,
+    params: X::Ref,
 ) -> Option<Move> {
     let depth_lim = min(Depth::MAX, limit.depth);
 
@@ -165,7 +165,7 @@ pub fn go(
 
         searcher
             .time_man
-            .hint_preferred_target(&stats, params.clone());
+            .hint_preferred_target::<X>(&stats, X::Ref::clone(&params));
 
         if searcher.should_stop(&stats) || searcher.time_man.reached_target() {
             break;

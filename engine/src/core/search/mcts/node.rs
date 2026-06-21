@@ -3,12 +3,11 @@ use crate::{
         depth::Depth,
         r#move::MoveIndex,
         search::mcts::{
-            eval::{Probability, Ratio},
             nn::PolicyHeadIndex,
             node::node_state::{ExpandedSwitch, HasBranches, HasValue, NodeState, Switch},
         },
     },
-    impl_variants,
+    impl_variants, math::{Probability, Ratio},
 };
 use std::{
     cmp::Ordering,

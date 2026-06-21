@@ -1,5 +1,5 @@
 #[cfg(feature = "tunable")]
-use crate::math;
+use crate::{core::{eval::hce::TaperValue, search::mcts::node::VisitCount}, math::{self, NormalizedEntropy}};
 use crate::{
     core::{
         chrono::ChronoParams,
@@ -460,28 +460,28 @@ impl Configuration {
         self.eval_futility_margin.value
     }
 
-    pub fn eval_delta_pruning_threshold(&self) -> eval::hce::TaperValue {
+    pub fn eval_delta_pruning_threshold(&self) -> TaperValue {
         TaperValue::new(self.eval_delta_pruning_threshold.value as u32)
     }
 
     pub fn select_cpuct(&self) -> f32 {
-        self.select_cpuct.value as f32 / 100.
+        self.select_cpuct.value.get::<ratio>()
     }
 
-    pub fn mcts_proven_loss_visit_threshold(&self) -> node::VisitCount {
+    pub fn mcts_proven_loss_visit_threshold(&self) -> VisitCount {
         VisitCount(self.mcts_proven_loss_visit_threshold.value as u32)
     }
 
     pub fn mcts_killer_exploitation(&self) -> f32 {
-        self.mcts_killer_exploitation.value as f32 / 100.
+        self.mcts_killer_exploitation.value.get::<ratio>()
     }
 
     pub fn mcts_tt_best_move(&self) -> f32 {
-        self.mcts_tt_best_move.value as f32 / 100.
+        self.mcts_tt_best_move.value.get::<ratio>()
     }
 
     pub fn timeman_entropy_target(&self) -> math::NormalizedEntropy {
-        NormalizedEntropy::new(self.timeman_entropy_target.value as f32 / 100.)
+        NormalizedEntropy::new(self.timeman_entropy_target.value.get::<ratio>())
     }
 }
 

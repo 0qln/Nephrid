@@ -508,7 +508,7 @@ impl fmt::Display for Cp {
 
 impl From<WinRate> for Cp {
     fn from(win_rate: WinRate) -> Self {
-        let w = win_rate.0.0.clamp(0.001, 0.999);
+        let w = win_rate.0.clamp(0.001, 0.999);
         let cp = Cp::SCALE * (w / (1.0 - w)).ln();
         Self { v: cp as TCp }
     }

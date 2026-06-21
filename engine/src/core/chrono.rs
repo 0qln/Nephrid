@@ -5,10 +5,7 @@ use std::{
 
 use crate::{
     core::{
-        color::colors,
-        position::Position,
-        search::{id, limit::UciLimit},
-        turn::Turn,
+        color::colors, params::IParams, position::Position, search::{id, limit::UciLimit}, turn::Turn
     },
     math::NormalizedEntropy,
 };
@@ -100,7 +97,7 @@ impl TimeMan {
 
     /// Hint to the time manager that right now would be a preferred (soft) stop
     /// point.
-    pub fn hint_preferred_target(&mut self, stats: &id::SearchStats, params: impl ChronoParams) {
+    pub fn hint_preferred_target<X: IParams + ChronoParams>(&mut self, stats: &id::SearchStats, params: X::Ref) {
         self.time_target = self.time_limit - stats.iter_time;
 
         self.entropy_target = params.entropy_target();

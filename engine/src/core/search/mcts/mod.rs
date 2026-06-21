@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        params::{C_MctsHceParams, CreateParamsError, IParams, MctsHceParams},
+        params::{C_MctsHceParams, CreateParamsError, IParams, MctsHceParams, MctsHceParamsRef},
         search::mcts::{search::MctsParams, select::puct::PuctParams},
     },
     math::Ratio,
@@ -42,18 +42,18 @@ pub mod strategy;
 
 pub mod test;
 
-pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState, P: IParams + MctsParams>(
+pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState, X: IParams + MctsParams>(
     pos: &mut Position,
     parts: &C::Parts,
     state: &mut M,
     strat: &mut C::Strat,
-    params: P::Ref,
+    params: X::Ref,
 ) -> <C::Strat as MctsStrategy>::Result {
     let tree = state.tree();
 
     strat.start(tree, pos);
 
-    let mut searcher = TreeSearcher::<{ MPV }, _, _, _, P>::new(
+    let mut searcher = TreeSearcher::<{ MPV }, _, _, _, X>::new(
         pos,
         params,
         parts.selector(),
@@ -221,7 +221,7 @@ impl MctsParts for HceParts {
     }
 
     fn evaluator(&self) -> Self::Evaluator {
-        HceEvaluator::new(self.params.clone())
+        HceEvaluator::new(MctsHceParamsRef::clone(&self.params))
     }
 
     fn noiser(&self) -> Self::Noiser {
@@ -248,9 +248,9 @@ impl TryFrom<&Configuration> for HceParts {
         let epsilon = Ratio::new(config.dirichlet_epsilon());
         epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
 
-        let params = MctsHceParams::try_from(config)?.shared();
+        let params = MctsHceParams::shared(MctsHceParams::try_from(config)?);
 
-        let cpuct = params.select_cpuct();
+        let cpuct = MctsHceParams::select_cpuct(&params);
 
         Ok(Self::new(alpha, epsilon, cpuct, params))
     }
