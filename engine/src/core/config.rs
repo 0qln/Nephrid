@@ -1,4 +1,3 @@
-#[cfg(feature = "tunable")]
 use crate::{core::{eval::hce::TaperValue, search::mcts::node::VisitCount}, math::{self, NormalizedEntropy}};
 use crate::{
     core::{
@@ -450,7 +449,6 @@ impl ConfigBuilder {
     }
 }
 
-#[cfg(feature = "tunable")]
 impl Configuration {
     pub fn eval_policy_temperature(&self) -> f32 {
         self.eval_policy_temperature.value.get::<ratio>()

@@ -26,10 +26,8 @@ pub const trait IParams: for<'a> TryFrom<&'a Configuration, Error: fmt::Display>
 
 // generic tunable
 
-#[cfg(feature = "tunable")]
 pub type TunableParamsRef = std::rc::Rc<TunableParams>;
 
-#[cfg(feature = "tunable")]
 #[derive(Debug, Clone)]
 pub struct TunableParams {
     timeman_entropy_target: NormalizedEntropy,
@@ -42,46 +40,38 @@ pub struct TunableParams {
     mcts_tt_best_move: f32,
 }
 
-#[cfg(feature = "tunable")]
 impl PuctParams for TunableParams {
     fn select_cpuct(&self) -> f32 { self.select_cpuct }
 }
 
-#[cfg(feature = "tunable")]
 impl PuctParams for TunableParamsRef {
     fn select_cpuct(&self) -> f32 { self.select_cpuct }
 }
 
-#[cfg(feature = "tunable")]
 impl MctsParams for TunableParams {
     fn proven_loss_visit_threshold(&self) -> VisitCount { self.mcts_proven_loss_visit_threshold }
     fn killer_exploitation(&self) -> f32 { self.mcts_killer_exploitation }
     fn tt_best_move(&self) -> f32 { self.mcts_tt_best_move }
 }
 
-#[cfg(feature = "tunable")]
 impl QSearchParams for TunableParams {
     fn futility_margin(&self) -> i32 { self.hce_q_futility_margin }
     fn delta_pruning_threshold(&self) -> TaperValue { self.hce_q_delta_pruning_threshold }
 }
 
-#[cfg(feature = "tunable")]
 impl QSearchParams for TunableParamsRef {
     fn futility_margin(&self) -> i32 { self.hce_q_futility_margin }
     fn delta_pruning_threshold(&self) -> TaperValue { self.hce_q_delta_pruning_threshold }
 }
 
-#[cfg(feature = "tunable")]
 impl PolicyParams for TunableParams {
     fn policy_temperature(&self) -> f32 { self.hce_policy_temp }
 }
 
-#[cfg(feature = "tunable")]
 impl ChronoParams for TunableParams {
     fn entropy_target(&self) -> NormalizedEntropy { self.timeman_entropy_target }
 }
 
-#[cfg(feature = "tunable")]
 impl IParams for TunableParams {
     type Ref = TunableParamsRef;
     fn shared(self) -> Self::Ref {
@@ -102,7 +92,6 @@ pub enum CreateTunableParamsError {
     InvalidDeltaPruningThreshold(String),
 }
 
-#[cfg(feature = "tunable")]
 impl TryFrom<&Configuration> for TunableParams {
     type Error = CreateTunableParamsError;
 
