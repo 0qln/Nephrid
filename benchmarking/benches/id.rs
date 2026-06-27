@@ -5,10 +5,12 @@ use engine::{
     core::{
         depth::Depth,
         move_iter::sliding_piece::magics,
+        params::C_IdHceParams,
         position::Position,
         search::{id, limit::UciLimit},
         zobrist,
-    }, math::NormalizedEntropy, misc::{CancellationToken, DebugMode}
+    },
+    misc::{CancellationToken, DebugMode},
 };
 use uom::si::{information::mebibyte, u64::Information};
 
@@ -33,7 +35,7 @@ fn search_with_node_target(pos: &mut Position) {
     let ct = CancellationToken::new();
     let hash_size = Information::new::<mebibyte>(16);
 
-    id::go(pos, limit, &debug, ct, hash_size, NormalizedEntropy::zero());
+    id::go(pos, limit, &debug, ct, hash_size, C_IdHceParams);
 }
 
 pub fn id_nps(c: &mut Criterion) {
@@ -49,11 +51,7 @@ pub fn id_nps(c: &mut Criterion) {
     for (name, fen) in POSITIONS {
         let pos = Position::from_fen(fen).unwrap();
         group.bench_with_input(BenchmarkId::new("search", name), &pos, |b, pos| {
-            b.iter_batched(
-                || pos.clone(),
-                |mut pos| search_with_node_target(&mut pos),
-                BatchSize::SmallInput,
-            )
+            b.iter_batched(|| pos.clone(), |mut pos| search_with_node_target(&mut pos), BatchSize::SmallInput)
         });
     }
 

@@ -14,7 +14,7 @@ fn run_search(fen: &str, depth: u8) {
     let debug = DebugMode::default();
     let ct = CancellationToken::new();
     let hash_size = Information::new::<mebibyte>(16);
-    go(&mut pos, limit, &debug, ct, hash_size, NormalizedEntropy::zero());
+    go(&mut pos, limit, &debug, ct, hash_size, C_IdHceParams);
 }
 
 #[test]

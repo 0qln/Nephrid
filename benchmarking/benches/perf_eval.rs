@@ -2,18 +2,14 @@ use std::fmt::Display;
 
 use engine::{
     core::{
-        r#move::Move,
-        move_iter::sliding_piece::magics,
-        position::{EpdLineImport, Position},
-        search::{
+        r#move::Move, move_iter::sliding_piece::magics, params::C_MctsHceParams, position::{EpdLineImport, Position}, search::{
             limit::UciLimit,
             mcts::{
                 self, HceParts, MctsConfig, mcts,
                 node::{self, Branch, VisitCount, node_state},
                 strategy::MctsUci,
             }, strat::{UciCp, UciScore},
-        },
-        zobrist,
+        }, zobrist
     },
     math::entropy,
     misc::{CancellationToken, DebugMode},
@@ -156,7 +152,7 @@ impl PerfRunner for MctsHceRunner {
         let state = &mut mcts::SearchState::default();
         let parts = HceParts::default();
         let strat = &mut MctsUci::new(limit, DebugMode::off(), ct, None);
-        let result = mcts::<1, Config, _>(&mut pos, &parts, state, strat)
+        let result = mcts::<1, Config, _, C_MctsHceParams>(&mut pos, &parts, state, strat, C_MctsHceParams)
             .expect("mcts should've completed in the given time");
 
         let tree = &state.tree;

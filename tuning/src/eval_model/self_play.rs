@@ -2,16 +2,10 @@ use burn_cuda::Cuda;
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use engine::{
     core::{
-        config::Configuration,
-        eval::GameResult,
-        r#move::MoveList,
-        move_iter::fold_legal_moves,
-        params::ParamsRef,
-        position::PgnResultValue,
-        search::mcts::{
+        config::Configuration, eval::GameResult, r#move::MoveList, move_iter::fold_legal_moves, params::C_MctsNnParams, position::PgnResultValue, search::mcts::{
             self, CreateNNPartsError, MctsParts, NNParts,
             eval::{
-                self, Evaluator, Policy, Quality, Ratio,
+                self, Evaluator, Policy, Quality,
                 nn::{TraceInfo, get_node_history},
             },
             nn::{self, BoardInputTensor, POLICY_OUTPUTS, RawLogits, StateInputTensor},
@@ -22,10 +16,9 @@ use engine::{
             noise::DirichletNoiser,
             search::{BatchItem, Selection},
             select::{Score, Selector},
-        },
-        zobrist,
+        }, zobrist
     },
-    math::entropy,
+    math::{Ratio, entropy},
     misc::{CheckHealth, List},
 };
 use itertools::Itertools;
@@ -636,11 +629,12 @@ where
             }
 
             let strat = &mut MctsTrainStrategy::new(limit.clone(), i, n);
-            let result = mcts::<{ MPV }, MctsTrainConfig, _>(
+            let result = mcts::<{ MPV }, MctsTrainConfig, _, C_MctsNnParams>(
                 game.position_mut(),
                 parts,
                 &mut mcts_state,
                 strat,
+                C_MctsNnParams
             );
 
             let pos = game.position();
@@ -720,10 +714,6 @@ impl MctsParts for MctsTrainParts {
     type Selector = MctsTrainSelector;
     type Evaluator = BatchedNNEvaluator;
     type Noiser = DirichletNoiser;
-
-    fn params(&self) -> ParamsRef {
-        todo!()
-    }
 
     fn selector(&self) -> Self::Selector {
         MctsTrainSelector::new(self.c_puct, 1., self.virtual_loss)

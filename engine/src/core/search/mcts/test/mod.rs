@@ -31,9 +31,7 @@ pub struct DummyEvaluator {
 }
 
 impl DummyEvaluator {
-    pub fn new() -> Self {
-        Self::default()
-    }
+    pub fn new() -> Self { Self::default() }
 }
 
 impl Default for DummyEvaluator {
@@ -49,14 +47,7 @@ impl Default for DummyEvaluator {
 impl Evaluator for DummyEvaluator {
     type TraceData = DummyTraceData;
 
-    fn trace<S: HasBranches>(
-        &self,
-        _node: NodeId<S>,
-        _tree: &Tree,
-        pos: &mut Position,
-    ) -> Self::TraceData {
-        DummyTraceData { turn: pos.get_turn() }
-    }
+    fn trace<S: HasBranches>(&self, _node: NodeId<S>, _tree: &Tree, pos: &mut Position) -> Self::TraceData { DummyTraceData { turn: pos.get_turn() } }
 
     fn eval_batch(
         &mut self,
@@ -81,12 +72,7 @@ impl Evaluator for DummyEvaluator {
             evaluations.push(Guess {
                 relative_to: trace_data.turn,
                 quality: Quality::new(quality),
-                policy: Policy::from_raw_logits(
-                    &raw_logits,
-                    moves,
-                    1.0,
-                    &mut Box::new(List::new()),
-                ),
+                policy: Policy::from_raw_logits(&raw_logits, moves, 1.0, &mut Box::new(List::new())),
             });
         }
 
@@ -99,9 +85,12 @@ impl Evaluator for DummyEvaluator {
 #[ignore = "implementation in the search is missing and test is not complete yet"]
 pub fn chooses_shortest_mate() {
     use crate::{
-        core::search::{
-            limit::UciLimit,
-            mcts::{HceParts, MctsConfig, SearchState, strategy::MctsUci},
+        core::{
+            params::C_MctsHceParams,
+            search::{
+                limit::UciLimit,
+                mcts::{HceParts, MctsConfig, SearchState, strategy::MctsUci},
+            },
         },
         misc::{CancellationToken, DebugMode},
     };
@@ -132,7 +121,7 @@ pub fn chooses_shortest_mate() {
     );
     let parts = HceParts::default();
 
-    super::mcts::<1, Config, _>(&mut pos, &parts, &mut state, &mut strat);
+    super::mcts::<1, Config, _, C_MctsHceParams>(&mut pos, &parts, &mut state, &mut strat, C_MctsHceParams);
 
     todo!()
 }
