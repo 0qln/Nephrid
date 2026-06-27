@@ -51,12 +51,7 @@ impl<B: Backend> LossOutput<B> {
         }
     }
 
-    pub fn new_weighted(
-        value_loss: Tensor<B, 1>,
-        policy_loss: Tensor<B, 1>,
-        value_weight: f32,
-        policy_weight: f32,
-    ) -> Self {
+    pub fn new_weighted(value_loss: Tensor<B, 1>, policy_loss: Tensor<B, 1>, value_weight: f32, policy_weight: f32) -> Self {
         let weighted_loss = value_loss.clone() * value_weight + policy_loss.clone() * policy_weight;
         Self {
             loss: weighted_loss,
@@ -83,26 +78,18 @@ impl<B: Backend> CheckHealth for LossOutput<B> {
     type Error = CheckLossOutputHealthError;
 
     fn check_health(&self) -> CheckHealthResult<Self::Error> {
-        self.value_loss
-            .check_health()
-            .map_err(CheckLossOutputHealthError::ValueLoss)?;
+        self.value_loss.check_health().map_err(CheckLossOutputHealthError::ValueLoss)?;
 
-        self.policy_loss
-            .check_health()
-            .map_err(CheckLossOutputHealthError::PolicyLoss)?;
+        self.policy_loss.check_health().map_err(CheckLossOutputHealthError::PolicyLoss)?;
 
-        self.loss
-            .check_health()
-            .map_err(CheckLossOutputHealthError::Loss)?;
+        self.loss.check_health().map_err(CheckLossOutputHealthError::Loss)?;
 
         Ok(())
     }
 }
 
 impl<B: Backend> Adaptor<LossInput<B>> for LossOutput<B> {
-    fn adapt(&self) -> LossInput<B> {
-        LossInput::new(self.loss.clone())
-    }
+    fn adapt(&self) -> LossInput<B> { LossInput::new(self.loss.clone()) }
 }
 
 #[derive(Clone, Default)]

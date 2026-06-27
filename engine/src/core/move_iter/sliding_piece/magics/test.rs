@@ -8,14 +8,10 @@ use crate::core::{
 use super::MagicGen;
 
 #[test]
-fn rook() {
-    test::<Rook>()
-}
+fn rook() { test::<Rook>() }
 
 #[test]
-fn bishop() {
-    test::<Bishop>()
-}
+fn bishop() { test::<Bishop>() }
 
 fn test<T: MagicGen + SlidingAttacks>() {
     super::init();

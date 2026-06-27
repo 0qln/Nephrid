@@ -7,9 +7,7 @@ use crate::core::{depth::Depth, r#move::Move, search::score::Cp};
 pub struct UciCp(pub Cp);
 
 impl fmt::Display for UciCp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "cp {}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "cp {}", self.0) }
 }
 
 #[derive(Debug)]
@@ -35,9 +33,7 @@ impl fmt::Display for UciScore {
 pub struct UciNodes(pub usize);
 
 impl fmt::Display for UciNodes {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "nodes {}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "nodes {}", self.0) }
 }
 
 #[derive(Default, Debug)]
@@ -56,36 +52,28 @@ impl UciNps {
 }
 
 impl fmt::Display for UciNps {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "nps {}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "nps {}", self.0) }
 }
 
 #[derive(Default, Debug)]
 pub struct UciPondermove(pub Move);
 
 impl fmt::Display for UciPondermove {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "ponder {}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "ponder {}", self.0) }
 }
 
 #[derive(Default, Debug)]
 pub struct UciDepth(pub Depth);
 
 impl fmt::Display for UciDepth {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "depth {}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "depth {}", self.0) }
 }
 
 #[derive(Default, Debug)]
 pub struct UciSeldepth(pub Depth);
 
 impl fmt::Display for UciSeldepth {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "seldepth {}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "seldepth {}", self.0) }
 }
 
 pub struct UciPv<Path>(pub Path);
@@ -107,18 +95,14 @@ where
 pub struct UciSearchtime(pub Duration);
 
 impl fmt::Display for UciSearchtime {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "time {}", self.0.as_millis())
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "time {}", self.0.as_millis()) }
 }
 
 #[derive(Default, Debug)]
 pub struct UciCurrmove(pub Move);
 
 impl fmt::Display for UciCurrmove {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "currmove {}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "currmove {}", self.0) }
 }
 
 pub enum UciArg<T: fmt::Display> {

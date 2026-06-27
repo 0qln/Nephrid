@@ -11,8 +11,7 @@ use const_for::const_for;
 
 use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose, squares::*};
 
-#[cfg(test)]
-pub mod tests;
+#[cfg(test)] pub mod tests;
 
 #[derive(Copy, Clone, Default, PartialEq, Eq)]
 pub struct Bitboard {
@@ -26,9 +25,7 @@ impl Try for Bitboard {
     type Residual = Self;
 
     #[inline(always)]
-    fn from_output(output: Self::Output) -> Self {
-        output
-    }
+    fn from_output(output: Self::Output) -> Self { output }
 
     #[inline(always)]
     fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
@@ -42,9 +39,7 @@ impl Try for Bitboard {
 }
 
 impl FromResidual for Bitboard {
-    fn from_residual(residual: <Self as Try>::Residual) -> Self {
-        residual
-    }
+    fn from_residual(residual: <Self as Try>::Residual) -> Self { residual }
 }
 
 impl Debug for Bitboard {
@@ -101,21 +96,15 @@ impl Iterator for Bitboard {
     type Item = Square;
 
     #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        self.pop_lsb()
-    }
+    fn next(&mut self) -> Option<Self::Item> { self.pop_lsb() }
 }
 
 impl Bitboard {
     #[inline]
-    pub const fn empty() -> Self {
-        Self { v: 0 }
-    }
+    pub const fn empty() -> Self { Self { v: 0 } }
 
     #[inline]
-    pub const fn full() -> Self {
-        Self { v: !0 }
-    }
+    pub const fn full() -> Self { Self { v: !0 } }
 
     /// Most significant bit or None if the bitboard is empty
     #[inline]
@@ -150,9 +139,7 @@ impl Bitboard {
     }
 
     #[inline]
-    pub const fn split_north(sq: Square) -> Self {
-        Self { v: !0u64 << (sq.v() as u32) << 1 }
-    }
+    pub const fn split_north(sq: Square) -> Self { Self { v: !0u64 << (sq.v() as u32) << 1 } }
 
     #[inline]
     pub const fn split_south(sq: Square) -> Self {
@@ -206,14 +193,10 @@ impl Bitboard {
     }
 
     #[inline]
-    pub const fn get_bit(&self, sq: Square) -> u64 {
-        (self.v & Self::from(sq).v) >> sq.v() as u32
-    }
+    pub const fn get_bit(&self, sq: Square) -> u64 { (self.v & Self::from(sq).v) >> sq.v() as u32 }
 
     #[inline]
-    pub const fn is_bit_set(&self, sq: Square) -> bool {
-        self.v & Self::from(sq).v != 0
-    }
+    pub const fn is_bit_set(&self, sq: Square) -> bool { self.v & Self::from(sq).v != 0 }
 
     #[inline]
     pub const fn shift(&self, dir: CompassRose) -> Self {
@@ -232,18 +215,12 @@ impl Bitboard {
     }
 
     #[inline]
-    pub const fn is_empty(&self) -> bool {
-        self.v == 0
-    }
+    pub const fn is_empty(&self) -> bool { self.v == 0 }
 
     #[inline]
-    pub const fn and_c(&self, other: Self) -> Self {
-        Self { v: self.v & other.v }
-    }
+    pub const fn and_c(&self, other: Self) -> Self { Self { v: self.v & other.v } }
 
-    pub const fn and_not_c(&self, other: Self) -> Self {
-        Self { v: self.v & !other.v }
-    }
+    pub const fn and_not_c(&self, other: Self) -> Self { Self { v: self.v & !other.v } }
 
     #[inline]
     const fn rays() -> [[Bitboard; 64]; 64] {
@@ -293,17 +270,11 @@ impl Bitboard {
     #[inline]
     pub fn ray(sq1: Square, sq2: Square) -> Self {
         // Safety: sq1 and sq2 are in range 0..64
-        unsafe {
-            *Self::rays()
-                .get_unchecked(sq1.v() as usize)
-                .get_unchecked(sq2.v() as usize)
-        }
+        unsafe { *Self::rays().get_unchecked(sq1.v() as usize).get_unchecked(sq2.v() as usize) }
     }
 
     #[inline]
-    pub const fn ray_c(sq1: Square, sq2: Square) -> Self {
-        Self::rays()[sq1.v() as usize][sq2.v() as usize]
-    }
+    pub const fn ray_c(sq1: Square, sq2: Square) -> Self { Self::rays()[sq1.v() as usize][sq2.v() as usize] }
 
     #[inline]
     pub fn between(sq1: Square, sq2: Square) -> Self {
@@ -329,22 +300,14 @@ impl Bitboard {
             between
         };
         // Safety: sq1 and sq2 are in range 0..64
-        unsafe {
-            *BETWEEN
-                .get_unchecked(sq1.v() as usize)
-                .get_unchecked(sq2.v() as usize)
-        }
+        unsafe { *BETWEEN.get_unchecked(sq1.v() as usize).get_unchecked(sq2.v() as usize) }
     }
 
     #[inline]
-    pub fn pop_cnt(&self) -> u32 {
-        self.v.count_ones()
-    }
+    pub fn pop_cnt(&self) -> u32 { self.v.count_ones() }
 
     #[inline]
-    pub fn pop_cnt_eq_1(&self) -> bool {
-        !self.is_empty() && !self.pop_cnt_gt_1()
-    }
+    pub fn pop_cnt_eq_1(&self) -> bool { !self.is_empty() && !self.pop_cnt_gt_1() }
 
     #[inline]
     pub fn pop_cnt_gt_1(&self) -> bool {
@@ -354,9 +317,7 @@ impl Bitboard {
         result
     }
 
-    pub const fn edges() -> Self {
-        Self { v: !0x007E7E7E7E7E7E00_u64 }
-    }
+    pub const fn edges() -> Self { Self { v: !0x007E7E7E7E7E7E00_u64 } }
 
     pub fn into_floats(self, upside_down: bool) -> Floats {
         let mut data: Floats = Default::default();
@@ -373,9 +334,7 @@ impl Bitboard {
 
 impl const From<Square> for Bitboard {
     #[inline]
-    fn from(sq: Square) -> Self {
-        Self { v: 1u64 << sq.v() }
-    }
+    fn from(sq: Square) -> Self { Self { v: 1u64 << sq.v() } }
 }
 
 impl const From<Option<Square>> for Bitboard {
@@ -399,9 +358,7 @@ impl const From<File> for Bitboard {
 
 impl const From<Rank> for Bitboard {
     #[inline]
-    fn from(rank: Rank) -> Self {
-        Self { v: 0xFFu64 << (rank.v() * 8) }
-    }
+    fn from(rank: Rank) -> Self { Self { v: 0xFFu64 << (rank.v() * 8) } }
 }
 
 impl const From<CompassRose> for Bitboard {

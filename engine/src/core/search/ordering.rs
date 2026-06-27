@@ -63,9 +63,7 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
 
         occupancy ^= Bitboard::from(attacker_sq);
 
-        let next_attacker = pos
-            .smallest_attackers(to, us, occupancy)
-            .and_then(|bb| bb.lsb());
+        let next_attacker = pos.smallest_attackers(to, us, occupancy).and_then(|bb| bb.lsb());
 
         match next_attacker {
             Some(sq) => {
@@ -78,9 +76,7 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
 
                 // If the piece that just attacked is a pawn, and 'to' is a promotion rank,
                 // it promotes. We assume it promotes to a Queen for SEE purposes.
-                if next_attacker_pt == piece_type::PAWN
-                    && matches!(Rank::from(to), ranks::_1 | ranks::_8)
-                {
+                if next_attacker_pt == piece_type::PAWN && matches!(Rank::from(to), ranks::_1 | ranks::_8) {
                     attacker_pt = piece_type::QUEEN;
                 }
                 else {
@@ -97,20 +93,11 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
         gain[depth.index() - 1] = min(gain[depth.index() - 1], -gain[depth.index()]);
     }
 
-    gain[0]
-        .try_into()
-        .unwrap_or_else(|_| todo!("TODO: how to handle this"))
+    gain[0].try_into().unwrap_or_else(|_| todo!("TODO: how to handle this"))
 }
 
 /// PSQT bonus/penalty for a move.
-pub fn psqt(
-    phase: TaperValue,
-    piece: PieceType,
-    from: Square,
-    to: Square,
-    flag: MoveFlag,
-    color: Color,
-) -> MoveScore {
+pub fn psqt(phase: TaperValue, piece: PieceType, from: Square, to: Square, flag: MoveFlag, color: Color) -> MoveScore {
     let curr_score = tapered_psqt(phase, piece, from, color);
 
     // a promoting pawn arrives at the destination square as the promotion piece,
@@ -133,24 +120,16 @@ pub struct ScoredMove {
 
 impl ScoredMove {
     #[inline]
-    pub fn new(m: Move, score: MoveScore) -> Self {
-        Self { score, mov: m }
-    }
+    pub fn new(m: Move, score: MoveScore) -> Self { Self { score, mov: m } }
 
     #[inline]
-    pub fn mov(&self) -> Move {
-        self.mov
-    }
+    pub fn mov(&self) -> Move { self.mov }
 
     #[inline]
-    pub fn score(&self) -> MoveScore {
-        self.score
-    }
+    pub fn score(&self) -> MoveScore { self.score }
 
     #[inline]
-    pub fn set_score(&mut self, score: MoveScore) {
-        self.score = score;
-    }
+    pub fn set_score(&mut self, score: MoveScore) { self.score = score; }
 }
 
 pub trait MoveScorer {
@@ -192,11 +171,7 @@ impl MovePicker {
         }
     }
 
-    pub fn new_with_max_stage(
-        hash_move: Move,
-        killers: RbSet<Move, 2>,
-        max_stage: RtStage,
-    ) -> Self {
+    pub fn new_with_max_stage(hash_move: Move, killers: RbSet<Move, 2>, max_stage: RtStage) -> Self {
         Self {
             move_gen: MoveGenerator::new(hash_move, killers),
             slice: Range::default(),
@@ -214,11 +189,7 @@ impl MovePicker {
         }
     }
 
-    pub fn next_for<P: Perspective>(
-        &mut self,
-        pos: &Position,
-        scorer: &impl MoveScorer,
-    ) -> Option<Move> {
+    pub fn next_for<P: Perspective>(&mut self, pos: &Position, scorer: &impl MoveScorer) -> Option<Move> {
         // try to generate new moves if we've exhausted the current slice. `curr` is an
         // absolute index into the generator's buffer.
         while self.curr >= self.slice.end {
@@ -409,15 +380,10 @@ impl MoveGenerator {
         }
     }
 
-    pub fn stage(&self) -> RtStage {
-        self.stage
-    }
+    pub fn stage(&self) -> RtStage { self.stage }
 
     #[inline(never)]
-    fn generate_moves<const HASH: bool, const KILLERS: bool, O: move_iter::Options>(
-        &mut self,
-        pos: &Position,
-    ) {
+    fn generate_moves<const HASH: bool, const KILLERS: bool, O: move_iter::Options>(&mut self, pos: &Position) {
         _ = fold_moves::<O, _, _, _>(pos, (), |_, m| {
             let is_hash = HASH && m == self.hash_move;
             let is_killer = KILLERS && self.killers._position(&m).is_some();
@@ -431,17 +397,10 @@ impl MoveGenerator {
 
     /// Pushes the next stage of moves into the list. Returns the new slice that
     /// could be consumed. slice.
-    pub fn next_for<P: Perspective>(
-        &mut self,
-        pos: &Position,
-        scorer: &impl MoveScorer,
-    ) -> Result<Range<usize>, MoveGenExhausted> {
+    pub fn next_for<P: Perspective>(&mut self, pos: &Position, scorer: &impl MoveScorer) -> Result<Range<usize>, MoveGenExhausted> {
         match self.stage {
             RtStage::YieldHashMove => {
-                if self.hash_move != Move::null()
-                    && pos.is_pseudo_legal_for::<P>(self.hash_move)
-                    && pos.is_legal_for::<P>(self.hash_move)
-                {
+                if self.hash_move != Move::null() && pos.is_pseudo_legal_for::<P>(self.hash_move) && pos.is_legal_for::<P>(self.hash_move) {
                     let score = scorer.score::<stages::YieldHashMove>(pos, self.hash_move);
                     self.buf.push(ScoredMove::new(self.hash_move, score));
 
@@ -508,15 +467,9 @@ impl MoveGenerator {
                 let start = self.buf.len();
 
                 for &killer in self.killers.as_slice() {
-                    debug_assert!(
-                        killer.get_capture_sq().is_none(),
-                        "Killers should not be captures"
-                    );
+                    debug_assert!(killer.get_capture_sq().is_none(), "Killers should not be captures");
 
-                    if killer != Move::null()
-                        && pos.is_pseudo_legal_for::<P>(killer)
-                        && pos.is_legal_for::<P>(killer)
-                    {
+                    if killer != Move::null() && pos.is_pseudo_legal_for::<P>(killer) && pos.is_legal_for::<P>(killer) {
                         let s = scorer.score::<stages::YieldKillers>(pos, killer);
                         self.buf.push(ScoredMove::new(killer, s));
                     }
@@ -628,12 +581,7 @@ pub mod test {
         let mov = Move::new(squares::E4, squares::D5, move_flags::CAPTURE);
 
         // Expected: Gains the pawn
-        run_see_test(
-            fen,
-            mov,
-            colors::WHITE,
-            piece_score(piece_type::PAWN).try_into().unwrap(),
-        );
+        run_see_test(fen, mov, colors::WHITE, piece_score(piece_type::PAWN).try_into().unwrap());
     }
 
     #[test]
@@ -647,9 +595,7 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            (piece_score(piece_type::PAWN) - piece_score(piece_type::PAWN))
-                .try_into()
-                .unwrap(),
+            (piece_score(piece_type::PAWN) - piece_score(piece_type::PAWN)).try_into().unwrap(),
         );
     }
 
@@ -665,9 +611,7 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            (-piece_score(piece_type::QUEEN) + piece_score(piece_type::PAWN))
-                .try_into()
-                .unwrap(),
+            (-piece_score(piece_type::QUEEN) + piece_score(piece_type::PAWN)).try_into().unwrap(),
         );
     }
 
@@ -685,10 +629,9 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            (piece_score(piece_type::BISHOP) - piece_score(piece_type::ROOK)
-                + piece_score(piece_type::ROOK))
-            .try_into()
-            .unwrap(),
+            (piece_score(piece_type::BISHOP) - piece_score(piece_type::ROOK) + piece_score(piece_type::ROOK))
+                .try_into()
+                .unwrap(),
         );
     }
 
@@ -700,12 +643,7 @@ pub mod test {
         let mov = Move::new(squares::E5, squares::D6, move_flags::EN_PASSANT);
 
         // Expected: +100 for the pawn.
-        run_see_test(
-            fen,
-            mov,
-            colors::WHITE,
-            piece_score(piece_type::PAWN).try_into().unwrap(),
-        );
+        run_see_test(fen, mov, colors::WHITE, piece_score(piece_type::PAWN).try_into().unwrap());
     }
 
     #[test]
@@ -714,11 +652,7 @@ pub mod test {
         // Black has a Rook on c8 ready to recapture the new Queen.
         let fen = "2rr4/4P3/8/8/8/8/8/8 w - - 0 1";
         // Pass the promotion-capture flag (e.g., PROMO_QUEEN_CAPTURE)
-        let mov = Move::new(
-            squares::E7,
-            squares::D8,
-            move_flags::CAPTURE_PROMOTION_QUEEN,
-        );
+        let mov = Move::new(squares::E7, squares::D8, move_flags::CAPTURE_PROMOTION_QUEEN);
 
         // 1. White captures Rook (+500) and promotes (+800) - loses pawn (-100).
         //    Initial gain: +1300.
@@ -727,11 +661,9 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            (piece_score(piece_type::ROOK) + piece_score(piece_type::QUEEN)
-                - piece_score(piece_type::PAWN)
-                - piece_score(piece_type::QUEEN))
-            .try_into()
-            .unwrap(),
+            (piece_score(piece_type::ROOK) + piece_score(piece_type::QUEEN) - piece_score(piece_type::PAWN) - piece_score(piece_type::QUEEN))
+                .try_into()
+                .unwrap(),
         );
     }
 
@@ -793,10 +725,7 @@ pub mod test {
                 {
                     let expected = all_moves.iter().collect::<HashSet<_>>();
                     let result = got.iter().collect::<HashSet<_>>();
-                    let diff = expected
-                        .symmetric_difference(&result)
-                        .cloned()
-                        .collect_vec();
+                    let diff = expected.symmetric_difference(&result).cloned().collect_vec();
 
                     if diff.is_empty() {
                         "None, there's likely duplicates in one of the sets.".to_string()
@@ -812,47 +741,26 @@ pub mod test {
     }
 
     #[test]
-    fn does_pick_all_legal_moves_0() {
-        test_does_pick_all_legal_moves(
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-            Depth::new(5),
-        );
-    }
+    fn does_pick_all_legal_moves_0() { test_does_pick_all_legal_moves("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Depth::new(5)); }
 
     #[test]
     fn does_pick_all_legal_moves_1() {
-        test_does_pick_all_legal_moves(
-            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
-            Depth::new(5),
-        );
+        test_does_pick_all_legal_moves("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", Depth::new(5));
     }
 
     #[test]
-    fn does_pick_all_legal_moves_2() {
-        test_does_pick_all_legal_moves("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", Depth::new(6));
-    }
+    fn does_pick_all_legal_moves_2() { test_does_pick_all_legal_moves("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", Depth::new(6)); }
 
     #[test]
     fn does_pick_all_legal_moves_3() {
-        test_does_pick_all_legal_moves(
-            "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
-            Depth::new(5),
-        );
+        test_does_pick_all_legal_moves("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1", Depth::new(5));
     }
 
     #[test]
-    fn does_pick_all_legal_moves_4() {
-        test_does_pick_all_legal_moves(
-            "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8  ",
-            Depth::new(5),
-        );
-    }
+    fn does_pick_all_legal_moves_4() { test_does_pick_all_legal_moves("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8  ", Depth::new(5)); }
 
     #[test]
     fn does_pick_all_legal_moves_5() {
-        test_does_pick_all_legal_moves(
-            "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10 ",
-            Depth::new(5),
-        );
+        test_does_pick_all_legal_moves("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10 ", Depth::new(5));
     }
 }

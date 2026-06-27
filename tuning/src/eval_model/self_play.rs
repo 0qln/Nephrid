@@ -2,7 +2,13 @@ use burn_cuda::Cuda;
 use crossbeam_channel::{RecvTimeoutError, Sender, bounded};
 use engine::{
     core::{
-        config::Configuration, eval::GameResult, r#move::MoveList, move_iter::fold_legal_moves, params::C_MctsNnParams, position::PgnResultValue, search::mcts::{
+        config::Configuration,
+        eval::GameResult,
+        r#move::MoveList,
+        move_iter::fold_legal_moves,
+        params::C_MctsNnParams,
+        position::PgnResultValue,
+        search::mcts::{
             self, CreateNNPartsError, MctsParts, NNParts,
             eval::{
                 self, Evaluator, Policy, Quality,
@@ -16,7 +22,8 @@ use engine::{
             noise::DirichletNoiser,
             search::{BatchItem, Selection},
             select::{Score, Selector},
-        }, zobrist
+        },
+        zobrist,
     },
     math::{Ratio, entropy},
     misc::{CheckHealth, List},
@@ -50,10 +57,7 @@ use engine::{
             SearchState,
             eval::Guess,
             mcts,
-            nn::{
-                BOARD_INPUT_HISTORY, BoardInputFloats, Model, StateInputFloats, board_input,
-                state_input,
-            },
+            nn::{BOARD_INPUT_HISTORY, BoardInputFloats, Model, StateInputFloats, board_input, state_input},
             node::Tree,
             strategy::{MctsFindBest, MctsStrategy},
         },
@@ -158,12 +162,7 @@ enum WorkerResult<P: PlayoutItem> {
     Aborted {},
 }
 
-fn try_cache_hit<P: PlayoutItem>(
-    fen: &str,
-    i: usize,
-    n: usize,
-    cache: &Cache,
-) -> Option<WorkerResult<P>>
+fn try_cache_hit<P: PlayoutItem>(fen: &str, i: usize, n: usize, cache: &Cache) -> Option<WorkerResult<P>>
 where
     P::Target: Clone,
 {
@@ -197,11 +196,7 @@ where
     }
 }
 
-fn build_cached_decision<T: Target>(
-    pos: &Position,
-    best_move: Move,
-    moving_color: Color,
-) -> Decision<T> {
+fn build_cached_decision<T: Target>(pos: &Position, best_move: Move, moving_color: Color) -> Decision<T> {
     let mut moves = MoveList::new();
     _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
         moves.push(m);
@@ -265,10 +260,7 @@ where
 #[derive(Debug, Clone, Copy)]
 pub enum Outcome {
     Discrete(GameResult),
-    Continuous {
-        quality: Quality,
-        relative_to: Color,
-    },
+    Continuous { quality: Quality, relative_to: Color },
 }
 
 pub trait PlayoutItem: for<'a> From<(Outcome, &'a [Decision<Self::Target>])> {
@@ -287,9 +279,7 @@ pub struct BatchGenerator {
 
 impl BatchGenerator {
     pub fn new(config: &SelfplayConfig) -> Result<Self, Box<dyn Error>> {
-        let pool = ThreadPoolBuilder::new()
-            .num_threads(config.concurrency)
-            .build()?;
+        let pool = ThreadPoolBuilder::new().num_threads(config.concurrency).build()?;
         Ok(Self { pool })
     }
 
@@ -333,44 +323,44 @@ impl BatchGenerator {
 
         let worker_results: Vec<WorkerResult<P>> = self.pool.install(|| {
             fens.iter()
-            .enumerate()
-            .collect_vec()
-            .into_par_iter()
-            .with_max_len(1)
-            .filter_map(|(i, fen)| {
-                let i = i + 1;
-                let n = num_fens;
-                let fen_str = fen.fen.clone();
+                .enumerate()
+                .collect_vec()
+                .into_par_iter()
+                .with_max_len(1)
+                .filter_map(|(i, fen)| {
+                    let i = i + 1;
+                    let n = num_fens;
+                    let fen_str = fen.fen.clone();
 
-                // 1. try cache
-                if let Some(cached) = try_cache_hit::<P>(&fen_str, i, n, cache) {
-                    games_completed.fetch_add(1, Ordering::Relaxed);
-                    return Some(cached);
-                }
-
-                // 2. otherwise run self‑play
-                let ret = match run_self_play_for_fen::<P>(&fen_str, i, n, limit, config, &parts) {
-                    Ok(result) => {
-                        if let WorkerResult::SelfPlay { ref game, .. } = result {
-                            let pgn = game.to_pgn();
-                            log::info!(target: "data", "[FEN {i:>3}/{n:<3}] Generated game:\n{pgn}");
-                        }
+                    // 1. try cache
+                    if let Some(cached) = try_cache_hit::<P>(&fen_str, i, n, cache) {
                         games_completed.fetch_add(1, Ordering::Relaxed);
-                        Some(result)
-                    },
-                    Err(err) => {
-                        log::error!(target: "data", "[FEN {i:>3}/{n:<3}] Self‑play error: {err}");
-                        None
+                        return Some(cached);
                     }
-                };
 
-                let games_completed = games_completed.load(Ordering::Relaxed);
-                let perc_complete = (games_completed as f32 / games_total as f32) * 100.0;
-                log::info!(target: "data", "Batch: {perc_complete:>3.2}% complete");
+                    // 2. otherwise run self‑play
+                    let ret = match run_self_play_for_fen::<P>(&fen_str, i, n, limit, config, &parts) {
+                        Ok(result) => {
+                            if let WorkerResult::SelfPlay { ref game, .. } = result {
+                                let pgn = game.to_pgn();
+                                log::info!(target: "data", "[FEN {i:>3}/{n:<3}] Generated game:\n{pgn}");
+                            }
+                            games_completed.fetch_add(1, Ordering::Relaxed);
+                            Some(result)
+                        }
+                        Err(err) => {
+                            log::error!(target: "data", "[FEN {i:>3}/{n:<3}] Self‑play error: {err}");
+                            None
+                        }
+                    };
 
-                ret
-            })
-            .collect()
+                    let games_completed = games_completed.load(Ordering::Relaxed);
+                    let perc_complete = (games_completed as f32 / games_total as f32) * 100.0;
+                    log::info!(target: "data", "Batch: {perc_complete:>3.2}% complete");
+
+                    ret
+                })
+                .collect()
         });
 
         let mut all_playout_items = Vec::new();
@@ -533,20 +523,11 @@ pub struct Decision<T: Target> {
 }
 
 impl<'a, T: Target> From<&'a Decision<T>> for StateInput {
-    fn from(decision: &'a Decision<T>) -> Self {
-        Self(decision.input.state_in)
-    }
+    fn from(decision: &'a Decision<T>) -> Self { Self(decision.input.state_in) }
 }
 
 impl<'a, T: Target> From<&'a [Decision<T>]> for BoardInput {
-    fn from(decisions: &'a [Decision<T>]) -> Self {
-        Self(
-            decisions
-                .iter()
-                .map(|d| d.input.board_in)
-                .collect::<Vec<_>>(),
-        )
-    }
+    fn from(decisions: &'a [Decision<T>]) -> Self { Self(decisions.iter().map(|d| d.input.board_in).collect::<Vec<_>>()) }
 }
 
 #[derive(Debug)]
@@ -571,9 +552,8 @@ pub fn self_play<P: PlayoutItem>(
 where
     P::Target: Clone,
 {
-    let unfinished_game_handling =
-        UnfinishedGameHandling::try_from(config.unfinished_games.as_str())
-            .map_err(|e| format!("Invalid config for unfinished games handling: {e}"))?;
+    let unfinished_game_handling = UnfinishedGameHandling::try_from(config.unfinished_games.as_str())
+        .map_err(|e| format!("Invalid config for unfinished games handling: {e}"))?;
 
     let mut decisions = Vec::<Decision<P::Target>>::new();
     let mut mcts_state = SearchState::default();
@@ -588,15 +568,9 @@ where
             }
 
             if {
-                let is_proven = mcts_state
-                    .tree
-                    .node(mcts_state.tree.root())
-                    .value()
-                    .is_proven();
+                let is_proven = mcts_state.tree.node(mcts_state.tree.root()).value().is_proven();
 
-                let is_too_long = config
-                    .allowed_moves
-                    .is_some_and(|max_moves| completed_moves >= max_moves);
+                let is_too_long = config.allowed_moves.is_some_and(|max_moves| completed_moves >= max_moves);
 
                 // if we've reached the allowed move limit and we don't have a proven result, we
                 // consider the game unfinished and handle it according to the config.
@@ -629,13 +603,7 @@ where
             }
 
             let strat = &mut MctsTrainStrategy::new(limit.clone(), i, n);
-            let result = mcts::<{ MPV }, MctsTrainConfig, _, C_MctsNnParams>(
-                game.position_mut(),
-                parts,
-                &mut mcts_state,
-                strat,
-                C_MctsNnParams
-            );
+            let result = mcts::<{ MPV }, MctsTrainConfig, _, C_MctsNnParams>(game.position_mut(), parts, &mut mcts_state, strat, C_MctsNnParams);
 
             let pos = game.position();
             let turn = pos.get_turn();
@@ -645,9 +613,7 @@ where
             let b_in = board_input(pos);
             let s_in = state_input(pos);
 
-            let mov = mov.expect(
-                "if we don't have a gameresult then the search should've yielded a bestmove.",
-            );
+            let mov = mov.expect("if we don't have a gameresult then the search should've yielded a bestmove.");
 
             let state = State { mov, moving_color: turn };
             let input = Input { board_in: b_in, state_in: s_in };
@@ -715,13 +681,9 @@ impl MctsParts for MctsTrainParts {
     type Evaluator = BatchedNNEvaluator;
     type Noiser = DirichletNoiser;
 
-    fn selector(&self) -> Self::Selector {
-        MctsTrainSelector::new(self.c_puct, 1., self.virtual_loss)
-    }
+    fn selector(&self) -> Self::Selector { MctsTrainSelector::new(self.c_puct, 1., self.virtual_loss) }
 
-    fn evaluator(&self) -> Self::Evaluator {
-        self.evaluator.clone()
-    }
+    fn evaluator(&self) -> Self::Evaluator { self.evaluator.clone() }
 
     fn noiser(&self) -> Self::Noiser {
         let rng = SmallRng::from_os_rng();
@@ -732,19 +694,11 @@ impl MctsParts for MctsTrainParts {
 impl TryFrom<&Configuration> for MctsTrainParts {
     type Error = CreateNNPartsError;
 
-    fn try_from(_config: &Configuration) -> Result<Self, Self::Error> {
-        unimplemented!("dont use this here")
-    }
+    fn try_from(_config: &Configuration) -> Result<Self, Self::Error> { unimplemented!("dont use this here") }
 }
 
 impl MctsTrainParts {
-    pub fn new(
-        evaluator: BatchedNNEvaluator,
-        alpha: f32,
-        epsilon: Ratio,
-        c_puct: f32,
-        virtual_loss: u32,
-    ) -> Self {
+    pub fn new(evaluator: BatchedNNEvaluator, alpha: f32, epsilon: Ratio, c_puct: f32, virtual_loss: u32) -> Self {
         Self {
             evaluator,
             alpha,
@@ -762,17 +716,13 @@ pub struct MctsTrainSelector {
 }
 
 impl MctsTrainSelector {
-    pub fn new(c: f32, policy_weight: f32, virtual_loss: u32) -> Self {
-        Self { c, policy_weight, virtual_loss }
-    }
+    pub fn new(c: f32, policy_weight: f32, virtual_loss: u32) -> Self { Self { c, policy_weight, virtual_loss } }
 
     /// Weighted policy, where
     ///     w,p,p_hat \el [0;1]
     ///     w=0 => p_hat=1
     ///     w=1 => p_hat=p
-    fn weighted_policy(p: f32, w: f32) -> f32 {
-        1.0 - w + p * w
-    }
+    fn weighted_policy(p: f32, w: f32) -> f32 { 1.0 - w + p * w }
 }
 
 impl Default for MctsTrainSelector {
@@ -807,12 +757,7 @@ impl Selector for MctsTrainSelector {
     }
 
     #[inline]
-    fn exploitation(
-        &self,
-        tree: &Tree,
-        branch_id: BranchId,
-        parent_id: NodeId<Evaluated>,
-    ) -> Score {
+    fn exploitation(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
         let parent = tree.node(parent_id);
@@ -835,9 +780,7 @@ impl Selector for MctsTrainSelector {
         }
     }
 
-    fn virtual_loss(&self) -> u32 {
-        self.virtual_loss
-    }
+    fn virtual_loss(&self) -> u32 { self.virtual_loss }
 }
 
 /// The request sent from an MCTS thread to the Inference Worker.
@@ -911,20 +854,11 @@ pub fn spawn_inference_workers<B: Backend>(
 
                 // --- TENSOR CONSTRUCTION AND FORWARD PASS ---
                 let board_batch = BoardInputTensor::<B>::cat(
-                    batch
-                        .iter()
-                        .map(|req| nn::board_history_input(&req.board_history, &device))
-                        .collect_vec(),
+                    batch.iter().map(|req| nn::board_history_input(&req.board_history, &device)).collect_vec(),
                     0,
                 );
 
-                let state_batch = StateInputTensor::<B>::cat(
-                    batch
-                        .iter()
-                        .map(|req| Tensor::from_floats([req.state], &device))
-                        .collect_vec(),
-                    0,
-                );
+                let state_batch = StateInputTensor::<B>::cat(batch.iter().map(|req| Tensor::from_floats([req.state], &device)).collect_vec(), 0);
 
                 #[cfg(debug_assertions)]
                 {
@@ -963,9 +897,7 @@ pub fn spawn_inference_workers<B: Backend>(
                     let mut raw_logits = RawLogits::null();
 
                     let start_idx = i * POLICY_OUTPUTS;
-                    raw_logits
-                        .0
-                        .copy_from_slice(&logits_data[start_idx..start_idx + POLICY_OUTPUTS]);
+                    raw_logits.0.copy_from_slice(&logits_data[start_idx..start_idx + POLICY_OUTPUTS]);
 
                     let _ = req.responder.send(NNResponse { value, raw_logits });
                 }
@@ -1053,22 +985,13 @@ pub struct BatchedNNEvaluator {
 }
 
 impl BatchedNNEvaluator {
-    pub fn new(worker_tx: Sender<NNRequest>) -> Self {
-        Self { worker_tx }
-    }
+    pub fn new(worker_tx: Sender<NNRequest>) -> Self { Self { worker_tx } }
 }
 
 impl Evaluator for BatchedNNEvaluator {
     type TraceData = TraceInfo;
 
-    fn trace<S: HasBranches>(
-        &self,
-        _node: node::NodeId<S>,
-        _tree: &Tree,
-        pos: &mut Position,
-    ) -> Self::TraceData {
-        TraceInfo::new(pos)
-    }
+    fn trace<S: HasBranches>(&self, _node: node::NodeId<S>, _tree: &Tree, pos: &mut Position) -> Self::TraceData { TraceInfo::new(pos) }
 
     fn eval_batch(
         &mut self,
@@ -1103,9 +1026,7 @@ impl Evaluator for BatchedNNEvaluator {
 
         for &leaf in leafs {
             // This blocks the MCTS thread until the GPU is done with this specific node.
-            let response = resp_rx
-                .recv()
-                .expect("Inference worker died or disconnected");
+            let response = resp_rx.recv().expect("Inference worker died or disconnected");
 
             let turn = leaf.sel_data.turn;
             let moves = tree.policy_indeces(leaf.node);
@@ -1145,9 +1066,7 @@ impl SelfPlayLimit {
             return false;
         }
 
-        nodes >= self.max_nodes
-            || terminal_nodes >= self.terminal_nodes
-            || iterations >= self.iterations
+        nodes >= self.max_nodes || terminal_nodes >= self.terminal_nodes || iterations >= self.iterations
     }
 }
 

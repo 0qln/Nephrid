@@ -1,11 +1,14 @@
 use std::hint::black_box;
 
-use criterion::{criterion_group, criterion_main, Criterion};
-use engine::core::bitboard::Bitboard;
-use engine::core::coordinates::squares;
-use engine::core::move_iter::queen::Queen;
-use engine::core::move_iter::sliding_piece::magics;
-use engine::core::move_iter::sliding_piece::SlidingAttacks;
+use criterion::{Criterion, criterion_group, criterion_main};
+use engine::core::{
+    bitboard::Bitboard,
+    coordinates::squares,
+    move_iter::{
+        queen::Queen,
+        sliding_piece::{SlidingAttacks, magics},
+    },
+};
 
 pub fn criterion_benchmark(c: &mut Criterion) {
     let queen = squares::E4;

@@ -7,7 +7,8 @@ use crate::{
             node::node_state::{ExpandedSwitch, HasBranches, HasValue, NodeState, Switch},
         },
     },
-    impl_variants, math::{Probability, Ratio},
+    impl_variants,
+    math::{Probability, Ratio},
 };
 use std::{
     cmp::Ordering,
@@ -30,8 +31,7 @@ use crate::core::{
     },
 };
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
 
 /// The height of the tree. The root is at height 1, and the height of an empty
 /// tree is 0.
@@ -47,15 +47,11 @@ impl Height {
 }
 
 impl From<Depth> for Height {
-    fn from(value: Depth) -> Self {
-        Height(value.v() as u16 + 1)
-    }
+    fn from(value: Depth) -> Self { Height(value.v() as u16 + 1) }
 }
 
 impl fmt::Display for Height {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
 }
 
 impl_op!(+|a: Height, b: Height| -> Height { Height(a.0 + b.0) });
@@ -70,48 +66,30 @@ impl_op!(+|a: Height, b: u16| -> Height { Height(a.0 + b) });
 pub struct Value(f32);
 
 impl Value {
-    pub const fn proven_win() -> Self {
-        Self(f32::INFINITY)
-    }
+    pub const fn proven_win() -> Self { Self(f32::INFINITY) }
 
-    pub const fn proven_loss() -> Self {
-        Self(f32::NEG_INFINITY)
-    }
+    pub const fn proven_loss() -> Self { Self(f32::NEG_INFINITY) }
 
-    pub fn is_proven_win(&self) -> bool {
-        *self == Self::proven_win()
-    }
+    pub fn is_proven_win(&self) -> bool { *self == Self::proven_win() }
 
-    pub fn is_proven_loss(&self) -> bool {
-        *self == Self::proven_loss()
-    }
+    pub fn is_proven_loss(&self) -> bool { *self == Self::proven_loss() }
 
-    pub fn is_proven(&self) -> bool {
-        self.is_proven_win() || self.is_proven_loss()
-    }
+    pub fn is_proven(&self) -> bool { self.is_proven_win() || self.is_proven_loss() }
 
-    pub fn v(&self) -> f32 {
-        self.0
-    }
+    pub fn v(&self) -> f32 { self.0 }
 }
 
 impl Deref for Value {
     type Target = f32;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.0.fmt(f) }
 }
 
 impl PartialOrd for Value {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { Some(self.cmp(other)) }
 }
 
 impl_op!(/ |l: Value, r: f32| -> f32 { l.0 / r });
@@ -121,9 +99,7 @@ impl_op!(+= |l: &mut Value, r: f32| { l.0 += r } );
 impl Eq for Value {}
 
 impl Ord for Value {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        f32::partial_cmp(&self.0, &other.0).unwrap_or(Ordering::Equal)
-    }
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering { f32::partial_cmp(&self.0, &other.0).unwrap_or(Ordering::Equal) }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -135,23 +111,17 @@ impl_op!(-= |l: &mut VisitCount, r: u32| { l.0 -= r } );
 type TVisitCount = u32;
 
 impl ops::DerefMut for VisitCount {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
 }
 
 impl ops::Deref for VisitCount {
     type Target = TVisitCount;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 impl fmt::Display for VisitCount {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -219,9 +189,7 @@ pub mod node_state {
     }
 
     impl NodeState {
-        pub const fn has_branches(&self) -> bool {
-            matches!(self, NodeState::Branching | NodeState::Evaluated)
-        }
+        pub const fn has_branches(&self) -> bool { matches!(self, NodeState::Branching | NodeState::Evaluated) }
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -289,12 +257,8 @@ pub mod node_state {
     pub struct Leaf;
     impl Any for Leaf {}
     impl const Valid for Leaf {
-        fn state() -> NodeState {
-            NodeState::Leaf
-        }
-        fn has_value() -> bool {
-            true
-        }
+        fn state() -> NodeState { NodeState::Leaf }
+        fn has_value() -> bool { true }
     }
     impl const HasValue for Leaf {}
 
@@ -302,12 +266,8 @@ pub mod node_state {
     pub struct Terminal;
     impl Any for Terminal {}
     impl const Valid for Terminal {
-        fn state() -> NodeState {
-            NodeState::Terminal
-        }
-        fn has_value() -> bool {
-            true
-        }
+        fn state() -> NodeState { NodeState::Terminal }
+        fn has_value() -> bool { true }
     }
     impl const HasValue for Terminal {}
     impl const Expanded for Terminal {}
@@ -316,12 +276,8 @@ pub mod node_state {
     pub struct Branching;
     impl const Any for Branching {}
     impl const Valid for Branching {
-        fn state() -> NodeState {
-            NodeState::Branching
-        }
-        fn has_value() -> bool {
-            false
-        }
+        fn state() -> NodeState { NodeState::Branching }
+        fn has_value() -> bool { false }
     }
     impl const HasBranches for Branching {}
     impl const Expanded for Branching {}
@@ -330,12 +286,8 @@ pub mod node_state {
     pub struct Evaluated;
     impl Any for Evaluated {}
     impl const Valid for Evaluated {
-        fn state() -> NodeState {
-            NodeState::Evaluated
-        }
-        fn has_value() -> bool {
-            true
-        }
+        fn state() -> NodeState { NodeState::Evaluated }
+        fn has_value() -> bool { true }
     }
     impl const HasValue for Evaluated {}
     impl const HasBranches for Evaluated {}
@@ -351,19 +303,13 @@ impl<'a> IntoIterator for &'a Path {
     type Item = Move;
     type IntoIter = std::iter::Map<std::slice::Iter<'a, Branch>, fn(&Branch) -> Move>;
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.iter().map(Branch::mov)
-    }
+    fn into_iter(self) -> Self::IntoIter { self.0.iter().map(Branch::mov) }
 }
 
 impl Path {
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
+    pub fn len(&self) -> usize { self.0.len() }
 
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
+    pub fn is_empty(&self) -> bool { self.0.is_empty() }
 }
 
 // -----------------------------------------------------------------------------
@@ -411,13 +357,9 @@ impl NodeData {
         }
     }
 
-    pub fn value(&self) -> Value {
-        self.value
-    }
+    pub fn value(&self) -> Value { self.value }
 
-    pub fn visits(&self) -> VisitCount {
-        self.visits
-    }
+    pub fn visits(&self) -> VisitCount { self.visits }
 }
 
 /// A relational representation connecting a parent node to a child node via
@@ -431,19 +373,13 @@ pub struct Branch {
 
 impl Branch {
     #[inline]
-    pub fn mov(&self) -> Move {
-        self.mov
-    }
+    pub fn mov(&self) -> Move { self.mov }
 
     #[inline]
-    pub fn policy(&self) -> Probability {
-        self.policy
-    }
+    pub fn policy(&self) -> Probability { self.policy }
 
     #[inline]
-    pub fn node(&self) -> RtNodeId {
-        self.node
-    }
+    pub fn node(&self) -> RtNodeId { self.node }
 }
 
 /// The unified container encapsulating the active arena and tracking global
@@ -457,9 +393,7 @@ pub struct Tree {
 }
 
 impl Default for Tree {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl Tree {
@@ -476,20 +410,12 @@ impl Tree {
         }
     }
 
-    pub fn size(&self) -> usize {
-        self.size
-    }
+    pub fn size(&self) -> usize { self.size }
 
-    pub fn terminal_nodes(&self) -> usize {
-        self.terminal_nodes
-    }
+    pub fn terminal_nodes(&self) -> usize { self.terminal_nodes }
 
     pub fn compute_subtree_size(&self, node_id: RtNodeId) -> usize {
-        1 + self
-            .branches_rt(node_id)
-            .iter()
-            .map(|b| self.compute_subtree_size(b.node))
-            .sum::<usize>()
+        1 + self.branches_rt(node_id).iter().map(|b| self.compute_subtree_size(b.node)).sum::<usize>()
     }
 
     pub fn compute_subtree_terminal_nodes_count(&self, node_id: RtNodeId) -> usize {
@@ -509,11 +435,7 @@ impl Tree {
     //     self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, &|_node, _depth|
     // todo!()) }
 
-    pub fn count_nodes(
-        &self,
-        pred: &impl Fn(NodeView<node_state::Unknown>, Depth) -> bool,
-        max: usize,
-    ) -> usize {
+    pub fn count_nodes(&self, pred: &impl Fn(NodeView<node_state::Unknown>, Depth) -> bool, max: usize) -> usize {
         self.count_subtree_nodes(Depth::ROOT, Self::ROOT_IDX, pred, max)
     }
 
@@ -543,10 +465,7 @@ impl Tree {
     }
 
     /// Iterates the nodes in the tree under `root` in some order.
-    pub fn iter_nodes(
-        &self,
-        stack: &mut Vec<RtNodeId>,
-    ) -> impl Iterator<Item = NodeView<'_, node_state::Unknown>> {
+    pub fn iter_nodes(&self, stack: &mut Vec<RtNodeId>) -> impl Iterator<Item = NodeView<'_, node_state::Unknown>> {
         // todo: for the implementation, we could just iterate the arena, which would
         // speed things up by a lot, however that might be unexpected by the
         // caller in some contexts.
@@ -575,9 +494,7 @@ impl Tree {
         TreeIter { tree: self, stack }
     }
 
-    pub fn maxheight(&self) -> Height {
-        self.maxheight
-    }
+    pub fn maxheight(&self) -> Height { self.maxheight }
 
     pub fn compute_subtree_maxheight(&self, node: RtNodeId) -> Height {
         Height::ROOT
@@ -589,9 +506,7 @@ impl Tree {
                 .unwrap_or(Height::EMPTY)
     }
 
-    pub fn compute_minheight(&self) -> Height {
-        self.compute_subtree_minheight(self.root())
-    }
+    pub fn compute_minheight(&self) -> Height { self.compute_subtree_minheight(self.root()) }
 
     pub fn compute_subtree_minheight(&self, node: RtNodeId) -> Height {
         let mut queue = VecDeque::new();
@@ -620,9 +535,7 @@ impl Tree {
         unreachable!()
     }
 
-    pub fn root(&self) -> RtNodeId {
-        Self::ROOT_IDX
-    }
+    pub fn root(&self) -> RtNodeId { Self::ROOT_IDX }
 
     #[inline]
     pub fn branch_ids<S: HasBranches>(&self, node_id: NodeId<S>) -> impl Iterator<Item = BranchId> {
@@ -699,13 +612,8 @@ impl Tree {
         });
     }
 
-    pub fn policy_indeces<S: HasBranches>(
-        &self,
-        node: NodeId<S>,
-    ) -> impl Iterator<Item = PolicyHeadIndex> {
-        self.branches(node)
-            .iter()
-            .map(|b| PolicyHeadIndex::from(b.mov()))
+    pub fn policy_indeces<S: HasBranches>(&self, node: NodeId<S>) -> impl Iterator<Item = PolicyHeadIndex> {
+        self.branches(node).iter().map(|b| PolicyHeadIndex::from(b.mov()))
     }
 
     /// Backpropagation exclusively mutates the tree sequentially using a
@@ -720,12 +628,7 @@ impl Tree {
 
     /// Expands a leaf node, creating branches and updating tree statistics
     /// immutably.
-    pub fn expand_node(
-        &mut self,
-        node_id: NodeId<Leaf>,
-        pos: &Position,
-        search_depth: Depth,
-    ) -> ExpandedSwitch {
+    pub fn expand_node(&mut self, node_id: NodeId<Leaf>, pos: &Position, search_depth: Depth) -> ExpandedSwitch {
         if pos.game_result().is_some() {
             self.arena.nodes[node_id.index as usize].state = NodeState::Terminal;
             self.terminal_nodes += 1;
@@ -740,8 +643,7 @@ impl Tree {
             ControlFlow::Continue::<(), _>(acc)
         });
 
-        let branches_count = MoveIndex::try_from(moves.len())
-            .expect("fold_legal_moves will return all moves in a legal position and no more.");
+        let branches_count = MoveIndex::try_from(moves.len()).expect("fold_legal_moves will return all moves in a legal position and no more.");
         if branches_count == MoveIndex::from(0) {
             unreachable!("If there are no branches for this node, it has to be terminal.");
         }
@@ -792,16 +694,9 @@ impl Tree {
         let start = data.branch_start as usize;
         let count = data.branch_count.v as usize;
 
-        debug_assert_eq!(
-            count,
-            policy.len(),
-            "There has to be exactly one policy for each branch."
-        );
+        debug_assert_eq!(count, policy.len(), "There has to be exactly one policy for each branch.");
 
-        for (branch, p) in self.arena.branches[start..start + count]
-            .iter_mut()
-            .zip(policy.iter())
-        {
+        for (branch, p) in self.arena.branches[start..start + count].iter_mut().zip(policy.iter()) {
             branch.policy = p;
         }
 
@@ -814,10 +709,7 @@ impl Tree {
         let start = data.branch_start as usize;
         let count = data.branch_count.v as usize;
 
-        for (branch, noise) in self.arena.branches[start..start + count]
-            .iter_mut()
-            .zip(noise.iter())
-        {
+        for (branch, noise) in self.arena.branches[start..start + count].iter_mut().zip(noise.iter()) {
             branch.policy.mix(noise, eps);
         }
 
@@ -836,21 +728,16 @@ impl Tree {
         self.arena.nodes[node.index as usize].value = Value::from(state);
     }
 
-    pub fn apply_virtual_loss(&mut self, node: RtNodeId, amount: u32) {
-        self.arena.nodes[node.index as usize].visits += amount;
-    }
+    pub fn apply_virtual_loss(&mut self, node: RtNodeId, amount: u32) { self.arena.nodes[node.index as usize].visits += amount; }
 
-    pub fn revert_virtual_loss(&mut self, node: RtNodeId, amount: u32) {
-        self.arena.nodes[node.index as usize].visits -= amount;
-    }
+    pub fn revert_virtual_loss(&mut self, node: RtNodeId, amount: u32) { self.arena.nodes[node.index as usize].visits -= amount; }
 
     /// Double-buffering Garbage Collection implementation.
     /// Discards dead branches and retains only the subtree of the committed
     /// move.
     pub fn advance_to(&mut self, back_buffer: &mut Tree, new_root_index: RtNodeId) {
         back_buffer.arena.clear();
-        let (_, new_size, terminal_nodes, new_height) =
-            self.copy_subtree(new_root_index, &mut back_buffer.arena, 1);
+        let (_, new_size, terminal_nodes, new_height) = self.copy_subtree(new_root_index, &mut back_buffer.arena, 1);
 
         std::mem::swap(&mut self.arena, &mut back_buffer.arena);
 
@@ -859,12 +746,7 @@ impl Tree {
         self.maxheight = new_height;
     }
 
-    fn copy_subtree(
-        &self,
-        old_idx: RtNodeId,
-        back_buffer: &mut ArenaBuffer,
-        current_height: u16,
-    ) -> (u32, usize, usize, Height) {
+    fn copy_subtree(&self, old_idx: RtNodeId, back_buffer: &mut ArenaBuffer, current_height: u16) -> (u32, usize, usize, Height) {
         let old_node = &self.arena.nodes[old_idx.index as usize];
         let new_idx = back_buffer.nodes.len() as u32;
 
@@ -889,15 +771,12 @@ impl Tree {
 
             for (i, branch_idx) in (branch_start..branch_end).enumerate() {
                 let old_branch = &self.arena.branches[branch_idx];
-                let (child_new_idx, sub_size, sub_terminal_nodes, sub_height) =
-                    self.copy_subtree(old_branch.node, back_buffer, current_height + 1);
+                let (child_new_idx, sub_size, sub_terminal_nodes, sub_height) = self.copy_subtree(old_branch.node, back_buffer, current_height + 1);
                 total_size += sub_size;
                 total_terminal_nodes += sub_terminal_nodes;
                 max_h = max_h.max(sub_height.0);
 
-                back_buffer.branches[(new_branch_start as usize) + i]
-                    .node
-                    .index = child_new_idx;
+                back_buffer.branches[(new_branch_start as usize) + i].node.index = child_new_idx;
             }
         }
 
@@ -907,29 +786,15 @@ impl Tree {
     pub fn best_branch(&self, node_id: NodeId<Evaluated>) -> &Branch {
         self.branches(node_id)
             .iter()
-            .max_by(|a, b| {
-                self.node(a.node())
-                    .partial_cmp(&self.node(b.node()))
-                    .unwrap_or(Ordering::Equal)
-            })
+            .max_by(|a, b| self.node(a.node()).partial_cmp(&self.node(b.node())).unwrap_or(Ordering::Equal))
             .expect("Branching node should have branches")
     }
 
-    pub fn best_move(&self, node_id: NodeId<Evaluated>) -> Move {
-        self.best_branch(node_id).mov()
-    }
+    pub fn best_move(&self, node_id: NodeId<Evaluated>) -> Move { self.best_branch(node_id).mov() }
 
-    pub fn maybe_best_move(&self, node_id: RtNodeId) -> Option<Move> {
-        self.node_switch(node_id)
-            .get::<Evaluated>()
-            .map(|node| self.best_move(node))
-    }
+    pub fn maybe_best_move(&self, node_id: RtNodeId) -> Option<Move> { self.node_switch(node_id).get::<Evaluated>().map(|node| self.best_move(node)) }
 
-    pub fn best_moves<S: HasBranches>(
-        &self,
-        node_id: NodeId<S>,
-        threshold: Value,
-    ) -> impl Iterator<Item = Move> {
+    pub fn best_moves<S: HasBranches>(&self, node_id: NodeId<S>, threshold: Value) -> impl Iterator<Item = Move> {
         self.branches(node_id)
             .iter()
             .filter(move |b| self.node(b.node()).value() > threshold)
@@ -972,15 +837,9 @@ impl Tree {
         self.node_switch(node_id).get::<S>().map(|x| self.node(x))
     }
 
-    pub fn node<S: node_state::Any>(&'_ self, node_id: NodeId<S>) -> NodeView<'_, S> {
-        NodeView::new(self, node_id)
-    }
+    pub fn node<S: node_state::Any>(&'_ self, node_id: NodeId<S>) -> NodeView<'_, S> { NodeView::new(self, node_id) }
 
-    pub fn branch_id<S: HasBranches>(
-        &self,
-        node_id: NodeId<S>,
-        mov_index: MoveIndex,
-    ) -> Option<BranchId> {
+    pub fn branch_id<S: HasBranches>(&self, node_id: NodeId<S>, mov_index: MoveIndex) -> Option<BranchId> {
         let node = self.node(node_id);
         let data = node.data();
         if mov_index < data.branch_count {
@@ -991,9 +850,7 @@ impl Tree {
         }
     }
 
-    pub fn branch(&self, branch: BranchId) -> &Branch {
-        unsafe { self.arena.branches.get_unchecked(branch.index()) }
-    }
+    pub fn branch(&self, branch: BranchId) -> &Branch { unsafe { self.arena.branches.get_unchecked(branch.index()) } }
 }
 
 // -----------------------------------------------------------------------------
@@ -1006,13 +863,9 @@ pub struct BranchId {
 }
 
 impl BranchId {
-    fn new(index: u32) -> Self {
-        Self { index }
-    }
+    fn new(index: u32) -> Self { Self { index } }
 
-    pub fn index(&self) -> usize {
-        self.index as usize
-    }
+    pub fn index(&self) -> usize { self.index as usize }
 }
 
 pub type RtNodeId = NodeId<node_state::Unknown>;
@@ -1025,31 +878,21 @@ pub struct NodeId<S: node_state::Any> {
 }
 
 impl From<usize> for NodeId<node_state::Unknown> {
-    fn from(value: usize) -> Self {
-        NodeId::new(value as u32)
-    }
+    fn from(value: usize) -> Self { NodeId::new(value as u32) }
 }
 
 impl<S: node_state::Any> NodeId<S> {
-    pub const fn new(index: u32) -> Self {
-        Self { index, _marker: PhantomData }
-    }
+    pub const fn new(index: u32) -> Self { Self { index, _marker: PhantomData } }
 
     /// # Safety
     /// The caller must ensure that the underlying node at this index is
     /// actually of the target typestate `T`. This is guaranteed by the internal
     /// logic of the Tree, but cannot be enforced by the type system.
-    pub unsafe fn cast<T: node_state::Any>(self) -> NodeId<T> {
-        NodeId::new(self.index)
-    }
+    pub unsafe fn cast<T: node_state::Any>(self) -> NodeId<T> { NodeId::new(self.index) }
 
-    pub fn down_cast(self) -> RtNodeId {
-        RtNodeId::new(self.index)
-    }
+    pub fn down_cast(self) -> RtNodeId { RtNodeId::new(self.index) }
 
-    pub fn index(&self) -> usize {
-        self.index as usize
-    }
+    pub fn index(&self) -> usize { self.index as usize }
 }
 
 impl<S: const node_state::Valid> NodeId<S> {
@@ -1077,9 +920,7 @@ impl<S: const node_state::Valid> NodeId<S> {
 }
 
 impl<S: node_state::Any> fmt::Debug for NodeId<S> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "CtNodeId({})", self.index)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "CtNodeId({})", self.index) }
 }
 
 #[derive(Clone, Copy)]
@@ -1089,9 +930,7 @@ pub struct NodeView<'a, S: node_state::Any> {
 }
 
 impl<'a, S: node_state::Any> PartialEq for NodeView<'a, S> {
-    fn eq(&self, other: &Self) -> bool {
-        ptr::eq(self.tree, other.tree) && self.id == other.id
-    }
+    fn eq(&self, other: &Self) -> bool { ptr::eq(self.tree, other.tree) && self.id == other.id }
 }
 
 impl<S: node_state::Any> PartialOrd for NodeView<'_, S> {
@@ -1117,58 +956,38 @@ impl<S: node_state::Any> PartialOrd for NodeView<'_, S> {
 }
 
 impl<'a, S: node_state::Any> NodeView<'a, S> {
-    pub fn new(tree: &'a Tree, id: NodeId<S>) -> Self {
-        Self { tree, id }
-    }
+    pub fn new(tree: &'a Tree, id: NodeId<S>) -> Self { Self { tree, id } }
 
     #[inline]
-    pub fn id(&self) -> NodeId<S> {
-        self.id
-    }
+    pub fn id(&self) -> NodeId<S> { self.id }
 
     #[inline]
-    fn data(&self) -> &NodeData {
-        &self.tree.arena.nodes[self.id.index as usize]
-    }
+    fn data(&self) -> &NodeData { &self.tree.arena.nodes[self.id.index as usize] }
 
     #[inline]
-    pub fn state(&self) -> NodeState {
-        self.data().state
-    }
+    pub fn state(&self) -> NodeState { self.data().state }
 
     #[inline]
-    pub fn value(&self) -> Value {
-        self.data().value
-    }
+    pub fn value(&self) -> Value { self.data().value }
 
     #[inline]
-    pub fn visits(&self) -> VisitCount {
-        self.data().visits
-    }
+    pub fn visits(&self) -> VisitCount { self.data().visits }
 }
 
 impl<'a, S: node_state::Valid> NodeView<'a, S> {
-    pub fn expected_state() -> NodeState {
-        S::state()
-    }
+    pub fn expected_state() -> NodeState { S::state() }
 }
 
 impl<'a, S: HasBranches> NodeView<'a, S> {
     #[inline]
-    pub fn branches(&self) -> &'a [Branch] {
-        self.tree.branches(self.id)
-    }
+    pub fn branches(&self) -> &'a [Branch] { self.tree.branches(self.id) }
 
-    pub fn branch_count(&self) -> MoveIndex {
-        self.data().branch_count
-    }
+    pub fn branch_count(&self) -> MoveIndex { self.data().branch_count }
 }
 
 impl<'a, S: HasValue> NodeView<'a, S> {
     #[inline]
-    pub fn proven(&self) -> Option<Proven> {
-        self.data().value.try_into().ok()
-    }
+    pub fn proven(&self) -> Option<Proven> { self.data().value.try_into().ok() }
 }
 
 /// The winrate of a node in range [0; 1].
@@ -1178,37 +997,25 @@ pub struct WinRate(pub Probability);
 impl ops::Deref for WinRate {
     type Target = Probability;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 impl WinRate {
     #[inline(always)]
-    pub const fn win() -> Self {
-        Self(Probability::one())
-    }
+    pub const fn win() -> Self { Self(Probability::one()) }
 
     #[inline(always)]
-    pub const fn loss() -> Self {
-        Self(Probability::zero())
-    }
+    pub const fn loss() -> Self { Self(Probability::zero()) }
 
     #[inline(always)]
-    pub const fn draw() -> Self {
-        Self(Probability::even())
-    }
+    pub const fn draw() -> Self { Self(Probability::even()) }
 
     #[inline(always)]
-    pub const fn inv(&self) -> Self {
-        Self(self.0.inv())
-    }
+    pub const fn inv(&self) -> Self { Self(self.0.inv()) }
 }
 
 impl Default for WinRate {
-    fn default() -> Self {
-        Self::draw()
-    }
+    fn default() -> Self { Self::draw() }
 }
 
 impl<'a> From<NodeView<'a, Evaluated>> for WinRate {
@@ -1235,19 +1042,13 @@ impl<'a> From<NodeView<'a, Evaluated>> for WinRate {
 }
 
 impl From<WinRate> for eval::Value {
-    fn from(win_rate: WinRate) -> Self {
-        Self::new(win_rate.0.v())
-    }
+    fn from(win_rate: WinRate) -> Self { Self::new(win_rate.0.v()) }
 }
 
 impl From<eval::Value> for WinRate {
-    fn from(value: eval::Value) -> Self {
-        Self(Probability::new(value.v()))
-    }
+    fn from(value: eval::Value) -> Self { Self(Probability::new(value.v())) }
 }
 
 impl fmt::Display for WinRate {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:.2}%", self.0.v() * 100.)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{:.2}%", self.0.v() * 100.) }
 }

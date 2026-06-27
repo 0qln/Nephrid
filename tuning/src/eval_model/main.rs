@@ -3,9 +3,7 @@ use crate::{
     data::build_dataloader,
     io::{load_weights, save_checkpoint, setup_environment},
     loss::{LossConfig, PlayoutBatcher, el::WeightedModel},
-    self_play::{
-        BatchGenerator, BatchStats, Decision, LimitConfig, MctsConfig, SelfplayConfig, Target,
-    },
+    self_play::{BatchGenerator, BatchStats, Decision, LimitConfig, MctsConfig, SelfplayConfig, Target},
 };
 use burn::{
     module::AutodiffModule,
@@ -20,9 +18,7 @@ use burn::{
     tensor::backend::AutodiffBackend,
 };
 
-use burn::{
-    backend::Autodiff, config::Config, data::dataloader::batcher::Batcher, train::TrainStep,
-};
+use burn::{backend::Autodiff, config::Config, data::dataloader::batcher::Batcher, train::TrainStep};
 use burn_cuda::{Cuda, CudaDevice};
 use engine::{
     core::{move_iter::sliding_piece::magics, search::mcts::nn::ModelConfig, zobrist},
@@ -35,8 +31,7 @@ use crate::{
     loss::{LossOutput, el::ExactLossPlayoutItem},
 };
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
 
 pub mod caching;
 pub mod data;
@@ -165,14 +160,7 @@ pub fn train<B: AutodiffBackend>(
         for (iteration, fens_batch) in train.iter().enumerate().skip(skip_count) {
             // Generate and shuffle MCTS playouts
             let (mut playout_items, stats) = batch_generator
-                .generate_batch::<_, ExactLossPlayoutItem>(
-                    model.valid(),
-                    &fens_batch,
-                    &limit,
-                    self_play,
-                    mcts_cfg,
-                    &mut cache,
-                )
+                .generate_batch::<_, ExactLossPlayoutItem>(model.valid(), &fens_batch, &limit, self_play, mcts_cfg, &mut cache)
                 .expect("Failed to generate batch");
             playout_items.shuffle(&mut rng);
 
@@ -220,13 +208,7 @@ pub fn train<B: AutodiffBackend>(
             }
 
             // Save the new state
-            save_checkpoint(
-                &model,
-                artifact_dir,
-                epoch,
-                iteration,
-                &mut current_model_path,
-            );
+            save_checkpoint(&model, artifact_dir, epoch, iteration, &mut current_model_path);
         }
 
         // Test
@@ -241,14 +223,7 @@ pub fn train<B: AutodiffBackend>(
 
             for fens_batch in test.iter() {
                 let (playout_items, stats) = batch_generator
-                    .generate_batch::<_, ExactLossPlayoutItem>(
-                        model.clone(),
-                        &fens_batch,
-                        &limit,
-                        self_play,
-                        mcts_cfg,
-                        &mut cache,
-                    )
+                    .generate_batch::<_, ExactLossPlayoutItem>(model.clone(), &fens_batch, &limit, self_play, mcts_cfg, &mut cache)
                     .expect("Failed to generate validation batch");
 
                 let batcher = PlayoutBatcher;
@@ -257,8 +232,7 @@ pub fn train<B: AutodiffBackend>(
 
                     // also use the weighted model here to ensure the training and validation loss
                     // are computed the same and are comparable.
-                    let weighted_model_valid =
-                        WeightedModel::new(model.clone(), value_weight, policy_weight);
+                    let weighted_model_valid = WeightedModel::new(model.clone(), value_weight, policy_weight);
                     let result = ValidStep::step(&weighted_model_valid, playouts_batch);
 
                     val_loss_sum += result.loss.into_scalar().to_f64();
@@ -286,13 +260,7 @@ pub fn train<B: AutodiffBackend>(
     current_model_path
 }
 
-fn log_step<B: AutodiffBackend>(
-    epoch: usize,
-    iteration: usize,
-    chunk_idx: usize,
-    result: &TrainOutput<LossOutput<B>>,
-    stats: &BatchStats,
-) {
+fn log_step<B: AutodiffBackend>(epoch: usize, iteration: usize, chunk_idx: usize, result: &TrainOutput<LossOutput<B>>, stats: &BatchStats) {
     log::info!(target: "train",
             "[Train - Epoch {} - Iteration {}.{}] Loss {:.5} (Value: {:.5}, Policy: {:.5}, Solved: {:.2}%)",
             epoch,

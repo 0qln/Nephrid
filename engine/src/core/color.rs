@@ -65,17 +65,11 @@ impl From<Color> for char {
 }
 
 impl fmt::Debug for Color {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Color")
-            .field("v", &Into::<char>::into(*self))
-            .finish()
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("Color").field("v", &Into::<char>::into(*self)).finish() }
 }
 
 impl fmt::Display for Color {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", Into::<char>::into(*self))
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", Into::<char>::into(*self)) }
 }
 
 pub trait Perspective: Clone + Copy {

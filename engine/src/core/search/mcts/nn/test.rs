@@ -4,10 +4,7 @@ use super::*;
 
 use crate::core::{move_iter::sliding_piece::magics, zobrist};
 
-fn make_input<B: Backend>(
-    batch_size: usize,
-    device: &B::Device,
-) -> (BoardInputTensor<B>, StateInputTensor<B>) {
+fn make_input<B: Backend>(batch_size: usize, device: &B::Device) -> (BoardInputTensor<B>, StateInputTensor<B>) {
     let board_input = BoardInputTensor::<B>::zeros(
         [
             batch_size,

@@ -76,9 +76,7 @@ pub struct FenItemRaw {
 }
 
 impl FenItemRaw {
-    pub fn new(fen: String) -> Self {
-        Self { fen }
-    }
+    pub fn new(fen: String) -> Self { Self { fen } }
 }
 
 pub struct FenDataset {
@@ -86,13 +84,9 @@ pub struct FenDataset {
 }
 
 impl Dataset<FenItemRaw> for FenDataset {
-    fn get(&self, index: usize) -> Option<FenItemRaw> {
-        self.dataset.get(index)
-    }
+    fn get(&self, index: usize) -> Option<FenItemRaw> { self.dataset.get(index) }
 
-    fn len(&self) -> usize {
-        self.dataset.len()
-    }
+    fn len(&self) -> usize { self.dataset.len() }
 }
 
 impl FenDataset {
@@ -100,10 +94,7 @@ impl FenDataset {
         let root = FenDataset::load_path(path, split);
         let fens = FenDataset::read_epd(&root, split, 0.9, num_fens_total);
 
-        let items: Vec<_> = fens
-            .into_iter()
-            .map(|s| FenItemRaw::new(s.to_owned()))
-            .collect();
+        let items: Vec<_> = fens.into_iter().map(|s| FenItemRaw::new(s.to_owned())).collect();
 
         let dataset = InMemDataset::new(items);
 
@@ -119,12 +110,7 @@ impl FenDataset {
     }
 
     /// num_fens_total: the number of fens in |train + test|
-    pub fn read_epd<P: AsRef<Path>>(
-        root: &P,
-        split: &str,
-        split_ratio: f32,
-        num_fens_total: usize,
-    ) -> Vec<String> {
+    pub fn read_epd<P: AsRef<Path>>(root: &P, split: &str, split_ratio: f32, num_fens_total: usize) -> Vec<String> {
         println!("Reading EPD from path: {:?}", root.as_ref());
         let epd = fs::read_to_string(root).expect("Couldn't read path");
         let lines = epd
@@ -173,22 +159,13 @@ pub struct IdentityBatcher<I> {
 }
 
 impl<B: Backend, I: Send + Sync> Batcher<B, I, Vec<I>> for IdentityBatcher<I> {
-    fn batch(&self, items: Vec<I>, _device: &B::Device) -> Vec<I> {
-        items
-    }
+    fn batch(&self, items: Vec<I>, _device: &B::Device) -> Vec<I> { items }
 }
 
-pub fn build_dataloader<B: AutodiffBackend>(
-    config: &TrainingConfig,
-    split: &str,
-) -> Arc<dyn DataLoader<B, Vec<FenItemRaw>>> {
+pub fn build_dataloader<B: AutodiffBackend>(config: &TrainingConfig, split: &str) -> Arc<dyn DataLoader<B, Vec<FenItemRaw>>> {
     DataLoaderBuilder::<B, _, _>::new(IdentityBatcher::<FenItemRaw>::default())
         .batch_size(config.batch_size)
         .shuffle(config.seed)
         .num_workers(0)
-        .build(FenDataset::from_epd(
-            &config.epd_dataset_path,
-            split,
-            config.epd_dataset_fens_total,
-        ))
+        .build(FenDataset::from_epd(&config.epd_dataset_path, split, config.epd_dataset_fens_total))
 }

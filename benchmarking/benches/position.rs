@@ -2,15 +2,13 @@ use core::fmt;
 use std::{fmt::Display, ops::ControlFlow};
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use engine::{
-    core::{
-        color::colors,
-        coordinates::squares,
-        move_iter::{fold_legal_moves, sliding_piece::magics},
-        piece::{Piece, piece_type},
-        position::Position,
-        zobrist,
-    },
+use engine::core::{
+    color::colors,
+    coordinates::squares,
+    move_iter::{fold_legal_moves, sliding_piece::magics},
+    piece::{Piece, piece_type},
+    position::Position,
+    zobrist,
 };
 use itertools::Itertools;
 
@@ -27,11 +25,9 @@ pub fn get_bitboard(c: &mut Criterion) {
     let pos = Position::start_position();
 
     for pair in inputs {
-        c.bench_with_input(
-            BenchmarkId::new("position::get_bitboard", pair),
-            &pair,
-            |b, &pair| b.iter(|| pos.get_bitboard(pair.0, pair.1)),
-        );
+        c.bench_with_input(BenchmarkId::new("position::get_bitboard", pair), &pair, |b, &pair| {
+            b.iter(|| pos.get_bitboard(pair.0, pair.1))
+        });
     }
 }
 
@@ -48,17 +44,13 @@ pub fn put_piece(c: &mut Criterion) {
     let pos = Position::default();
 
     for pair in inputs {
-        c.bench_with_input(
-            BenchmarkId::new("position::put_piece", pair),
-            &pair,
-            |b, &pair| {
-                b.iter_batched(
-                    || pos.clone(),
-                    |mut pos| unsafe { pos.put_piece_unsafe(pair.0, pair.1) },
-                    BatchSize::PerIteration,
-                )
-            },
-        );
+        c.bench_with_input(BenchmarkId::new("position::put_piece", pair), &pair, |b, &pair| {
+            b.iter_batched(
+                || pos.clone(),
+                |mut pos| unsafe { pos.put_piece_unsafe(pair.0, pair.1) },
+                BatchSize::PerIteration,
+            )
+        });
     }
 }
 
@@ -70,17 +62,9 @@ pub fn remove_piece(c: &mut Criterion) {
     let pos = Position::start_position();
 
     for sq in inputs {
-        c.bench_with_input(
-            BenchmarkId::new("position::remove_piece", sq),
-            &sq,
-            |b, &sq| {
-                b.iter_batched(
-                    || pos.clone(),
-                    |mut pos| unsafe { pos.remove_piece_unsafe(sq) },
-                    BatchSize::PerIteration,
-                )
-            },
-        );
+        c.bench_with_input(BenchmarkId::new("position::remove_piece", sq), &sq, |b, &sq| {
+            b.iter_batched(|| pos.clone(), |mut pos| unsafe { pos.remove_piece_unsafe(sq) }, BatchSize::PerIteration)
+        });
     }
 }
 
@@ -96,17 +80,13 @@ pub fn move_piece(c: &mut Criterion) {
     let pos = Position::start_position();
 
     for pair in inputs {
-        c.bench_with_input(
-            BenchmarkId::new("position::move_piece", pair),
-            &pair,
-            |b, &pair| {
-                b.iter_batched(
-                    || pos.clone(),
-                    |mut pos| unsafe { pos.move_piece_unsafe(pair.0, pair.1) },
-                    BatchSize::PerIteration,
-                )
-            },
-        );
+        c.bench_with_input(BenchmarkId::new("position::move_piece", pair), &pair, |b, &pair| {
+            b.iter_batched(
+                || pos.clone(),
+                |mut pos| unsafe { pos.move_piece_unsafe(pair.0, pair.1) },
+                BatchSize::PerIteration,
+            )
+        });
     }
 }
 
@@ -125,11 +105,7 @@ pub fn make_move(c: &mut Criterion) {
 
     for m in moves.into_iter().unique_by(|m| m.get_flag()) {
         c.bench_with_input(BenchmarkId::new("position::make_move", m), &m, |b, &m| {
-            b.iter_batched(
-                || pos.clone(),
-                |mut pos| pos.make_move(m),
-                BatchSize::PerIteration,
-            )
+            b.iter_batched(|| pos.clone(), |mut pos| pos.make_move(m), BatchSize::PerIteration)
         });
     }
 }
@@ -138,18 +114,9 @@ pub fn make_move(c: &mut Criterion) {
 struct Pair<T1, T2>(T1, T2);
 
 impl<T1: Display, T2: Display> fmt::Display for Pair<T1, T2> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({}, {})", self.0, self.1)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "({}, {})", self.0, self.1) }
 }
 
-criterion_group!(
-    benches,
-    get_bitboard,
-    put_piece,
-    remove_piece,
-    move_piece,
-    make_move,
-);
+criterion_group!(benches, get_bitboard, put_piece, remove_piece, move_piece, make_move,);
 
 criterion_main!(benches);

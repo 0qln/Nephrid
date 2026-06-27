@@ -3,10 +3,7 @@ use itertools::Itertools;
 use std::rc::Rc;
 
 use crate::core::search::mcts::{
-    nn::{
-        self, BOARD_INPUT_HISTORY, BoardInputFloats, Model, StateInputFloats, VALUE_OUTPUTS,
-        board_input, state_input,
-    },
+    nn::{self, BOARD_INPUT_HISTORY, BoardInputFloats, Model, StateInputFloats, VALUE_OUTPUTS, board_input, state_input},
     search::{BatchItem, Selection},
 };
 
@@ -34,9 +31,7 @@ pub struct TraceInfo {
 }
 
 impl TraceInfo {
-    pub fn new(pos: &Position) -> Self {
-        Self { inputs: InputFloats::new(pos) }
-    }
+    pub fn new(pos: &Position) -> Self { Self { inputs: InputFloats::new(pos) } }
 }
 
 /// X: batch size
@@ -52,10 +47,7 @@ pub struct NNEvaluator<B: Backend> {
 /// Returns the history of the given selected leaf in following order:
 /// - the oldest board state is the first index
 /// - the youngest board state is the last index
-pub fn get_node_history(
-    selection: &Selection<TraceInfo>,
-    leaf: &BatchItem<TraceInfo>,
-) -> Vec<BoardInputFloats> {
+pub fn get_node_history(selection: &Selection<TraceInfo>, leaf: &BatchItem<TraceInfo>) -> Vec<BoardInputFloats> {
     let mut vec: Vec<BoardInputFloats> = vec![];
 
     // 1. Insert the leaf's own board input first
@@ -74,21 +66,13 @@ pub fn get_node_history(
 }
 
 impl<B: Backend> NNEvaluator<B> {
-    pub fn new(model: Rc<Model<B>>, device: Rc<B::Device>) -> Self {
-        Self { model, device }
-    }
+    pub fn new(model: Rc<Model<B>>, device: Rc<B::Device>) -> Self { Self { model, device } }
 
-    fn device(&self) -> &B::Device {
-        &self.device
-    }
+    fn device(&self) -> &B::Device { &self.device }
 
     /// batch: The iterator of the selected leaf nodes that should be evaluated
     /// in this batch.
-    fn build_board_batch<'c>(
-        &self,
-        selection: &Selection<TraceInfo>,
-        batch: impl Iterator<Item = &'c BatchItem<TraceInfo>>,
-    ) -> Tensor<B, 4> {
+    fn build_board_batch<'c>(&self, selection: &Selection<TraceInfo>, batch: impl Iterator<Item = &'c BatchItem<TraceInfo>>) -> Tensor<B, 4> {
         // concatenate the board inputs along the batch dimension.
         Tensor::cat(
             batch
@@ -100,10 +84,7 @@ impl<B: Backend> NNEvaluator<B> {
         )
     }
 
-    fn build_state_batch<'c>(
-        &self,
-        batch: impl Iterator<Item = &'c BatchItem<TraceInfo>>,
-    ) -> Tensor<B, 2> {
+    fn build_state_batch<'c>(&self, batch: impl Iterator<Item = &'c BatchItem<TraceInfo>>) -> Tensor<B, 2> {
         // concatenate the state inputs along the batch dimension.
         Tensor::cat(
             batch
@@ -120,14 +101,7 @@ impl<B: Backend> NNEvaluator<B> {
 impl<B: Backend> Evaluator for NNEvaluator<B> {
     type TraceData = TraceInfo;
 
-    fn trace<S: HasBranches>(
-        &self,
-        _node: NodeId<S>,
-        _tree: &Tree,
-        pos: &mut Position,
-    ) -> Self::TraceData {
-        TraceInfo::new(pos)
-    }
+    fn trace<S: HasBranches>(&self, _node: NodeId<S>, _tree: &Tree, pos: &mut Position) -> Self::TraceData { TraceInfo::new(pos) }
 
     fn eval_batch(
         &mut self,
@@ -160,13 +134,9 @@ impl<B: Backend> Evaluator for NNEvaluator<B> {
             )
         };
 
-        let values = values
-            .as_slice::<f32>()
-            .expect("Qualities could not be converted to vec.");
+        let values = values.as_slice::<f32>().expect("Qualities could not be converted to vec.");
 
-        let raw_logits = raw_logits
-            .as_slice::<f32>()
-            .expect("Policy could not be converted to vec.");
+        let raw_logits = raw_logits.as_slice::<f32>().expect("Policy could not be converted to vec.");
 
         let values = values.chunks(VALUE_OUTPUTS);
 

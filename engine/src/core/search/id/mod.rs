@@ -41,8 +41,7 @@ use crate::{
     misc::{CancellationToken, DebugMode, List},
 };
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
 
 /// Softmax temperature applied to root-move qualities when computing the
 /// normalized root entropy used as a soft stopping target. Qualities are
@@ -156,29 +155,19 @@ struct RootStats {
 
 impl RootStats {
     #[inline]
-    fn new(m: Move, score: MoveScore) -> Self {
-        Self { mov: ScoredMove::new(m, score) }
-    }
+    fn new(m: Move, score: MoveScore) -> Self { Self { mov: ScoredMove::new(m, score) } }
 
     #[inline]
-    fn mov(&self) -> Move {
-        self.mov.mov()
-    }
+    fn mov(&self) -> Move { self.mov.mov() }
 
     #[inline]
-    fn scored_move(&self) -> &ScoredMove {
-        &self.mov
-    }
+    fn scored_move(&self) -> &ScoredMove { &self.mov }
 
     #[inline]
-    fn score(&self) -> MoveScore {
-        self.mov.score()
-    }
+    fn score(&self) -> MoveScore { self.mov.score() }
 
     #[inline]
-    fn set_score(&mut self, score: MoveScore) {
-        self.mov.set_score(score);
-    }
+    fn set_score(&mut self, score: MoveScore) { self.mov.set_score(score); }
 }
 
 struct Searcher {
@@ -220,13 +209,9 @@ impl Searcher {
         }
     }
 
-    fn sort_root(&mut self) {
-        self.root_stats.as_mut_slice().sort_by_key(|mov| Reverse(mov.score()));
-    }
+    fn sort_root(&mut self) { self.root_stats.as_mut_slice().sort_by_key(|mov| Reverse(mov.score())); }
 
-    fn root_best_move(&self) -> Option<Move> {
-        self.root_stats.get(0).map(|x| x.mov())
-    }
+    fn root_best_move(&self) -> Option<Move> { self.root_stats.get(0).map(|x| x.mov()) }
 
     fn root_logits(&self) -> List<{ MAX_LEGAL_MOVES }, f32> {
         let mut root_logits = List::<{ MAX_LEGAL_MOVES }, f32>::new();
@@ -508,9 +493,7 @@ pub struct TTEntry {
 }
 
 impl tt::ZKey for TTEntry {
-    fn key(&self) -> zobrist::Hash {
-        self.key
-    }
+    fn key(&self) -> zobrist::Hash { self.key }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -606,16 +589,12 @@ impl<T: const Default, const N: usize> const Default for RbSet<T, N> {
 }
 
 impl<T: const Default + Copy + Eq, const N: usize> const From<[T; N]> for RbSet<T, N> {
-    fn from(items: [T; N]) -> Self {
-        Self { items }
-    }
+    fn from(items: [T; N]) -> Self { Self { items } }
 }
 
 impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
     #[inline(always)]
-    pub const fn new() -> Self {
-        Self { items: [T::default(); N] }
-    }
+    pub const fn new() -> Self { Self { items: [T::default(); N] } }
 
     // todo: make sure this is unrolled for our N=2/3
     // todo: this is O(n) but i don't  think this matters for our n=2 lmao
@@ -637,14 +616,10 @@ impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
     }
 
     #[inline(always)]
-    pub fn position(&self, item: &T) -> Option<usize> {
-        self.items.iter().position(|x| x == item)
-    }
+    pub fn position(&self, item: &T) -> Option<usize> { self.items.iter().position(|x| x == item) }
 
     #[inline(always)]
-    pub fn as_slice(&self) -> &[T] {
-        &self.items
-    }
+    pub fn as_slice(&self) -> &[T] { &self.items }
 }
 
 // todo: benchmark that this is actually faster...
@@ -672,9 +647,7 @@ impl<T: Default + Copy + Eq> RbSet<T, 2> {
     }
 
     #[inline(always)]
-    pub fn _is_empty(&self) -> bool {
-        self.items[0] == T::default() && self.items[1] == T::default()
-    }
+    pub fn _is_empty(&self) -> bool { self.items[0] == T::default() && self.items[1] == T::default() }
 }
 
 pub struct Scorer {

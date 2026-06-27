@@ -1,10 +1,13 @@
 use std::hint::{self};
 
 use crate::core::{
-    color::Color, eval::GameResult, search::mcts::{
+    color::Color,
+    eval::GameResult,
+    search::mcts::{
         eval::{self, Evaluation, Guess},
         node::{NodeId, Tree, node_state::*, proven},
-    }, turn::Turn
+    },
+    turn::Turn,
 };
 
 pub trait RelativeValue {
@@ -23,36 +26,20 @@ impl RelativeValue for GameResult {
 }
 
 impl RelativeValue for Evaluation {
-    fn relative_to(&self, relative_to: Color) -> eval::Value {
-        self.to_value(relative_to)
-    }
+    fn relative_to(&self, relative_to: Color) -> eval::Value { self.to_value(relative_to) }
 }
 
 impl RelativeValue for Guess {
-    fn relative_to(&self, relative_to: Color) -> eval::Value {
-        self.to_value(relative_to)
-    }
+    fn relative_to(&self, relative_to: Color) -> eval::Value { self.to_value(relative_to) }
 }
 
-pub fn update_branching(
-    tree: &mut Tree,
-    node: NodeId<Branching>,
-    turn: Turn,
-    guess: &Guess,
-    weight: f32,
-) {
+pub fn update_branching(tree: &mut Tree, node: NodeId<Branching>, turn: Turn, guess: &Guess, weight: f32) {
     let value = guess.to_value(!turn);
     let evaluated = tree.set_policy(node, &guess.policy);
     tree.update_node(evaluated, value, weight);
 }
 
-pub fn update_terminal(
-    tree: &mut Tree,
-    node: NodeId<Terminal>,
-    turn: Turn,
-    game_result: GameResult,
-    weight: f32,
-) {
+pub fn update_terminal(tree: &mut Tree, node: NodeId<Terminal>, turn: Turn, game_result: GameResult, weight: f32) {
     match game_result {
         GameResult::Win { relative_to } if relative_to == turn => {
             tree.set_proven(node, proven::LOSS, weight);
@@ -69,30 +56,18 @@ pub fn update_terminal(
     }
 }
 
-pub fn update_shortcut(
-    tree: &mut Tree,
-    node: NodeId<Leaf>,
-    weight: f32,
-) -> impl RelativeValue + Copy + use<> {
+pub fn update_shortcut(tree: &mut Tree, node: NodeId<Leaf>, weight: f32) -> impl RelativeValue + Copy + use<> {
     #[derive(Copy, Clone)]
     struct Draw;
     impl RelativeValue for Draw {
-        fn relative_to(&self, _relative_to: Color) -> eval::Value {
-            eval::Value::draw()
-        }
+        fn relative_to(&self, _relative_to: Color) -> eval::Value { eval::Value::draw() }
     }
     let value = eval::Value::draw();
     tree.update_node(node, value, weight);
     Draw
 }
 
-pub fn update_skip(
-    tree: &mut Tree,
-    node: NodeId<Evaluated>,
-    turn: Turn,
-    eval: &Evaluation,
-    weight: f32,
-) {
+pub fn update_skip(tree: &mut Tree, node: NodeId<Evaluated>, turn: Turn, eval: &Evaluation, weight: f32) {
     // (e.g. in the case of a 2fold.) Make sure that we also update leaf
     // node values. Otherwise the exploration score of such a node will be
     // overinflated and the searcher will get stuck picking this leaf node.
@@ -100,38 +75,21 @@ pub fn update_skip(
     tree.update_node(node, value, weight);
 }
 
-pub fn update_parent(
-    tree: &mut Tree,
-    node: NodeId<Evaluated>,
-    turn: Turn,
-    child_value: &impl RelativeValue,
-    weight: f32,
-) {
+pub fn update_parent(tree: &mut Tree, node: NodeId<Evaluated>, turn: Turn, child_value: &impl RelativeValue, weight: f32) {
     tree.update_node(node, child_value.relative_to(!turn), weight);
 }
 
 pub fn try_prove_parent(tree: &mut Tree, node: NodeId<Evaluated>, weight: f32) {
     let branches = tree.branches(node);
-    if branches
-        .iter()
-        .all(|b| tree.node(b.node()).value().is_proven_loss())
-    {
+    if branches.iter().all(|b| tree.node(b.node()).value().is_proven_loss()) {
         tree.set_proven(node, proven::WIN, weight);
     }
-    else if branches
-        .iter()
-        .any(|b| tree.node(b.node()).value().is_proven_win())
-    {
+    else if branches.iter().any(|b| tree.node(b.node()).value().is_proven_win()) {
         tree.set_proven(node, proven::LOSS, weight);
     }
 }
 
-pub fn backpropagate_up(
-    tree: &mut Tree,
-    path: impl IntoIterator<Item = (NodeId<Evaluated>, Turn)>,
-    leaf_value: &impl RelativeValue,
-    weight: f32,
-) {
+pub fn backpropagate_up(tree: &mut Tree, path: impl IntoIterator<Item = (NodeId<Evaluated>, Turn)>, leaf_value: &impl RelativeValue, weight: f32) {
     for (node, turn) in path {
         update_parent(tree, node, turn, leaf_value, weight);
         try_prove_parent(tree, node, weight);

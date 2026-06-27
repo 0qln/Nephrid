@@ -12,9 +12,7 @@ pub struct PuctSelector {
 }
 
 impl PuctSelector {
-    pub fn new(c: f32) -> Self {
-        Self { c }
-    }
+    pub fn new(c: f32) -> Self { Self { c } }
 
     #[inline]
     pub fn score(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
@@ -23,15 +21,11 @@ impl PuctSelector {
         exploitation + exploration
     }
 
-    pub const fn c(&self) -> f32 {
-        self.c
-    }
+    pub const fn c(&self) -> f32 { self.c }
 }
 
 impl Default for PuctSelector {
-    fn default() -> Self {
-        Self { c: 1.12 }
-    }
+    fn default() -> Self { Self { c: 1.12 } }
 }
 
 impl super::Selector for PuctSelector {
@@ -50,12 +44,7 @@ impl super::Selector for PuctSelector {
     }
 
     #[inline]
-    fn exploitation(
-        &self,
-        tree: &Tree,
-        branch_id: BranchId,
-        parent_id: NodeId<Evaluated>,
-    ) -> Score {
+    fn exploitation(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
         let parent = tree.node(parent_id);

@@ -24,21 +24,12 @@ fn test_dirichlet_noise_basic() {
     let mut tree = Tree::new();
 
     let pos = Position::start_position();
-    let _node = tree.expand_node(
-        tree.node_switch(tree.root()).get::<Leaf>().unwrap(),
-        &pos,
-        Depth::ROOT,
-    );
+    let _node = tree.expand_node(tree.node_switch(tree.root()).get::<Leaf>().unwrap(), &pos, Depth::ROOT);
     let node = tree.node_switch(tree.root()).get::<Branching>().unwrap();
 
     let policy = {
         let branches = tree.branches(node);
-        let logits = Logits(
-            branches
-                .iter()
-                .map(|_| rng.next_u32() as f32)
-                .collect::<List<{ MAX_LEGAL_MOVES }, f32>>(),
-        );
+        let logits = Logits(branches.iter().map(|_| rng.next_u32() as f32).collect::<List<{ MAX_LEGAL_MOVES }, f32>>());
         Policy::from_logits(logits, 1., &mut List::new())
     };
     let node = tree.set_policy(node, &policy);

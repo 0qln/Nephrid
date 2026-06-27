@@ -1,7 +1,7 @@
 use crate::core::{
     bitboard::Bitboard,
     coordinates::Square,
-    piece::{piece_type, IPieceType, PieceType},
+    piece::{IPieceType, PieceType, piece_type},
 };
 
 use super::{
@@ -18,14 +18,10 @@ impl IPieceType for Queen {
 
 impl SlidingAttacks for Queen {
     #[inline]
-    fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
-        Rook::compute_attacks(sq, occupancy) | Bishop::compute_attacks(sq, occupancy)
-    }
+    fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard { Rook::compute_attacks(sq, occupancy) | Bishop::compute_attacks(sq, occupancy) }
 
     #[inline]
-    fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
-        Rook::lookup_attacks(sq, occupancy) | Bishop::lookup_attacks(sq, occupancy)
-    }
+    fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard { Rook::lookup_attacks(sq, occupancy) | Bishop::lookup_attacks(sq, occupancy) }
 }
 
 impl SlidingPieceType for Queen {}

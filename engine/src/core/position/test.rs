@@ -1,10 +1,5 @@
 use super::*;
-use crate::{
-    core::{
-        bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics,
-        piece::piece_type, ply::Ply, zobrist,
-    },
-};
+use crate::core::{bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics, piece::piece_type, ply::Ply, zobrist};
 
 #[test]
 fn cloning() {
@@ -31,10 +26,7 @@ fn fen_decoding() {
     assert_eq!(pos.get_turn(), colors::WHITE);
     assert_eq!(pos.plys_50(), Ply { v: 0 });
     assert_eq!(pos.ply(), Ply { v: 2 });
-    assert_eq!(
-        pos.get_bitboard(piece_type::PAWN, colors::WHITE),
-        Bitboard::from(ranks::_2)
-    );
+    assert_eq!(pos.get_bitboard(piece_type::PAWN, colors::WHITE), Bitboard::from(ranks::_2));
 }
 
 // relies on fen_decoding working
@@ -77,10 +69,7 @@ fn fen_encoding_2() {
     test_fen_encoding(
         "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2",
         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        vec![
-            Move::new(E2, E4, DOUBLE_PAWN_PUSH),
-            Move::new(C7, C5, DOUBLE_PAWN_PUSH),
-        ],
+        vec![Move::new(E2, E4, DOUBLE_PAWN_PUSH), Move::new(C7, C5, DOUBLE_PAWN_PUSH)],
     );
 }
 
@@ -156,8 +145,8 @@ fn pgn_encoding_san_disambiguation() {
             Move::new(E1, D1, QUIET),
             Move::new(D3, C5, QUIET),
         ],
-        "1. e4 c5 2. e5 d5 3. exd6 Nh6 4. g4 Nd7 5. h4 Nxg4 6. Rh3 Nge5 7. a4 c4 8. Raa3 c3 9. \
-         Bg2 cxb2 10. d3 bxc1=N 11. Kf1 Ncxd3 12. Qe1 Nc4 13. Qd1 Na5 14. Qe1 Nb3 15. Qd1 Nd3c5",
+        "1. e4 c5 2. e5 d5 3. exd6 Nh6 4. g4 Nd7 5. h4 Nxg4 6. Rh3 Nge5 7. a4 c4 8. Raa3 c3 9. Bg2 cxb2 10. d3 bxc1=N 11. Kf1 Ncxd3 12. Qe1 Nc4 13. \
+         Qd1 Na5 14. Qe1 Nb3 15. Qd1 Nd3c5",
     );
 }
 
@@ -168,10 +157,7 @@ fn pgn_encoding_san_castling() {
 
     test_pgn_encoding_move_section(
         "r3kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQK2R w KQkq - 0 1",
-        &[
-            Move::new(E1, G1, KING_CASTLE),
-            Move::new(E8, C8, QUEEN_CASTLE),
-        ],
+        &[Move::new(E1, G1, KING_CASTLE), Move::new(E8, C8, QUEEN_CASTLE)],
         "1. O-O O-O-O",
     );
 }
@@ -211,10 +197,7 @@ fn twofold_repetition_is_detected() {
     // Sanity: a fresh starting position should not have a recorded twofold
     // repetition.
     let fresh = Position::start_position();
-    assert!(
-        !fresh.has_twofold_repetition(),
-        "fresh position must not have twofold repetition"
-    );
+    assert!(!fresh.has_twofold_repetition(), "fresh position must not have twofold repetition");
 
     // After the back-and-forth sequence, the same position has occurred twice, so
     // the 2-fold repetition detector should report true.
@@ -237,10 +220,7 @@ fn twofold_heuristic_applies_only_beyond_root() {
     // At the root depth, the 2-fold heuristic must *not* treat the position as a
     // draw.
     let result_at_root = pos.search_result_with(has_moves, Depth::ROOT);
-    assert!(
-        result_at_root.is_none(),
-        "2-fold repetition should not be scored as draw at ROOT depth"
-    );
+    assert!(result_at_root.is_none(), "2-fold repetition should not be scored as draw at ROOT depth");
 
     // For a depth strictly greater than ROOT, the 2-fold heuristic should kick in
     // and treat the position as a draw, assuming no 50-move or
@@ -290,8 +270,8 @@ fn epd_import_multiple_ops() {
     zobrist::init();
     magics::init();
 
-    let line = "r1bqk2r/p1pp1ppp/2p2n2/8/1b2P3/2N5/PPP2PPP/R1BQKB1R w KQkq - bm Bd3; id \"Crafty \
-                Test Pos.28\"; c0 \"DB/GK Philadelphia 1996, Game 5, move 7W (Bd3)\";";
+    let line = "r1bqk2r/p1pp1ppp/2p2n2/8/1b2P3/2N5/PPP2PPP/R1BQKB1R w KQkq - bm Bd3; id \"Crafty Test Pos.28\"; c0 \"DB/GK Philadelphia 1996, Game \
+                5, move 7W (Bd3)\";";
     let (pos, ops) = parse_epd_line(line).expect("Should parse EPD with multiple operations");
     assert_eq!(ops.len(), 3);
     assert_eq!(ops[0].0, "bm");
@@ -302,11 +282,7 @@ fn epd_import_multiple_ops() {
     assert_eq!(ops[2].1, "DB/GK Philadelphia 1996, Game 5, move 7W (Bd3)");
     // Quick sanity on the position
     assert_eq!(pos.get_turn(), colors::WHITE);
-    assert!(
-        pos.get_piece(crate::core::coordinates::squares::E4)
-            .piece_type()
-            == piece_type::PAWN
-    );
+    assert!(pos.get_piece(crate::core::coordinates::squares::E4).piece_type() == piece_type::PAWN);
 }
 
 #[test]
@@ -314,10 +290,9 @@ fn epd_import_argument_with_spaces() {
     zobrist::init();
     magics::init();
 
-    let line = "8/3r4/pr1Pk1p1/8/7P/6P1/3R3K/5R2 w - - bm Re2+; id \"arasan21.16\"; c0 \"Aldiga \
-                (Brainfish 091016)-Knight-king (Komodo 10 64-bit), playchess.com 2016\";";
-    let (_pos, ops) =
-        parse_epd_line(line).expect("Should parse EPD with argument containing spaces");
+    let line = "8/3r4/pr1Pk1p1/8/7P/6P1/3R3K/5R2 w - - bm Re2+; id \"arasan21.16\"; c0 \"Aldiga (Brainfish 091016)-Knight-king (Komodo 10 64-bit), \
+                playchess.com 2016\";";
+    let (_pos, ops) = parse_epd_line(line).expect("Should parse EPD with argument containing spaces");
     assert_eq!(ops.len(), 3);
     assert_eq!(ops[0].0, "bm");
     assert_eq!(ops[0].1, "Re2+");
@@ -381,8 +356,7 @@ fn epd_import_real_world_example() {
     magics::init();
 
     // Example from Crafty test suite
-    let line = "3r1rk1/1p3pnp/p3pBp1/1qPpP3/1P1P2R1/P2Q3R/6PP/6K1 w - - bm Rxh7; c0 \"Mate in 7 \
-                moves\"; id \"BT2630-14\";";
+    let line = "3r1rk1/1p3pnp/p3pBp1/1qPpP3/1P1P2R1/P2Q3R/6PP/6K1 w - - bm Rxh7; c0 \"Mate in 7 moves\"; id \"BT2630-14\";";
     let (pos, ops) = parse_epd_line(line).expect("Should parse real-world EPD");
     assert_eq!(ops.len(), 3);
     assert_eq!(ops[0].0, "bm");
@@ -394,14 +368,6 @@ fn epd_import_real_world_example() {
 
     // Verify a few details of the position
     assert_eq!(pos.get_turn(), colors::WHITE);
-    assert_eq!(
-        pos.get_piece(crate::core::coordinates::squares::H3)
-            .piece_type(),
-        piece_type::ROOK
-    );
-    assert_eq!(
-        pos.get_piece(crate::core::coordinates::squares::F6)
-            .piece_type(),
-        piece_type::BISHOP
-    );
+    assert_eq!(pos.get_piece(crate::core::coordinates::squares::H3).piece_type(), piece_type::ROOK);
+    assert_eq!(pos.get_piece(crate::core::coordinates::squares::F6).piece_type(), piece_type::BISHOP);
 }

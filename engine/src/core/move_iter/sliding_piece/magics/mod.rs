@@ -1,18 +1,17 @@
 use std::{iter::once, mem, sync::Once};
 
 use itertools::Itertools;
-use rand::{rngs::SmallRng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng, rngs::SmallRng};
 
 use crate::core::{
     bitboard::Bitboard,
-    coordinates::{squares, Square},
+    coordinates::{Square, squares},
     move_iter::{bishop::Bishop, map_bits, rook::Rook},
 };
 
 use super::SlidingAttacks;
 
-#[cfg(test)]
-mod test;
+#[cfg(test)] mod test;
 
 pub const trait MagicGen {
     fn relevant_occupancy(sq: Square) -> Bitboard;
@@ -28,9 +27,7 @@ pub struct Magic<'a> {
 }
 
 impl Magic<'_> {
-    pub fn new(ptr: &[Bitboard], mask: Bitboard, magic: u64, shift: u8) -> Magic<'_> {
-        Magic { ptr, mask, magic, shift }
-    }
+    pub fn new(ptr: &[Bitboard], mask: Bitboard, magic: u64, shift: u8) -> Magic<'_> { Magic { ptr, mask, magic, shift } }
 
     #[inline(always)]
     pub fn key(&self, occupancy: Bitboard) -> usize {
@@ -40,9 +37,7 @@ impl Magic<'_> {
     }
 
     #[inline(always)]
-    pub fn get(&self, occupancy: Bitboard) -> Bitboard {
-        unsafe { *self.ptr.get_unchecked(self.key(occupancy)) }
-    }
+    pub fn get(&self, occupancy: Bitboard) -> Bitboard { unsafe { *self.ptr.get_unchecked(self.key(occupancy)) } }
 }
 
 #[derive(Debug, Default, Clone)]
@@ -67,9 +62,7 @@ impl MagicInfo {
         key as usize
     }
 
-    pub fn cost(&self) -> u32 {
-        self.init_cost
-    }
+    pub fn cost(&self) -> u32 { self.init_cost }
 }
 
 pub struct MagicTable<'a>([Magic<'a>; 64]);
@@ -140,30 +133,16 @@ pub fn init() {
     });
 }
 
-pub fn find_magics<T: MagicGen + SlidingAttacks>(
-    table: &mut AttackTable,
-    rng: &mut SmallRng,
-    prev: Option<&MagicInfo>,
-) -> [MagicInfo; 64] {
+pub fn find_magics<T: MagicGen + SlidingAttacks>(table: &mut AttackTable, rng: &mut SmallRng, prev: Option<&MagicInfo>) -> [MagicInfo; 64] {
     let mut result: [MagicInfo; 64] = unsafe { mem::zeroed() };
     for sq in squares::A1..=squares::H8 {
         let idx = sq.v() as usize;
-        result[idx] = find_magic::<T>(
-            table,
-            sq,
-            rng,
-            idx.checked_sub(1).map_or(prev, |x| Some(&result[x])),
-        );
+        result[idx] = find_magic::<T>(table, sq, rng, idx.checked_sub(1).map_or(prev, |x| Some(&result[x])));
     }
     result
 }
 
-fn find_magic<T: MagicGen + SlidingAttacks>(
-    table: &mut AttackTable,
-    sq: Square,
-    rng: &mut SmallRng,
-    prev: Option<&MagicInfo>,
-) -> MagicInfo {
+fn find_magic<T: MagicGen + SlidingAttacks>(table: &mut AttackTable, sq: Square, rng: &mut SmallRng, prev: Option<&MagicInfo>) -> MagicInfo {
     let max_size = T::relevant_occupancy_num_combinations();
     let full_blockers = T::relevant_occupancy(sq);
 
@@ -173,10 +152,7 @@ fn find_magic<T: MagicGen + SlidingAttacks>(
         .chain(once(full_blockers))
         .collect_vec();
 
-    let attacks = blockers
-        .iter()
-        .map(|&x| T::compute_attacks(sq, x))
-        .collect_vec();
+    let attacks = blockers.iter().map(|&x| T::compute_attacks(sq, x)).collect_vec();
 
     let mask = T::relevant_occupancy(sq);
     let shift = 64 - mask.pop_cnt() as u8;
@@ -231,6 +207,4 @@ fn find_magic<T: MagicGen + SlidingAttacks>(
     m
 }
 
-fn rn(rng: &mut SmallRng) -> u64 {
-    rng.next_u64() & rng.next_u64() & rng.next_u64()
-}
+fn rn(rng: &mut SmallRng) -> u64 { rng.next_u64() & rng.next_u64() & rng.next_u64() }

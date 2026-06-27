@@ -25,8 +25,7 @@
 #![feature(const_cmp)]
 #![feature(const_default)]
 
-#[macro_use]
-extern crate impl_ops;
+#[macro_use] extern crate impl_ops;
 
 pub mod core;
 pub mod math;

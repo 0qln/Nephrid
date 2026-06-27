@@ -1,15 +1,16 @@
-use crate::core::{color::{Color, Perspective}, coordinates::EpTargetSquare, eval::hce::TaperValue, position::PieceInfo, search::score::Score, turn::Turn};
+use crate::core::{
+    color::{Color, Perspective},
+    coordinates::EpTargetSquare,
+    eval::hce::TaperValue,
+    position::PieceInfo,
+    search::score::Score,
+    turn::Turn,
+};
 
 pub mod hce;
 
 pub trait StaticEvaluator {
-    fn eval<P: Perspective>(
-        &self,
-        pos: &PieceInfo,
-        turn: Turn,
-        ep_sq: EpTargetSquare,
-        phase: TaperValue,
-    ) -> Score<P>;
+    fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P>;
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]

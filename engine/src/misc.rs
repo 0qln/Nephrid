@@ -72,9 +72,7 @@ pub struct ValueOutOfRangeError<T: Debug> {
 }
 
 impl<T: Debug> ValueOutOfRangeError<T> {
-    pub fn new<B: IntoBounds<T>>(value: T, range: B) -> Self {
-        Self { value, range: Bounds::new(range) }
-    }
+    pub fn new<B: IntoBounds<T>>(value: T, range: B) -> Self { Self { value, range: Bounds::new(range) } }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -85,9 +83,7 @@ pub struct ValueOutOfSetError<T: Debug + 'static> {
 }
 
 impl<T: Debug + 'static> ValueOutOfSetError<T> {
-    pub fn new(value: T, set: &'static [T]) -> Self {
-        Self { value, expected: set }
-    }
+    pub fn new(value: T, set: &'static [T]) -> Self { Self { value, expected: set } }
 }
 
 #[derive(Debug, Error, PartialEq)]
@@ -97,9 +93,7 @@ pub struct InvalidValueError<T: Debug> {
 }
 
 impl<T: Debug> InvalidValueError<T> {
-    pub fn new(value: T) -> Self {
-        Self { value }
-    }
+    pub fn new(value: T) -> Self { Self { value } }
 }
 
 #[derive(Debug, Error, Default)]
@@ -109,9 +103,7 @@ pub struct MissingTokenError<T: Default> {
 }
 
 impl<T: Default> MissingTokenError<T> {
-    pub fn new() -> Self {
-        Self::default()
-    }
+    pub fn new() -> Self { Self::default() }
 }
 
 #[derive(Debug, Error)]
@@ -121,9 +113,7 @@ pub struct UnexpectedTokenError {
 }
 
 impl UnexpectedTokenError {
-    pub fn new(token_name: &'static str) -> Self {
-        Self { expected_token_name: token_name }
-    }
+    pub fn new(token_name: &'static str) -> Self { Self { expected_token_name: token_name } }
 }
 
 // #[derive(Debug, Error)]
@@ -273,21 +263,13 @@ pub fn trim_newline(s: &mut String) {
 pub struct DebugMode(Arc<AtomicBool>);
 
 impl DebugMode {
-    pub fn off() -> Self {
-        Self(Arc::new(AtomicBool::new(false)))
-    }
+    pub fn off() -> Self { Self(Arc::new(AtomicBool::new(false))) }
 
-    pub fn on() -> Self {
-        Self(Arc::new(AtomicBool::new(true)))
-    }
+    pub fn on() -> Self { Self(Arc::new(AtomicBool::new(true))) }
 
-    pub fn get(&self) -> bool {
-        self.0.load(Ordering::Relaxed)
-    }
+    pub fn get(&self) -> bool { self.0.load(Ordering::Relaxed) }
 
-    pub fn set(&self, val: bool) {
-        self.0.store(val, Ordering::Relaxed);
-    }
+    pub fn set(&self, val: bool) { self.0.store(val, Ordering::Relaxed); }
 }
 
 #[derive(Default, Clone, Debug)]
@@ -302,13 +284,9 @@ impl CancellationToken {
         }
     }
 
-    pub fn cancel(&self) {
-        self.v.store(true, Ordering::Relaxed)
-    }
+    pub fn cancel(&self) { self.v.store(true, Ordering::Relaxed) }
 
-    pub fn is_cancelled(&self) -> bool {
-        self.v.load(Ordering::Relaxed)
-    }
+    pub fn is_cancelled(&self) -> bool { self.v.load(Ordering::Relaxed) }
 }
 
 pub type CheckHealthResult<E> = Result<(), E>;
@@ -327,9 +305,7 @@ pub struct List<const N: usize, T> {
 }
 
 impl<const N: usize, T: PartialEq> PartialEq for List<N, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.as_slice() == other.as_slice()
-    }
+    fn eq(&self, other: &Self) -> bool { self.as_slice() == other.as_slice() }
 }
 
 impl<const N: usize, T: Clone> Clone for List<N, T> {
@@ -359,19 +335,13 @@ impl<const N: usize, T> List<N, T> {
     }
 
     #[inline]
-    pub fn len(&self) -> usize {
-        self.len
-    }
+    pub fn len(&self) -> usize { self.len }
 
     #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
+    pub fn is_empty(&self) -> bool { self.len == 0 }
 
     #[inline]
-    pub fn clear(&mut self) {
-        self.len = 0;
-    }
+    pub fn clear(&mut self) { self.len = 0; }
 
     /// Pushes an item to the list.
     #[inline]
@@ -431,15 +401,11 @@ impl<const N: usize, T> List<N, T> {
 
     /// Returns an iterator over the initialized elements.
     #[inline]
-    pub fn iter(&self) -> slice::Iter<'_, T> {
-        self.as_slice().iter()
-    }
+    pub fn iter(&self) -> slice::Iter<'_, T> { self.as_slice().iter() }
 
     /// Returns a mutable iterator over the initialized elements.
     #[inline]
-    pub fn iter_mut(&mut self) -> slice::IterMut<'_, T> {
-        self.as_mut_slice().iter_mut()
-    }
+    pub fn iter_mut(&mut self) -> slice::IterMut<'_, T> { self.as_mut_slice().iter_mut() }
 
     #[inline]
     pub fn get(&self, index: usize) -> Option<&T> {
@@ -458,26 +424,14 @@ impl<const N: usize, T> List<N, T> {
     /// alignment, and that the bitwise representation of `T2` is a valid
     /// representation of `T`.
     pub unsafe fn transmute<T2>(src: List<N, T2>) -> List<N, T> {
-        debug_assert_eq!(
-            mem::size_of::<T>(),
-            mem::size_of::<T2>(),
-            "Sizes must match"
-        );
-        debug_assert_eq!(
-            mem::align_of::<T>(),
-            mem::align_of::<T2>(),
-            "Alignments must match"
-        );
+        debug_assert_eq!(mem::size_of::<T>(), mem::size_of::<T2>(), "Sizes must match");
+        debug_assert_eq!(mem::align_of::<T>(), mem::align_of::<T2>(), "Alignments must match");
 
         let src = ManuallyDrop::new(src);
 
         List {
             len: src.len,
-            items: unsafe {
-                std::ptr::read(
-                    (&src.items as *const [MaybeUninit<T2>; N]).cast::<[MaybeUninit<T>; N]>(),
-                )
-            },
+            items: unsafe { std::ptr::read((&src.items as *const [MaybeUninit<T2>; N]).cast::<[MaybeUninit<T>; N]>()) },
         }
     }
 }
@@ -493,15 +447,11 @@ impl<const N: usize, T: Clone> List<N, T> {
 }
 
 impl<const N: usize, T: fmt::Debug> fmt::Debug for List<N, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list().entries(self.as_slice()).finish()
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.debug_list().entries(self.as_slice()).finish() }
 }
 
 impl<const N: usize, T> Default for List<N, T> {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl<const N: usize, T> Extend<T> for List<N, T> {
@@ -522,13 +472,9 @@ impl<const N: usize, T> FromIterator<T> for List<N, T> {
 }
 
 impl<const N: usize, T> AsRef<[T]> for List<N, T> {
-    fn as_ref(&self) -> &[T] {
-        self.as_slice()
-    }
+    fn as_ref(&self) -> &[T] { self.as_slice() }
 }
 
 // stdlib is not const
 #[inline(always)]
-pub const fn c_abs(this: i8) -> i8 {
-    if this.is_negative() { -this } else { this }
-}
+pub const fn c_abs(this: i8) -> i8 { if this.is_negative() { -this } else { this } }

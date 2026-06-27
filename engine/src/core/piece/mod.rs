@@ -15,8 +15,7 @@ use crate::{
 
 use super::r#move::MoveFlag;
 
-#[cfg(test)]
-mod test;
+#[cfg(test)] mod test;
 
 pub trait IPieceType {
     const ID: PieceType;
@@ -30,17 +29,11 @@ pub struct PieceType {
 }
 
 impl Step for PieceType {
-    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
-        Step::steps_between(&start.v, &end.v)
-    }
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) { Step::steps_between(&start.v, &end.v) }
 
-    fn forward_checked(start: Self, count: usize) -> Option<Self> {
-        Self::try_from(Step::forward_checked(start.v, count)?).ok()
-    }
+    fn forward_checked(start: Self, count: usize) -> Option<Self> { Self::try_from(Step::forward_checked(start.v, count)?).ok() }
 
-    fn backward_checked(start: Self, count: usize) -> Option<Self> {
-        Self::try_from(Step::backward_checked(start.v, count)?).ok()
-    }
+    fn backward_checked(start: Self, count: usize) -> Option<Self> { Self::try_from(Step::backward_checked(start.v, count)?).ok() }
 }
 
 impl_variants! {
@@ -56,24 +49,16 @@ impl_variants! {
 }
 
 impl fmt::Debug for PieceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("PieceType")
-            .field("v", &Into::<char>::into(*self))
-            .finish()
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("PieceType").field("v", &Into::<char>::into(*self)).finish() }
 }
 
 impl fmt::Display for PieceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", Into::<char>::into(*self))
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", Into::<char>::into(*self)) }
 }
 
 impl PieceType {
     #[inline]
-    pub const fn is_promo(&self) -> bool {
-        self.v >= piece_type::KNIGHT.v && self.v <= piece_type::QUEEN.v
-    }
+    pub const fn is_promo(&self) -> bool { self.v >= piece_type::KNIGHT.v && self.v <= piece_type::QUEEN.v }
 }
 
 pub type PieceTypeUpgradeError = ValueOutOfRangeError<TPieceType>;
@@ -129,9 +114,7 @@ impl From<PieceType> for char {
 }
 
 impl From<PromoPieceType> for PieceType {
-    fn from(value: PromoPieceType) -> Self {
-        value.v()
-    }
+    fn from(value: PromoPieceType) -> Self { value.v() }
 }
 
 #[derive(Copy, Clone, Default, Debug, PartialEq)]
@@ -149,9 +132,7 @@ impl_variants! {
 }
 
 impl fmt::Display for PromoPieceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.v, f)
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { Display::fmt(&self.v, f) }
 }
 
 pub type PromoPieceParseError = ValueOutOfSetError<char>;
@@ -166,10 +147,7 @@ impl TryFrom<char> for PromoPieceType {
             'b' | 'B' => Ok(BISHOP),
             'r' | 'R' => Ok(ROOK),
             'q' | 'Q' => Ok(QUEEN),
-            x => Err(Self::Error::new(
-                x,
-                &['n', 'b', 'r', 'q', 'N', 'B', 'R', 'Q'],
-            )),
+            x => Err(Self::Error::new(x, &['n', 'b', 'r', 'q', 'N', 'B', 'R', 'Q'])),
         }
     }
 }
@@ -231,9 +209,7 @@ impl Piece {
         unsafe { Color::from_v(self.v & 1) }
     }
 
-    pub const fn v(&self) -> TPiece {
-        self.v
-    }
+    pub const fn v(&self) -> TPiece { self.v }
 }
 
 impl const From<(Color, PieceType)> for Piece {
@@ -305,7 +281,5 @@ impl fmt::Debug for Piece {
 }
 
 impl fmt::Display for Piece {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", Into::<char>::into(*self))
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", Into::<char>::into(*self)) }
 }

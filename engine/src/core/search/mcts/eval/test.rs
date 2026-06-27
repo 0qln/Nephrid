@@ -17,17 +17,13 @@ use crate::core::{
 fn test(pos: Position, expected_result: Option<GameResult>) {
     let mut tree = Tree::new();
 
-    let node = tree.expand_node(
-        tree.node_switch(tree.root()).get::<Leaf>().unwrap(),
-        &pos,
-        pos.ply().into(),
-    );
+    let node = tree.expand_node(tree.node_switch(tree.root()).get::<Leaf>().unwrap(), &pos, pos.ply().into());
 
     assert_eq!(
         tree.node_switch(tree.root()).get::<Terminal>().is_some(),
         expected_result.is_some(),
-        "if we expect a game result \n\n{expected_result:?}\n\n in position \n\n{pos:?}\n\n, the \
-         state transition should be Terminal \n\n{node:?}\n\n, and visa versa"
+        "if we expect a game result \n\n{expected_result:?}\n\n in position \n\n{pos:?}\n\n, the state transition should be Terminal \
+         \n\n{node:?}\n\n, and visa versa"
     );
 
     if let Some(expected_result) = expected_result {
@@ -48,17 +44,10 @@ fn test_fen(fen: &str, expected_result: Option<GameResult>) {
 }
 
 #[test]
-fn normal() {
-    test_fen(
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        None,
-    );
-}
+fn normal() { test_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", None); }
 
 #[test]
-fn stalemate() {
-    test_fen("K7/3r4/2k5/1r6/8/8/8/8 w - - 0 1", Some(GameResult::Draw));
-}
+fn stalemate() { test_fen("K7/3r4/2k5/1r6/8/8/8/8 w - - 0 1", Some(GameResult::Draw)); }
 
 #[test]
 fn fifty_move_rule() {
@@ -67,20 +56,10 @@ fn fifty_move_rule() {
 }
 
 #[test]
-fn checkmate_for_black() {
-    test_fen(
-        "K2r4/2r5/2k5/8/8/8/8/8 w - - 0 1",
-        Some(GameResult::Win { relative_to: colors::BLACK }),
-    );
-}
+fn checkmate_for_black() { test_fen("K2r4/2r5/2k5/8/8/8/8/8 w - - 0 1", Some(GameResult::Win { relative_to: colors::BLACK })); }
 
 #[test]
-fn checkmate_for_white() {
-    test_fen(
-        "2k2R2/4R3/K7/8/8/8/8/8 b - - 0 1",
-        Some(GameResult::Win { relative_to: colors::WHITE }),
-    );
-}
+fn checkmate_for_white() { test_fen("2k2R2/4R3/K7/8/8/8/8/8 b - - 0 1", Some(GameResult::Win { relative_to: colors::WHITE })); }
 
 #[test]
 fn three_fold_repetition() {
@@ -110,6 +89,4 @@ fn three_fold_repetition() {
 }
 
 #[test]
-fn insufficent_material() {
-    test_fen("8/3k4/8/8/3K4/8/8/8 w - - 0 1", Some(GameResult::Draw));
-}
+fn insufficent_material() { test_fen("8/3k4/8/8/3K4/8/8/8 w - - 0 1", Some(GameResult::Draw)); }

@@ -23,8 +23,7 @@ use crate::{
     misc::{CheckHealth, CheckHealthResult, List},
 };
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
 
 pub mod hce;
 pub mod nn;
@@ -32,12 +31,7 @@ pub mod playout;
 
 /// Evaluate a node's terminal state. If the node is terminal, return the
 /// evaluation, else return None.
-pub fn eval_terminal(
-    _node: NodeId<Terminal>,
-    _tree: &Tree,
-    depth: Depth,
-    pos: &Position,
-) -> GameResult {
+pub fn eval_terminal(_node: NodeId<Terminal>, _tree: &Tree, depth: Depth, pos: &Position) -> GameResult {
     let game_result = pos.search_result(depth);
     game_result.expect("Input is a terminal node and thus there has to be a search result.")
 }
@@ -48,12 +42,7 @@ pub trait Evaluator {
     /// Note a trace of a branching node during the selection phase.
     /// `node` may or may not be the node that was just expanded during the
     /// selection phase.
-    fn trace<S: const Valid + HasBranches>(
-        &self,
-        node: NodeId<S>,
-        tree: &Tree,
-        pos: &mut Position,
-    ) -> Self::TraceData;
+    fn trace<S: const Valid + HasBranches>(&self, node: NodeId<S>, tree: &Tree, pos: &mut Position) -> Self::TraceData;
 
     fn eval_batch(
         &mut self,
@@ -71,9 +60,7 @@ pub struct Guess {
 }
 
 impl Guess {
-    pub fn policy(&self) -> &Policy {
-        &self.policy
-    }
+    pub fn policy(&self) -> &Policy { &self.policy }
 
     /// Returns the value of the guess relative to `turn`.
     pub fn to_value(&self, relative_to: Color) -> Value {
@@ -87,13 +74,9 @@ impl Guess {
         }
     }
 
-    pub fn relative_to(&self) -> Color {
-        self.relative_to
-    }
+    pub fn relative_to(&self) -> Color { self.relative_to }
 
-    pub fn quality(&self) -> Quality {
-        self.quality
-    }
+    pub fn quality(&self) -> Quality { self.quality }
 }
 
 #[derive(Debug, PartialEq)]
@@ -162,9 +145,7 @@ pub struct RawPolicy(pub [Probability; POLICY_OUTPUTS]);
 impl RawPolicy {
     const EPS: f32 = 1e-4;
 
-    pub fn get(&self, i: PolicyHeadIndex) -> Probability {
-        unsafe { *self.0.get_unchecked(i.v() as usize) }
-    }
+    pub fn get(&self, i: PolicyHeadIndex) -> Probability { unsafe { *self.0.get_unchecked(i.v() as usize) } }
 
     pub fn new(p: [Probability; POLICY_OUTPUTS]) -> Self {
         debug_assert!(
@@ -187,20 +168,13 @@ impl RawPolicy {
 impl CheckHealth for RawPolicy {
     type Error = String;
     fn check_health(&self) -> CheckHealthResult<Self::Error> {
-        if let Some(err) = self
-            .0
-            .iter()
-            .map(CheckHealth::check_health)
-            .find(Result::is_err)
-        {
+        if let Some(err) = self.0.iter().map(CheckHealth::check_health).find(Result::is_err) {
             return err;
         }
 
         let sum = self.0.map(|p| p.v()).iter().sum::<f32>();
         if (sum - 1.0).abs() >= Self::EPS {
-            return Err(format!(
-                "policy probabilities must sum to 1, but was: {sum}",
-            ));
+            return Err(format!("policy probabilities must sum to 1, but was: {sum}",));
         }
 
         Ok(())
@@ -208,9 +182,7 @@ impl CheckHealth for RawPolicy {
 }
 
 impl std::fmt::Debug for RawPolicy {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("RawPolicy").field(&"...").finish()
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_tuple("RawPolicy").field(&"...").finish() }
 }
 
 /// Some kind of logits for each legal move in a position.
@@ -246,13 +218,9 @@ pub struct Policy(List<{ MAX_LEGAL_MOVES }, Probability>);
 impl Policy {
     const EPS: f32 = 1e-4;
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
+    pub fn len(&self) -> usize { self.0.len() }
 
-    pub fn sum(&self) -> f32 {
-        self.0.iter().map(|p| p.v()).sum::<f32>()
-    }
+    pub fn sum(&self) -> f32 { self.0.iter().map(|p| p.v()).sum::<f32>() }
 
     pub fn new(policy: List<{ MAX_LEGAL_MOVES }, Probability>) -> Self {
         debug_assert!(
@@ -262,9 +230,7 @@ impl Policy {
         Self(policy)
     }
 
-    pub fn new_empty() -> Self {
-        Self(List::new())
-    }
+    pub fn new_empty() -> Self { Self(List::new()) }
 
     pub fn new_even(len: usize) -> Self {
         debug_assert!(len > 0, "Policy::new_even called with len == 0");
@@ -306,22 +272,14 @@ impl Policy {
     }
 
     /// Construct a `Policy` from logits by applying softmax.
-    pub fn from_logits(
-        logits: Logits,
-        temp: f32,
-        exps_buf: &mut List<{ MAX_LEGAL_MOVES }, f32>,
-    ) -> Self {
+    pub fn from_logits(logits: Logits, temp: f32, exps_buf: &mut List<{ MAX_LEGAL_MOVES }, f32>) -> Self {
         let policy = softmax(logits.0, temp, exps_buf);
         Self(policy)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Probability> {
-        self.0.iter().cloned()
-    }
+    pub fn iter(&self) -> impl Iterator<Item = Probability> { self.0.iter().cloned() }
 
-    pub fn as_slice(&self) -> &[Probability] {
-        self.0.as_slice()
-    }
+    pub fn as_slice(&self) -> &[Probability] { self.0.as_slice() }
 }
 
 /// Construct a policy from visit counts by applying the AlphaZero
@@ -387,36 +345,22 @@ impl Quality {
     }
 
     /// Inverses the value in it's range
-    pub fn inverse(&self) -> Self {
-        Self(-self.0)
-    }
+    pub fn inverse(&self) -> Self { Self(-self.0) }
 
-    pub fn v(&self) -> f32 {
-        self.0
-    }
+    pub fn v(&self) -> f32 { self.0 }
 
-    pub const fn max() -> Self {
-        Self(1.)
-    }
+    pub const fn max() -> Self { Self(1.) }
 
-    pub const fn min() -> Self {
-        Self(-1.)
-    }
+    pub const fn min() -> Self { Self(-1.) }
 
     // these are functions, because maybe later we want to have different values for
     // e.g. a win that is close to the root node or further.
 
-    pub const fn draw() -> Self {
-        Self(0.0)
-    }
+    pub const fn draw() -> Self { Self(0.0) }
 
-    pub const fn win() -> Self {
-        Self::max()
-    }
+    pub const fn win() -> Self { Self::max() }
 
-    pub const fn loss() -> Self {
-        Self::min()
-    }
+    pub const fn loss() -> Self { Self::min() }
 }
 
 impl CheckHealth for Quality {
@@ -444,15 +388,11 @@ impl CheckHealth for Quality {
 }
 
 impl From<Value> for Quality {
-    fn from(value: Value) -> Self {
-        Self::new((value.v() - 0.5) * 2.)
-    }
+    fn from(value: Value) -> Self { Self::new((value.v() - 0.5) * 2.) }
 }
 
 impl fmt::Display for Quality {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
 }
 
 /// A value in range [0; 1]
@@ -460,50 +400,32 @@ impl fmt::Display for Quality {
 pub struct Value(pub Bounded<f32, Bounds0to1>);
 
 impl Value {
-    pub fn new(v: f32) -> Self {
-        Self(Bounded::new(v))
-    }
+    pub fn new(v: f32) -> Self { Self(Bounded::new(v)) }
 
     /// Inverses the value in it's range
-    pub fn inverse(&self) -> Value {
-        Self(self.0.inv())
-    }
+    pub fn inverse(&self) -> Value { Self(self.0.inv()) }
 
-    pub fn v(&self) -> f32 {
-        self.0.v()
-    }
+    pub fn v(&self) -> f32 { self.0.v() }
 
     // these are functions, because maybe later we want to have different values for
     // // e.g. a win that is close to the root node or further.
 
-    pub const fn draw() -> Self {
-        Self(Bounded::<f32, Bounds0to1>::even())
-    }
+    pub const fn draw() -> Self { Self(Bounded::<f32, Bounds0to1>::even()) }
 
-    pub const fn win() -> Self {
-        Self(Bounded::<f32, Bounds0to1>::one())
-    }
+    pub const fn win() -> Self { Self(Bounded::<f32, Bounds0to1>::one()) }
 
-    pub const fn loss() -> Self {
-        Self(Bounded::<f32, Bounds0to1>::zero())
-    }
+    pub const fn loss() -> Self { Self(Bounded::<f32, Bounds0to1>::zero()) }
 }
 
 impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.0) }
 }
 impl From<Quality> for Value {
-    fn from(q: Quality) -> Self {
-        Self::new((q.0 + 1.) / 2.)
-    }
+    fn from(q: Quality) -> Self { Self::new((q.0 + 1.) / 2.) }
 }
 
 impl fmt::Display for Cp {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.v)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.v) }
 }
 
 impl From<WinRate> for Cp {

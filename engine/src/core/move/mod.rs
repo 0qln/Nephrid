@@ -13,10 +13,7 @@ use crate::{
         bitboard::Bitboard,
         castling::{CastlingSideParseError, castling_sides},
         color::colors,
-        coordinates::{
-            EpCaptureSquare, EpTargetSquare, File, Rank, Square, SquareTokenizationError, files,
-            ranks,
-        },
+        coordinates::{EpCaptureSquare, EpTargetSquare, File, Rank, Square, SquareTokenizationError, files, ranks},
         move_iter::{
             bishop::Bishop,
             fold_legal_moves,
@@ -35,8 +32,7 @@ use crate::{
 
 use super::{castling::CastlingSide, piece::PromoPieceType};
 
-#[cfg(test)]
-mod test;
+#[cfg(test)] mod test;
 
 pub struct LongAlgebraicNotation;
 
@@ -60,9 +56,7 @@ pub struct StandardAlgebraicNotationParser<'a, 'b> {
 }
 
 impl<'a, 'b> StandardAlgebraicNotationParser<'a, 'b> {
-    pub const fn new(san: &'a str, context: &'b Position) -> Self {
-        Self { san, context }
-    }
+    pub const fn new(san: &'a str, context: &'b Position) -> Self { Self { san, context } }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
@@ -117,15 +111,11 @@ impl fmt::Debug for MoveFlag {
 impl MoveFlag {
     #[inline]
     pub const fn is_capture(&self) -> bool {
-        self.v == f::CAPTURE.v
-            || self.v == f::EN_PASSANT.v
-            || (self.v >= f::CAPTURE_PROMOTION_KNIGHT.v && self.v <= f::CAPTURE_PROMOTION_QUEEN.v)
+        self.v == f::CAPTURE.v || self.v == f::EN_PASSANT.v || (self.v >= f::CAPTURE_PROMOTION_KNIGHT.v && self.v <= f::CAPTURE_PROMOTION_QUEEN.v)
     }
 
     #[inline]
-    pub const fn is_promo(&self) -> bool {
-        self.v >= f::PROMOTION_KNIGHT.v && self.v <= f::CAPTURE_PROMOTION_QUEEN.v
-    }
+    pub const fn is_promo(&self) -> bool { self.v >= f::PROMOTION_KNIGHT.v && self.v <= f::CAPTURE_PROMOTION_QUEEN.v }
 }
 
 impl From<(PromoPieceType, bool)> for MoveFlag {
@@ -166,9 +156,7 @@ pub struct Move {
 }
 
 impl const Default for Move {
-    fn default() -> Self {
-        Self::null()
-    }
+    fn default() -> Self { Self::null() }
 }
 
 impl Move {
@@ -182,21 +170,15 @@ impl Move {
     pub const MASK_SQ: u16 = Move::MASK_FROM | Move::MASK_TO;
 
     #[inline]
-    pub const fn null() -> Self {
-        Move { v: 0 }
-    }
+    pub const fn null() -> Self { Move { v: 0 } }
 
     #[inline]
-    pub const fn v(&self) -> u16 {
-        self.v
-    }
+    pub const fn v(&self) -> u16 { self.v }
 
     #[inline]
     pub const fn new(from: Square, to: Square, flag: MoveFlag) -> Self {
         Move {
-            v: ((from.v() as u16) << Move::SHIFT_FROM)
-                | ((to.v() as u16) << Move::SHIFT_TO)
-                | ((flag.v as u16) << Move::SHIFT_FLAG),
+            v: ((from.v() as u16) << Move::SHIFT_FROM) | ((to.v() as u16) << Move::SHIFT_TO) | ((flag.v as u16) << Move::SHIFT_FLAG),
         }
     }
 
@@ -279,9 +261,7 @@ impl Move {
 
 impl From<Move> for (Square, Square, MoveFlag) {
     #[inline]
-    fn from(value: Move) -> Self {
-        (value.get_from(), value.get_to(), value.get_flag())
-    }
+    fn from(value: Move) -> Self { (value.get_from(), value.get_to(), value.get_flag()) }
 }
 
 impl fmt::Display for Move {
@@ -357,17 +337,16 @@ impl<'a> fmt::Display for SAN<'a> {
             if candidates.pop_cnt_gt_1() {
                 // Only investigate legality of the candidates once we found a pseudo legal
                 // candidate.
-                let legal_mask =
-                    fold_legal_moves(self.context, Bitboard::empty(), |mut acc, mov| {
-                        // Accumilate all from-squares, where there exists a legal move that
-                        // has our to-square as destination.
-                        if mov.get_to() == to {
-                            acc |= Bitboard::from(mov.get_from())
-                        }
-                        ControlFlow::Continue::<(), _>(acc)
-                    })
-                    .continue_value()
-                    .unwrap();
+                let legal_mask = fold_legal_moves(self.context, Bitboard::empty(), |mut acc, mov| {
+                    // Accumilate all from-squares, where there exists a legal move that
+                    // has our to-square as destination.
+                    if mov.get_to() == to {
+                        acc |= Bitboard::from(mov.get_from())
+                    }
+                    ControlFlow::Continue::<(), _>(acc)
+                })
+                .continue_value()
+                .unwrap();
 
                 let candidates = candidates & legal_mask;
 
@@ -446,9 +425,7 @@ pub enum SanParseError {
     #[error("Invalid promotion piece type: {0}")]
     InvalidPromoPieceType(PromoPieceTokenizationError),
 
-    #[error(
-        "The SAN string does not contain enough disambiguation information. Candidate moves: {0}"
-    )]
+    #[error("The SAN string does not contain enough disambiguation information. Candidate moves: {0}")]
     NotEnoughDisambiguation(Box<MoveList>),
 
     #[error("The SAN string does not correspond to a legal move in the given position.")]
@@ -629,11 +606,9 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
     type Error = LanParseError;
 
     fn try_from(move_notation: LongAlgebraicUciNotation<'_, '_, '_>) -> Result<Self, Self::Error> {
-        let from = Square::try_from(&mut *move_notation.tokens)
-            .map_err(LanParseError::InvalidFromSquare)?;
+        let from = Square::try_from(&mut *move_notation.tokens).map_err(LanParseError::InvalidFromSquare)?;
 
-        let to =
-            Square::try_from(&mut *move_notation.tokens).map_err(LanParseError::InvalidToSquare)?;
+        let to = Square::try_from(&mut *move_notation.tokens).map_err(LanParseError::InvalidToSquare)?;
 
         let moving_p = move_notation.context.get_piece(from);
         let captured_p = move_notation.context.get_piece(to);
@@ -675,15 +650,11 @@ pub struct MoveList {
 }
 
 impl AsRef<[Move]> for MoveList {
-    fn as_ref(&self) -> &[Move] {
-        self.inner.as_ref()
-    }
+    fn as_ref(&self) -> &[Move] { self.inner.as_ref() }
 }
 
 impl fmt::Debug for MoveList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        fmt::Debug::fmt(&self.inner, f)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { fmt::Debug::fmt(&self.inner, f) }
 }
 
 impl MoveList {
@@ -691,68 +662,46 @@ impl MoveList {
 
     /// Creates a new, empty move list.
     #[inline]
-    pub fn new() -> Self {
-        Self { inner: List::new() }
-    }
+    pub fn new() -> Self { Self { inner: List::new() } }
 
     #[inline]
-    pub fn len(&self) -> u8 {
-        self.inner.len() as u8
-    }
+    pub fn len(&self) -> u8 { self.inner.len() as u8 }
 
-    pub fn clear(&mut self) {
-        self.inner.clear();
-    }
+    pub fn clear(&mut self) { self.inner.clear(); }
 
     /// Pushes a move to the list.
     #[inline]
-    pub fn push(&mut self, m: Move) {
-        self.inner.push(m);
-    }
+    pub fn push(&mut self, m: Move) { self.inner.push(m); }
 
     /// Returns a mutable slice of the initialized moves up to `len`.
     #[inline]
-    pub fn as_mut_slice(&mut self) -> &mut [Move] {
-        self.inner.as_mut_slice()
-    }
+    pub fn as_mut_slice(&mut self) -> &mut [Move] { self.inner.as_mut_slice() }
 
     /// Returns a slice of the initialized moves.
     #[inline]
-    pub fn as_slice(&self) -> &[Move] {
-        self.inner.as_slice()
-    }
+    pub fn as_slice(&self) -> &[Move] { self.inner.as_slice() }
 
     /// Returns an iterator over the initialized moves.
     #[inline]
-    pub fn iter(&self) -> slice::Iter<'_, Move> {
-        self.inner.iter()
-    }
+    pub fn iter(&self) -> slice::Iter<'_, Move> { self.inner.iter() }
 
     #[inline]
-    pub fn get(&self, index: MoveIndex) -> Option<Move> {
-        self.inner.get(index.v as usize).copied()
-    }
+    pub fn get(&self, index: MoveIndex) -> Option<Move> { self.inner.get(index.v as usize).copied() }
 }
 
 impl Default for MoveList {
-    fn default() -> Self {
-        Self::new()
-    }
+    fn default() -> Self { Self::new() }
 }
 
 impl fmt::Display for MoveList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_list().entries(self.as_slice()).finish()
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.debug_list().entries(self.as_slice()).finish() }
 }
 
 impl<'a> IntoIterator for &'a MoveList {
     type Item = Move;
     type IntoIter = iter::Cloned<slice::Iter<'a, Move>>;
 
-    fn into_iter(self) -> Self::IntoIter {
-        self.iter().cloned()
-    }
+    fn into_iter(self) -> Self::IntoIter { self.iter().cloned() }
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default)]
@@ -776,9 +725,7 @@ impl TryFrom<usize> for MoveIndex {
 }
 
 impl From<u8> for MoveIndex {
-    fn from(value: u8) -> Self {
-        Self { v: value }
-    }
+    fn from(value: u8) -> Self { Self { v: value } }
 }
 
 // https://lichess.org/@/Tobs40/blog/why-a-reachable-position-can-have-at-most-218-playable-moves/a5xdxeqs

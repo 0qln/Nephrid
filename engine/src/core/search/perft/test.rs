@@ -53,10 +53,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
                 {
                     let expected = list_filtered.iter().collect::<HashSet<_>>();
                     let result = list_skipped.iter().collect::<HashSet<_>>();
-                    expected
-                        .symmetric_difference(&result)
-                        .cloned()
-                        .collect_vec()
+                    expected.symmetric_difference(&result).cloned().collect_vec()
                 }
             );
         },
@@ -69,8 +66,7 @@ pub fn compare_capture_filtering_test_1() {
     zobrist::init();
 
     compare_capture_filtering_find_error(
-        Position::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")
-            .unwrap(),
+        Position::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1").unwrap(),
         Depth::new(8),
     )
 }
@@ -92,10 +88,7 @@ pub fn compare_capture_filtering_test_3() {
     zobrist::init();
 
     compare_capture_filtering_find_error(
-        Position::from_fen(
-            "r1bqk2r/1pp1bppp/p1n1pn2/3p4/3P4/P1N1PN2/1PP1BPPP/R1BQK2R w KQkq - 0 1",
-        )
-        .unwrap(),
+        Position::from_fen("r1bqk2r/1pp1bppp/p1n1pn2/3p4/3P4/P1N1PN2/1PP1BPPP/R1BQK2R w KQkq - 0 1").unwrap(),
         Depth::new(9),
     )
 }

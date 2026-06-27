@@ -7,24 +7,15 @@ pub struct UcbSelector {
 }
 
 impl UcbSelector {
-    pub fn new(c: f32) -> Self {
-        Self { c }
-    }
+    pub fn new(c: f32) -> Self { Self { c } }
 }
 
 impl Default for UcbSelector {
-    fn default() -> Self {
-        Self { c: f32::sqrt(2.0) }
-    }
+    fn default() -> Self { Self { c: f32::sqrt(2.0) } }
 }
 
 impl Selector for UcbSelector {
-    fn exploitation(
-        &self,
-        tree: &Tree,
-        branch_id: BranchId,
-        _parent_id: NodeId<Evaluated>,
-    ) -> Score {
+    fn exploitation(&self, tree: &Tree, branch_id: BranchId, _parent_id: NodeId<Evaluated>) -> Score {
         let branch = tree.branch(branch_id);
         let node = tree.node(branch.node());
 

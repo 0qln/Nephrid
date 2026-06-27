@@ -2,9 +2,9 @@ use std::{hint::black_box, ops::ControlFlow, time::Duration};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::core::{
+    r#move::Move,
     move_iter::{fold_legal_moves, sliding_piece::magics},
     position::Position,
-    r#move::Move,
     zobrist,
 };
 
@@ -24,9 +24,7 @@ pub fn is_pseudo_legal(c: &mut Criterion) {
     let csv_data = include_str!("../resources/positions.csv");
 
     let mut group = c.benchmark_group("is_pseudo_legal");
-    group
-        .measurement_time(Duration::from_secs(10))
-        .sample_size(100);
+    group.measurement_time(Duration::from_secs(10)).sample_size(100);
 
     for (i, line) in csv_data.lines().skip(1).enumerate() {
         let line = line.trim();

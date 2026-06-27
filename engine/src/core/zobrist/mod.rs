@@ -13,8 +13,7 @@ use super::{
     turn::Turn,
 };
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
 
 /// Note: the default hash is equivalent to the hash of the default (empty)
 /// position.
@@ -24,9 +23,7 @@ pub struct Hash {
 }
 
 impl fmt::Display for Hash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:X?}", self.v)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{:X?}", self.v) }
 }
 
 #[inline]
@@ -37,18 +34,14 @@ fn hasher() -> &'static Hasher {
 }
 
 impl Hash {
-    pub const fn v(self) -> u64 {
-        self.v
-    }
+    pub const fn v(self) -> u64 { self.v }
 
     pub const fn index(&self, max_entries: usize) -> usize {
         debug_assert!(max_entries != 0, "Hash::index requires max_entries != 0");
         (self.v as usize) % max_entries
     }
 
-    pub fn from_v(v: u64) -> Self {
-        Self { v }
-    }
+    pub fn from_v(v: u64) -> Self { Self { v } }
 
     #[inline]
     pub fn set_turn(&mut self, turn: Turn) -> Self {
@@ -98,9 +91,7 @@ impl_op!(^ |l: Hash, r: u64| -> Hash { Hash { v: l.v ^ r } });
 impl From<&Position> for Hash {
     fn from(pos: &Position) -> Self {
         Bitboard::full()
-            .fold(Hash::default(), |mut acc, sq| {
-                acc.toggle_piece_sq(sq, pos.get_piece(sq))
-            })
+            .fold(Hash::default(), |mut acc, sq| acc.toggle_piece_sq(sq, pos.get_piece(sq)))
             .toggle_ep_square(pos.get_ep_capture_square())
             .toggle_castling(pos.get_castling())
             .set_turn(pos.get_turn())
@@ -112,14 +103,10 @@ static mut HASHER: Hasher = unsafe { mem::zeroed() };
 static INIT: Once = Once::new();
 
 #[allow(static_mut_refs)]
-pub fn init() {
-    INIT.call_once(|| unsafe { HASHER.init(14278029879823863027) });
-}
+pub fn init() { INIT.call_once(|| unsafe { HASHER.init(14278029879823863027) }); }
 
 #[allow(static_mut_refs)]
-pub fn force_init(seed: u64) {
-    unsafe { HASHER.init(seed) };
-}
+pub fn force_init(seed: u64) { unsafe { HASHER.init(seed) }; }
 
 struct Hasher {
     piece_sq: [[u64; 14]; 64],

@@ -1,7 +1,7 @@
 use core::fmt;
 use std::fmt::Display;
 
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::core::{bitboard::Bitboard, coordinates::squares};
 
 pub fn pop_cnt(c: &mut Criterion) {
@@ -11,16 +11,12 @@ pub fn pop_cnt(c: &mut Criterion) {
 
     for input in inputs {
         let bb = Bitboard { v: input };
-        group.bench_with_input(
-            BenchmarkId::new("bitboard::pop_cnt::normal", input),
-            &bb,
-            |b, &bb| b.iter(|| bb.pop_cnt() == 1),
-        );
-        group.bench_with_input(
-            BenchmarkId::new("bitboard::pop_cnt::specialized", input),
-            &bb,
-            |b, &bb| b.iter(|| bb.pop_cnt_eq_1()),
-        );
+        group.bench_with_input(BenchmarkId::new("bitboard::pop_cnt::normal", input), &bb, |b, &bb| {
+            b.iter(|| bb.pop_cnt() == 1)
+        });
+        group.bench_with_input(BenchmarkId::new("bitboard::pop_cnt::specialized", input), &bb, |b, &bb| {
+            b.iter(|| bb.pop_cnt_eq_1())
+        });
     }
 
     group.finish();
@@ -35,11 +31,9 @@ pub fn between(c: &mut Criterion) {
     ];
 
     for pair in inputs {
-        c.bench_with_input(
-            BenchmarkId::new("bitboard::between", pair),
-            &pair,
-            |b, &pair| b.iter(|| Bitboard::between(pair.0, pair.1)),
-        );
+        c.bench_with_input(BenchmarkId::new("bitboard::between", pair), &pair, |b, &pair| {
+            b.iter(|| Bitboard::between(pair.0, pair.1))
+        });
     }
 }
 
@@ -53,11 +47,9 @@ pub fn ray(c: &mut Criterion) {
     ];
 
     for pair in inputs {
-        c.bench_with_input(
-            BenchmarkId::new("bitboard::ray", pair),
-            &pair,
-            |b, &pair| b.iter(|| Bitboard::ray(pair.0, pair.1)),
-        );
+        c.bench_with_input(BenchmarkId::new("bitboard::ray", pair), &pair, |b, &pair| {
+            b.iter(|| Bitboard::ray(pair.0, pair.1))
+        });
     }
 }
 
@@ -65,9 +57,7 @@ pub fn ray(c: &mut Criterion) {
 struct Pair<T>(T, T);
 
 impl<T: Display> fmt::Display for Pair<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "({}, {})", self.0, self.1)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "({}, {})", self.0, self.1) }
 }
 
 criterion_group!(benches, pop_cnt, between, ray,);

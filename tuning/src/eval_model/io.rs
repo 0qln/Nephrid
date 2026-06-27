@@ -10,9 +10,7 @@ use engine::core::search::mcts::nn::Model;
 
 use crate::TrainingConfig;
 
-pub fn get_config(path: &str) -> TrainingConfig {
-    TrainingConfig::load(path).expect("Couldn't load config.json at {path:?}")
-}
+pub fn get_config(path: &str) -> TrainingConfig { TrainingConfig::load(path).expect("Couldn't load config.json at {path:?}") }
 
 pub enum ResumeAction {
     /// Resume an existing phase: (Start Epoch, Start Iteration, Path)
@@ -71,20 +69,12 @@ pub fn get_resume_state(artifact_dir: &str) -> (usize, usize, Option<String>) {
     }
 }
 
-pub fn setup_environment<B: AutodiffBackend>(
-    artifact_dir: &str,
-    config: &TrainingConfig,
-    device: &B::Device,
-) {
+pub fn setup_environment<B: AutodiffBackend>(artifact_dir: &str, config: &TrainingConfig, device: &B::Device) {
     fs::create_dir_all(artifact_dir).ok();
     B::seed(device, config.seed);
 }
 
-pub fn load_weights<B: AutodiffBackend>(
-    model: Model<B>,
-    device: &B::Device,
-    checkpoint_path: &Option<String>,
-) -> Model<B> {
+pub fn load_weights<B: AutodiffBackend>(model: Model<B>, device: &B::Device, checkpoint_path: &Option<String>) -> Model<B> {
     if let Some(path) = checkpoint_path {
         log::info!(target: "train", "Resuming training from {}", path);
         let record = CompactRecorder::new()

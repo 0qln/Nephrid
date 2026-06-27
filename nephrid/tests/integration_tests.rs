@@ -18,22 +18,16 @@ impl Drop for GuardedChild {
 impl Deref for GuardedChild {
     type Target = Child;
 
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 impl DerefMut for GuardedChild {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
 }
 
 fn read_engine_line(reader: &mut BufReader<ChildStdout>) -> String {
     let mut line = String::new();
-    reader
-        .read_line(&mut line)
-        .expect("Failed to read from engine");
+    reader.read_line(&mut line).expect("Failed to read from engine");
     let trimmed = line.trim().to_string();
     if !trimmed.is_empty() {
         println!("Engine: {}", trimmed);
@@ -43,10 +37,7 @@ fn read_engine_line(reader: &mut BufReader<ChildStdout>) -> String {
 
 /// Block the engine until a line is read that fullfills pred.
 /// Returns that line.
-fn block_engine_line(
-    reader: &mut BufReader<ChildStdout>,
-    mut pred: impl FnMut(&str) -> bool,
-) -> String {
+fn block_engine_line(reader: &mut BufReader<ChildStdout>, mut pred: impl FnMut(&str) -> bool) -> String {
     loop {
         let out = read_engine_line(reader);
         if pred(&out) {
@@ -58,10 +49,7 @@ fn block_engine_line(
 /// Reads and accumulates lines from the engine until a line fulfills the
 /// predicate. Returns all lines read *before* the matching line as a single
 /// joined string.
-fn collect_engine_lines_until(
-    reader: &mut BufReader<ChildStdout>,
-    mut pred: impl FnMut(&str) -> bool,
-) -> String {
+fn collect_engine_lines_until(reader: &mut BufReader<ChildStdout>, mut pred: impl FnMut(&str) -> bool) -> String {
     let mut lines = Vec::new();
     loop {
         let out = read_engine_line(reader);
@@ -149,10 +137,7 @@ pub mod ponder_tests {
         let bestmove_line = block_engine_line(&mut reader, |l| l.starts_with("bestmove"));
 
         // 6. Assert the engine's behavior
-        assert!(
-            !bestmove_line.is_empty(),
-            "Engine exited before outputting a bestmove"
-        );
+        assert!(!bestmove_line.is_empty(), "Engine exited before outputting a bestmove");
         assert!(
             bestmove_line.contains("ponder"),
             "Engine outputted a bestmove, but forgot the ponder move! Output: {}",
@@ -219,14 +204,8 @@ pub mod ponder_tests {
             hit_move = child_nodes[0].0.clone(); // Most visited (Ponder move)
             miss_move = child_nodes[1].0.clone(); // Second most visited (Actual move)
 
-            println!(
-                "Most visited (hit): {} with {} visits",
-                hit_move, child_nodes[0].1
-            );
-            println!(
-                "Second visited (miss): {} with {} visits",
-                miss_move, child_nodes[1].1
-            );
+            println!("Most visited (hit): {} with {} visits", hit_move, child_nodes[0].1);
+            println!("Second visited (miss): {} with {} visits", miss_move, child_nodes[1].1);
         }
         else {
             panic!("Not enough child nodes dumped by MCTS to pick a hit and a miss!");
@@ -234,10 +213,7 @@ pub mod ponder_tests {
 
         // 3. Setup the predicted line (e.g., White played e2e4, we guess Black plays
         //    e7e5)
-        write_engine_line(
-            &mut stdin,
-            &format!("position startpos moves e2e4 {miss_move}"),
-        );
+        write_engine_line(&mut stdin, &format!("position startpos moves e2e4 {miss_move}"));
         write_engine_line(&mut stdin, "go ponder wtime 295000 btime 295000");
         block_engine_line(&mut reader, |l| {
             l.starts_with("info") && extract_nodes(l).is_some_and(|nodes| nodes > 2000)
@@ -249,22 +225,13 @@ pub mod ponder_tests {
 
         // 5. Simulate the Ponder Miss! (Black actually played c7c5)
         // This is exactly a 1-ply divergence, which should trigger the Rollback logic.
-        write_engine_line(
-            &mut stdin,
-            &format!("position startpos moves e2e4 {hit_move}"),
-        );
+        write_engine_line(&mut stdin, &format!("position startpos moves e2e4 {hit_move}"));
         write_engine_line(&mut stdin, "go wtime 295000 btime 295000");
 
         // 6. Capture the first info line of the new search
-        let first_info_line = block_engine_line(&mut reader, |l| {
-            l.starts_with("info") && !l.starts_with("info string")
-        });
-        let first_search_nodes = extract_nodes(&first_info_line).unwrap_or_else(|| {
-            panic!(
-                "Failed to extract nodes from first info line of new search! Line: {}",
-                first_info_line
-            )
-        });
+        let first_info_line = block_engine_line(&mut reader, |l| l.starts_with("info") && !l.starts_with("info string"));
+        let first_search_nodes = extract_nodes(&first_info_line)
+            .unwrap_or_else(|| panic!("Failed to extract nodes from first info line of new search! Line: {}", first_info_line));
 
         // 7. Stop the second search and quit cleanly
         write_engine_line(&mut stdin, "stop");
@@ -278,8 +245,7 @@ pub mod ponder_tests {
         // `e2e4 c7c5`.
         assert!(
             first_search_nodes > 1000,
-            "Failed caching! Expected cached tree with >1000 nodes, but the first info reported \
-             only {} nodes. The tree was dropped!",
+            "Failed caching! Expected cached tree with >1000 nodes, but the first info reported only {} nodes. The tree was dropped!",
             first_search_nodes
         );
     }
@@ -323,10 +289,7 @@ pub mod ponder_tests {
         // We do NOT send "stop" here. We just wait for bestmove.
         let bestmove_line = block_engine_line(&mut reader, |l| l.starts_with("bestmove"));
 
-        assert!(
-            !bestmove_line.is_empty(),
-            "Engine failed to stop on its own after ponderhit!"
-        );
+        assert!(!bestmove_line.is_empty(), "Engine failed to stop on its own after ponderhit!");
 
         write_engine_line(&mut stdin, "quit");
     }
@@ -370,15 +333,9 @@ pub mod ponder_tests {
         write_engine_line(&mut stdin, "go nodes 500000");
 
         // 3. We must capture the first info line of the new search
-        let first_info_line = block_engine_line(&mut reader, |l| {
-            l.starts_with("info") && extract_nodes(l).is_some()
-        });
-        let first_search_nodes = extract_nodes(&first_info_line).unwrap_or_else(|| {
-            panic!(
-                "Failed to extract nodes from first info line of new search! Line: {}",
-                first_info_line
-            )
-        });
+        let first_info_line = block_engine_line(&mut reader, |l| l.starts_with("info") && extract_nodes(l).is_some());
+        let first_search_nodes = extract_nodes(&first_info_line)
+            .unwrap_or_else(|| panic!("Failed to extract nodes from first info line of new search! Line: {}", first_info_line));
 
         write_engine_line(&mut stdin, "stop");
         block_engine_line(&mut reader, |l| l.starts_with("bestmove"));
@@ -389,8 +346,7 @@ pub mod ponder_tests {
         // initialized root).
         assert!(
             first_search_nodes < 100,
-            "Tree reset failed! The engine retained {} nodes from a completely unrelated game \
-             state.",
+            "Tree reset failed! The engine retained {} nodes from a completely unrelated game state.",
             first_search_nodes
         );
 
