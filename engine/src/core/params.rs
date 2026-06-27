@@ -1,4 +1,4 @@
-use std::{convert::Infallible, fmt, ops::Deref};
+use std::{fmt, marker::PhantomData, ops::Deref};
 
 use crate::{
     core::{
@@ -39,8 +39,8 @@ macro_rules! const_params {
             #[allow(non_camel_case_types)]
             pub type [<C_ $name ParamsRef>] = [<C_ $name Params>];
 
-            #[cfg(feature = "tunable")] pub type [<$name Params>] = TunableParams;
-            #[cfg(feature = "tunable")] pub type [<$name ParamsRef>] = TunableParamsRef;
+            #[cfg(feature = "tunable")] pub type [<$name Params>] = TunableParams<[<C_ $name Params>]>;
+            #[cfg(feature = "tunable")] pub type [<$name ParamsRef>] = TunableParamsRef<[<C_ $name Params>]>;
             #[cfg(not(feature = "tunable"))] pub type [<$name Params>] = [<C_ $name Params>];
             #[cfg(not(feature = "tunable"))] pub type [<$name ParamsRef>] = [<C_ $name ParamsRef>];
 
@@ -52,11 +52,17 @@ macro_rules! const_params {
             }
 
             impl [<C_ $name Params>] {
-                pub fn tunable(&self) -> TunableParams {
+                pub fn tunable(&self) -> TunableParams<[<C_ $name Params>]> {
                     let builder = Configuration::builder();
                     let config = self.build_config(builder).build();
                     TunableParams::from_config(&config)
                 }
+            }
+
+            impl IParams for [<C_ $name Params>] {
+                type Ref = Self;
+                fn shared(self) -> Self::Ref { self }
+                fn try_from_config<C: Deref<Target = Configuration>>(_: C) -> Result<Self::Ref, std::convert::Infallible> { Ok(Self) }
             }
         }
     };
@@ -64,10 +70,10 @@ macro_rules! const_params {
 
 // generic tunable
 
-pub type TunableParamsRef = std::rc::Rc<TunableParams>;
+pub type TunableParamsRef<B> = std::rc::Rc<TunableParams<B>>;
 
 #[derive(Debug, Clone)]
-pub struct TunableParams {
+pub struct TunableParams<Base> {
     timeman_entropy_target: NormalizedEntropy,
     hce_policy_temp: f32,
     hce_q_futility_margin: i32,
@@ -76,32 +82,33 @@ pub struct TunableParams {
     mcts_proven_loss_visit_threshold: VisitCount,
     mcts_killer_exploitation: f32,
     mcts_tt_best_move: f32,
+    _base: PhantomData<Base>,
 }
 
-impl<X: Deref<Target = TunableParams>> PuctParams for X {
+impl<B, X: Deref<Target = TunableParams<B>>> PuctParams for X {
     fn select_cpuct(&self) -> f32 { self.select_cpuct }
 }
 
-impl<X: Deref<Target = TunableParams>> MctsParams for X {
+impl<B, X: Deref<Target = TunableParams<B>>> MctsParams for X {
     fn proven_loss_visit_threshold(&self) -> VisitCount { self.mcts_proven_loss_visit_threshold }
     fn killer_exploitation(&self) -> f32 { self.mcts_killer_exploitation }
     fn tt_best_move(&self) -> f32 { self.mcts_tt_best_move }
 }
 
-impl<X: Deref<Target = TunableParams>> QSearchParams for X {
+impl<B, X: Deref<Target = TunableParams<B>>> QSearchParams for X {
     fn futility_margin(&self) -> i32 { self.hce_q_futility_margin }
     fn delta_pruning_threshold(&self) -> TaperValue { self.hce_q_delta_pruning_threshold }
 }
 
-impl<X: Deref<Target = TunableParams>> PolicyParams for X {
+impl<B, X: Deref<Target = TunableParams<B>>> PolicyParams for X {
     fn policy_temperature(&self) -> f32 { self.hce_policy_temp }
 }
 
-impl<X: Deref<Target = TunableParams>> ChronoParams for X {
+impl<B, X: Deref<Target = TunableParams<B>>> ChronoParams for X {
     fn entropy_target(&self) -> NormalizedEntropy { self.timeman_entropy_target }
 }
 
-impl TunableParams {
+impl<B> TunableParams<B> {
     fn from_config<C: Deref<Target = Configuration>>(config: C) -> Self {
         let config = config.deref();
         let timeman_entropy_target = config.timeman_entropy_target();
@@ -121,12 +128,13 @@ impl TunableParams {
             mcts_proven_loss_visit_threshold,
             mcts_killer_exploitation,
             mcts_tt_best_move,
+            _base: PhantomData,
         }
     }
 }
 
-impl IParams for TunableParams {
-    type Ref = TunableParamsRef;
+impl<B> IParams for TunableParams<B> {
+    type Ref = TunableParamsRef<B>;
 
     fn shared(self) -> Self::Ref { std::rc::Rc::new(self) }
 
@@ -135,10 +143,20 @@ impl IParams for TunableParams {
     }
 }
 
-impl IConfigBuilder for TunableParams {
+impl<B> IConfigBuilder for TunableParams<B> {
     fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
         builder.chrono(&self).policy(&self).qsearch(&self).puct(&self).mcts(&self)
+    }
+}
+
+impl<B: IConfigBuilder + Default> Default for TunableParams<B> {
+    fn default() -> Self {
+        let base = B::default();
+        let builder = Configuration::builder();
+        let builder = base.build_config(builder);
+        let config = builder.build();
+        Self::from_config(&config)
     }
 }
 
@@ -191,26 +209,26 @@ impl const PolicyParams for C_MctsHceParams {
 
 // mcts nn
 
-const_params!(MctsNN);
+const_params!(MctsNn);
 
-impl IConfigBuilder for C_MctsNNParams {
+impl IConfigBuilder for C_MctsNnParams {
     fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
         builder.puct(self).mcts(self).policy(self)
     }
 }
 
-impl const PuctParams for C_MctsNNParams {
+impl const PuctParams for C_MctsNnParams {
     fn select_cpuct(&self) -> f32 { 0.77 }
 }
 
-impl const MctsParams for C_MctsNNParams {
+impl const MctsParams for C_MctsNnParams {
     fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
     fn killer_exploitation(&self) -> f32 { 0.27 }
     fn tt_best_move(&self) -> f32 { 1.65 }
 }
 
-impl const PolicyParams for C_MctsNNParams {
+impl const PolicyParams for C_MctsNnParams {
     fn policy_temperature(&self) -> f32 { 24.58 }
 }
 
@@ -223,6 +241,12 @@ impl IConfigBuilder for C_MctsPureParams {
         //
         builder
     }
+}
+
+impl const MctsParams for C_MctsPureParams {
+    fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
+    fn killer_exploitation(&self) -> f32 { 0.27 }
+    fn tt_best_move(&self) -> f32 { 1.65 }
 }
 
 // id hce

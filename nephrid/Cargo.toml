@@ -15,10 +15,11 @@ id-hce = []
 
 tunable = ["engine/tunable"]
 
-default = ["id-hce", "tunable"]
+default = ["id-hce"]
 
 [dependencies]
-burn-cuda = "0.21.0"
+burn = { version = "0.19.1", features = ["ndarray"] }
+burn-cuda = "0.19.1"
 engine = { version = "*", path = "../engine", default-features = false }
 regex = "1.12.3"
 

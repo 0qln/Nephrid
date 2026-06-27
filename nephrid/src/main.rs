@@ -22,23 +22,18 @@ mod search {
     #[allow(dead_code)]
     pub type Params = cfg_select! {
         feature = "mcts-hce"  => params::MctsHceParams,
-        feature = "mcts-nn"   => params::MctsNNParams,
+        feature = "mcts-nn"   => params::MctsNnParams,
         feature = "mcts-pure" => params::MctsPureParams,
         feature = "id-hce"    => params::IdHceParams,
     };
 
-    #[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
+    #[allow(dead_code)]
     pub struct Config;
-
-    #[cfg(feature = "mcts-hce")]
-    impl search::mcts::MctsConfig for Config {
-        type Parts = search::mcts::HceParts;
-        type Strat = search::mcts::strategy::MctsUci;
-    }
 
     // todo: this was supposed to be inside the MctsConfig trait, but we get some
     // kind of evaluation overflow error :(
     // todo: tune
+    #[allow(dead_code)]
     const MPV: usize = cfg_select! {
         feature = "mcts-hce"  => 1,
         feature = "mcts-pure" => 1,
@@ -47,22 +42,20 @@ mod search {
         all(feature = "mcts-nn", feature = "nn-backend-ndarray") => 1,
     };
 
-    #[cfg(feature = "mcts-pure")]
+    #[cfg(any(feature = "mcts-hce", feature = "mcts-pure", feature = "mcts-nn"))]
     impl search::mcts::MctsConfig for Config {
-        type Parts = search::mcts::PureParts;
-        type Strat = search::mcts::strategy::MctsUci;
-    }
-
-    #[cfg(all(feature = "mcts-nn", feature = "nn-backend-cuda"))]
-    impl search::mcts::MctsConfig for Config {
-        type Parts = search::mcts::NNParts<burn_cuda::Cuda<f32>>;
-        type Strat = search::mcts::strategy::MctsUci;
-    }
-
-    #[cfg(all(feature = "mcts-nn", feature = "nn-backend-ndarray"))]
-    impl search::mcts::MctsConfig for Config {
-        type Parts = search::mcts::NNParts<burn::backend::NdArray>;
-        type Strat = search::mcts::strategy::MctsUci;
+        type Parts = cfg_select! {
+            feature = "mcts-hce"  => { search::mcts::HceParts },
+            feature = "mcts-pure" => { search::mcts::PureParts },
+            all(feature = "mcts-nn", feature = "nn-backend-cuda") => { search::mcts::NNParts<burn_cuda::Cuda<f32>> },
+            all(feature = "mcts-nn", feature = "nn-backend-ndarray") => { search::mcts::NNParts<burn::backend::NdArray> },
+        };
+        type Strat = cfg_select! {
+            feature = "mcts-hce"  => { search::mcts::strategy::MctsUci },
+            feature = "mcts-pure" => { search::mcts::strategy::MctsUci },
+            all(feature = "mcts-nn", feature = "nn-backend-cuda") => { search::mcts::strategy::MctsUci },
+            all(feature = "mcts-nn", feature = "nn-backend-ndarray") => { search::mcts::strategy::MctsUci },
+        };
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::core::{
-    params::{IParams, IdHceParams, IdHceParamsRef, id_hce_params_default},
+    params::{IParams, IdHceParams, IdHceParamsRef},
     search::{mcts::search::MctsParams, score::Cp},
 };
 use thiserror::Error;
@@ -30,7 +30,8 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc::{Sender, channel},
-    }, thread
+    },
+    thread,
 };
 
 use crate::{
@@ -86,7 +87,7 @@ impl SearchWorker for IdWorker {
     fn new() -> Self {
         Self {
             hash_size: Information::new::<byte>(0),
-            params: id_hce_params_default(),
+            params: <Self::X as Default>::default().shared(),
         }
     }
 
@@ -142,7 +143,7 @@ pub struct MctsWorker<const MPV: usize, C: MctsConfig, X: IParams> {
     params: X::Ref,
 }
 
-impl<const MPV: usize, C, X: IParams> SearchWorker for MctsWorker<MPV, C, X>
+impl<const MPV: usize, C, X: IParams + Default> SearchWorker for MctsWorker<MPV, C, X>
 where
     C: MctsConfig<Strat = MctsUci>,
     X::Ref: MctsParams,
@@ -157,7 +158,7 @@ where
             mcts_parts,
             mcts_state,
             backup_tree,
-            params: X::try_from_config(X::build_config(&Configuration::builder()).build()),
+            params: <Self::X as Default>::default().shared(),
         }
     }
 
