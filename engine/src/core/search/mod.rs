@@ -30,8 +30,7 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
         mpsc::{Sender, channel},
-    },
-    thread,
+    }, thread
 };
 
 use crate::{
@@ -140,6 +139,7 @@ pub struct MctsWorker<const MPV: usize, C: MctsConfig, X: IParams> {
     mcts_parts: Option<C::Parts>,
     mcts_state: mcts::SearchState,
     backup_tree: Option<Tree>,
+    params: X::Ref,
 }
 
 impl<const MPV: usize, C, X: IParams> SearchWorker for MctsWorker<MPV, C, X>
@@ -157,6 +157,7 @@ where
             mcts_parts,
             mcts_state,
             backup_tree,
+            params: X::try_from_config(X::build_config(&Configuration::builder()).build()),
         }
     }
 
@@ -187,8 +188,9 @@ where
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
                 let strat = &mut C::Strat::new(limit, debug, ct, None);
+                let params = self.params.clone();
 
-                let result = mcts::<MPV, C, _, X>(&mut pos, parts, state, strat, parts.params.clone());
+                let result = mcts::<MPV, C, _, X>(&mut pos, parts, state, strat, params);
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")

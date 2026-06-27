@@ -13,8 +13,12 @@ use crate::{
     math::NormalizedEntropy,
 };
 
+pub const trait IConfigBuilder {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder;
+}
+
 /// Something that wraps parameters used by some part of the engine.
-pub const trait IParams {
+pub const trait IParams: IConfigBuilder {
     type Ref: ?Sized + Clone;
 
     /// Get a shared reference to the params.
@@ -45,12 +49,6 @@ macro_rules! const_params {
                     feature = "tunable" => [<C_ $name Params>]::tunable(&[<C_ $name Params>]).shared(),
                     _ => [<C_ $name Params>]
                 }
-            }
-
-            impl IParams for [<C_ $name Params>] {
-                type Ref = Self;
-                fn shared(self) -> Self::Ref { self }
-                fn try_from_config<C: Deref<Target = Configuration>>(_: C) -> Result<Self::Ref, Infallible> { Ok(Self {}) }
             }
 
             impl [<C_ $name Params>] {
@@ -125,11 +123,6 @@ impl TunableParams {
             mcts_tt_best_move,
         }
     }
-
-    pub fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
-        //
-        builder.chrono(&self).policy(&self).qsearch(&self).puct(&self).mcts(&self)
-    }
 }
 
 impl IParams for TunableParams {
@@ -139,6 +132,13 @@ impl IParams for TunableParams {
 
     fn try_from_config<C: Deref<Target = Configuration>>(config: C) -> Result<Self::Ref, CreateTunableParamsError> {
         Ok(Self::from_config(config).shared())
+    }
+}
+
+impl IConfigBuilder for TunableParams {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+        //
+        builder.chrono(&self).policy(&self).qsearch(&self).puct(&self).mcts(&self)
     }
 }
 
@@ -159,8 +159,8 @@ pub enum CreateTunableParamsError {
 
 const_params!(MctsHce);
 
-impl C_MctsHceParams {
-    pub fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+impl IConfigBuilder for C_MctsHceParams {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
         builder.puct(self).mcts(self).qsearch(self).policy(self)
     }
@@ -193,8 +193,8 @@ impl const PolicyParams for C_MctsHceParams {
 
 const_params!(MctsNN);
 
-impl C_MctsNNParams {
-    pub fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+impl IConfigBuilder for C_MctsNNParams {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
         builder.puct(self).mcts(self).policy(self)
     }
@@ -218,8 +218,8 @@ impl const PolicyParams for C_MctsNNParams {
 
 const_params!(MctsPure);
 
-impl C_MctsPureParams {
-    pub fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+impl IConfigBuilder for C_MctsPureParams {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
         builder
     }
@@ -229,8 +229,8 @@ impl C_MctsPureParams {
 
 const_params!(IdHce);
 
-impl C_IdHceParams {
-    pub fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+impl IConfigBuilder for C_IdHceParams {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
         builder.chrono(self).qsearch(self)
     }
