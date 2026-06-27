@@ -42,24 +42,21 @@ pub mod strategy;
 
 pub mod test;
 
-pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState, X: IParams + MctsParams>(
+pub fn mcts<const MPV: usize, C: MctsConfig, M: MctsState, X: IParams>(
     pos: &mut Position,
     parts: &C::Parts,
     state: &mut M,
     strat: &mut C::Strat,
     params: X::Ref,
-) -> <C::Strat as MctsStrategy>::Result {
+) -> <C::Strat as MctsStrategy>::Result
+where
+    X::Ref: MctsParams,
+{
     let tree = state.tree();
 
     strat.start(tree, pos);
 
-    let mut searcher = TreeSearcher::<{ MPV }, _, _, _, X>::new(
-        pos,
-        params,
-        parts.selector(),
-        parts.evaluator(),
-        parts.noiser(),
-    );
+    let mut searcher = TreeSearcher::<{ MPV }, _, _, _, X>::new(pos, params, parts.selector(), parts.evaluator(), parts.noiser());
 
     searcher.init_root(tree);
 
@@ -84,9 +81,7 @@ pub trait MctsParts: for<'a> TryFrom<&'a Configuration, Error: StdError> {
     fn selector(&self) -> Self::Selector;
     fn evaluator(&self) -> Self::Evaluator;
     fn noiser(&self) -> Self::Noiser;
-    fn warmup(&mut self, _batch_size: usize) -> Result<(), String> {
-        Ok(())
-    }
+    fn warmup(&mut self, _batch_size: usize) -> Result<(), String> { Ok(()) }
 }
 
 pub trait MctsState {
@@ -119,9 +114,7 @@ impl SearchState {
 }
 
 impl MctsState for SearchState {
-    fn tree(&mut self) -> &mut Tree {
-        &mut self.tree
-    }
+    fn tree(&mut self) -> &mut Tree { &mut self.tree }
 }
 
 /// Mcts parts for mcts with puct + nn analysis.
@@ -140,13 +133,9 @@ impl<B: Backend> MctsParts for NNParts<B> {
     type Evaluator = NNEvaluator<B>;
     type Noiser = DirichletNoiser;
 
-    fn selector(&self) -> Self::Selector {
-        PuctSelector::default()
-    }
+    fn selector(&self) -> Self::Selector { PuctSelector::default() }
 
-    fn evaluator(&self) -> Self::Evaluator {
-        NNEvaluator::new(self.model.clone(), self.device.clone())
-    }
+    fn evaluator(&self) -> Self::Evaluator { NNEvaluator::new(self.model.clone(), self.device.clone()) }
 
     fn noiser(&self) -> Self::Noiser {
         let rng = SmallRng::from_os_rng();
@@ -216,13 +205,9 @@ impl MctsParts for HceParts {
     type Evaluator = HceEvaluator;
     type Noiser = DirichletNoiser;
 
-    fn selector(&self) -> Self::Selector {
-        PuctSelector::new(self.cpuct)
-    }
+    fn selector(&self) -> Self::Selector { PuctSelector::new(self.cpuct) }
 
-    fn evaluator(&self) -> Self::Evaluator {
-        HceEvaluator::new(MctsHceParamsRef::clone(&self.params))
-    }
+    fn evaluator(&self) -> Self::Evaluator { HceEvaluator::new(MctsHceParamsRef::clone(&self.params)) }
 
     fn noiser(&self) -> Self::Noiser {
         let rng = SmallRng::from_os_rng();
@@ -248,9 +233,9 @@ impl TryFrom<&Configuration> for HceParts {
         let epsilon = Ratio::new(config.dirichlet_epsilon());
         epsilon.check_health().map_err(Self::Error::BadEpsilon)?;
 
-        let params = MctsHceParams::shared(MctsHceParams::try_from(config)?);
+        let params = MctsHceParams::try_from_config(config)?;
 
-        let cpuct = MctsHceParams::select_cpuct(&params);
+        let cpuct = params.select_cpuct();
 
         Ok(Self::new(alpha, epsilon, cpuct, params))
     }
@@ -269,9 +254,7 @@ impl Default for HceParts {
 }
 
 impl HceParts {
-    pub fn new(alpha: f32, epsilon: Ratio, cpuct: f32, params: <MctsHceParams as IParams>::Ref) -> Self {
-        Self { alpha, epsilon, cpuct, params }
-    }
+    pub fn new(alpha: f32, epsilon: Ratio, cpuct: f32, params: <MctsHceParams as IParams>::Ref) -> Self { Self { alpha, epsilon, cpuct, params } }
 }
 
 /// Mcts parts for pure mcts.
@@ -283,22 +266,16 @@ impl MctsParts for PureParts {
     type Evaluator = PlayoutEvaluator;
     type Noiser = NullNoiser;
 
-    fn selector(&self) -> Self::Selector {
-        Default::default()
-    }
+    fn selector(&self) -> Self::Selector { Default::default() }
 
     fn evaluator(&self) -> Self::Evaluator {
         let rng = SmallRng::seed_from_u64(0x_dead_beef_u64);
         PlayoutEvaluator::new(rng)
     }
 
-    fn noiser(&self) -> Self::Noiser {
-        Default::default()
-    }
+    fn noiser(&self) -> Self::Noiser { Default::default() }
 }
 
 impl From<&Configuration> for PureParts {
-    fn from(_config: &Configuration) -> Self {
-        Self {}
-    }
+    fn from(_config: &Configuration) -> Self { Self {} }
 }

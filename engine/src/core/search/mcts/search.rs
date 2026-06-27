@@ -7,17 +7,24 @@ use itertools::Itertools;
 use rustc_hash::FxBuildHasher;
 
 use crate::core::{
-    Position, color::{Perspective, colors, perspectives}, depth::Depth, eval::GameResult, r#move::Move, params::IParams, search::mcts::{
+    Position,
+    color::{Perspective, colors, perspectives},
+    depth::Depth,
+    eval::GameResult,
+    r#move::Move,
+    params::IParams,
+    search::mcts::{
         back::{self},
         eval::{Evaluation, Evaluator, Guess, eval_terminal},
         node::{BranchId, NodeId, NodeView, RtNodeId, Tree, VisitCount, node_state::*},
         noise::Noiser,
         select::{self, Selector},
-    }, turn::Turn, zobrist
+    },
+    turn::Turn,
+    zobrist,
 };
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
 
 // todo:
 // the weight parameter was removed in the process of implementing virtual loss.
@@ -155,14 +162,9 @@ impl<T> Selection<T> {
         id
     }
 
-    pub fn iter_path_up(&self, leaf: Option<ParentNodeId>) -> impl Iterator<Item = &ParentItem<T>> {
-        Self::iter_up(leaf, &self.parents)
-    }
+    pub fn iter_path_up(&self, leaf: Option<ParentNodeId>) -> impl Iterator<Item = &ParentItem<T>> { Self::iter_up(leaf, &self.parents) }
 
-    fn iter_up(
-        current: Option<ParentNodeId>,
-        arena: &[ParentItem<T>],
-    ) -> impl Iterator<Item = &ParentItem<T>> {
+    fn iter_up(current: Option<ParentNodeId>, arena: &[ParentItem<T>]) -> impl Iterator<Item = &ParentItem<T>> {
         pub struct IterUp<'a, T> {
             arena: &'a [ParentItem<T>],
             current: Option<ParentNodeId>,
@@ -213,14 +215,7 @@ pub const trait MctsParams {
 }
 
 /// # Tree searcher
-pub struct TreeSearcher<
-    'pos,
-    const BATCH_SIZE: usize,
-    E: Evaluator,
-    S: Selector,
-    N: Noiser,
-    X: MctsParams + IParams,
-> {
+pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector, N: Noiser, X: IParams> {
     position: &'pos mut Position,
     selector: S,
     evaluator: E,
@@ -231,16 +226,11 @@ pub struct TreeSearcher<
     params: X::Ref,
 }
 
-impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsParams + IParams>
-    TreeSearcher<'pos, BATCH, E, S, N, X>
+impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: IParams> TreeSearcher<'pos, BATCH, E, S, N, X>
+where
+    X::Ref: MctsParams,
 {
-    pub fn new(
-        position: &'pos mut Position,
-        params: X::Ref,
-        selector: S,
-        evaluator: E,
-        noiser: N,
-    ) -> Self {
+    pub fn new(position: &'pos mut Position, params: X::Ref, selector: S, evaluator: E, noiser: N) -> Self {
         Self {
             position,
             selector,
@@ -270,10 +260,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
                         sel_data: SelData { turn },
                         weight: 1.,
                     };
-                    let evals: Vec<Guess> = self
-                        .evaluator
-                        .eval_batch(tree, &self.selection, &[&batch_item])
-                        .collect();
+                    let evals: Vec<Guess> = self.evaluator.eval_batch(tree, &self.selection, &[&batch_item]).collect();
                     back::update_branching(tree, node, turn, &evals[0], 1.);
                 }
                 Switch::Evaluated(node) => {
@@ -295,9 +282,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
         self.backup_evals(tree);
     }
 
-    fn revert_virtual_loss(&mut self, tree: &mut Tree) {
-        self.selection.revert_virtual_loss(tree)
-    }
+    fn revert_virtual_loss(&mut self, tree: &mut Tree) { self.selection.revert_virtual_loss(tree) }
 
     fn select_lines(&mut self, tree: &mut Tree) {
         match self.position.get_turn() {
@@ -382,13 +367,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
     //     }
     // }
 
-    fn pick_branch<P: Perspective>(
-        &mut self,
-        depth: Depth,
-        parent_node_id: NodeId<Evaluated>,
-        tree: &mut Tree,
-        sel_node_id: ParentNodeId,
-    ) {
+    fn pick_branch<P: Perspective>(&mut self, depth: Depth, parent_node_id: NodeId<Evaluated>, tree: &mut Tree, sel_node_id: ParentNodeId) {
         let key = self.position.get_key();
 
         let tt_entry = self.tt.get(key);
@@ -483,9 +462,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
         });
 
         // update ss.killer
-        if !best_move.get_flag().is_capture()
-            && killer_exploitation.is_none_or(|e| e < best_exploitation)
-        {
+        if !best_move.get_flag().is_capture() && killer_exploitation.is_none_or(|e| e < best_exploitation) {
             let e = self.ss.entry(depth);
             e.killer_move = Some(best_move);
             e.killer_exploitation = Some(best_exploitation);
@@ -495,13 +472,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
         self.select_branch::<P>(depth, best_branch_id, tree, sel_node_id)
     }
 
-    fn select_branch<P: Perspective>(
-        &mut self,
-        depth: Depth,
-        branch: BranchId,
-        tree: &mut Tree,
-        parent_sel_id: ParentNodeId,
-    ) {
+    fn select_branch<P: Perspective>(&mut self, depth: Depth, branch: BranchId, tree: &mut Tree, parent_sel_id: ParentNodeId) {
         let (mov, node) = {
             let branch = tree.branch(branch);
             (branch.mov(), branch.node())
@@ -530,11 +501,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
                 }
                 // otherwise continue down the tree
                 else {
-                    self.selection.apply_virtual_loss(
-                        tree,
-                        node.down_cast(),
-                        self.selector.virtual_loss(),
-                    );
+                    self.selection.apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
                     let new_parent_id = self.selection.push_parent(ParentItem {
                         parent: Some(parent_sel_id),
                         trace: self.evaluator.trace(node, tree, self.position),
@@ -562,16 +529,8 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
     }
 
     #[inline]
-    fn select_skip(
-        &mut self,
-        tree: &mut Tree,
-        parent_id: ParentNodeId,
-        node: NodeId<Evaluated>,
-        eval: Evaluation,
-        _depth: Depth,
-    ) {
-        self.selection
-            .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
+    fn select_skip(&mut self, tree: &mut Tree, parent_id: ParentNodeId, node: NodeId<Evaluated>, eval: Evaluation, _depth: Depth) {
+        self.selection.apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
         self.selection.skips.push(SkipItem {
             node,
             sel_data: SelData { turn: self.position.get_turn() },
@@ -581,43 +540,25 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
     }
 
     #[inline]
-    fn select_leaf(
-        &mut self,
-        tree: &mut Tree,
-        parent_sel_id: ParentNodeId,
-        node: NodeId<Leaf>,
-        depth: Depth,
-    ) {
+    fn select_leaf(&mut self, tree: &mut Tree, parent_sel_id: ParentNodeId, node: NodeId<Leaf>, depth: Depth) {
         let expanded = tree.expand_node(node, self.position, depth);
 
         match expanded {
-            ExpandedSwitch::Terminal(node) => {
-                self.select_terminal(tree, parent_sel_id, node, depth)
-            }
-            ExpandedSwitch::Branching(node) => {
-                self.select_branching(tree, parent_sel_id, node, depth)
-            }
+            ExpandedSwitch::Terminal(node) => self.select_terminal(tree, parent_sel_id, node, depth),
+            ExpandedSwitch::Branching(node) => self.select_branching(tree, parent_sel_id, node, depth),
         }
     }
 
     /// Select a shortcut to a node that can be considered terminal.
     #[inline]
     fn select_shortcut(&mut self, tree: &mut Tree, parent: ParentNodeId, node: NodeId<Leaf>) {
-        self.selection
-            .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
+        self.selection.apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
         self.selection.shortcuts.push(ShortcutItem { parent, node })
     }
 
     #[inline]
-    fn select_terminal(
-        &mut self,
-        tree: &mut Tree,
-        parent: ParentNodeId,
-        node: NodeId<Terminal>,
-        depth: Depth,
-    ) {
-        self.selection
-            .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
+    fn select_terminal(&mut self, tree: &mut Tree, parent: ParentNodeId, node: NodeId<Terminal>, depth: Depth) {
+        self.selection.apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
         self.selection.terminals.push(TerminalItem {
             parent,
             eval: eval_terminal(node, tree, depth, self.position),
@@ -627,15 +568,8 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
     }
 
     #[inline]
-    fn select_branching(
-        &mut self,
-        tree: &mut Tree,
-        parent: ParentNodeId,
-        node: NodeId<Branching>,
-        depth: Depth,
-    ) {
-        self.selection
-            .apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
+    fn select_branching(&mut self, tree: &mut Tree, parent: ParentNodeId, node: NodeId<Branching>, depth: Depth) {
+        self.selection.apply_virtual_loss(tree, node.down_cast(), self.selector.virtual_loss());
 
         if depth > Depth::MAX {
             // return, such that the top-level while loop will try again and
@@ -663,17 +597,13 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
         // todo: clean this up
         let batch = self.selection.batched.iter().collect_vec();
 
-        let evals: Vec<Guess> = self
-            .evaluator
-            .eval_batch(tree, &self.selection, &batch)
-            .collect();
+        let evals: Vec<Guess> = self.evaluator.eval_batch(tree, &self.selection, &batch).collect();
 
         for (item, eval) in batch.iter().zip(evals) {
             self.selection.evaluations.push(EvalItem {
                 parent: item.parent.expect(
-                    "Only the root has not parent and we don't grow if there the root is not \
-                     initialized. So this shouldn't ever be None. todo: this is a bad solution. \
-                     Refactor such that this case is impossible to hit.",
+                    "Only the root has not parent and we don't grow if there the root is not initialized. So this shouldn't ever be None. todo: \
+                     this is a bad solution. Refactor such that this case is impossible to hit.",
                 ),
                 node: item.node,
                 sel_data: item.sel_data,
@@ -686,10 +616,7 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
     fn backup_evals(&mut self, tree: &mut Tree) {
         for &TerminalItem { parent, eval, node, sel_data } in &self.selection.terminals {
             back::update_terminal(tree, node, sel_data.turn, eval, 1.0);
-            let path = self
-                .selection
-                .iter_path_up(Some(parent))
-                .map(|p| (p.node, p.sel_data.turn));
+            let path = self.selection.iter_path_up(Some(parent)).map(|p| (p.node, p.sel_data.turn));
             back::backpropagate_up(tree, path, &eval, 1.0);
         }
 
@@ -702,28 +629,19 @@ impl<'pos, const BATCH: usize, E: Evaluator, S: Selector, N: Noiser, X: MctsPara
         } in &self.selection.evaluations
         {
             back::update_branching(tree, node, sel_data.turn, eval, weight);
-            let path = self
-                .selection
-                .iter_path_up(Some(parent))
-                .map(|p| (p.node, p.sel_data.turn));
+            let path = self.selection.iter_path_up(Some(parent)).map(|p| (p.node, p.sel_data.turn));
             back::backpropagate_up(tree, path, eval, 1.0);
         }
 
         for &ShortcutItem { parent, node, .. } in &self.selection.shortcuts {
             let eval = back::update_shortcut(tree, node, 1.0);
-            let path = self
-                .selection
-                .iter_path_up(Some(parent))
-                .map(|p| (p.node, p.sel_data.turn));
+            let path = self.selection.iter_path_up(Some(parent)).map(|p| (p.node, p.sel_data.turn));
             back::backpropagate_up(tree, path, &eval, 1.0);
         }
 
         for &SkipItem { parent, ref eval, node, sel_data } in &self.selection.skips {
             back::update_skip(tree, node, sel_data.turn, eval, 1.0);
-            let path = self
-                .selection
-                .iter_path_up(Some(parent))
-                .map(|p| (p.node, p.sel_data.turn));
+            let path = self.selection.iter_path_up(Some(parent)).map(|p| (p.node, p.sel_data.turn));
             back::backpropagate_up(tree, path, eval, 1.0);
         }
     }
@@ -735,9 +653,7 @@ pub struct TranspositionTable<const ENTRIES: usize, Data> {
 
 impl<const ENTRIES: usize, Data> Default for TranspositionTable<ENTRIES, Data> {
     fn default() -> Self {
-        const fn const_none<T>() -> Option<T> {
-            None
-        }
+        const fn const_none<T>() -> Option<T> { None }
         Self {
             entries: [const { const_none() }; ENTRIES],
         }
@@ -794,9 +710,7 @@ pub struct TTData {
 }
 
 impl ZKey for TTData {
-    fn key(&self) -> zobrist::Hash {
-        self.key
-    }
+    fn key(&self) -> zobrist::Hash { self.key }
 }
 
 #[derive(Default)]
@@ -805,9 +719,7 @@ pub struct SearchStack {
 }
 
 impl SearchStack {
-    pub fn new() -> Self {
-        Self { entries: Vec::new() }
-    }
+    pub fn new() -> Self { Self { entries: Vec::new() } }
 
     pub fn get(&self, depth: Depth) -> Option<&SearchEntry> {
         let idx = depth.v() as usize;

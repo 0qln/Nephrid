@@ -1,12 +1,13 @@
-use crate::{core::{eval::hce::TaperValue, search::mcts::node::VisitCount}, math::{self, NormalizedEntropy}};
 use crate::{
     core::{
         chrono::ChronoParams,
+        eval::hce::TaperValue,
         search::{
-            mcts::{eval::hce::PolicyParams, search::MctsParams, select::puct::PuctParams},
+            mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
             quiesce::QSearchParams,
         },
     },
+    math::{self, NormalizedEntropy},
     misc::{InvalidValueError, ValueOutOfRangeError},
 };
 use std::{
@@ -38,12 +39,8 @@ impl UciUnit for UciPercent {
     type Quantity = Ratio;
     type Raw = f32;
 
-    fn to_quantity(raw: Self::Raw) -> Self::Quantity {
-        Ratio::new::<percent>(raw)
-    }
-    fn to_raw(qty: &Self::Quantity) -> Self::Raw {
-        qty.get::<percent>()
-    }
+    fn to_quantity(raw: Self::Raw) -> Self::Quantity { Ratio::new::<percent>(raw) }
+    fn to_raw(qty: &Self::Quantity) -> Self::Raw { qty.get::<percent>() }
 }
 
 #[derive(Debug, Clone)]
@@ -52,12 +49,8 @@ impl UciUnit for UciMebibyte {
     type Quantity = Information;
     type Raw = u64;
 
-    fn to_quantity(raw: Self::Raw) -> Self::Quantity {
-        Information::new::<information::mebibyte>(raw)
-    }
-    fn to_raw(qty: &Self::Quantity) -> Self::Raw {
-        qty.get::<information::mebibyte>()
-    }
+    fn to_quantity(raw: Self::Raw) -> Self::Quantity { Information::new::<information::mebibyte>(raw) }
+    fn to_raw(qty: &Self::Quantity) -> Self::Raw { qty.get::<information::mebibyte>() }
 }
 
 #[derive(Debug, Clone)]
@@ -66,12 +59,8 @@ impl UciUnit for UciInteger {
     type Quantity = i32;
     type Raw = i32;
 
-    fn to_quantity(raw: Self::Raw) -> Self::Quantity {
-        raw
-    }
-    fn to_raw(qty: &Self::Quantity) -> Self::Raw {
-        *qty
-    }
+    fn to_quantity(raw: Self::Raw) -> Self::Quantity { raw }
+    fn to_raw(qty: &Self::Quantity) -> Self::Raw { *qty }
 }
 
 #[derive(Debug, Clone)]
@@ -80,12 +69,8 @@ impl UciUnit for UciMillis {
     type Quantity = Time;
     type Raw = u64;
 
-    fn to_quantity(raw: Self::Raw) -> Self::Quantity {
-        Time::new::<millisecond>(raw)
-    }
-    fn to_raw(qty: &Self::Quantity) -> Self::Raw {
-        qty.get::<millisecond>()
-    }
+    fn to_quantity(raw: Self::Raw) -> Self::Quantity { Time::new::<millisecond>(raw) }
+    fn to_raw(qty: &Self::Quantity) -> Self::Raw { qty.get::<millisecond>() }
 }
 
 #[derive(Debug, Error)]
@@ -99,9 +84,7 @@ pub struct ConfigOption<T> {
 }
 
 impl<T> ConfigOption<T> {
-    pub fn new(name: &str, inner: T) -> Self {
-        Self { name: name.to_string(), inner }
-    }
+    pub fn new(name: &str, inner: T) -> Self { Self { name: name.to_string(), inner } }
 }
 
 impl<U: UciUnit> ConfigOption<Spin<U>>
@@ -116,21 +99,15 @@ where
 
 impl<T> Deref for ConfigOption<T> {
     type Target = T;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
+    fn deref(&self) -> &Self::Target { &self.inner }
 }
 
 impl<T> DerefMut for ConfigOption<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.inner }
 }
 
 impl<T: fmt::Display> fmt::Display for ConfigOption<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "option name {} type {}", self.name, self.inner)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "option name {} type {}", self.name, self.inner) }
 }
 
 #[derive(Clone, Debug)]
@@ -156,9 +133,7 @@ where
     }
 
     pub fn set(&mut self, value_str: &str) -> Result<(), Box<dyn Error>> {
-        let val = value_str
-            .parse::<U::Raw>()
-            .map_err(|_| InvalidValueError::new(value_str.to_string()))?;
+        let val = value_str.parse::<U::Raw>().map_err(|_| InvalidValueError::new(value_str.to_string()))?;
 
         let min_raw = U::to_raw(&self.min);
         let max_raw = U::to_raw(&self.max);
@@ -190,22 +165,16 @@ pub struct Check {
 }
 
 impl Check {
-    pub fn new(default: bool) -> Self {
-        Self { value: default, default }
-    }
+    pub fn new(default: bool) -> Self { Self { value: default, default } }
 
     pub fn set(&mut self, value_str: &str) -> Result<(), Box<dyn Error>> {
-        self.value = value_str
-            .parse::<bool>()
-            .map_err(|_| InvalidValueError::new(value_str.to_string()))?;
+        self.value = value_str.parse::<bool>().map_err(|_| InvalidValueError::new(value_str.to_string()))?;
         Ok(())
     }
 }
 
 impl fmt::Display for Check {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "check default {}", self.default)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "check default {}", self.default) }
 }
 
 #[derive(Clone, Debug)]
@@ -222,15 +191,11 @@ impl StringOption {
         }
     }
 
-    pub fn set(&mut self, value_str: &str) {
-        self.value = value_str.to_string();
-    }
+    pub fn set(&mut self, value_str: &str) { self.value = value_str.to_string(); }
 }
 
 impl fmt::Display for StringOption {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "string default {}", self.default)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "string default {}", self.default) }
 }
 
 #[derive(Clone, Debug)]
@@ -276,25 +241,17 @@ pub struct Button {
 }
 
 impl Button {
-    pub fn new(callback: fn()) -> Self {
-        Self { callback }
-    }
+    pub fn new(callback: fn()) -> Self { Self { callback } }
 
-    pub fn trigger(&self) {
-        (self.callback)();
-    }
+    pub fn trigger(&self) { (self.callback)(); }
 }
 
 impl fmt::Display for Button {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "button")
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "button") }
 }
 
 impl fmt::Debug for Button {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Button")
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Button") }
 }
 
 /// Engine configuration.
@@ -365,6 +322,7 @@ impl Configuration {
     /// params type only has to implement the param traits for the options
     /// it cares about.
     #[rustfmt::skip]
+    #[allow(clippy::unit_arg)]
     pub fn builder() -> ConfigBuilder {
         fn _mebibyte(v: u64) -> Information { Information::new::<information::mebibyte>(v) }
         fn _ratio(v: f32) -> Ratio { Ratio::new::<ratio>(v) }
@@ -444,79 +402,33 @@ impl ConfigBuilder {
     }
 
     /// Finish building the [`Configuration`].
-    pub fn build(self) -> Configuration {
-        self.config
-    }
+    pub fn build(self) -> Configuration { self.config }
+}
+
+// #[cfg(feature = "tunable")]
+impl Configuration {
+    pub fn eval_policy_temperature(&self) -> f32 { self.eval_policy_temperature.value.get::<ratio>() }
+    pub fn eval_futility_margin(&self) -> i32 { self.eval_futility_margin.value }
+    pub fn eval_delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(self.eval_delta_pruning_threshold.value as u32) }
+    pub fn select_cpuct(&self) -> f32 { self.select_cpuct.value.get::<ratio>() }
+    pub fn mcts_proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(self.mcts_proven_loss_visit_threshold.value as u32) }
+    pub fn mcts_killer_exploitation(&self) -> f32 { self.mcts_killer_exploitation.value.get::<ratio>() }
+    pub fn mcts_tt_best_move(&self) -> f32 { self.mcts_tt_best_move.value.get::<ratio>() }
+    pub fn timeman_entropy_target(&self) -> math::NormalizedEntropy { NormalizedEntropy::new(self.timeman_entropy_target.value.get::<ratio>()) }
 }
 
 impl Configuration {
-    pub fn eval_policy_temperature(&self) -> f32 {
-        self.eval_policy_temperature.value.get::<ratio>()
-    }
-
-    pub fn eval_futility_margin(&self) -> i32 {
-        self.eval_futility_margin.value
-    }
-
-    pub fn eval_delta_pruning_threshold(&self) -> TaperValue {
-        TaperValue::new(self.eval_delta_pruning_threshold.value as u32)
-    }
-
-    pub fn select_cpuct(&self) -> f32 {
-        self.select_cpuct.value.get::<ratio>()
-    }
-
-    pub fn mcts_proven_loss_visit_threshold(&self) -> VisitCount {
-        VisitCount(self.mcts_proven_loss_visit_threshold.value as u32)
-    }
-
-    pub fn mcts_killer_exploitation(&self) -> f32 {
-        self.mcts_killer_exploitation.value.get::<ratio>()
-    }
-
-    pub fn mcts_tt_best_move(&self) -> f32 {
-        self.mcts_tt_best_move.value.get::<ratio>()
-    }
-
-    pub fn timeman_entropy_target(&self) -> math::NormalizedEntropy {
-        NormalizedEntropy::new(self.timeman_entropy_target.value.get::<ratio>())
-    }
-}
-
-impl Configuration {
-    pub fn hash(&self) -> Information {
-        self.hash.value
-    }
-
-    pub fn threads(&self) -> i32 {
-        self.threads.value
-    }
-
-    pub fn dirichlet_alpha(&self) -> f32 {
-        self.dirichlet_alpha.value.get::<ratio>()
-    }
-
-    pub fn dirichlet_epsilon(&self) -> f32 {
-        self.dirichlet_epsilon.value.get::<ratio>()
-    }
-
-    pub fn weights_path(&self) -> &str {
-        &self.weights_path.value
-    }
-
-    pub fn game_tree_caching(&self) -> bool {
-        self.game_tree_caching.value
-    }
-
-    pub fn gui_lag(&self) -> u16 {
-        self.gui_lag.value.get::<millisecond>() as u16
-    }
-
-    pub fn ponder(&self) -> bool {
-        self.ponder.value
-    }
+    pub fn hash(&self) -> Information { self.hash.value }
+    pub fn threads(&self) -> i32 { self.threads.value }
+    pub fn dirichlet_alpha(&self) -> f32 { self.dirichlet_alpha.value.get::<ratio>() }
+    pub fn dirichlet_epsilon(&self) -> f32 { self.dirichlet_epsilon.value.get::<ratio>() }
+    pub fn weights_path(&self) -> &str { &self.weights_path.value }
+    pub fn game_tree_caching(&self) -> bool { self.game_tree_caching.value }
+    pub fn gui_lag(&self) -> u16 { self.gui_lag.value.get::<millisecond>() as u16 }
+    pub fn ponder(&self) -> bool { self.ponder.value }
 
     #[rustfmt::skip]
+    #[allow(clippy::unit_arg)]
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn Error>> {
         match name.to_lowercase().as_str() {
             "clearhash" => Ok(self.clear_hash.trigger()),

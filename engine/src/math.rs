@@ -98,9 +98,15 @@ pub trait FloatBounds {
     const MAX: f32;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Default, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct Bounded<T, B>(T, PhantomData<B>);
+
+impl Default for Bounded<f32, Bounds0to1> {
+    fn default() -> Self {
+        Self(Bounds0to1::MIN, PhantomData)
+    }
+}
 
 impl<B: FloatBounds> Bounded<f32, B> {
     /// Allowed inaccuracy

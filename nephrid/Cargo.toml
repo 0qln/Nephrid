@@ -13,9 +13,12 @@ mcts-nn = []
 mcts-hce = []
 id-hce = []
 
-default = ["id-hce"]
+tunable = ["engine/tunable"]
+
+default = ["id-hce", "tunable"]
 
 [dependencies]
+burn-cuda = "0.21.0"
 engine = { version = "*", path = "../engine", default-features = false }
 regex = "1.12.3"
 

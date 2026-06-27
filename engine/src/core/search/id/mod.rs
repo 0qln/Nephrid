@@ -17,14 +17,11 @@ use crate::{
         depth::Depth,
         eval::{
             self, GameResult,
-            hce::{
-                self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility,
-                passed_pawns,
-            },
+            hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
-        params::{C_IdHceParams, IParams},
+        params::C_IdHceParams,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
         search::{
@@ -34,10 +31,7 @@ use crate::{
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
             quiesce::{QSearchParams, qsearch},
             score::{Cp, Score},
-            strat::{
-                UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore,
-                UciSearchtime, UciSeldepth,
-            },
+            strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth},
             tt::{self, TranspositionTable},
         },
         turn::Turn,
@@ -50,8 +44,6 @@ use crate::{
 #[cfg(test)]
 pub mod test;
 
-pub trait IdParams: ChronoParams + QSearchParams {}
-
 /// Softmax temperature applied to root-move qualities when computing the
 /// normalized root entropy used as a soft stopping target. Qualities are
 /// `tanh`-squashed into `[-1, 1]`, so a sub-1 temperature is needed for a
@@ -61,19 +53,8 @@ const ROOT_ENTROPY_TEMP: f32 = 0.3;
 struct StaticEvaluator;
 
 impl eval::StaticEvaluator for StaticEvaluator {
-    fn eval<P: Perspective>(
-        &self,
-        pos: &PieceInfo,
-        turn: Turn,
-        ep_sq: EpTargetSquare,
-        phase: TaperValue,
-    ) -> Score<P> {
-        fn static_value<P: Perspective>(
-            pos: &PieceInfo,
-            ep_sq: EpTargetSquare,
-            phase: TaperValue,
-            turn: Turn,
-        ) -> Score<P> {
+    fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
+        fn static_value<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, phase: TaperValue, turn: Turn) -> Score<P> {
             material::<P>(pos)
                 + mobility::<P>(pos, phase)
                 + hce::psqt::<P>(pos, phase)
@@ -118,13 +99,13 @@ impl Default for SearchStats {
     }
 }
 
-pub fn go<X: IParams + IdParams + ChronoParams>(
+pub fn go(
     pos: &mut Position,
     limit: UciLimit,
     _debug: &DebugMode,
     ct: CancellationToken,
     hash_size: Information,
-    params: X::Ref,
+    params: impl ChronoParams + QSearchParams,
 ) -> Option<Move> {
     let depth_lim = min(Depth::MAX, limit.depth);
 
@@ -146,13 +127,7 @@ pub fn go<X: IParams + IdParams + ChronoParams>(
         best_move = searcher.root_best_move();
         if let Some(best_move) = best_move {
             let search_time = Instant::now() - searcher.time_man.time_start();
-            uci_info(
-                depth,
-                &stats,
-                Cp { v: best_score as i16 },
-                best_move,
-                search_time,
-            );
+            uci_info(depth, &stats, Cp { v: best_score as i16 }, best_move, search_time);
         }
 
         // update stats
@@ -163,9 +138,9 @@ pub fn go<X: IParams + IdParams + ChronoParams>(
             math::normalized_entropy(&root_policy)
         };
 
-        searcher
-            .time_man
-            .hint_preferred_target::<X>(&stats, X::Ref::clone(&params));
+        searcher.time_man.hint_time_target(searcher.time_man.time_limit() - stats.iter_time);
+        searcher.time_man.hint_entropy_target(params.entropy_target());
+        searcher.time_man.set_curr_entropy(stats.root_entropy);
 
         if searcher.should_stop(&stats) || searcher.time_man.reached_target() {
             break;
@@ -246,9 +221,7 @@ impl Searcher {
     }
 
     fn sort_root(&mut self) {
-        self.root_stats
-            .as_mut_slice()
-            .sort_by_key(|mov| Reverse(mov.score()));
+        self.root_stats.as_mut_slice().sort_by_key(|mov| Reverse(mov.score()));
     }
 
     fn root_best_move(&self) -> Option<Move> {
@@ -274,9 +247,7 @@ impl Searcher {
         }
 
         // time manager says we should stop or limit has been reached
-        if self.limit.is_active()
-            && (self.time_man.reached_limit() || self.limit.is_reached(nodes, iters))
-        {
+        if self.limit.is_active() && (self.time_man.reached_limit() || self.limit.is_reached(nodes, iters)) {
             return true;
         }
 
@@ -288,24 +259,12 @@ impl Searcher {
     fn search_root(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> i32 {
         match pos.get_turn() {
             colors::WHITE => {
-                self.search::<perspectives::White, Root>(
-                    pos,
-                    stats,
-                    depth,
-                    Score::NEG_INF,
-                    Score::POS_INF,
-                )
-                .0
+                self.search::<perspectives::White, Root>(pos, stats, depth, Score::NEG_INF, Score::POS_INF)
+                    .0
             }
             colors::BLACK => {
-                self.search::<perspectives::Black, Root>(
-                    pos,
-                    stats,
-                    depth,
-                    Score::NEG_INF,
-                    Score::POS_INF,
-                )
-                .0
+                self.search::<perspectives::Black, Root>(pos, stats, depth, Score::NEG_INF, Score::POS_INF)
+                    .0
             }
             _ => unreachable!(),
         }
@@ -343,14 +302,7 @@ impl Searcher {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return qsearch(
-                pos,
-                alpha,
-                beta,
-                C_IdHceParams,
-                &StaticEvaluator,
-                Depth::new(100),
-            );
+            return qsearch(pos, alpha, beta, C_IdHceParams, &StaticEvaluator, Depth::new(100));
         }
 
         let pieces = pos.piece_info();
@@ -463,8 +415,7 @@ impl Searcher {
                         && zws_score < beta
                     {
                         !self.search::<P::Opponent, Normal>(
-                            pos, stats, new_depth, !beta,
-                            // new lower_bound, since it was able to beat alpha
+                            pos, stats, new_depth, !beta, // new lower_bound, since it was able to beat alpha
                             !zws_score,
                         )
                     }
@@ -485,9 +436,10 @@ impl Searcher {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
                 self.root_stats.as_mut_slice()[curr].set_score(
-                    score.0.try_into().unwrap_or_else(|_| {
-                        todo!("TODO: compress the eval scores into move scores")
-                    }),
+                    score
+                        .0
+                        .try_into()
+                        .unwrap_or_else(|_| todo!("TODO: compress the eval scores into move scores")),
                 );
             }
 
@@ -738,17 +690,12 @@ impl MoveScorer for Scorer {
         match S::stage() {
             // no need to score hashmove, there's only 1
             RtStage::YieldHashMove => {
-                debug_assert!(
-                    mov == self.tt_move,
-                    "hashmove stage should only yield the tt move"
-                );
+                debug_assert!(mov == self.tt_move, "hashmove stage should only yield the tt move");
                 0
             }
 
             // captures and promos, ordered by see value.
-            RtStage::GenerateCapturesAndPromos
-            | RtStage::YieldGoodCapturesAndPromos
-            | RtStage::YieldBadCaptures => {
+            RtStage::GenerateCapturesAndPromos | RtStage::YieldGoodCapturesAndPromos | RtStage::YieldBadCaptures => {
                 // todo: currently see evaluates the promo values, but we don't need a whole
                 // see for quiet promos, maybe that can be optimized...
                 ordering::see(pos.piece_info(), mov, self.color)
@@ -757,10 +704,7 @@ impl MoveScorer for Scorer {
             // score killer moves by their age
             RtStage::YieldKillers => {
                 let age = self.killers._position(&mov);
-                debug_assert!(
-                    age.is_some(),
-                    "move in killer stage should be a killer move"
-                );
+                debug_assert!(age.is_some(), "move in killer stage should be a killer move");
 
                 // Safety: assert above
                 let age = unsafe { age.unwrap_unchecked() };
@@ -783,13 +727,7 @@ impl MoveScorer for Scorer {
     }
 }
 
-fn uci_info(
-    depth: Depth,
-    stats: &SearchStats,
-    best_score: Cp,
-    best_move: Move,
-    search_time: Duration,
-) {
+fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move, search_time: Duration) {
     let depth = UciArg::Some(UciDepth(depth));
     let seldepth = UciArg::<UciSeldepth>::None; // TODO
     let score = UciArg::Some(UciScore::Centipawns(UciCp(best_score)));

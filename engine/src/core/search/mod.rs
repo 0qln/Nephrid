@@ -1,6 +1,6 @@
 use crate::core::{
-    params::IParams,
-    search::{id::IdParams, score::Cp},
+    params::{IParams, IdHceParams, IdHceParamsRef, id_hce_params_default},
+    search::{mcts::search::MctsParams, score::Cp},
 };
 use thiserror::Error;
 use uom::si::{information::byte, u64::Information};
@@ -14,16 +14,13 @@ use crate::{
             limit::UciLimit,
             mcts::{
                 MctsConfig, MctsParts,
-                eval::hce::PolicyParams,
                 node::{
                     Tree, WinRate,
                     node_state::{Evaluated, Switch},
                 },
-                search::MctsParams,
-                select::{Selector, puct::PuctParams},
+                select::Selector,
                 strategy::MctsUci,
             },
-            quiesce::QSearchParams,
         },
     },
     misc::CancellationToken,
@@ -71,36 +68,27 @@ pub enum ExecError {
 }
 
 pub trait SearchWorker {
-    /// The params type this worker derives its [`Configuration`] defaults from.
-    type Params;
+    type X: IParams;
 
     fn new() -> Self;
     fn exec(&mut self, cmd: Command) -> Result<(), ExecError>;
-    fn build_config(params: &Self::Params) -> Configuration;
 }
 
 /// Iterative deepening worker.
-pub struct IdWorker<X: IParams> {
+pub struct IdWorker {
     // todo: don't store the construction information here but the tt and timeman itself
     hash_size: Information,
-    params: X::Ref,
+    params: IdHceParamsRef,
 }
 
-impl<X: IdParams + Default + IParams> SearchWorker for IdWorker<X> {
-    type Params = X;
+impl SearchWorker for IdWorker {
+    type X = IdHceParams;
 
     fn new() -> Self {
         Self {
             hash_size: Information::new::<byte>(0),
-            params: X::default().shared(),
+            params: id_hce_params_default(),
         }
-    }
-
-    fn build_config(params: &X) -> Configuration {
-        Configuration::builder()
-            .qsearch(params)
-            .chrono(params)
-            .build()
     }
 
     fn exec(&mut self, cmd: Command) -> Result<(), ExecError> {
@@ -115,14 +103,7 @@ impl<X: IdParams + Default + IParams> SearchWorker for IdWorker<X> {
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
-                let best_move = id::go::<X>(
-                    &mut pos,
-                    limit,
-                    &debug,
-                    ct,
-                    self.hash_size,
-                    X::Ref::clone(&self.params),
-                );
+                let best_move = id::go(&mut pos, limit, &debug, ct, self.hash_size, self.params.clone());
 
                 if let Some(mov) = best_move {
                     println!("bestmove {mov}");
@@ -136,15 +117,10 @@ impl<X: IdParams + Default + IParams> SearchWorker for IdWorker<X> {
             Command::AdvanceState(_) => Ok(()),
             Command::RollbackAndAdvance(_) => Ok(()),
             Command::Configure(config) => {
-                let cfg = &config
-                    .lock()
-                    .map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
+                let cfg = config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
 
                 self.hash_size = cfg.hash();
-
-                self.params = Self::Params::try_from(cfg)
-                    .map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?
-                    .shared();
+                self.params = IdHceParams::try_from_config(cfg).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
 
                 Ok(())
             }
@@ -160,28 +136,18 @@ impl<X: IdParams + Default + IParams> SearchWorker for IdWorker<X> {
 }
 
 /// Monte Carlo Tree Search worker.
-pub struct MctsWorker<const MPV: usize, C: MctsConfig, P: IParams> {
+pub struct MctsWorker<const MPV: usize, C: MctsConfig, X: IParams> {
     mcts_parts: Option<C::Parts>,
     mcts_state: mcts::SearchState,
     backup_tree: Option<Tree>,
-    params: P::Ref,
 }
 
-impl<const MPV: usize, C, X: MctsParams + IParams + Default> SearchWorker for MctsWorker<MPV, C, X>
+impl<const MPV: usize, C, X: IParams> SearchWorker for MctsWorker<MPV, C, X>
 where
     C: MctsConfig<Strat = MctsUci>,
-    X: Default + QSearchParams + PolicyParams + PuctParams + MctsParams,
+    X::Ref: MctsParams,
 {
-    type Params = X;
-
-    fn build_config(params: &X) -> Configuration {
-        Configuration::builder()
-            .qsearch(params)
-            .policy(params)
-            .puct(params)
-            .mcts(params)
-            .build()
-    }
+    type X = X;
 
     fn new() -> Self {
         let mcts_state = mcts::SearchState::default();
@@ -191,7 +157,6 @@ where
             mcts_parts,
             mcts_state,
             backup_tree,
-            params: X::default().shared(),
         }
     }
 
@@ -223,13 +188,7 @@ where
                 let state = &mut self.mcts_state;
                 let strat = &mut C::Strat::new(limit, debug, ct, None);
 
-                let result = mcts::<MPV, C, _, X>(
-                    &mut pos,
-                    parts,
-                    state,
-                    strat,
-                    X::Ref::clone(&self.params),
-                );
+                let result = mcts::<MPV, C, _, X>(&mut pos, parts, state, strat, parts.params.clone());
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -242,13 +201,7 @@ where
                 let state = &mut self.mcts_state;
                 let strat = &mut C::Strat::new(limit, debug, ct, Some(pt));
 
-                let result = mcts::<MPV, C, _, X>(
-                    &mut pos,
-                    parts,
-                    state,
-                    strat,
-                    X::Ref::clone(&self.params),
-                );
+                let result = mcts::<MPV, C, _, X>(&mut pos, parts, state, strat, self.params.clone());
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -257,12 +210,9 @@ where
                 Ok(())
             }
             Command::Configure(config) => {
-                let cfg = &config
-                    .lock()
-                    .map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
+                let cfg = &config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
 
-                let mut parts = <C::Parts as TryFrom<&Configuration>>::try_from(cfg)
-                    .map_err(|e| ExecError::BadConfig(e.to_string()))?;
+                let mut parts = <C::Parts as TryFrom<&Configuration>>::try_from(cfg).map_err(|e| ExecError::BadConfig(e.to_string()))?;
 
                 parts.warmup(MPV).map_err(ExecError::BadConfig)?;
 
@@ -298,9 +248,7 @@ where
                     root.state(),
                     root.value(),
                     root.visits(),
-                    root_evaluated
-                        .map(|x| (WinRate::from(x).inv()).to_string())
-                        .unwrap_or("/".to_string()),
+                    root_evaluated.map(|x| (WinRate::from(x).inv()).to_string()).unwrap_or("/".to_string()),
                     root_evaluated
                         .map(|x| Cp::from(WinRate::from(x).inv()).to_string())
                         .unwrap_or("/".to_string())
@@ -372,13 +320,7 @@ pub fn init<W: SearchWorker>(default_config: Arc<Mutex<Configuration>>) -> Searc
 pub enum Command {
     Perft(Position, UciLimit, CancellationToken, DebugMode, bool),
     Normal(Position, UciLimit, CancellationToken, DebugMode),
-    Ponder(
-        Position,
-        UciLimit,
-        CancellationToken,
-        DebugMode,
-        PonderToken,
-    ),
+    Ponder(Position, UciLimit, CancellationToken, DebugMode, PonderToken),
     AdvanceState(Move),
     RollbackAndAdvance(Move),
     Configure(Arc<Mutex<Configuration>>),
@@ -392,21 +334,13 @@ pub enum Command {
 pub struct PonderToken(Arc<AtomicBool>);
 
 impl Default for PonderToken {
-    fn default() -> Self {
-        Self(Arc::new(AtomicBool::new(false)))
-    }
+    fn default() -> Self { Self(Arc::new(AtomicBool::new(false))) }
 }
 
 impl PonderToken {
-    pub fn should_ponder(&self) -> bool {
-        !self.0.load(Ordering::Relaxed)
-    }
+    pub fn should_ponder(&self) -> bool { !self.0.load(Ordering::Relaxed) }
 
-    pub fn stop_ponder(&self) {
-        self.0.store(true, Ordering::Relaxed)
-    }
+    pub fn stop_ponder(&self) { self.0.store(true, Ordering::Relaxed) }
 
-    pub fn start_ponder(&self) {
-        self.0.store(false, Ordering::Relaxed)
-    }
+    pub fn start_ponder(&self) { self.0.store(false, Ordering::Relaxed) }
 }

@@ -5,13 +5,10 @@ use crate::{
         depth::Depth,
         eval::{
             self,
-            hce::{
-                self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility,
-                passed_pawns,
-            },
+            hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
         },
         r#move::MAX_LEGAL_MOVES,
-        params::{MctsHceParams, MctsHceParamsRef},
+        params::MctsHceParamsRef,
         position::{CheckState, Position},
         search::{
             mcts::{
@@ -41,19 +38,8 @@ use crate::core::{
 struct StaticEvaluator;
 
 impl eval::StaticEvaluator for StaticEvaluator {
-    fn eval<P: Perspective>(
-        &self,
-        pos: &PieceInfo,
-        turn: Turn,
-        ep_sq: EpTargetSquare,
-        phase: TaperValue,
-    ) -> Score<P> {
-        fn static_value<P: Perspective>(
-            pos: &PieceInfo,
-            ep_sq: EpTargetSquare,
-            phase: TaperValue,
-            turn: Turn,
-        ) -> Score<P> {
+    fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
+        fn static_value<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, phase: TaperValue, turn: Turn) -> Score<P> {
             material::<P>(pos)
                 + mobility::<P>(pos, phase)
                 + hce::psqt::<P>(pos, phase)
@@ -154,9 +140,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
 
     /// Convert QualityInput into Quality, where the Quality is relative to
     /// white.
-    pub fn quality(&self) -> Quality {
-        Quality::from(self.quality)
-    }
+    pub fn quality(&self) -> Quality { Quality::from(self.quality) }
 
     pub fn policy(&self, buf: &mut List<218 /* inlined MAX_LEGAL_MOVES */, f32>) -> Policy {
         let pos = &self.pos;
@@ -181,11 +165,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             logits.push(score as f32);
         }
 
-        Policy::from_logits(
-            Logits(logits),
-            MctsHceParams::policy_temperature(&self.params),
-            buf,
-        )
+        Policy::from_logits(Logits(logits), self.params.policy_temperature(), buf)
     }
 }
 
@@ -211,12 +191,7 @@ impl HceEvaluator {
 impl Evaluator for HceEvaluator {
     type TraceData = Option<EvalInfo<Vec<Move>>>;
 
-    fn trace<S: const Valid + HasBranches>(
-        &self,
-        node: NodeId<S>,
-        tree: &Tree,
-        pos: &mut Position,
-    ) -> Self::TraceData {
+    fn trace<S: const Valid + HasBranches>(&self, node: NodeId<S>, tree: &Tree, pos: &mut Position) -> Self::TraceData {
         node.try_into::<Branching>().map(|node| {
             EvalInfo::new(
                 tree.branches(node).iter().map(|b| b.mov()).collect(),
