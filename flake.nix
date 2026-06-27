@@ -97,6 +97,7 @@
             in
               (with pkgs; [
                 cutechess
+                fastchess
                 bacon
                 perf
                 act
