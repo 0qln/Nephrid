@@ -261,7 +261,7 @@ impl IConfigBuilder for C_IdHceParams {
 }
 
 impl const ChronoParams for C_IdHceParams {
-    fn entropy_target(&self) -> NormalizedEntropy { NormalizedEntropy::new_c(0.6) }
+    fn entropy_target(&self) -> NormalizedEntropy { NormalizedEntropy::new_c(0.55) }
 }
 
 impl const QSearchParams for C_IdHceParams {
