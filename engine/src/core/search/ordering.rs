@@ -10,7 +10,9 @@ use crate::{
         depth::Depth,
         eval::hce::{TaperValue, piece_score, tapered_psqt},
         r#move::{MAX_LEGAL_MOVES, Move, MoveFlag},
-        move_iter::{self, fold_moves},
+        move_iter::{
+            fold_moves_for, {self},
+        },
         piece::{PieceType, PromoPieceType, piece_type},
         position::{PieceInfo, Position},
         search::{
@@ -383,8 +385,8 @@ impl MoveGenerator {
     pub fn stage(&self) -> RtStage { self.stage }
 
     #[inline(never)]
-    fn generate_moves<const HASH: bool, const KILLERS: bool, O: move_iter::Options>(&mut self, pos: &Position) {
-        _ = fold_moves::<O, _, _, _>(pos, (), |_, m| {
+    fn generate_moves<const HASH: bool, const KILLERS: bool, P: Perspective, O: move_iter::Options>(&mut self, pos: &Position) {
+        _ = fold_moves_for::<P, O, _, _, _>(pos, (), |_, m| {
             let is_hash = HASH && m == self.hash_move;
             let is_killer = KILLERS && self.killers._position(&m).is_some();
 
@@ -419,10 +421,10 @@ impl MoveGenerator {
                 let has_killers = !self.killers._is_empty();
                 type Opts = GenerateCapturesAndPromos;
                 match (has_hashmove, has_killers) {
-                    (true, true) => self.generate_moves::<true, true, Opts>(pos),
-                    (true, false) => self.generate_moves::<true, false, Opts>(pos),
-                    (false, true) => self.generate_moves::<false, true, Opts>(pos),
-                    (false, false) => self.generate_moves::<false, false, Opts>(pos),
+                    (true, true) => self.generate_moves::<true, true, P, Opts>(pos),
+                    (true, false) => self.generate_moves::<true, false, P, Opts>(pos),
+                    (false, true) => self.generate_moves::<false, true, P, Opts>(pos),
+                    (false, false) => self.generate_moves::<false, false, P, Opts>(pos),
                 }
 
                 let end = self.buf.len();
@@ -501,10 +503,10 @@ impl MoveGenerator {
                 let has_killers = !self.killers._is_empty();
                 type Opts = GenerateQuiets;
                 match (has_hashmove, has_killers) {
-                    (true, true) => self.generate_moves::<true, true, Opts>(pos),
-                    (true, false) => self.generate_moves::<true, false, Opts>(pos),
-                    (false, true) => self.generate_moves::<false, true, Opts>(pos),
-                    (false, false) => self.generate_moves::<false, false, Opts>(pos),
+                    (true, true) => self.generate_moves::<true, true, P, Opts>(pos),
+                    (true, false) => self.generate_moves::<true, false, P, Opts>(pos),
+                    (false, true) => self.generate_moves::<false, true, P, Opts>(pos),
+                    (false, false) => self.generate_moves::<false, false, P, Opts>(pos),
                 }
 
                 let end = self.buf.len();
