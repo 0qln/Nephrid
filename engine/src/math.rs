@@ -39,6 +39,7 @@ pub fn variance(xs: &[f32]) -> f32 {
 pub fn stddev(xs: &[f32]) -> f32 { variance(xs).sqrt() }
 
 /// Applies the softmax without allocating a new list.
+#[cfg(not(target_feature = "avx2"))]
 pub fn softmax<const N: usize>(mut xs: List<N, f32>, temperature: f32, exps: &mut List<N, f32>) -> List<N, Probability> {
     let max = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
 
@@ -51,6 +52,56 @@ pub fn softmax<const N: usize>(mut xs: List<N, f32>, temperature: f32, exps: &mu
 
     for (x, e) in xs.iter_mut().zip(exps.iter()) {
         *x = *e / sum;
+    }
+
+    // SAFETY: Probability is the same layout as an f32 and we just mathematically
+    // transformed the array to be probabilities.
+    unsafe { List::transmute(xs) }
+}
+
+#[cfg(target_feature = "avx2")]
+pub fn softmax<const N: usize>(mut xs: List<N, f32>, temperature: f32, _exps: &mut List<N, f32>) -> List<N, Probability> {
+    use wide::f32x8;
+
+    // find max
+    let mut max_vec = f32x8::splat(f32::NEG_INFINITY);
+    let (xs_chunks, xs_rem) = xs.as_slice().as_chunks::<8>();
+    for x_chunk in xs_chunks {
+        max_vec = max_vec.max(f32x8::from(*x_chunk));
+    }
+    let mut max = max_vec.to_array().into_iter().fold(f32::NEG_INFINITY, f32::max);
+    for x in xs_rem {
+        max = max.max(*x);
+    }
+
+    // exp and sum
+    let temp_vec = f32x8::splat(temperature);
+    let max_vec = f32x8::splat(max);
+    let mut sum_vec = f32x8::splat(0.);
+
+    let (xs_chunks, xs_rem) = xs.as_mut_slice().as_chunks_mut::<8>();
+    for x_chunk in xs_chunks.into_iter() {
+        let exp_vec = ((f32x8::from(*x_chunk) - max_vec) / temp_vec).exp();
+        *x_chunk = exp_vec.to_array();
+        sum_vec += exp_vec;
+    }
+    let mut sum: f32 = sum_vec.to_array().iter().sum();
+    for x in xs_rem.into_iter() {
+        let exp = ((*x - max) / temperature).exp();
+        *x = exp;
+        sum += exp;
+    }
+
+    // normalize
+    let sum_vec = f32x8::splat(sum);
+    let (xs_chunks, xs_rem) = xs.as_mut_slice().as_chunks_mut::<8>();
+    for x_chunk in xs_chunks.into_iter() {
+        let norm_vec = f32x8::from(*x_chunk) / sum_vec;
+        *x_chunk = norm_vec.to_array();
+    }
+    for x in xs_rem.into_iter() {
+        let norm = *x / sum;
+        *x = norm;
     }
 
     // SAFETY: Probability is the same layout as an f32 and we just mathematically
