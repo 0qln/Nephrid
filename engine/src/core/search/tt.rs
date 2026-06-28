@@ -1,3 +1,5 @@
+use uom::si::{u64::Information, information::byte};
+
 use crate::core::zobrist;
 
 pub struct TranspositionTable<Data> {
@@ -10,6 +12,13 @@ impl<Data: ZKey + Clone> TranspositionTable<Data> {
         Self {
             entries: (vec![const { const_none() }; size]).into_boxed_slice(),
         }
+    }
+
+    pub fn new_of_size(size: Information) -> Self {
+        let bytes = size.get::<byte>() as usize;
+        let entry_size = std::mem::size_of::<Option<Data>>();
+        let num_entries = (bytes / entry_size).max(1);
+        Self::new(num_entries)
     }
 
     /// Number of entries
@@ -52,6 +61,8 @@ impl<Data: ZKey + Clone> TranspositionTable<Data> {
             self.entries[idx] = None;
         }
     }
+
+    pub fn entries_mut(&mut self) -> impl Iterator<Item = &mut Data> { self.entries.iter_mut().flatten() }
 }
 
 pub trait ZKey {

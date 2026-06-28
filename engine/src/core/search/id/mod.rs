@@ -4,7 +4,6 @@ use std::{
     ops::ControlFlow,
     time::{Duration, Instant},
 };
-use uom::si::{information::byte, u64::Information};
 
 use crate::{
     core::{
@@ -103,12 +102,12 @@ pub fn go(
     limit: UciLimit,
     _debug: &DebugMode,
     ct: CancellationToken,
-    hash_size: Information,
+    tt: &mut TranspositionTable<TTEntry>,
     params: impl ChronoParams + QSearchParams,
 ) -> Option<Move> {
     let depth_lim = min(Depth::MAX, limit.depth);
 
-    let mut searcher = Searcher::new(pos, limit, ct, hash_size);
+    let mut searcher = Searcher::new(pos, limit, ct, tt);
     let mut stats = SearchStats::default();
     let mut best_move = None;
 
@@ -170,19 +169,19 @@ impl RootStats {
     fn set_score(&mut self, score: MoveScore) { self.mov.set_score(score); }
 }
 
-struct Searcher {
+struct Searcher<'a> {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
     root_ply: Ply,
     limit: UciLimit,
     time_man: TimeMan,
     ct: CancellationToken,
     aborted: bool,
-    tt: TranspositionTable<TTEntry>,
+    tt: &'a mut TranspositionTable<TTEntry>,
     ss: SearchStack,
 }
 
-impl Searcher {
-    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, hash_size: Information) -> Self {
+impl<'a> Searcher<'a> {
+    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, tt: &'a mut TranspositionTable<TTEntry>) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
             stats.push(RootStats::new(m, 0));
@@ -191,12 +190,6 @@ impl Searcher {
 
         let time_man = TimeMan::init(&limit, pos);
 
-        let tt_entries = {
-            let bytes = hash_size.get::<byte>() as usize;
-            let entry_size = std::mem::size_of::<Option<TTEntry>>();
-            (bytes / entry_size).max(1)
-        };
-
         Self {
             root_stats: stats,
             root_ply: pos.ply(),
@@ -204,7 +197,7 @@ impl Searcher {
             time_man,
             ct,
             aborted: false,
-            tt: TranspositionTable::new(tt_entries),
+            tt,
             ss: SearchStack::new(),
         }
     }

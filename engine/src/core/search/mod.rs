@@ -1,9 +1,8 @@
 use crate::core::{
     params::{IParams, IdHceParams, IdHceParamsRef},
-    search::{mcts::search::MctsParams, score::Cp},
+    search::{mcts::search::MctsParams, score::Cp, tt::TranspositionTable},
 };
 use thiserror::Error;
-use uom::si::{information::byte, u64::Information};
 
 use crate::{
     core::{
@@ -77,7 +76,7 @@ pub trait SearchWorker {
 /// Iterative deepening worker.
 pub struct IdWorker {
     // todo: don't store the construction information here but the tt and timeman itself
-    hash_size: Information,
+    tt: TranspositionTable<id::TTEntry>,
     params: IdHceParamsRef,
 }
 
@@ -86,7 +85,7 @@ impl SearchWorker for IdWorker {
 
     fn new() -> Self {
         Self {
-            hash_size: Information::new::<byte>(0),
+            tt: TranspositionTable::new(0),
             params: <Self::X as Default>::default().shared(),
         }
     }
@@ -103,7 +102,7 @@ impl SearchWorker for IdWorker {
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
-                let best_move = id::go(&mut pos, limit, &debug, ct, self.hash_size, self.params.clone());
+                let best_move = id::go(&mut pos, limit, &debug, ct, &mut self.tt, self.params.clone());
 
                 if let Some(mov) = best_move {
                     println!("bestmove {mov}");
@@ -114,12 +113,18 @@ impl SearchWorker for IdWorker {
             Command::Ponder(_pos, _limit, _ct, _dbg, _ponder) => {
                 todo!()
             }
-            Command::AdvanceState(_) => Ok(()),
-            Command::RollbackAndAdvance(_) => Ok(()),
+            Command::AdvanceState(_) => {
+                // no need to update the tt, the depth will be the same
+                Ok(())
+            }
+            Command::RollbackAndAdvance(_) => {
+                // no need to update the tt, the depth will be the same
+                Ok(())
+            }
             Command::Configure(config) => {
                 let cfg = config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
 
-                self.hash_size = cfg.hash();
+                self.tt = TranspositionTable::new_of_size(cfg.hash());
                 self.params = IdHceParams::try_from_config(cfg).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
 
                 Ok(())
