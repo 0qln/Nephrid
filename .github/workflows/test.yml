@@ -26,14 +26,10 @@ jobs:
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
 
-      - name: Run Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Check
+        run: bin/check -- -D warnings
         shell: nix develop . --command bash -e {0}
 
-      - name: Run Unit Tests
-        run: cargo test --workspace --verbose
-        shell: nix develop . --command bash -e {0}
-
-      - name: Dry Run Benchmarks
-        run: cargo test --benches --workspace --verbose
+      - name: Test & Dry Run Benchmarks
+        run: bin/test --verbose
         shell: nix develop . --command bash -e {0}

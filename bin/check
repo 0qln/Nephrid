@@ -6,4 +6,5 @@ cargo hack clippy --feature-powerset \
     --mutually-exclusive-features "nn-backend-cuda,nn-backend-ndarray" \
     --at-least-one-of             "nn-backend-cuda,nn-backend-ndarray" \
     --exclude-no-default-features \
-    --workspace --all-targets
+    --workspace --all-targets \
+    "$@"
