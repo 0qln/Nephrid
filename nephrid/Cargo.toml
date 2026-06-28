@@ -1,6 +1,6 @@
 [package]
 name = "nephrid"
-version = "26.6.12+29b6967"
+version = "26.6.28+2559cf4"
 edition = "2024"
 
 [features]
@@ -13,9 +13,13 @@ mcts-nn = []
 mcts-hce = []
 id-hce = []
 
+tunable = ["engine/tunable"]
+
 default = ["id-hce"]
 
 [dependencies]
+burn = { version = "0.19.1", features = ["ndarray"] }
+burn-cuda = "0.19.1"
 engine = { version = "*", path = "../engine", default-features = false }
 regex = "1.12.3"
 

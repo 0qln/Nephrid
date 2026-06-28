@@ -5,8 +5,7 @@ use crate::{core::color::colors, uci::tokens::Tokenizer};
 use core::fmt;
 use std::{num::ParseIntError, ops};
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct FullMoveCount {
@@ -14,15 +13,11 @@ pub struct FullMoveCount {
 }
 
 impl From<u16> for FullMoveCount {
-    fn from(v: u16) -> Self {
-        Self { v }
-    }
+    fn from(v: u16) -> Self { Self { v } }
 }
 
 impl fmt::Display for FullMoveCount {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.v)
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.v) }
 }
 
 pub type FullMoveCountParseError = ParseIntError;
@@ -39,9 +34,7 @@ impl TryFrom<&str> for FullMoveCount {
 }
 
 impl From<Ply> for FullMoveCount {
-    fn from(ply: Ply) -> Self {
-        Self { v: ply.v / 2 }
-    }
+    fn from(ply: Ply) -> Self { Self { v: ply.v / 2 } }
 }
 
 #[derive(Debug, Error)]
@@ -72,20 +65,14 @@ pub struct Ply {
 impl Ply {
     /// # UCI mate score conversion
     /// Converts a sequence of plies into a UCI-compliant mate score (moves).
-    pub fn to_mate_score(&self) -> i32 {
-        self.v.div_ceil(2) as i32
-    }
+    pub fn to_mate_score(&self) -> i32 { self.v.div_ceil(2) as i32 }
 }
 impl fmt::Display for Ply {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.v)
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.v) }
 }
 
 impl From<u16> for Ply {
-    fn from(v: u16) -> Self {
-        Self { v }
-    }
+    fn from(v: u16) -> Self { Self { v } }
 }
 
 impl_op!(-|a: Ply, b: Ply| -> Ply { Ply { v: a.v - b.v } });

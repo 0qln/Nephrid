@@ -1,0 +1,3 @@
+[submodule "tuning/src/params"]
+	path = tuning/src/params
+	url = https://github.com/0qln/Nephrid-tuner

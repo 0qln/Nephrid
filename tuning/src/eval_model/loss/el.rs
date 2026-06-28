@@ -11,7 +11,8 @@ use engine::{
     core::search::mcts::{
         eval::{RawPolicy, normalize_visits},
         nn::{
-            BoardInputTensor, CheckTensorHealthError, Model, POLICY_OUTPUT_TENSOR_DIM, POLICY_OUTPUTS, PolicyHeadIndex, STATE_INPUT_TENSOR_DIM, StateInputTensor, VALUE_OUTPUT_TENSOR_DIM, board_history_input
+            BoardInputTensor, CheckTensorHealthError, Model, POLICY_OUTPUT_TENSOR_DIM, POLICY_OUTPUTS, PolicyHeadIndex, STATE_INPUT_TENSOR_DIM,
+            StateInputTensor, VALUE_OUTPUT_TENSOR_DIM, board_history_input,
         },
         node::{VisitCount, node_state::Evaluated},
     },
@@ -163,9 +164,7 @@ impl From<&Tree> for ExactLossTarget {
 }
 
 impl Target for ExactLossTarget {
-    fn from_visit_counts(visit_counts: VisitCounts) -> Self {
-        Self { visit_counts }
-    }
+    fn from_visit_counts(visit_counts: VisitCounts) -> Self { Self { visit_counts } }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -173,9 +172,7 @@ pub struct SoftCrossEntropyLoss;
 
 impl SoftCrossEntropyLoss {
     /// Creates a new SoftCrossEntropyLoss.
-    pub fn new() -> Self {
-        Self
-    }
+    pub fn new() -> Self { Self }
 
     /// Computes the soft cross entropy loss between raw logits and target
     /// probabilities.
@@ -190,11 +187,7 @@ impl SoftCrossEntropyLoss {
     /// # Returns
     ///
     /// A scalar tensor containing the batch-averaged loss.
-    pub fn forward<B: Backend, const D: usize>(
-        &self,
-        logits: Tensor<B, D, Float>,
-        targets: Tensor<B, D, Float>,
-    ) -> Tensor<B, 1, Float> {
+    pub fn forward<B: Backend, const D: usize>(&self, logits: Tensor<B, D, Float>, targets: Tensor<B, D, Float>) -> Tensor<B, 1, Float> {
         // 1. Convert raw logits to log-probabilities safely using the LogSumExp trick.
         // We apply it over the last dimension (the class/move dimension).
         let class_dim = D - 1;
@@ -240,25 +233,13 @@ pub fn forward_with_loss_weighted<B: Backend>(
 
 impl<B: Backend> ValidStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for Model<B> {
     fn step(&self, batch: ExactLossPlayoutBatch<B>) -> LossOutput<B> {
-        forward_with_loss(
-            self,
-            batch.board_inputs,
-            batch.state_inputs,
-            batch.value_targets,
-            batch.policy_targets,
-        )
+        forward_with_loss(self, batch.board_inputs, batch.state_inputs, batch.value_targets, batch.policy_targets)
     }
 }
 
 impl<B: AutodiffBackend> TrainStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for Model<B> {
     fn step(&self, batch: ExactLossPlayoutBatch<B>) -> TrainOutput<LossOutput<B>> {
-        let item = forward_with_loss(
-            self,
-            batch.board_inputs,
-            batch.state_inputs,
-            batch.value_targets,
-            batch.policy_targets,
-        );
+        let item = forward_with_loss(self, batch.board_inputs, batch.state_inputs, batch.value_targets, batch.policy_targets);
 
         TrainOutput::new(self, item.loss.backward(), item)
     }
@@ -310,15 +291,8 @@ impl<B: AutodiffBackend> TrainStep<ExactLossPlayoutBatch<B>, LossOutput<B>> for 
 }
 
 impl<B: Backend> Batcher<B, ExactLossPlayoutItem, ExactLossPlayoutBatch<B>> for PlayoutBatcher {
-    fn batch(
-        &self,
-        items: Vec<ExactLossPlayoutItem>,
-        device: &B::Device,
-    ) -> ExactLossPlayoutBatch<B> {
-        let boards = items
-            .iter()
-            .map(|x| board_history_input(&x.board_input.0, device))
-            .collect();
+    fn batch(&self, items: Vec<ExactLossPlayoutItem>, device: &B::Device) -> ExactLossPlayoutBatch<B> {
+        let boards = items.iter().map(|x| board_history_input(&x.board_input.0, device)).collect();
 
         let states = items
             .iter()

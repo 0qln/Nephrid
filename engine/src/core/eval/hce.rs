@@ -2,13 +2,8 @@ use crate::{
     core::{
         bitboard::Bitboard,
         color::{Color, Perspective, colors},
-        coordinates::{
-            EpTargetSquare, File, Rank, Square, files, pawn_utils::single_step, squares,
-        },
-        move_iter::{
-            bishop::Bishop, king, knight, pawn, queen::Queen, rook::Rook,
-            sliding_piece::SlidingAttacks,
-        },
+        coordinates::{EpTargetSquare, File, Rank, Square, files, pawn_utils::single_step, squares},
+        move_iter::{bishop::Bishop, king, knight, pawn, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks},
         piece::{PieceType, piece_type},
         position::PieceInfo,
         search::score::{Penalty, Score},
@@ -26,16 +21,12 @@ impl Psqt {
         unsafe { *self.0.get_unchecked(sq.v() as usize) }
     }
 
-    pub const fn empty() -> Psqt {
-        Self([const { 0 }; squares::N_VARIANTS])
-    }
+    pub const fn empty() -> Psqt { Self([const { 0 }; squares::N_VARIANTS]) }
 }
 
 const PIECE_SCORES: [i32; piece_type::N_VARIANTS] = [0, 100, 300, 300, 500, 800, 0];
 
-pub const fn piece_score(pt: PieceType) -> i32 {
-    PIECE_SCORES[pt.v() as usize]
-}
+pub const fn piece_score(pt: PieceType) -> i32 { PIECE_SCORES[pt.v() as usize] }
 
 #[rustfmt::skip]
 const MG_PAWN_TABLE: Psqt = Psqt([
@@ -266,7 +257,7 @@ const PIECE_PHASES: [PiecePhase; piece_type::N_VARIANTS] = {
 pub struct TaperValue(u32);
 
 impl TaperValue {
-    pub fn new(val: u32) -> Self {
+    pub const fn new(val: u32) -> Self {
         debug_assert!(val <= piece_phases::TOTAL_C);
         Self(val)
     }
@@ -285,9 +276,7 @@ impl TaperValue {
         ((mg_eval * (total - phase)) + (eg_eval * phase)) / total
     }
 
-    pub const fn v(&self) -> u32 {
-        self.0
-    }
+    pub const fn v(&self) -> u32 { self.0 }
 }
 
 pub fn material<P: Perspective>(pos: &PieceInfo) -> Score<P> {
@@ -371,12 +360,7 @@ pub fn pawn_shield<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Squ
 }
 
 /// Evaluates the safety of our king's position by looking at enemy pawn storm.
-pub fn pawn_storm_penalty<P: Perspective>(
-    pos: &PieceInfo,
-    ep_sq: EpTargetSquare,
-    turn: Turn,
-    king: Square,
-) -> Penalty<P> {
+pub fn pawn_storm_penalty<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, turn: Turn, king: Square) -> Penalty<P> {
     const DANGER_ZONES: [[Bitboard; squares::N_VARIANTS]; colors::N_VARIANTS] = {
         let step_b = 1;
         let step_w = -1;
@@ -460,11 +444,7 @@ pub fn pawn_storm_penalty<P: Perspective>(
     Penalty::<P>::new(storm_danger_penalty as i32)
 }
 
-pub fn open_king_file_penalty<P: Perspective>(
-    pos: &PieceInfo,
-    phase: TaperValue,
-    king: Square,
-) -> Penalty<P> {
+pub fn open_king_file_penalty<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Square) -> Penalty<P> {
     // [[start, end], king_file]
     const DANGER_FILES: [[File; 2]; files::N_VARIANTS] = {
         let mut files = [[files::A; 2]; files::N_VARIANTS];
@@ -510,12 +490,7 @@ pub fn open_king_file_penalty<P: Perspective>(
     Penalty::<P>::new(score)
 }
 
-pub fn king_safety<P: Perspective>(
-    pos: &PieceInfo,
-    _ep_sq: EpTargetSquare,
-    _turn: Turn,
-    phase: TaperValue,
-) -> Score<P> {
+pub fn king_safety<P: Perspective>(pos: &PieceInfo, _ep_sq: EpTargetSquare, _turn: Turn, phase: TaperValue) -> Score<P> {
     if let Some(king) = pos.get_bitboard(piece_type::KING, P::COLOR).lsb() {
         pawn_shield::<P>(pos, phase, king) + open_king_file_penalty::<P>(pos, phase, king)
         // + pawn_storm_penalty::<P>(pos, ep_sq, turn, king)
@@ -528,11 +503,7 @@ pub fn king_safety<P: Perspective>(
 // todo: ep capture possibilities are subject of qsearch anyway, so maybe it's
 // better to just ignore that possibility.
 #[allow(clippy::erasing_op)]
-pub fn passed_pawns<P: Perspective>(
-    pos: &PieceInfo,
-    ep_sq: EpTargetSquare,
-    turn: Turn,
-) -> Score<P> {
+pub fn passed_pawns<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, turn: Turn) -> Score<P> {
     let us = P::COLOR;
     let them = !us;
 
@@ -602,11 +573,7 @@ pub fn bishop_pair<P: Perspective>(pos: &PieceInfo) -> Score<P> {
 pub fn psqt<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
     fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> i32 {
         (piece_type::PAWN..=piece_type::KING)
-            .map(|piece| {
-                pos.get_bitboard(piece, color)
-                    .map(|sq| psqt_score(phase, piece, sq, color))
-                    .sum::<i32>()
-            })
+            .map(|piece| pos.get_bitboard(piece, color).map(|sq| psqt_score(phase, piece, sq, color)).sum::<i32>())
             .sum()
     }
 

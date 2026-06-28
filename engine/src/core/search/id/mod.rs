@@ -8,7 +8,7 @@ use uom::si::{information::byte, u64::Information};
 
 use crate::{
     core::{
-        chrono::TimeMan,
+        chrono::{ChronoParams, TimeMan},
         color::{
             Color, Perspective, colors,
             perspectives::{self},
@@ -17,53 +17,43 @@ use crate::{
         depth::Depth,
         eval::{
             self, GameResult,
-            hce::{
-                self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility,
-                passed_pawns,
-            },
+            hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::fold_legal_moves,
-        params::HceParams,
+        params::C_IdHceParams,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
         search::{
             id::node_types::*,
             limit::UciLimit,
+            mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
-            quiesce::qsearch,
+            quiesce::{QSearchParams, qsearch},
             score::{Cp, Score},
-            strat::{
-                UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore,
-                UciSearchtime, UciSeldepth,
-            },
+            strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth},
             tt::{self, TranspositionTable},
         },
         turn::Turn,
         zobrist,
     },
+    math::{self, NormalizedEntropy},
     misc::{CancellationToken, DebugMode, List},
 };
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
+
+/// Softmax temperature applied to root-move qualities when computing the
+/// normalized root entropy used as a soft stopping target. Qualities are
+/// `tanh`-squashed into `[-1, 1]`, so a sub-1 temperature is needed for a
+/// confident position to produce a peaked (low-entropy) distribution.
+const ROOT_ENTROPY_TEMP: f32 = 0.3;
 
 struct StaticEvaluator;
 
 impl eval::StaticEvaluator for StaticEvaluator {
-    fn eval<P: Perspective>(
-        &self,
-        pos: &PieceInfo,
-        turn: Turn,
-        ep_sq: EpTargetSquare,
-        phase: TaperValue,
-    ) -> Score<P> {
-        fn static_value<P: Perspective>(
-            pos: &PieceInfo,
-            ep_sq: EpTargetSquare,
-            phase: TaperValue,
-            turn: Turn,
-        ) -> Score<P> {
+    fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
+        fn static_value<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, phase: TaperValue, turn: Turn) -> Score<P> {
             material::<P>(pos)
                 + mobility::<P>(pos, phase)
                 + hce::psqt::<P>(pos, phase)
@@ -85,13 +75,27 @@ impl eval::StaticEvaluator for StaticEvaluator {
     }
 }
 
-#[derive(Default)]
 pub struct SearchStats {
     pub nodes: u64,
     pub iterations: u64,
 
     /// Time taken for last iteration.
     pub iter_time: Duration,
+
+    /// Entropy of the last completed iteration.
+    pub root_entropy: NormalizedEntropy,
+}
+
+impl Default for SearchStats {
+    fn default() -> Self {
+        Self {
+            nodes: 0,
+            iterations: 0,
+            iter_time: Duration::ZERO,
+            // Max uncertainty until a policy is computed
+            root_entropy: NormalizedEntropy::one(),
+        }
+    }
 }
 
 pub fn go(
@@ -100,6 +104,7 @@ pub fn go(
     _debug: &DebugMode,
     ct: CancellationToken,
     hash_size: Information,
+    params: impl ChronoParams + QSearchParams,
 ) -> Option<Move> {
     let depth_lim = min(Depth::MAX, limit.depth);
 
@@ -121,19 +126,20 @@ pub fn go(
         best_move = searcher.root_best_move();
         if let Some(best_move) = best_move {
             let search_time = Instant::now() - searcher.time_man.time_start();
-            uci_info(
-                depth,
-                &stats,
-                Cp { v: best_score as i16 },
-                best_move,
-                search_time,
-            );
+            uci_info(depth, &stats, Cp { v: best_score as i16 }, best_move, search_time);
         }
 
         // update stats
         stats.iterations += 1;
+        stats.root_entropy = {
+            let root_logits = searcher.root_logits();
+            let root_policy = math::softmax(root_logits, ROOT_ENTROPY_TEMP, &mut List::new());
+            math::normalized_entropy(&root_policy)
+        };
 
-        searcher.time_man.hint_preferred_target(&stats);
+        searcher.time_man.hint_time_target(searcher.time_man.time_limit() - stats.iter_time);
+        searcher.time_man.hint_entropy_target(params.entropy_target());
+        searcher.time_man.set_curr_entropy(stats.root_entropy);
 
         if searcher.should_stop(&stats) || searcher.time_man.reached_target() {
             break;
@@ -149,29 +155,19 @@ struct RootStats {
 
 impl RootStats {
     #[inline]
-    fn new(m: Move, score: MoveScore) -> Self {
-        Self { mov: ScoredMove::new(m, score) }
-    }
+    fn new(m: Move, score: MoveScore) -> Self { Self { mov: ScoredMove::new(m, score) } }
 
     #[inline]
-    fn mov(&self) -> Move {
-        self.mov.mov()
-    }
+    fn mov(&self) -> Move { self.mov.mov() }
 
     #[inline]
-    fn scored_move(&self) -> &ScoredMove {
-        &self.mov
-    }
+    fn scored_move(&self) -> &ScoredMove { &self.mov }
 
     #[inline]
-    fn score(&self) -> MoveScore {
-        self.mov.score()
-    }
+    fn score(&self) -> MoveScore { self.mov.score() }
 
     #[inline]
-    fn set_score(&mut self, score: MoveScore) {
-        self.mov.set_score(score);
-    }
+    fn set_score(&mut self, score: MoveScore) { self.mov.set_score(score); }
 }
 
 struct Searcher {
@@ -213,14 +209,17 @@ impl Searcher {
         }
     }
 
-    fn sort_root(&mut self) {
-        self.root_stats
-            .as_mut_slice()
-            .sort_by_key(|mov| Reverse(mov.score()));
-    }
+    fn sort_root(&mut self) { self.root_stats.as_mut_slice().sort_by_key(|mov| Reverse(mov.score())); }
 
-    fn root_best_move(&self) -> Option<Move> {
-        self.root_stats.get(0).map(|x| x.mov())
+    fn root_best_move(&self) -> Option<Move> { self.root_stats.get(0).map(|x| x.mov()) }
+
+    fn root_logits(&self) -> List<{ MAX_LEGAL_MOVES }, f32> {
+        let mut root_logits = List::<{ MAX_LEGAL_MOVES }, f32>::new();
+        self.root_stats
+            .iter()
+            .map(|x| Quality::from(Cp::new(x.score())).v())
+            .collect_into(&mut root_logits);
+        root_logits
     }
 
     fn should_stop(&self, stats: &SearchStats) -> bool {
@@ -233,9 +232,7 @@ impl Searcher {
         }
 
         // time manager says we should stop or limit has been reached
-        if self.limit.is_active()
-            && (self.time_man.reached_limit() || self.limit.is_reached(nodes, iters))
-        {
+        if self.limit.is_active() && (self.time_man.reached_limit() || self.limit.is_reached(nodes, iters)) {
             return true;
         }
 
@@ -247,24 +244,12 @@ impl Searcher {
     fn search_root(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> i32 {
         match pos.get_turn() {
             colors::WHITE => {
-                self.search::<perspectives::White, Root>(
-                    pos,
-                    stats,
-                    depth,
-                    Score::NEG_INF,
-                    Score::POS_INF,
-                )
-                .0
+                self.search::<perspectives::White, Root>(pos, stats, depth, Score::NEG_INF, Score::POS_INF)
+                    .0
             }
             colors::BLACK => {
-                self.search::<perspectives::Black, Root>(
-                    pos,
-                    stats,
-                    depth,
-                    Score::NEG_INF,
-                    Score::POS_INF,
-                )
-                .0
+                self.search::<perspectives::Black, Root>(pos, stats, depth, Score::NEG_INF, Score::POS_INF)
+                    .0
             }
             _ => unreachable!(),
         }
@@ -302,14 +287,7 @@ impl Searcher {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return qsearch(
-                pos,
-                alpha,
-                beta,
-                HceParams,
-                &StaticEvaluator,
-                Depth::new(100),
-            );
+            return qsearch(pos, alpha, beta, C_IdHceParams, &StaticEvaluator, Depth::new(100));
         }
 
         let pieces = pos.piece_info();
@@ -422,8 +400,7 @@ impl Searcher {
                         && zws_score < beta
                     {
                         !self.search::<P::Opponent, Normal>(
-                            pos, stats, new_depth, !beta,
-                            // new lower_bound, since it was able to beat alpha
+                            pos, stats, new_depth, !beta, // new lower_bound, since it was able to beat alpha
                             !zws_score,
                         )
                     }
@@ -444,9 +421,10 @@ impl Searcher {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
                 self.root_stats.as_mut_slice()[curr].set_score(
-                    score.0.try_into().unwrap_or_else(|_| {
-                        todo!("TODO: compress the eval scores into move scores")
-                    }),
+                    score
+                        .0
+                        .try_into()
+                        .unwrap_or_else(|_| todo!("TODO: compress the eval scores into move scores")),
                 );
             }
 
@@ -515,9 +493,7 @@ pub struct TTEntry {
 }
 
 impl tt::ZKey for TTEntry {
-    fn key(&self) -> zobrist::Hash {
-        self.key
-    }
+    fn key(&self) -> zobrist::Hash { self.key }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -613,16 +589,12 @@ impl<T: const Default, const N: usize> const Default for RbSet<T, N> {
 }
 
 impl<T: const Default + Copy + Eq, const N: usize> const From<[T; N]> for RbSet<T, N> {
-    fn from(items: [T; N]) -> Self {
-        Self { items }
-    }
+    fn from(items: [T; N]) -> Self { Self { items } }
 }
 
 impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
     #[inline(always)]
-    pub const fn new() -> Self {
-        Self { items: [T::default(); N] }
-    }
+    pub const fn new() -> Self { Self { items: [T::default(); N] } }
 
     // todo: make sure this is unrolled for our N=2/3
     // todo: this is O(n) but i don't  think this matters for our n=2 lmao
@@ -644,14 +616,10 @@ impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
     }
 
     #[inline(always)]
-    pub fn position(&self, item: &T) -> Option<usize> {
-        self.items.iter().position(|x| x == item)
-    }
+    pub fn position(&self, item: &T) -> Option<usize> { self.items.iter().position(|x| x == item) }
 
     #[inline(always)]
-    pub fn as_slice(&self) -> &[T] {
-        &self.items
-    }
+    pub fn as_slice(&self) -> &[T] { &self.items }
 }
 
 // todo: benchmark that this is actually faster...
@@ -679,9 +647,7 @@ impl<T: Default + Copy + Eq> RbSet<T, 2> {
     }
 
     #[inline(always)]
-    pub fn _is_empty(&self) -> bool {
-        self.items[0] == T::default() && self.items[1] == T::default()
-    }
+    pub fn _is_empty(&self) -> bool { self.items[0] == T::default() && self.items[1] == T::default() }
 }
 
 pub struct Scorer {
@@ -697,17 +663,12 @@ impl MoveScorer for Scorer {
         match S::stage() {
             // no need to score hashmove, there's only 1
             RtStage::YieldHashMove => {
-                debug_assert!(
-                    mov == self.tt_move,
-                    "hashmove stage should only yield the tt move"
-                );
+                debug_assert!(mov == self.tt_move, "hashmove stage should only yield the tt move");
                 0
             }
 
             // captures and promos, ordered by see value.
-            RtStage::GenerateCapturesAndPromos
-            | RtStage::YieldGoodCapturesAndPromos
-            | RtStage::YieldBadCaptures => {
+            RtStage::GenerateCapturesAndPromos | RtStage::YieldGoodCapturesAndPromos | RtStage::YieldBadCaptures => {
                 // todo: currently see evaluates the promo values, but we don't need a whole
                 // see for quiet promos, maybe that can be optimized...
                 ordering::see(pos.piece_info(), mov, self.color)
@@ -716,10 +677,7 @@ impl MoveScorer for Scorer {
             // score killer moves by their age
             RtStage::YieldKillers => {
                 let age = self.killers._position(&mov);
-                debug_assert!(
-                    age.is_some(),
-                    "move in killer stage should be a killer move"
-                );
+                debug_assert!(age.is_some(), "move in killer stage should be a killer move");
 
                 // Safety: assert above
                 let age = unsafe { age.unwrap_unchecked() };
@@ -742,13 +700,7 @@ impl MoveScorer for Scorer {
     }
 }
 
-fn uci_info(
-    depth: Depth,
-    stats: &SearchStats,
-    best_score: Cp,
-    best_move: Move,
-    search_time: Duration,
-) {
+fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move, search_time: Duration) {
     let depth = UciArg::Some(UciDepth(depth));
     let seldepth = UciArg::<UciSeldepth>::None; // TODO
     let score = UciArg::Some(UciScore::Centipawns(UciCp(best_score)));

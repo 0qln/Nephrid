@@ -25,10 +25,7 @@ fn promo_moves_same_file_different_types_unique() {
     let indices: Vec<PolicyHeadIndex> = moves.iter().map(|m| PolicyHeadIndex::from(*m)).collect();
     for i in 0..indices.len() {
         for j in (i + 1)..indices.len() {
-            assert_ne!(
-                indices[i], indices[j],
-                "Same from-file promotions must have unique indices"
-            );
+            assert_ne!(indices[i], indices[j], "Same from-file promotions must have unique indices");
         }
     }
 }
@@ -64,10 +61,7 @@ fn promo_and_non_promo_indices_dont_overlap() {
         PolicyHeadIndex::from(non_promo).v() < Move::MASK_SQ,
         "Non-promo index should be below 4096"
     );
-    assert!(
-        PolicyHeadIndex::from(promo).v() > Move::MASK_SQ,
-        "Promo index should be above 4096"
-    );
+    assert!(PolicyHeadIndex::from(promo).v() > Move::MASK_SQ, "Promo index should be above 4096");
 }
 
 #[test]
@@ -75,10 +69,7 @@ fn all_promo_indices_within_expected_range() {
     let from = squares::H7; // Max file (7)
     let max_promo = Move::new(from, squares::H8, move_flags::CAPTURE_PROMOTION_QUEEN);
     let idx: PolicyHeadIndex = max_promo.into();
-    assert!(
-        idx.v() <= 4096 + 7 + 8,
-        "Promo indices must not exceed 4111"
-    );
+    assert!(idx.v() <= 4096 + 7 + 8, "Promo indices must not exceed 4111");
 }
 
 #[test]

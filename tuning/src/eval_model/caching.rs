@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use crate::self_play::Outcome;
 use burn::config::Config;
 use engine::core::{r#move::Move, zobrist};
-use crate::self_play::Outcome;
+use std::collections::HashMap;
 
 #[derive(Debug, Config)]
 pub struct CachingConfig {
@@ -21,12 +21,7 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new(config: CachingConfig) -> Self {
-        Self {
-            entries: HashMap::new(),
-            config,
-        }
-    }
+    pub fn new(config: CachingConfig) -> Self { Self { entries: HashMap::new(), config } }
 
     pub fn get(&self, hash: zobrist::Hash) -> Option<&CacheEntry> {
         if !self.config.proven_games {
@@ -39,7 +34,8 @@ impl Cache {
         if !self.config.proven_games {
             return;
         }
-        // Only store discrete outcomes (win/loss/draw) – continuous outcomes are not "proven"
+        // Only store discrete outcomes (win/loss/draw) – continuous outcomes are not
+        // "proven"
         if let Outcome::Discrete(_) = outcome {
             self.entries.insert(hash, CacheEntry { key: hash, outcome, best_move });
         }

@@ -37,13 +37,9 @@ impl UciLimit {
         }
     }
 
-    pub fn is_active(&self) -> bool {
-        self.is_active
-    }
+    pub fn is_active(&self) -> bool { self.is_active }
 
-    pub fn is_reached(&self, nodes: u64, iterations: u64) -> bool {
-        nodes >= self.nodes || iterations >= self.iterations
-    }
+    pub fn is_reached(&self, nodes: u64, iterations: u64) -> bool { nodes >= self.nodes || iterations >= self.iterations }
 }
 
 impl Default for UciLimit {

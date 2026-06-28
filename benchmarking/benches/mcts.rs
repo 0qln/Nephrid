@@ -3,20 +3,15 @@ use std::time::Duration;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::core::{
     move_iter::sliding_piece::magics,
-    params::{IParams, Params},
+    params::C_MctsHceParams,
     position::Position,
     search::mcts::{HceParts, MctsParts, node::Tree, search::TreeSearcher},
     zobrist,
 };
 
 fn bench_mcts<const B: usize, P: MctsParts>(mut pos: Position, mut tree: Tree, parts: P) {
-    let mut searcher = TreeSearcher::<B, _, _, _>::new(
-        &mut pos,
-        Params::default().shared(),
-        parts.selector(),
-        parts.evaluator(),
-        parts.noiser(),
-    );
+    let mut searcher =
+        TreeSearcher::<B, _, _, _, C_MctsHceParams>::new(&mut pos, C_MctsHceParams, parts.selector(), parts.evaluator(), parts.noiser());
     searcher.init_root(&mut tree);
     for _ in 0..(20_000 / B) {
         searcher.grow(&mut tree);
@@ -28,9 +23,7 @@ pub fn mcts_benches(c: &mut Criterion) {
     zobrist::init();
 
     let mut group = c.benchmark_group("mcts");
-    group
-        .measurement_time(Duration::from_secs(30))
-        .sample_size(10);
+    group.measurement_time(Duration::from_secs(30)).sample_size(10);
 
     let csv_data = include_str!("../resources/positions.csv");
 
@@ -52,86 +45,46 @@ pub fn mcts_benches(c: &mut Criterion) {
         {
             const BATCH_SIZE: usize = 1;
             let param = (BATCH_SIZE, fen);
-            group.bench_with_input(
-                BenchmarkId::new(name, format!("{param:?}")),
-                &param,
-                |b, &(_bs, fen)| {
-                    b.iter_batched(
-                        || {
-                            (
-                                Position::from_fen(fen).unwrap(),
-                                Tree::default(),
-                                HceParts::default(),
-                            )
-                        },
-                        |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
-                        BatchSize::LargeInput,
-                    )
-                },
-            );
+            group.bench_with_input(BenchmarkId::new(name, format!("{param:?}")), &param, |b, &(_bs, fen)| {
+                b.iter_batched(
+                    || (Position::from_fen(fen).unwrap(), Tree::default(), HceParts::default()),
+                    |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
+                    BatchSize::LargeInput,
+                )
+            });
         }
         {
             const BATCH_SIZE: usize = 2;
             let param = (BATCH_SIZE, fen);
-            group.bench_with_input(
-                BenchmarkId::new(name, format!("{param:?}")),
-                &param,
-                |b, &(_bs, fen)| {
-                    b.iter_batched(
-                        || {
-                            (
-                                Position::from_fen(fen).unwrap(),
-                                Tree::default(),
-                                HceParts::default(),
-                            )
-                        },
-                        |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
-                        BatchSize::LargeInput,
-                    )
-                },
-            );
+            group.bench_with_input(BenchmarkId::new(name, format!("{param:?}")), &param, |b, &(_bs, fen)| {
+                b.iter_batched(
+                    || (Position::from_fen(fen).unwrap(), Tree::default(), HceParts::default()),
+                    |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
+                    BatchSize::LargeInput,
+                )
+            });
         }
         {
             const BATCH_SIZE: usize = 4;
             let param = (BATCH_SIZE, fen);
-            group.bench_with_input(
-                BenchmarkId::new(name, format!("{param:?}")),
-                &param,
-                |b, &(_bs, fen)| {
-                    b.iter_batched(
-                        || {
-                            (
-                                Position::from_fen(fen).unwrap(),
-                                Tree::default(),
-                                HceParts::default(),
-                            )
-                        },
-                        |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
-                        BatchSize::LargeInput,
-                    )
-                },
-            );
+            group.bench_with_input(BenchmarkId::new(name, format!("{param:?}")), &param, |b, &(_bs, fen)| {
+                b.iter_batched(
+                    || (Position::from_fen(fen).unwrap(), Tree::default(), HceParts::default()),
+                    |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
+                    BatchSize::LargeInput,
+                )
+            });
         }
         {
             const BATCH_SIZE: usize = 64;
             let param = (BATCH_SIZE, fen);
-            group.bench_with_input(
-                BenchmarkId::new(name, format!("{param:?}")),
-                &param,
-                |b, &(_bs, fen)| {
-                    b.iter_batched(
-                        || {
-                            (
-                                Position::from_fen(fen).unwrap(),
-                                Tree::default(),
-                                HceParts::default(),
-                            )
-                        },
-                        |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
-                        BatchSize::LargeInput,
-                    )
-                },
-            );
+            group.bench_with_input(BenchmarkId::new(name, format!("{param:?}")), &param, |b, &(_bs, fen)| {
+                b.iter_batched(
+                    || (Position::from_fen(fen).unwrap(), Tree::default(), HceParts::default()),
+                    |(pos, tree, parts)| bench_mcts::<{ BATCH_SIZE }, _>(pos, tree, parts),
+                    BatchSize::LargeInput,
+                )
+            });
         }
     }
 

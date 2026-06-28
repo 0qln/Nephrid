@@ -14,13 +14,11 @@ fn run_search(fen: &str, depth: u8) {
     let debug = DebugMode::default();
     let ct = CancellationToken::new();
     let hash_size = Information::new::<mebibyte>(16);
-    go(&mut pos, limit, &debug, ct, hash_size);
+    go(&mut pos, limit, &debug, ct, hash_size, C_IdHceParams);
 }
 
 #[test]
-fn no_segfault_perpetual_check() {
-    run_search("8/6pk/7p/pp6/3p4/3P3P/rP2RKP1/8 w - - 6 43", 12);
-}
+fn no_segfault_perpetual_check() { run_search("8/6pk/7p/pp6/3p4/3P3P/rP2RKP1/8 w - - 6 43", 12); }
 
 #[test]
 fn no_segfault_in_check() {
@@ -29,8 +27,5 @@ fn no_segfault_in_check() {
     // Double check: only king moves resolve it.
     run_search("4k3/8/8/8/8/8/4r3/R3K2b w Q - 0 1", 6);
     // Single check with many non-resolving pseudo-legal moves.
-    run_search(
-        "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2",
-        8,
-    );
+    run_search("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2", 8);
 }

@@ -1,3 +1,5 @@
+use std::ops::ControlFlow;
+
 use itertools::Itertools;
 use rand::prelude::*;
 
@@ -18,9 +20,7 @@ pub struct PlayoutEvaluator {
 }
 
 impl PlayoutEvaluator {
-    pub fn new(rng: SmallRng) -> Self {
-        Self { rng }
-    }
+    pub fn new(rng: SmallRng) -> Self { Self { rng } }
 
     /// Executes a random playout from the given position until a terminal state
     /// or depth limit.
@@ -69,14 +69,8 @@ impl Evaluator for PlayoutEvaluator {
     type TraceData = Option<PlayoutTraceData>;
 
     /// Captures the position at the current node.
-    fn trace<S: const Valid + HasBranches>(
-        &self,
-        node: NodeId<S>,
-        _tree: &Tree,
-        pos: &mut Position,
-    ) -> Self::TraceData {
-        node.try_into::<Branching>()
-            .map(|_node| PlayoutTraceData { start_pos: pos.clone() })
+    fn trace<S: const Valid + HasBranches>(&self, node: NodeId<S>, _tree: &Tree, pos: &mut Position) -> Self::TraceData {
+        node.try_into::<Branching>().map(|_node| PlayoutTraceData { start_pos: pos.clone() })
     }
 
     /// Runs playouts for all collected leaves in the batch.

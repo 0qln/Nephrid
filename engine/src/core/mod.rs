@@ -1,6 +1,10 @@
 use crate::core::{
     eval::hce::{self},
-    search::{mcts, score::Cp},
+    params::{IParams, MctsHceParams},
+    search::{
+        mcts::{self},
+        score::Cp,
+    },
 };
 use search::mode::Mode;
 use std::{
@@ -15,15 +19,9 @@ use crate::{
         config::Configuration,
         depth::Depth,
         r#move::{Move, MoveList, SanParseError},
-        params::{IParams, Params},
         piece::piece_type,
-        position::{
-            EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError,
-            PgnImport, PgnImportError, Position, ReducedPgn,
-        },
-        search::{
-            Command, PonderToken, SearchThread, SearchWorker, limit::UciLimit, mcts::node::WinRate,
-        },
+        position::{EpdLineImport, EpdLineParseError, EpdOp, FenExport, FenImport, FenParseError, PgnImport, PgnImportError, Position, ReducedPgn},
+        search::{Command, PonderToken, SearchThread, SearchWorker, limit::UciLimit, mcts::node::WinRate},
     },
     misc::{CancellationToken, DebugMode, List, trim_newline},
     uci::{UciError, tokens::Tokenizer},
@@ -32,6 +30,7 @@ use std::{error::Error, process};
 
 pub mod bitboard;
 pub mod castling;
+pub mod chrono;
 pub mod color;
 pub mod config;
 pub mod coordinates;
@@ -44,7 +43,6 @@ pub mod piece;
 pub mod ply;
 pub mod position;
 pub mod search;
-pub mod chrono;
 pub mod turn;
 pub mod zobrist;
 
@@ -76,17 +74,11 @@ impl Game {
         game
     }
 
-    pub fn from_history(position: Position, history: Vec<Move>) -> Self {
-        Self { position, history }
-    }
+    pub fn from_history(position: Position, history: Vec<Move>) -> Self { Self { position, history } }
 
-    pub fn from_position(position: Position) -> Self {
-        Self { position, ..Default::default() }
-    }
+    pub fn from_position(position: Position) -> Self { Self { position, ..Default::default() } }
 
-    pub fn from_fen(fen: FenImport<'_, '_>) -> Result<Self, FenParseError> {
-        Ok(Self::from_position(Position::try_from(fen)?))
-    }
+    pub fn from_fen(fen: FenImport<'_, '_>) -> Result<Self, FenParseError> { Ok(Self::from_position(Position::try_from(fen)?)) }
 
     pub fn from_epd(epd: EpdLineImport<'_, '_>) -> Result<Self, EpdImportError> {
         let (pos, ops) = epd.try_into()?;
@@ -113,26 +105,18 @@ impl Game {
         Ok(game)
     }
 
-    pub fn moves(&self) -> &[Move] {
-        &self.history
-    }
+    pub fn moves(&self) -> &[Move] { &self.history }
 
-    pub fn position(&self) -> &Position {
-        &self.position
-    }
+    pub fn position(&self) -> &Position { &self.position }
 
-    pub fn position_mut(&mut self) -> &mut Position {
-        &mut self.position
-    }
+    pub fn position_mut(&mut self) -> &mut Position { &mut self.position }
 
     pub fn push_move(&mut self, mov: Move) {
         self.history.push(mov);
         self.position.make_move(mov);
     }
 
-    pub fn to_pgn(&self) -> ReducedPgn {
-        ReducedPgn::from_current_pos(self.position.clone(), &self.history[..])
-    }
+    pub fn to_pgn(&self) -> ReducedPgn { ReducedPgn::from_current_pos(self.position.clone(), &self.history[..]) }
 }
 
 /// Stores relevant information of the chess engine.
@@ -157,10 +141,13 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new<Searcher: SearchWorker>() -> Self {
+    pub fn new<Searcher: SearchWorker>(config: Configuration) -> Self {
+        let config = Arc::new(Mutex::new(config));
+        let search = search::init::<Searcher>(Arc::clone(&config));
+
         Self {
-            config: Default::default(),
-            search_t: search::init::<Searcher>(),
+            config,
+            search_t: search,
             debug: Default::default(),
             game: Default::default(),
             _pos_src: Default::default(),
@@ -169,13 +156,12 @@ impl Engine {
     }
 }
 
-pub fn execute_uci(
-    engine: &mut Engine,
-    mut command: String,
-    cancellation_token: CancellationToken,
-) -> Result<(), Box<dyn Error>> {
+pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation_token: CancellationToken) -> Result<(), Box<dyn Error>> {
+    let mut command: String = command.into();
     trim_newline(&mut command);
+
     let mut tokenizer = Tokenizer::new(command.as_str());
+
     match tokenizer.next_token() {
         Some("d") | Some("print") => {
             let pos = &engine.game.position();
@@ -274,9 +260,7 @@ pub fn execute_uci(
                     ponder_hit.start_ponder();
                     Command::Ponder(position, limit, token, debug, ponder_hit)
                 }
-                Mode::Perft { captures_only } => {
-                    Command::Perft(position, limit, token, debug, captures_only)
-                }
+                Mode::Perft { captures_only } => Command::Perft(position, limit, token, debug, captures_only),
             };
 
             engine.search_t.tx.send(cmd)?;
@@ -351,9 +335,8 @@ pub fn execute_uci(
 
             let config = engine.config.lock().expect("Config dead :(");
             let moves = pos.collect_moves(MoveList::new());
-            let config = &config.clone();
-            let params = Params::try_from(config)?;
-            let eval = mcts::eval::hce::EvalInfo::new(moves.clone(), &mut pos, params.shared());
+            let hce_params = MctsHceParams::try_from_config(config)?;
+            let eval = mcts::eval::hce::EvalInfo::new(moves.clone(), &mut pos, hce_params);
 
             if matches!(cmd, None | Some("centipawns")) {
                 let quality = eval.quality();
@@ -400,11 +383,7 @@ pub fn execute_uci(
                 engine.game.push_move(mov);
 
                 // also advance the mcts game tree
-                let game_tree_caching = engine
-                    .config
-                    .lock()
-                    .map(|c| c.game_tree_caching())
-                    .unwrap_or(false);
+                let game_tree_caching = engine.config.lock().map(|c| c.game_tree_caching()).unwrap_or(false);
 
                 // todo: the gui usually does not start our clock until it has sent the `go`
                 // command. which means, instead of having the search-thread block until it can
@@ -420,9 +399,7 @@ pub fn execute_uci(
                 Ok(())
             };
 
-            let cached = command.len() > engine._pos_src.len()
-                && !engine._pos_src.is_empty()
-                && command[..engine._pos_src.len()] == engine._pos_src;
+            let cached = command.len() > engine._pos_src.len() && !engine._pos_src.is_empty() && command[..engine._pos_src.len()] == engine._pos_src;
 
             // First, try to simply update the current position with new appended moves.
             if cached {
@@ -444,11 +421,7 @@ pub fn execute_uci(
                     Some("startpos") => Game::from_position(Position::start_position()),
                     None => return Err(UciError::MissingArgument("value").into()),
                     Some(x) => {
-                        return Err(UciError::InvalidValue(
-                            x.to_string(),
-                            vec!["fen".to_string(), "startpos".to_string()],
-                        )
-                        .into());
+                        return Err(UciError::InvalidValue(x.to_string(), vec!["fen".to_string(), "startpos".to_string()]).into());
                     }
                 };
 
@@ -469,20 +442,13 @@ pub fn execute_uci(
                     && old_moves[..old_moves.len() - 1] == new_moves[..new_moves.len() - 1]
                     && old_moves.last() != new_moves.last();
 
-                let game_tree_caching = engine
-                    .config
-                    .lock()
-                    .map(|c| c.game_tree_caching())
-                    .unwrap_or(false);
+                let game_tree_caching = engine.config.lock().map(|c| c.game_tree_caching()).unwrap_or(false);
 
                 if is_ponder_miss && game_tree_caching {
                     // Ponder Miss detected! Restore the 1-ply backup and advance down the actual
                     // move.
                     let actual_move = *new_moves.last().unwrap();
-                    engine
-                        .search_t
-                        .tx
-                        .send(Command::RollbackAndAdvance(actual_move))?;
+                    engine.search_t.tx.send(Command::RollbackAndAdvance(actual_move))?;
                 }
                 else {
                     // Completely new game or caching disabled: safely reset the tree entirely.
@@ -547,11 +513,7 @@ pub fn execute_uci(
 
             let new_value = new_value.trim();
 
-            engine
-                .config
-                .lock()
-                .expect("Config dead :(")
-                .set(name, new_value)?;
+            engine.config.lock().expect("Config dead :(").set(name, new_value)?;
 
             // update search thread config.
             let cfg = engine.config.clone();
@@ -565,11 +527,7 @@ pub fn execute_uci(
                 Some("on") => true,
                 Some("off") => false,
                 Some(x) => {
-                    return Err(UciError::InvalidValue(
-                        x.to_string(),
-                        vec!["on".to_string(), "off".to_string()],
-                    )
-                    .into());
+                    return Err(UciError::InvalidValue(x.to_string(), vec!["on".to_string(), "off".to_string()]).into());
                 }
                 None => return Err(UciError::MissingArgument("value").into()),
             };
@@ -584,11 +542,7 @@ pub fn execute_uci(
             execute_uci(engine, "go".to_owned(), cancellation_token.clone())?;
             execute_uci(engine, "go".to_owned(), cancellation_token.clone())?;
 
-            let dur = tokenizer
-                .next_token()
-                .map(&str::parse::<u64>)
-                .and_then(Result::ok)
-                .unwrap_or(5);
+            let dur = tokenizer.next_token().map(&str::parse::<u64>).and_then(Result::ok).unwrap_or(5);
             let dur = time::Duration::from_secs(dur);
             thread::sleep(dur);
 

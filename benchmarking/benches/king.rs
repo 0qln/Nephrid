@@ -18,12 +18,8 @@ pub fn king_attacks(c: &mut Criterion) {
     let king = squares::E4;
     let mut group = c.benchmark_group("king::attacks");
 
-    group.bench_function("king::attacks::lookup", |b| {
-        b.iter(|| lookup_attacks(black_box(king)))
-    });
-    group.bench_function("king::attacks::compute", |b| {
-        b.iter(|| compute_attacks(black_box(king)))
-    });
+    group.bench_function("king::attacks::lookup", |b| b.iter(|| lookup_attacks(black_box(king))));
+    group.bench_function("king::attacks::compute", |b| b.iter(|| compute_attacks(black_box(king))));
 
     group.finish();
 }
@@ -76,22 +72,16 @@ pub fn king_move_iter_castling(c: &mut Criterion) {
 
     for &input in &mut inputs.iter() {
         let pos = Position::from_fen(input).unwrap();
-        c.bench_with_input(
-            BenchmarkId::new("king::move_iter::castling", input),
-            &pos,
-            |b, pos| {
-                b.iter(|| {
-                    king::fold_legal_castling(
-                        black_box(pos),
-                        black_box(0),
-                        black_box(|acc, m: Move| {
-                            ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())
-                        }),
-                        king::nstm_attacks(pos, pos.get_occupancy()),
-                    )
-                })
-            },
-        );
+        c.bench_with_input(BenchmarkId::new("king::move_iter::castling", input), &pos, |b, pos| {
+            b.iter(|| {
+                king::fold_legal_castling(
+                    black_box(pos),
+                    black_box(0),
+                    black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
+                    king::nstm_attacks(pos, pos.get_occupancy()),
+                )
+            })
+        });
     }
 }
 

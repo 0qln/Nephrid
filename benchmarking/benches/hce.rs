@@ -1,10 +1,11 @@
-use engine::core::{
-    config::Configuration,
-    r#move::MoveList,
-    move_iter::sliding_piece::magics,
-    params::{IParams, Params},
-    search::mcts::eval::Ratio,
-    zobrist,
+use engine::{
+    core::{
+        r#move::MoveList,
+        move_iter::sliding_piece::magics,
+        params::{C_MctsHceParams, IParams},
+        zobrist,
+    },
+    math::{Probability, Ratio},
 };
 use std::{hint::black_box, time::Duration};
 
@@ -15,7 +16,7 @@ use engine::{
         position::Position,
         search::mcts::{
             HceParts, MctsParts,
-            eval::{Probability, hce::EvalInfo},
+            eval::hce::EvalInfo,
             node::{Height, Tree, VisitCount, node_state::Evaluated},
             search::TreeSearcher,
             select::puct::PuctSelector,
@@ -31,8 +32,7 @@ pub fn policy(c: &mut Criterion) {
     let mut pos = Position::start_position();
 
     let moves = pos.collect_moves(MoveList::new());
-    let config = Configuration::default();
-    let params = Params::try_from(&config).unwrap();
+    let params = C_MctsHceParams;
     let eval = EvalInfo::new(moves, &mut pos, params.shared());
 
     let mut buf = List::<{ MAX_LEGAL_MOVES }, f32>::new();
@@ -51,9 +51,9 @@ pub fn puct(c: &mut Criterion) {
     let mut pos = Position::start_position();
     let mut tree = Tree::new();
     let parts = HceParts::default();
-    let mut searcher = TreeSearcher::<1, _, _, _>::new(
+    let mut searcher = TreeSearcher::<1, _, _, _, C_MctsHceParams>::new(
         &mut pos,
-        Params::default().shared(),
+        C_MctsHceParams.shared(),
         PuctSelector::default(),
         parts.evaluator(),
         parts.noiser(),

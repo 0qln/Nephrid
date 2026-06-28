@@ -1,3 +1,10 @@
 #!/usr/bin/env bash
 
-cargo clippy --workspace --all-targets
+cargo hack clippy --feature-powerset \
+    --mutually-exclusive-features "mcts-hce,mcts-nn,mcts-pure,id-hce" \
+    --at-least-one-of             "mcts-hce,mcts-nn,mcts-pure,id-hce" \
+    --mutually-exclusive-features "nn-backend-cuda,nn-backend-ndarray" \
+    --at-least-one-of             "nn-backend-cuda,nn-backend-ndarray" \
+    --exclude-no-default-features \
+    --workspace --all-targets \
+    "$@"

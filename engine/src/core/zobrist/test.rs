@@ -1,13 +1,11 @@
-use crate::{
-    core::{
-        color::colors,
-        coordinates::squares,
-        r#move::{Move, move_flags},
-        move_iter::sliding_piece::magics,
-        piece::{Piece, piece_type},
-        position::Position,
-        zobrist,
-    },
+use crate::core::{
+    color::colors,
+    coordinates::squares,
+    r#move::{Move, move_flags},
+    move_iter::sliding_piece::magics,
+    piece::{Piece, piece_type},
+    position::Position,
+    zobrist,
 };
 
 #[test]

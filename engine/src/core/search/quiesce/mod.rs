@@ -15,7 +15,7 @@ use crate::core::{
     },
 };
 
-pub trait QSearchParams {
+pub const trait QSearchParams {
     fn futility_margin(&self) -> i32;
     fn delta_pruning_threshold(&self) -> TaperValue;
 }
@@ -25,12 +25,12 @@ pub trait QSearchParams {
 /// Make the position quiet.
 ///
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
-pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
+pub fn qsearch<P: Perspective>(
     pos: &mut Position,
     mut alpha: Score<P>,
     beta: Score<P>,
-    params: X,
-    static_evaluator: &S,
+    params: impl QSearchParams + Clone,
+    static_evaluator: &impl StaticEvaluator,
     depth: Depth,
 ) -> Score<P> {
     let in_check = pos.get_check_state() != CheckState::None;
@@ -99,14 +99,7 @@ pub fn qsearch<S: StaticEvaluator, P: Perspective, X: QSearchParams + Clone>(
 
         pos.make_move_for::<P>(m);
 
-        let score = !qsearch(
-            pos,
-            !beta,
-            !alpha,
-            params.clone(),
-            static_evaluator,
-            depth - 1,
-        );
+        let score = !qsearch(pos, !beta, !alpha, params.clone(), static_evaluator, depth - 1);
 
         pos.unmake_move_for::<P>(m);
 
@@ -134,23 +127,13 @@ impl ordering::MoveScorer for MoveScorer {
             ordering::RtStage::YieldHashMove => {
                 todo!("we don't yet have a hashmove in qsearch")
             }
-            ordering::RtStage::GenerateCapturesAndPromos
-            | ordering::RtStage::YieldGoodCapturesAndPromos
-            | ordering::RtStage::YieldBadCaptures => {
+            ordering::RtStage::GenerateCapturesAndPromos | ordering::RtStage::YieldGoodCapturesAndPromos | ordering::RtStage::YieldBadCaptures => {
                 let pieces = pos.piece_info();
 
                 let (from, to, _) = mov.into();
                 let piece = pieces.get_piece(from);
 
-                ordering::see(pieces, mov, self.color)
-                    + ordering::psqt(
-                        self.phase,
-                        piece.piece_type(),
-                        from,
-                        to,
-                        mov.get_flag(),
-                        self.color,
-                    )
+                ordering::see(pieces, mov, self.color) + ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
             }
             ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
             ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {
@@ -161,14 +144,7 @@ impl ordering::MoveScorer for MoveScorer {
                 let pieces = pos.piece_info();
                 let (from, to, _) = mov.into();
                 let piece = pieces.get_piece(from);
-                ordering::psqt(
-                    self.phase,
-                    piece.piece_type(),
-                    from,
-                    to,
-                    mov.get_flag(),
-                    self.color,
-                )
+                ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
             }
             ordering::RtStage::Done => todo!("why are we scoring Done??"),
         }

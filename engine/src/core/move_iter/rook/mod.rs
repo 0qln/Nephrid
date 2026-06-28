@@ -1,17 +1,14 @@
-use crate::{
-    core::{
-        bitboard::Bitboard,
-        coordinates::{File, Rank, Square, compass_rose, files, ranks, squares},
-        move_iter::rook,
-        piece::{IPieceType, PieceType, piece_type},
-    },
+use crate::core::{
+    bitboard::Bitboard,
+    coordinates::{File, Rank, Square, compass_rose, files, ranks, squares},
+    move_iter::rook,
+    piece::{IPieceType, PieceType, piece_type},
 };
 use const_for::const_for;
 
 use super::sliding_piece::{self, SlidingAttacks, SlidingPieceType, magics::MagicGen};
 
-#[cfg(test)]
-mod tests;
+#[cfg(test)] mod tests;
 
 pub struct Rook;
 
@@ -37,8 +34,7 @@ impl Rook {
 
 impl MagicGen for Rook {
     fn relevant_occupancy(sq: Square) -> Bitboard {
-        !Bitboard::from(sq)
-            & (Self::relevant_file(File::from(sq)) | Self::relevant_rank(Rank::from(sq)))
+        !Bitboard::from(sq) & (Self::relevant_file(File::from(sq)) | Self::relevant_rank(Rank::from(sq)))
     }
 
     #[inline]
@@ -52,9 +48,7 @@ impl MagicGen for Rook {
 
 impl SlidingAttacks for Rook {
     #[inline]
-    fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
-        rook::compute_attacks(sq, occupancy)
-    }
+    fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard { rook::compute_attacks(sq, occupancy) }
 
     #[allow(static_mut_refs)]
     #[inline]

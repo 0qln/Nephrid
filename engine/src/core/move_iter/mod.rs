@@ -9,9 +9,7 @@ use rook::Rook;
 
 use crate::core::{r#move::move_flags, piece::IPieceType, position};
 
-use super::{
-    bitboard::Bitboard, color::Color, coordinates::Square, r#move::Move, position::Position,
-};
+use super::{bitboard::Bitboard, color::Color, coordinates::Square, r#move::Move, position::Position};
 
 pub mod bishop;
 pub mod king;
@@ -22,8 +20,7 @@ pub mod rook;
 pub mod sliding_piece;
 pub mod staged;
 
-#[cfg(test)]
-mod test;
+#[cfg(test)] mod test;
 
 /// To squares for quiet moves
 #[inline(always)]
@@ -62,9 +59,7 @@ pub const trait Options {
 
     /// Whether to generated moves have to be legal. If false, also generates
     /// pseudo legal moves, which's check-rules are not checked.
-    fn legal() -> bool {
-        true
-    }
+    fn legal() -> bool { true }
 }
 
 pub trait FoldMoves<Check, O: Options> {
@@ -85,18 +80,14 @@ pub trait NoDoubleCheck: CheckState {}
 pub struct NoCheck;
 impl const CheckState for NoCheck {
     #[inline(always)]
-    fn check_state() -> RtCheckState {
-        RtCheckState::None
-    }
+    fn check_state() -> RtCheckState { RtCheckState::None }
 }
 impl NoDoubleCheck for NoCheck {}
 
 pub struct SingleCheck;
 impl const CheckState for SingleCheck {
     #[inline(always)]
-    fn check_state() -> RtCheckState {
-        RtCheckState::Single
-    }
+    fn check_state() -> RtCheckState { RtCheckState::Single }
 }
 impl SomeCheck for SingleCheck {}
 impl NoDoubleCheck for SingleCheck {}
@@ -104,9 +95,7 @@ impl NoDoubleCheck for SingleCheck {}
 struct DoubleCheck;
 impl const CheckState for DoubleCheck {
     #[inline(always)]
-    fn check_state() -> RtCheckState {
-        RtCheckState::Double
-    }
+    fn check_state() -> RtCheckState { RtCheckState::Double }
 }
 impl SomeCheck for DoubleCheck {}
 
@@ -174,60 +163,40 @@ pub mod opt {
     pub struct AllLegal;
     impl const Options for AllLegal {
         #[inline(always)]
-        fn gen_quiets() -> bool {
-            true
-        }
+        fn gen_quiets() -> bool { true }
 
         #[inline(always)]
-        fn gen_captures() -> bool {
-            true
-        }
+        fn gen_captures() -> bool { true }
 
         #[inline(always)]
-        fn gen_promos() -> bool {
-            true
-        }
+        fn gen_promos() -> bool { true }
     }
 
     pub struct AllPseudoLegal;
     impl const Options for AllPseudoLegal {
         #[inline(always)]
-        fn gen_quiets() -> bool {
-            true
-        }
+        fn gen_quiets() -> bool { true }
 
         #[inline(always)]
-        fn gen_captures() -> bool {
-            true
-        }
+        fn gen_captures() -> bool { true }
 
         #[inline(always)]
-        fn gen_promos() -> bool {
-            true
-        }
+        fn gen_promos() -> bool { true }
 
         #[inline(always)]
-        fn legal() -> bool {
-            false
-        }
+        fn legal() -> bool { false }
     }
 
     pub struct Captures;
     impl const Options for Captures {
         #[inline(always)]
-        fn gen_quiets() -> bool {
-            false
-        }
+        fn gen_quiets() -> bool { false }
 
         #[inline(always)]
-        fn gen_captures() -> bool {
-            true
-        }
+        fn gen_captures() -> bool { true }
 
         #[inline(always)]
-        fn gen_promos() -> bool {
-            false
-        }
+        fn gen_promos() -> bool { false }
     }
 }
 

@@ -58,9 +58,8 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
             }
 
             todo!(
-                "The repetition_table does not exist anymore. If you want to tune the zobrist \
-                 seeds, you're gonna have to implement your own hash-collision counting and/or \
-                 statistics here."
+                "The repetition_table does not exist anymore. If you want to tune the zobrist seeds, you're gonna have to implement your own \
+                 hash-collision counting and/or statistics here."
             );
             // let collisions_per_ply = pos.repetition_table_collisions() as f32
             // / pos.ply().v as f32;
@@ -76,6 +75,4 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
     SeedTestResult { total_collisions: collisions }
 }
 
-fn main() {
-    find_seeds();
-}
+fn main() { find_seeds(); }

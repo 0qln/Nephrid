@@ -4,6 +4,7 @@ use engine::{
     core::{
         r#move::Move,
         move_iter::sliding_piece::magics,
+        params::C_MctsHceParams,
         position::{EpdLineImport, Position},
         search::{
             limit::UciLimit,
@@ -11,7 +12,8 @@ use engine::{
                 self, HceParts, MctsConfig, mcts,
                 node::{self, Branch, VisitCount, node_state},
                 strategy::MctsUci,
-            }, strat::{UciCp, UciScore},
+            },
+            strat::{UciCp, UciScore},
         },
         zobrist,
     },
@@ -42,23 +44,17 @@ impl TryFrom<EpdLineImport<'_, '_>> for Test {
             .1
             .clone();
 
-        let bm = ops
-            .iter()
-            .find(|op| matches!(op.0.as_ref(), "bm"))
-            .map(|op| {
-                op.1.split_ascii_whitespace()
-                    .map(|mov| Move::from_san(mov, &pos).expect("Parse SAN from EPD line"))
-                    .collect_vec()
-            });
+        let bm = ops.iter().find(|op| matches!(op.0.as_ref(), "bm")).map(|op| {
+            op.1.split_ascii_whitespace()
+                .map(|mov| Move::from_san(mov, &pos).expect("Parse SAN from EPD line"))
+                .collect_vec()
+        });
 
-        let am = ops
-            .iter()
-            .find(|op| matches!(op.0.as_ref(), "am"))
-            .map(|op| {
-                op.1.split_ascii_whitespace()
-                    .map(|mov| Move::from_san(mov, &pos).expect("Parse SAN from EPD line"))
-                    .collect_vec()
-            });
+        let am = ops.iter().find(|op| matches!(op.0.as_ref(), "am")).map(|op| {
+            op.1.split_ascii_whitespace()
+                .map(|mov| Move::from_san(mov, &pos).expect("Parse SAN from EPD line"))
+                .collect_vec()
+        });
 
         Ok(Test { id, pos, find: bm, avoid: am })
     }
@@ -83,14 +79,8 @@ fn print_dataset(tests: &[Test]) {
     let entries: Vec<EretEntry> = tests
         .iter()
         .map(|test| {
-            let am_str = test
-                .avoid
-                .as_ref()
-                .map_or(String::new(), |am| am.iter().join(", "));
-            let bm_str = test
-                .find
-                .as_ref()
-                .map_or(String::new(), |bm| bm.iter().join(", "));
+            let am_str = test.avoid.as_ref().map_or(String::new(), |am| am.iter().join(", "));
+            let bm_str = test.find.as_ref().map_or(String::new(), |bm| bm.iter().join(", "));
             let fen = FenExport(&test.pos).to_string();
             EretEntry {
                 id: test.id.clone(),
@@ -156,7 +146,7 @@ impl PerfRunner for MctsHceRunner {
         let state = &mut mcts::SearchState::default();
         let parts = HceParts::default();
         let strat = &mut MctsUci::new(limit, DebugMode::off(), ct, None);
-        let result = mcts::<1, Config, _>(&mut pos, &parts, state, strat)
+        let result = mcts::<1, Config, _, C_MctsHceParams>(&mut pos, &parts, state, strat, C_MctsHceParams)
             .expect("mcts should've completed in the given time");
 
         let tree = &state.tree;
@@ -165,11 +155,7 @@ impl PerfRunner for MctsHceRunner {
             .try_node::<node_state::Evaluated>(tree.root())
             .expect("root should be evaluated after the search");
 
-        let root_policies = tree
-            .branches(root.id())
-            .iter()
-            .map(Branch::policy)
-            .collect::<Vec<_>>();
+        let root_policies = tree.branches(root.id()).iter().map(Branch::policy).collect::<Vec<_>>();
 
         let root_entropy = entropy(root_policies.iter().cloned());
 
@@ -247,10 +233,7 @@ fn main() {
 
     let runner = MctsHceRunner;
 
-    let solutions = tests
-        .into_iter()
-        .map(|test| run_perf_eval(test, runner))
-        .collect::<Vec<_>>();
+    let solutions = tests.into_iter().map(|test| run_perf_eval(test, runner)).collect::<Vec<_>>();
 
     print_solution(&solutions);
 }

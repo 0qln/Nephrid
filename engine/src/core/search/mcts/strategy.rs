@@ -39,10 +39,7 @@ impl MctsStrategy for MctsFindBest {
     type Result = Option<Move>;
     type Step = Option<Move>;
 
-    fn result(&mut self, tree: &mut Tree) -> Self::Result {
-        self.last_best_move
-            .or_else(|| tree.maybe_best_move(tree.root()))
-    }
+    fn result(&mut self, tree: &mut Tree) -> Self::Result { self.last_best_move.or_else(|| tree.maybe_best_move(tree.root())) }
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
         let curr_best_move = tree.maybe_best_move(tree.root());
@@ -57,9 +54,7 @@ impl MctsStrategy for MctsFindBest {
 
     fn start(&mut self, _tree: &mut Tree, _pos: &Position) {}
 
-    fn should_stop(&mut self, _tree: &Tree) -> bool {
-        false
-    }
+    fn should_stop(&mut self, _tree: &Tree) -> bool { false }
 }
 
 #[derive(Default, Debug)]
@@ -84,12 +79,7 @@ pub struct MctsUci {
 }
 
 impl MctsUci {
-    pub fn new(
-        limit: UciLimit,
-        debug: DebugMode,
-        ct: CancellationToken,
-        pt: Option<PonderToken>,
-    ) -> Self {
+    pub fn new(limit: UciLimit, debug: DebugMode, ct: CancellationToken, pt: Option<PonderToken>) -> Self {
         Self {
             limit,
             debug,
@@ -99,18 +89,11 @@ impl MctsUci {
         }
     }
 
-    pub fn search_time(&self) -> Option<UciSearchtime> {
-        Some(UciSearchtime(
-            self.time_man.as_ref().map(|t| t.search_time())?,
-        ))
-    }
+    pub fn search_time(&self) -> Option<UciSearchtime> { Some(UciSearchtime(self.time_man.as_ref().map(|t| t.search_time())?)) }
 
     /// Number of nodes per second since start of the search, given the current
     /// number of nodes in the search tree.
-    pub fn nps(&self, num_nodes: u64) -> Option<UciNps> {
-        self.search_time()
-            .map(|t| UciNps::from_nodes_and_time(num_nodes, t.0))
-    }
+    pub fn nps(&self, num_nodes: u64) -> Option<UciNps> { self.search_time().map(|t| UciNps::from_nodes_and_time(num_nodes, t.0)) }
 
     /// Determine score in centipawns / mate-in-x, etc.
     /// Returns `None` if the root node is not evaluated or unproven.
@@ -184,13 +167,9 @@ impl MctsUci {
         }
     }
 
-    pub fn limit(&self) -> &UciLimit {
-        &self.limit
-    }
+    pub fn limit(&self) -> &UciLimit { &self.limit }
 
-    pub fn time_man(&self) -> Option<&TimeMan> {
-        self.time_man.as_ref()
-    }
+    pub fn time_man(&self) -> Option<&TimeMan> { self.time_man.as_ref() }
 }
 
 impl MctsStrategy for MctsUci {
@@ -256,9 +235,7 @@ impl MctsStrategy for MctsUci {
 
         // 5. Standard time/node limits
         if self.limit.is_active()
-            && (self
-                .limit
-                .is_reached(tree.size() as u64 - self.nodes_begin, self.iterations)
+            && (self.limit.is_reached(tree.size() as u64 - self.nodes_begin, self.iterations)
                 || matches!(self.time_man().map(|t| t.reached_limit()), Some(true)))
         {
             return true;
@@ -288,9 +265,7 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
     type Result = (<I as MctsStrategy>::Result, u64);
     type Step = (<I as MctsStrategy>::Step, u64);
 
-    fn result(&mut self, tree: &mut Tree) -> Self::Result {
-        (self.inner.result(tree), self.iteration)
-    }
+    fn result(&mut self, tree: &mut Tree) -> Self::Result { (self.inner.result(tree), self.iteration) }
 
     fn step(&mut self, tree: &mut Tree) -> Self::Step {
         let step = (self.inner.step(tree), self.iteration);
@@ -298,11 +273,7 @@ impl<I: MctsStrategy> MctsStrategy for MctsDebug<I> {
         step
     }
 
-    fn start(&mut self, tree: &mut Tree, pos: &Position) {
-        self.inner.start(tree, pos);
-    }
+    fn start(&mut self, tree: &mut Tree, pos: &Position) { self.inner.start(tree, pos); }
 
-    fn should_stop(&mut self, tree: &Tree) -> bool {
-        self.inner.should_stop(tree)
-    }
+    fn should_stop(&mut self, tree: &Tree) -> bool { self.inner.should_stop(tree) }
 }

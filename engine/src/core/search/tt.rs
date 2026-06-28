@@ -6,9 +6,7 @@ pub struct TranspositionTable<Data> {
 
 impl<Data: ZKey + Clone> TranspositionTable<Data> {
     pub fn new(size: usize) -> Self {
-        const fn const_none<T>() -> Option<T> {
-            None
-        }
+        const fn const_none<T>() -> Option<T> { None }
         Self {
             entries: (vec![const { const_none() }; size]).into_boxed_slice(),
         }
@@ -16,9 +14,7 @@ impl<Data: ZKey + Clone> TranspositionTable<Data> {
 
     /// Number of entries
     #[inline]
-    pub fn size(&self) -> usize {
-        self.entries.len()
-    }
+    pub fn size(&self) -> usize { self.entries.len() }
 
     /// Get data for the given key.
     #[inline]

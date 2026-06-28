@@ -33,21 +33,15 @@ pub fn move_iter_check_none(c: &mut Criterion) {
 
     for &input in &mut inputs.iter() {
         let pos = Position::from_fen(input).unwrap();
-        c.bench_with_input(
-            BenchmarkId::new("pawn::move_iter::check_none", input),
-            &pos,
-            |b, pos| {
-                b.iter(|| {
-                    <Pawn as FoldMoves<NoCheck, opt::AllLegal>>::fold_moves(
-                        black_box(pos),
-                        black_box(0),
-                        black_box(|acc, m: Move| {
-                            ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())
-                        }),
-                    )
-                })
-            },
-        );
+        c.bench_with_input(BenchmarkId::new("pawn::move_iter::check_none", input), &pos, |b, pos| {
+            b.iter(|| {
+                <Pawn as FoldMoves<NoCheck, opt::AllLegal>>::fold_moves(
+                    black_box(pos),
+                    black_box(0),
+                    black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
+                )
+            })
+        });
     }
 }
 

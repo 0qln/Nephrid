@@ -38,47 +38,23 @@ fn bench_perft<Opt: Options>(mut pos: Position, depth: Depth) {
 pub struct Pair<T1, T2>(T1, T2);
 
 impl<T1: Display, T2: Display> Display for Pair<T1, T2> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "({}, {})", self.0, self.1)
-    }
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { write!(f, "({}, {})", self.0, self.1) }
 }
 
-fn perft(c: &mut Criterion) {
-    perft_benches::<opt::AllLegal>(c, "perft", include_str!("../resources/positions.csv"))
-}
+fn perft(c: &mut Criterion) { perft_benches::<opt::AllLegal>(c, "perft", include_str!("../resources/positions.csv")) }
 
-fn perft_pawn(c: &mut Criterion) {
-    perft_benches::<opt::AllLegal>(
-        c,
-        "perft_pawn",
-        include_str!("../resources/pawn_positions.csv"),
-    )
-}
+fn perft_pawn(c: &mut Criterion) { perft_benches::<opt::AllLegal>(c, "perft_pawn", include_str!("../resources/pawn_positions.csv")) }
 
-fn perft_rook(c: &mut Criterion) {
-    perft_benches::<opt::AllLegal>(
-        c,
-        "perft_rook",
-        include_str!("../resources/rook_positions.csv"),
-    )
-}
+fn perft_rook(c: &mut Criterion) { perft_benches::<opt::AllLegal>(c, "perft_rook", include_str!("../resources/rook_positions.csv")) }
 
-fn perft_captures(c: &mut Criterion) {
-    perft_benches::<opt::Captures>(
-        c,
-        "perft_captures",
-        include_str!("../resources/capture_positions.csv"),
-    )
-}
+fn perft_captures(c: &mut Criterion) { perft_benches::<opt::Captures>(c, "perft_captures", include_str!("../resources/capture_positions.csv")) }
 
 pub fn perft_benches<Opt: Options>(c: &mut Criterion, name: &str, csv_data: &str) {
     magics::init();
     zobrist::init();
 
     let mut group = c.benchmark_group(name);
-    group
-        .measurement_time(Duration::from_secs(60))
-        .sample_size(20);
+    group.measurement_time(Duration::from_secs(60)).sample_size(20);
 
     for (i, line) in csv_data.lines().skip(1).enumerate() {
         let line = line.trim();
@@ -91,10 +67,7 @@ pub fn perft_benches<Opt: Options>(c: &mut Criterion, name: &str, csv_data: &str
             panic!("Invalid CSV line: {}", line);
         };
 
-        let depth_val = depth_str
-            .trim()
-            .parse()
-            .expect("Depth should be a valid number");
+        let depth_val = depth_str.trim().parse().expect("Depth should be a valid number");
         let depth = Depth::new(depth_val);
         let fen = fen_str.trim();
 

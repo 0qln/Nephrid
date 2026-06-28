@@ -141,18 +141,9 @@ fn test_node_sort_by_visits() {
     });
 
     let sorted_branches = tree.branches(eval_node);
-    assert_eq!(
-        tree.arena.nodes[sorted_branches[0].node().index()].visits(),
-        VisitCount(3)
-    );
-    assert_eq!(
-        tree.arena.nodes[sorted_branches[1].node().index()].visits(),
-        VisitCount(2)
-    );
-    assert_eq!(
-        tree.arena.nodes[sorted_branches[2].node().index()].visits(),
-        VisitCount(1)
-    );
+    assert_eq!(tree.arena.nodes[sorted_branches[0].node().index()].visits(), VisitCount(3));
+    assert_eq!(tree.arena.nodes[sorted_branches[1].node().index()].visits(), VisitCount(2));
+    assert_eq!(tree.arena.nodes[sorted_branches[2].node().index()].visits(), VisitCount(1));
 }
 
 // --- Tree Advancing & Traversal ---
@@ -254,14 +245,8 @@ fn test_tree_principal_variation_simple_path() {
     let pv = tree.principal_line();
 
     assert_eq!(pv.len(), 2);
-    assert_eq!(
-        pv.0[0].mov(),
-        Move::new(squares::E2, squares::E4, move_flags::QUIET)
-    );
-    assert_eq!(
-        pv.0[1].mov(),
-        Move::new(squares::E7, squares::E5, move_flags::QUIET)
-    );
+    assert_eq!(pv.0[0].mov(), Move::new(squares::E2, squares::E4, move_flags::QUIET));
+    assert_eq!(pv.0[1].mov(), Move::new(squares::E7, squares::E5, move_flags::QUIET));
 }
 
 // ================================================
@@ -440,10 +425,7 @@ fn test_advance_to_deeper_level_updates_pointers_correctly() {
 
     // Grab first child and expand it -> Level 2
     let level_1_branch = tree.branches_rt(tree.root())[0].clone();
-    let child_leaf = tree
-        .node_switch(level_1_branch.node())
-        .get::<Leaf>()
-        .unwrap();
+    let child_leaf = tree.node_switch(level_1_branch.node()).get::<Leaf>().unwrap();
 
     // Fake a position for child expansion to simulate depth
     let mut pos_copy = pos.clone();

@@ -14,28 +14,30 @@ use burn::{
     record::{CompactRecorder, Recorder},
 };
 use burn_cuda::{Cuda, CudaDevice};
-use engine::core::{
-    color::colors,
-    coordinates::squares::{A5, B5, F3, G1},
-    eval::GameResult,
-    r#move::{Move, move_flags::QUIET},
-    move_iter::sliding_piece::magics,
-    position::Position,
-    search::mcts::{
-        NNParts, SearchState,
-        eval::{Probability, Quality, Ratio, RawPolicy},
-        mcts,
-        nn::{ModelConfig, PolicyHeadIndex},
+use engine::{
+    core::{
+        color::colors,
+        coordinates::squares::{A5, B5, F3, G1},
+        eval::GameResult,
+        r#move::{Move, move_flags::QUIET},
+        move_iter::sliding_piece::magics,
+        params::C_MctsNnParams,
+        position::Position,
+        search::mcts::{
+            NNParts, SearchState,
+            eval::{Quality, RawPolicy},
+            mcts,
+            nn::{ModelConfig, PolicyHeadIndex},
+        },
+        zobrist,
     },
-    zobrist,
+    math::{Probability, Ratio},
 };
 
 const OUT_DIR: &str = "out/eval_model/test";
 const SRC_DIR: &str = "src/eval_model/test";
 
-fn proj_root() -> String {
-    var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable")
-}
+fn proj_root() -> String { var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable") }
 
 fn config_file(test_name: &str) -> String {
     let mut buf = PathBuf::new();
@@ -77,10 +79,7 @@ pub mod logs {
                 println!("Loaded logging config from {config}");
             }
             Err(e) => {
-                println!(
-                    "Failed to load logging config from {config}, using default config. (Error: \
-                     {e})"
-                );
+                println!("Failed to load logging config from {config}, using default config. (Error: {e})");
             }
         }
     }
@@ -163,16 +162,12 @@ pub fn test_network_can_overfit_hardcoded_target() {
     let valid_model = model.valid();
 
     // Run inference on the identical inputs
-    let (value_pred, policy_logits) =
-        valid_model.forward(batch.board_inputs.valid(), batch.state_inputs.valid());
+    let (value_pred, policy_logits) = valid_model.forward(batch.board_inputs.valid(), batch.state_inputs.valid());
 
     // Check Value Output
     let pred_v = value_pred.into_scalar();
     println!("Predicted Value: {pred_v:.5} (Target: {target_value})");
-    assert!(
-        (pred_v - target_value.v()).abs() < 0.1,
-        "Value head failed to overfit!"
-    );
+    assert!((pred_v - target_value.v()).abs() < 0.1, "Value head failed to overfit!");
 
     // Apply Softmax to convert raw logits into actual probabilities (0.0 to 1.0)
     use burn::tensor::activation::softmax;
@@ -183,16 +178,9 @@ pub fn test_network_can_overfit_hardcoded_target() {
     let pred_p = pred_p.as_slice::<f32>().unwrap();
 
     // Find the move index with the highest probability
-    let (best_idx, max_prob) = pred_p
-        .iter()
-        .enumerate()
-        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
-        .unwrap();
+    let (best_idx, max_prob) = pred_p.iter().enumerate().max_by(|a, b| a.1.partial_cmp(b.1).unwrap()).unwrap();
 
-    println!(
-        "Predicted Best Move Index: {best_idx} with probability {max_prob:.5} (Target Index: \
-         {target_move_index:?})"
-    );
+    println!("Predicted Best Move Index: {best_idx} with probability {max_prob:.5} (Target Index: {target_move_index:?})");
 
     assert_eq!(
         best_idx,
@@ -226,14 +214,7 @@ pub fn learn_mate_in_1() {
 
     let config = get_config(&config_file);
 
-    let result_weights = train::<AutodiffBackend>(
-        phase_name,
-        &config,
-        &artifact_dir,
-        ResumeAction::Scratch,
-        &device,
-    )
-    .unwrap();
+    let result_weights = train::<AutodiffBackend>(phase_name, &config, &artifact_dir, ResumeAction::Scratch, &device).unwrap();
 
     // test
     let num_fens_total = config.epd_dataset_fens_total;
@@ -247,9 +228,7 @@ pub fn learn_mate_in_1() {
             .load(result_weights.into(), &device)
             .expect("Should be able to load the model weights from the provided file");
 
-        let model = ModelConfig::new()
-            .init::<Backend>(&device)
-            .load_record(record);
+        let model = ModelConfig::new().init::<Backend>(&device).load_record(record);
 
         let mut mcts_state = SearchState::default();
         let parts = NNParts::new(model, device, 0.3, Ratio::zero());
@@ -260,11 +239,12 @@ pub fn learn_mate_in_1() {
             ..Default::default()
         };
 
-        let result = mcts::<{ MPV }, MctsTestConfig, _>(
+        let result = mcts::<{ MPV }, MctsTestConfig, _, C_MctsNnParams>(
             &mut pos,
             &parts,
             &mut mcts_state,
             &mut MctsTrainStrategy::new(limit, 1, 1),
+            C_MctsNnParams,
         );
 
         for b in mcts_state.tree.branches_rt(mcts_state.tree.root()) {
@@ -288,10 +268,7 @@ pub fn learn_mate_in_1() {
     println!("Best by policy: {best_move_by_policy}");
 
     let expected_move = Move::new(B5, A5, QUIET);
-    assert_eq!(
-        best_move_played, expected_move,
-        "MCTS did not find the mate in 1 move!"
-    );
+    assert_eq!(best_move_played, expected_move, "MCTS did not find the mate in 1 move!");
     assert_eq!(
         best_move_by_policy, expected_move,
         "Policy head did not assign the highest probability to the mate in 1 move!"
@@ -318,14 +295,7 @@ pub fn learn_mate_in_2() {
 
     let config = get_config(&config_file);
 
-    let result_weights = train::<AutodiffBackend>(
-        phase_name,
-        &config,
-        &artifact_dir,
-        ResumeAction::Scratch,
-        &device,
-    )
-    .unwrap();
+    let result_weights = train::<AutodiffBackend>(phase_name, &config, &artifact_dir, ResumeAction::Scratch, &device).unwrap();
 
     // test
     let num_fens_total = config.epd_dataset_fens_total;
@@ -339,9 +309,7 @@ pub fn learn_mate_in_2() {
             .load(result_weights.into(), &device)
             .expect("Should be able to load the model weights from the provided file");
 
-        let model = ModelConfig::new()
-            .init::<Backend>(&device)
-            .load_record(record);
+        let model = ModelConfig::new().init::<Backend>(&device).load_record(record);
 
         let limit = SelfPlayLimit {
             iterations: 25,
@@ -352,11 +320,12 @@ pub fn learn_mate_in_2() {
         let nn_parts = NNParts::new(model, device, 0.3, Ratio::zero());
 
         for _ in 0..3 {
-            let result = mcts::<{ MPV }, MctsTestConfig, _>(
+            let result = mcts::<{ MPV }, MctsTestConfig, _, C_MctsNnParams>(
                 &mut pos,
                 &nn_parts,
                 &mut mcts_state,
                 &mut MctsTrainStrategy::new(limit.clone(), 1, 1),
+                C_MctsNnParams,
             );
 
             for b in mcts_state.tree.branches_rt(mcts_state.tree.root()) {

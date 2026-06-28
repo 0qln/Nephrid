@@ -27,8 +27,7 @@ use crate::{
     misc::{CheckHealth, CheckHealthResult},
 };
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
 
 #[derive(Debug, Error)]
 pub enum CheckTensorHealthError {
@@ -217,33 +216,16 @@ pub fn board_input(pos: &Position) -> BoardInputFloats {
     ]
 }
 
-pub fn board_history_input<B: Backend>(
-    history: &[BoardInputFloats],
-    device: &B::Device,
-) -> BoardInputTensor<B> {
+pub fn board_history_input<B: Backend>(history: &[BoardInputFloats], device: &B::Device) -> BoardInputTensor<B> {
     let history_len = history.len();
     let padding_len = BOARD_INPUT_HISTORY - history_len;
     debug_assert_eq!(padding_len + history_len, BOARD_INPUT_HISTORY);
 
     // pad missing history info with zeroes.
-    let padding_tensor = BoardInputTensor::<B>::zeros(
-        [
-            1,
-            padding_len * BOARD_INPUT_CHANNELS,
-            ranks::N_VARIANTS,
-            files::N_VARIANTS,
-        ],
-        device,
-    );
+    let padding_tensor = BoardInputTensor::<B>::zeros([1, padding_len * BOARD_INPUT_CHANNELS, ranks::N_VARIANTS, files::N_VARIANTS], device);
 
     // convert input floats to tensors
-    let history_tensor = Tensor::cat(
-        history
-            .iter()
-            .map(|b| Tensor::from_floats([*b], device))
-            .collect_vec(),
-        1,
-    );
+    let history_tensor = Tensor::cat(history.iter().map(|b| Tensor::from_floats([*b], device)).collect_vec(), 1);
 
     // concat padding with history
     // burn throws error "assertion failed: divisor != 0" if padding is empty, so
@@ -308,18 +290,12 @@ impl PolicyHeadIndex {
     pub const MAX: u16 = (POLICY_OUTPUTS - 1) as u16;
 
     pub fn new(i: u16) -> Self {
-        debug_assert!(
-            i <= Self::MAX,
-            "PolicyHeadIndex must be between 0 and {}",
-            Self::MAX
-        );
+        debug_assert!(i <= Self::MAX, "PolicyHeadIndex must be between 0 and {}", Self::MAX);
 
         Self(i)
     }
 
-    pub fn v(&self) -> u16 {
-        self.0
-    }
+    pub fn v(&self) -> u16 { self.0 }
 }
 
 impl From<Move> for PolicyHeadIndex {
@@ -356,55 +332,35 @@ impl From<Move> for PolicyHeadIndex {
 pub struct RawLogits(pub [f32; POLICY_OUTPUTS]);
 
 impl std::fmt::Debug for RawLogits {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("RawLogits").field(&"...").finish()
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_tuple("RawLogits").field(&"...").finish() }
 }
 
 impl Default for RawLogits {
-    fn default() -> Self {
-        Self::null()
-    }
+    fn default() -> Self { Self::null() }
 }
 
 impl RawLogits {
-    pub fn get(&self, i: PolicyHeadIndex) -> f32 {
-        unsafe { *self.0.get_unchecked(i.0 as usize) }
-    }
+    pub fn get(&self, i: PolicyHeadIndex) -> f32 { unsafe { *self.0.get_unchecked(i.0 as usize) } }
 
-    pub fn set(&mut self, i: usize, val: f32) {
-        self.0[i] = val;
-    }
+    pub fn set(&mut self, i: usize, val: f32) { self.0[i] = val; }
 
-    pub fn null() -> Self {
-        Self::new([0.0; POLICY_OUTPUTS])
-    }
+    pub fn null() -> Self { Self::new([0.0; POLICY_OUTPUTS]) }
 
-    pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self {
-        Self(p)
-    }
+    pub fn new(p: [f32; POLICY_OUTPUTS]) -> Self { Self(p) }
 
     /// Returns an immutable view of the underlying policy values.
-    pub fn as_slice(&self) -> &[f32] {
-        &self.0
-    }
+    pub fn as_slice(&self) -> &[f32] { &self.0 }
 
-    pub fn sum(&self) -> f32 {
-        self.0.iter().sum::<f32>()
-    }
+    pub fn sum(&self) -> f32 { self.0.iter().sum::<f32>() }
 
     pub fn len(&self) -> usize {
         debug_assert_eq!(POLICY_OUTPUTS, self.0.len());
         POLICY_OUTPUTS
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = f32> {
-        self.0.iter().cloned()
-    }
+    pub fn iter(&self) -> impl Iterator<Item = f32> { self.0.iter().cloned() }
 
-    pub fn inner_mut(&mut self) -> &mut [f32] {
-        &mut self.0
-    }
+    pub fn inner_mut(&mut self) -> &mut [f32] { &mut self.0 }
 }
 
 pub type PolicyOutputTensor<B> = Tensor<B, POLICY_OUTPUT_TENSOR_DIM>;
@@ -417,10 +373,7 @@ pub struct ConvBlock<B: Backend> {
 }
 
 impl<B: Backend> ConvBlock<B> {
-    pub fn forward(
-        &self,
-        x: Tensor<B, { BOARD_INPUT_TENSOR_DIM }>,
-    ) -> Tensor<B, { BOARD_INPUT_TENSOR_DIM }> {
+    pub fn forward(&self, x: Tensor<B, { BOARD_INPUT_TENSOR_DIM }>) -> Tensor<B, { BOARD_INPUT_TENSOR_DIM }> {
         let x = self.conv.forward(x);
         let x = self.b_norm.forward(x);
         self.activation.forward(x)
@@ -476,10 +429,7 @@ pub struct ResidualBlock<B: Backend> {
 }
 
 impl<B: Backend> ResidualBlock<B> {
-    pub fn forward(
-        &self,
-        x: Tensor<B, { BOARD_INPUT_TENSOR_DIM }>,
-    ) -> Tensor<B, { BOARD_INPUT_TENSOR_DIM }> {
+    pub fn forward(&self, x: Tensor<B, { BOARD_INPUT_TENSOR_DIM }>) -> Tensor<B, { BOARD_INPUT_TENSOR_DIM }> {
         let identity = x.clone();
 
         let out = self.conv1.forward(x);
@@ -555,11 +505,7 @@ pub struct Model<B: Backend> {
 }
 
 impl<B: Backend> Model<B> {
-    pub fn forward(
-        &self,
-        board_input: BoardInputTensor<B>,
-        state_input: StateInputTensor<B>,
-    ) -> (ValueOutputTensor<B>, PolicyOutputTensor<B>) {
+    pub fn forward(&self, board_input: BoardInputTensor<B>, state_input: StateInputTensor<B>) -> (ValueOutputTensor<B>, PolicyOutputTensor<B>) {
         let mut x = self.initial_conv.forward(board_input);
 
         for block in self.res_blocks.iter() {
@@ -591,15 +537,7 @@ impl<B: Backend> Model<B> {
         // this or just doing one batchsize and then filling with zeroes if not full?
         for batch_size in 1..=batch_size_max {
             let dummy_state = StateInputTensor::<B>::zeros([batch_size, STATE_INPUT_LEN], device);
-            let dummy_board = BoardInputTensor::<B>::zeros(
-                [
-                    batch_size,
-                    INPUT_CHANNELS,
-                    ranks::N_VARIANTS,
-                    files::N_VARIANTS,
-                ],
-                device,
-            );
+            let dummy_board = BoardInputTensor::<B>::zeros([batch_size, INPUT_CHANNELS, ranks::N_VARIANTS, files::N_VARIANTS], device);
 
             let output = self.forward(dummy_board, dummy_state);
 
@@ -639,9 +577,7 @@ pub enum CheckModelHealthError {
 impl<B: Backend> CheckHealth for Model<B> {
     type Error = CheckModelHealthError;
     fn check_health(&self) -> CheckHealthResult<Self::Error> {
-        self.initial_conv
-            .check_health()
-            .map_err(Self::Error::InitialConv)?;
+        self.initial_conv.check_health().map_err(Self::Error::InitialConv)?;
 
         for (index, block) in self.res_blocks.iter().enumerate() {
             block
@@ -649,22 +585,12 @@ impl<B: Backend> CheckHealth for Model<B> {
                 .map_err(|e| CheckModelHealthError::ResidualBlock { index, error: e })?;
         }
 
-        self.value_conv
-            .check_health()
-            .map_err(Self::Error::ValueHeadConv)?;
-        self.value_dense1
-            .check_health()
-            .map_err(Self::Error::ValueHeadDense)?;
-        self.value_dense2
-            .check_health()
-            .map_err(Self::Error::ValueHeadDense)?;
+        self.value_conv.check_health().map_err(Self::Error::ValueHeadConv)?;
+        self.value_dense1.check_health().map_err(Self::Error::ValueHeadDense)?;
+        self.value_dense2.check_health().map_err(Self::Error::ValueHeadDense)?;
 
-        self.policy_conv
-            .check_health()
-            .map_err(CheckModelHealthError::PolicyHeadConv)?;
-        self.policy_dense
-            .check_health()
-            .map_err(Self::Error::PolicyHeadDense)?;
+        self.policy_conv.check_health().map_err(CheckModelHealthError::PolicyHeadConv)?;
+        self.policy_dense.check_health().map_err(Self::Error::PolicyHeadDense)?;
 
         Ok(())
     }

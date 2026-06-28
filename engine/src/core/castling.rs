@@ -97,55 +97,35 @@ impl CastlingRights {
     /// # Safety
     /// The caller must ensure that `v` is a valid castling rights bitmask.
     #[inline]
-    pub const unsafe fn from_v(v: u8) -> Self {
-        Self { v }
-    }
+    pub const unsafe fn from_v(v: u8) -> Self { Self { v } }
 
     #[inline]
-    pub const fn set_false(&mut self, side: CastlingSide, color: Color) {
-        self.v &= !(1 << Self::to_index(side, color));
-    }
+    pub const fn set_false(&mut self, side: CastlingSide, color: Color) { self.v &= !(1 << Self::to_index(side, color)); }
 
     #[inline]
-    pub const fn set_true(&mut self, side: CastlingSide, color: Color) {
-        self.v |= 1 << Self::to_index(side, color);
-    }
+    pub const fn set_true(&mut self, side: CastlingSide, color: Color) { self.v |= 1 << Self::to_index(side, color); }
 
     #[inline]
-    pub const fn is_true(&self, side: CastlingSide, color: Color) -> bool {
-        self.v & (1 << Self::to_index(side, color)) != 0
-    }
+    pub const fn is_true(&self, side: CastlingSide, color: Color) -> bool { self.v & (1 << Self::to_index(side, color)) != 0 }
 
     #[inline]
-    pub const fn is_empty(&self) -> bool {
-        self.v == 0
-    }
+    pub const fn is_empty(&self) -> bool { self.v == 0 }
 
     #[inline]
-    pub const fn v(&self) -> u8 {
-        self.v
-    }
+    pub const fn v(&self) -> u8 { self.v }
 
     #[inline]
-    pub const fn get_float(&self, side: CastlingSide, color: Color) -> f32 {
-        if self.is_true(side, color) { 1.0 } else { 0.0 }
-    }
+    pub const fn get_float(&self, side: CastlingSide, color: Color) -> f32 { if self.is_true(side, color) { 1.0 } else { 0.0 } }
 
     /// applies a castling mask
     #[inline]
-    pub const fn apply_mask(&mut self, mask: Self) {
-        self.v &= mask.v;
-    }
+    pub const fn apply_mask(&mut self, mask: Self) { self.v &= mask.v; }
 
     #[inline]
-    pub const fn empty() -> Self {
-        Self { v: 0 }
-    }
+    pub const fn empty() -> Self { Self { v: 0 } }
 
     #[inline]
-    pub const fn full() -> Self {
-        Self { v: 0xF }
-    }
+    pub const fn full() -> Self { Self { v: 0xF } }
 
     #[inline]
     const fn to_index(side: CastlingSide, color: Color) -> u8 {

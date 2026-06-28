@@ -1,25 +1,80 @@
-use std::rc::Rc;
+use std::{fmt, marker::PhantomData, ops::Deref};
 
-use crate::core::{
-    config::Configuration, eval::hce::TaperValue, search::{mcts::{self, eval::hce::PolicyParams, node::VisitCount}, quiesce::QSearchParams}
+use crate::{
+    core::{
+        chrono::ChronoParams,
+        config::{ConfigBuilder, Configuration},
+        eval::hce::TaperValue,
+        search::{
+            mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
+            quiesce::QSearchParams,
+        },
+    },
+    math::NormalizedEntropy,
 };
 
-#[cfg(feature = "tunable")]
-pub type Params = TunableParams;
-#[cfg(feature = "tunable")]
-pub type ParamsRef = Rc<TunableParams>;
-#[cfg(feature = "tunable")]
-pub type CreateParamsError = CreateTunableParamsError;
+pub const trait IConfigBuilder {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder;
+}
 
-#[cfg(not(feature = "tunable"))]
-pub type Params = HceParams;
-#[cfg(not(feature = "tunable"))]
-pub type ParamsRef = HceParams;
-#[cfg(not(feature = "tunable"))]
-pub type CreateParamsError = CreateConcreteParamsError;
+/// Something that wraps parameters used by some part of the engine.
+pub const trait IParams: IConfigBuilder {
+    type Ref: ?Sized + Clone;
+
+    /// Get a shared reference to the params.
+    fn shared(self) -> Self::Ref;
+
+    fn try_from_config<C: Deref<Target = Configuration>>(config: C) -> Result<Self::Ref, impl fmt::Display>;
+}
+
+// const generator
+
+macro_rules! const_params {
+    ($name:ident) => {
+        paste::paste! {
+            #[derive(Debug, Default, Clone)]
+            #[allow(non_camel_case_types)]
+            pub struct [<C_ $name Params>];
+
+            #[allow(non_camel_case_types)]
+            pub type [<C_ $name ParamsRef>] = [<C_ $name Params>];
+
+            #[cfg(feature = "tunable")] pub type [<$name Params>] = TunableParams<[<C_ $name Params>]>;
+            #[cfg(feature = "tunable")] pub type [<$name ParamsRef>] = TunableParamsRef<[<C_ $name Params>]>;
+            #[cfg(not(feature = "tunable"))] pub type [<$name Params>] = [<C_ $name Params>];
+            #[cfg(not(feature = "tunable"))] pub type [<$name ParamsRef>] = [<C_ $name ParamsRef>];
+
+            pub fn [<$name:snake _params_default>]() -> [<$name ParamsRef>] {
+                cfg_select! {
+                    feature = "tunable" => [<C_ $name Params>]::tunable(&[<C_ $name Params>]).shared(),
+                    _ => [<C_ $name Params>]
+                }
+            }
+
+            impl [<C_ $name Params>] {
+                pub fn tunable(&self) -> TunableParams<[<C_ $name Params>]> {
+                    let builder = Configuration::builder();
+                    let config = self.build_config(builder).build();
+                    TunableParams::from_config(&config)
+                }
+            }
+
+            impl IParams for [<C_ $name Params>] {
+                type Ref = Self;
+                fn shared(self) -> Self::Ref { self }
+                fn try_from_config<C: Deref<Target = Configuration>>(_: C) -> Result<Self::Ref, std::convert::Infallible> { Ok(Self) }
+            }
+        }
+    };
+}
+
+// generic tunable
+
+pub type TunableParamsRef<B> = std::rc::Rc<TunableParams<B>>;
 
 #[derive(Debug, Clone)]
-pub struct TunableParams {
+pub struct TunableParams<Base> {
+    timeman_entropy_target: NormalizedEntropy,
     hce_policy_temp: f32,
     hce_q_futility_margin: i32,
     hce_q_delta_pruning_threshold: TaperValue,
@@ -27,19 +82,45 @@ pub struct TunableParams {
     mcts_proven_loss_visit_threshold: VisitCount,
     mcts_killer_exploitation: f32,
     mcts_tt_best_move: f32,
+    _base: PhantomData<Base>,
 }
 
-impl TunableParams {
-    pub fn new(
-        hce_policy_temp: f32,
-        hce_q_futility_margin: i32,
-        hce_q_delta_pruning_threshold: TaperValue,
-        select_cpuct: f32,
-        mcts_proven_loss_visit_threshold: VisitCount,
-        mcts_killer_exploitation: f32,
-        mcts_tt_best_move: f32,
-    ) -> Self {
+impl<B, X: Deref<Target = TunableParams<B>>> PuctParams for X {
+    fn select_cpuct(&self) -> f32 { self.select_cpuct }
+}
+
+impl<B, X: Deref<Target = TunableParams<B>>> MctsParams for X {
+    fn proven_loss_visit_threshold(&self) -> VisitCount { self.mcts_proven_loss_visit_threshold }
+    fn killer_exploitation(&self) -> f32 { self.mcts_killer_exploitation }
+    fn tt_best_move(&self) -> f32 { self.mcts_tt_best_move }
+}
+
+impl<B, X: Deref<Target = TunableParams<B>>> QSearchParams for X {
+    fn futility_margin(&self) -> i32 { self.hce_q_futility_margin }
+    fn delta_pruning_threshold(&self) -> TaperValue { self.hce_q_delta_pruning_threshold }
+}
+
+impl<B, X: Deref<Target = TunableParams<B>>> PolicyParams for X {
+    fn policy_temperature(&self) -> f32 { self.hce_policy_temp }
+}
+
+impl<B, X: Deref<Target = TunableParams<B>>> ChronoParams for X {
+    fn entropy_target(&self) -> NormalizedEntropy { self.timeman_entropy_target }
+}
+
+impl<B> TunableParams<B> {
+    fn from_config<C: Deref<Target = Configuration>>(config: C) -> Self {
+        let config = config.deref();
+        let timeman_entropy_target = config.timeman_entropy_target();
+        let hce_policy_temp = config.eval_policy_temperature();
+        let hce_q_futility_margin = config.eval_futility_margin();
+        let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
+        let select_cpuct = config.select_cpuct();
+        let mcts_proven_loss_visit_threshold = config.mcts_proven_loss_visit_threshold();
+        let mcts_killer_exploitation = config.mcts_killer_exploitation();
+        let mcts_tt_best_move = config.mcts_tt_best_move();
         Self {
+            timeman_entropy_target,
             hce_policy_temp,
             hce_q_futility_margin,
             hce_q_delta_pruning_threshold,
@@ -47,63 +128,40 @@ impl TunableParams {
             mcts_proven_loss_visit_threshold,
             mcts_killer_exploitation,
             mcts_tt_best_move,
+            _base: PhantomData,
         }
     }
+}
 
-    pub fn select_cpuct(&self) -> f32 {
-        self.select_cpuct
+impl<B> IParams for TunableParams<B> {
+    type Ref = TunableParamsRef<B>;
+
+    fn shared(self) -> Self::Ref { std::rc::Rc::new(self) }
+
+    fn try_from_config<C: Deref<Target = Configuration>>(config: C) -> Result<Self::Ref, CreateTunableParamsError> {
+        Ok(Self::from_config(config).shared())
     }
 }
 
-impl Default for TunableParams {
+impl<B> IConfigBuilder for TunableParams<B> {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+        //
+        builder.chrono(&self).policy(&self).qsearch(&self).puct(&self).mcts(&self)
+    }
+}
+
+impl<B: IConfigBuilder + Default> Default for TunableParams<B> {
     fn default() -> Self {
-        let config = Configuration::default();
-        Self::try_from(&config).expect("default config should contain healthy values")
+        let base = B::default();
+        let builder = Configuration::builder();
+        let builder = base.build_config(builder);
+        let config = builder.build();
+        Self::from_config(&config)
     }
 }
 
-impl mcts::select::puct::PuctParams for Rc<TunableParams> {
-    fn select_cpuct(&self) -> f32 {
-        self.select_cpuct
-    }
-}
-
-impl mcts::search::SearchParams for Rc<TunableParams> {
-    fn proven_loss_visit_threshold(&self) -> mcts::node::VisitCount {
-        self.mcts_proven_loss_visit_threshold
-    }
-
-    fn killer_exploitation(&self) -> f32 {
-        self.mcts_killer_exploitation
-    }
-
-    fn tt_best_move(&self) -> f32 {
-        self.mcts_tt_best_move
-    }
-}
-
-impl QSearchParams for Rc<TunableParams> {
-    fn futility_margin(&self) -> i32 {
-        self.hce_q_futility_margin
-    }
-    fn delta_pruning_threshold(&self) -> TaperValue {
-        self.hce_q_delta_pruning_threshold
-    }
-}
-
-impl PolicyParams for Rc<TunableParams> {
-    #[inline(always)]
-    fn policy_temperature(&self) -> f32 {
-        self.hce_policy_temp
-    }
-}
-
-impl IParams for TunableParams {
-    type Ref = Rc<TunableParams>;
-    fn shared(self) -> Rc<TunableParams> {
-        Rc::new(self)
-    }
-}
+#[rustfmt::skip] #[cfg(feature = "tunable")] pub type CreateParamsError = CreateTunableParamsError;
+#[rustfmt::skip] #[cfg(not(feature = "tunable"))] pub type CreateParamsError = std::convert::Infallible;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CreateTunableParamsError {
@@ -115,102 +173,98 @@ pub enum CreateTunableParamsError {
     InvalidDeltaPruningThreshold(String),
 }
 
-impl TryFrom<&Configuration> for TunableParams {
-    type Error = CreateTunableParamsError;
+// mcts hce
 
-    fn try_from(config: &Configuration) -> Result<Self, Self::Error> {
-        let hce_policy_temp = config.eval_policy_temperature();
-        let hce_q_futility_margin = config.eval_futility_margin();
-        let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
-        let select_cpuct = config.select_cpuct();
-        let mcts_proven_loss_visit_threshold = config.mcts_proven_loss_visit_threshold();
-        let mcts_killer_exploitation = config.mcts_killer_exploitation();
-        let mcts_tt_best_move = config.mcts_tt_best_move();
-        Ok(Self {
-            hce_policy_temp,
-            hce_q_futility_margin,
-            hce_q_delta_pruning_threshold,
-            select_cpuct,
-            mcts_proven_loss_visit_threshold,
-            mcts_killer_exploitation,
-            mcts_tt_best_move,
-        })
+const_params!(MctsHce);
+
+impl IConfigBuilder for C_MctsHceParams {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+        //
+        builder.puct(self).mcts(self).qsearch(self).policy(self)
     }
 }
 
-// todo:
-// move the HceParams into the nephrid binary target.
-// these values are tuned for this specific evaluation function and are are
-// likely to have different optimal values for e.g. NNParts
+#[rustfmt::skip]
+impl const PuctParams for C_MctsHceParams {
+    #[inline(always)] fn select_cpuct(&self) -> f32 { 0.77 }
+}
 
-#[derive(Debug, Default, Clone)]
-pub struct HceParams;
+#[rustfmt::skip]
+impl const MctsParams for C_MctsHceParams {
+    #[inline(always)] fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
+    #[inline(always)] fn killer_exploitation(&self) -> f32 { 0.27 }
+    #[inline(always)] fn tt_best_move(&self) -> f32 { 1.65 }
+}
 
-impl mcts::select::puct::PuctParams for HceParams {
-    #[inline(always)]
-    fn select_cpuct(&self) -> f32 {
-        0.77
+#[rustfmt::skip]
+impl const QSearchParams for C_MctsHceParams {
+    #[inline(always)] fn futility_margin(&self) -> i32 { 166 }
+    #[inline(always)] fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+}
+
+#[rustfmt::skip]
+impl const PolicyParams for C_MctsHceParams {
+    #[inline(always)] fn policy_temperature(&self) -> f32 { 24.58 }
+}
+
+// mcts nn
+
+const_params!(MctsNn);
+
+impl IConfigBuilder for C_MctsNnParams {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+        //
+        builder.puct(self).mcts(self).policy(self)
     }
 }
 
-impl mcts::search::SearchParams for HceParams {
-    #[inline(always)]
-    fn proven_loss_visit_threshold(&self) -> mcts::node::VisitCount {
-        VisitCount(5)
-    }
+impl const PuctParams for C_MctsNnParams {
+    fn select_cpuct(&self) -> f32 { 0.77 }
+}
 
-    #[inline(always)]
-    fn killer_exploitation(&self) -> f32 {
-        0.27
-    }
+impl const MctsParams for C_MctsNnParams {
+    fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
+    fn killer_exploitation(&self) -> f32 { 0.27 }
+    fn tt_best_move(&self) -> f32 { 1.65 }
+}
 
-    #[inline(always)]
-    fn tt_best_move(&self) -> f32 {
-        1.65
+impl const PolicyParams for C_MctsNnParams {
+    fn policy_temperature(&self) -> f32 { 24.58 }
+}
+
+// mcts pure
+
+const_params!(MctsPure);
+
+impl IConfigBuilder for C_MctsPureParams {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+        //
+        builder
     }
 }
 
-impl QSearchParams for HceParams {
-    #[inline(always)]
-    fn futility_margin(&self) -> i32 {
-        166
-    }
+impl const MctsParams for C_MctsPureParams {
+    fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
+    fn killer_exploitation(&self) -> f32 { 0.27 }
+    fn tt_best_move(&self) -> f32 { 1.65 }
+}
 
-    #[inline(always)]
-    fn delta_pruning_threshold(&self) -> TaperValue {
-        TaperValue::new(16)
+// id hce
+
+const_params!(IdHce);
+
+impl IConfigBuilder for C_IdHceParams {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+        //
+        builder.chrono(self).qsearch(self)
     }
 }
 
-impl PolicyParams for HceParams {
-    #[inline(always)]
-    fn policy_temperature(&self) -> f32 {
-        24.58
-    }
+impl const ChronoParams for C_IdHceParams {
+    fn entropy_target(&self) -> NormalizedEntropy { NormalizedEntropy::new_c(0.55) }
 }
 
-impl IParams for HceParams {
-    type Ref = Self;
-
-    #[inline(always)]
-    fn shared(self) -> Self::Ref {
-        self
-    }
-}
-
-#[allow(clippy::infallible_try_from)]
-impl TryFrom<&Configuration> for HceParams {
-    type Error = CreateConcreteParamsError;
-
-    #[inline(always)]
-    fn try_from(_: &Configuration) -> Result<Self, Self::Error> {
-        Ok(Self)
-    }
-}
-
-pub type CreateConcreteParamsError = std::convert::Infallible;
-
-pub trait IParams {
-    type Ref: ?Sized;
-    fn shared(self) -> Self::Ref;
+impl const QSearchParams for C_IdHceParams {
+    fn futility_margin(&self) -> i32 { 166 }
+    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
 }

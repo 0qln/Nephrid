@@ -18,8 +18,7 @@ use crate::{
         castling::{CastlingRights, CastlingSideTokenizationError},
         color::{Color, ColorTokenizationError, Perspective, colors, perspectives},
         coordinates::{
-            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square,
-            castling::castling_rank, files, pawn_utils, ranks, squares,
+            EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, castling::castling_rank, files, pawn_utils, ranks, squares,
         },
         depth::Depth,
         r#move::{Move, MoveList, SAN, SanParseError, move_flags},
@@ -53,8 +52,7 @@ pub enum CheckState {
     Double,
 }
 
-#[cfg(test)]
-mod test;
+#[cfg(test)] mod test;
 
 #[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct StateInfo {
@@ -98,11 +96,8 @@ impl StateInfo {
 
             // The X-Ray checkers for the given king. X-Ray checkers are pieces which attack
             // a king through zero or more pieces.
-            let x_ray_checkers = {
-                Bitboard::empty()
-                    | (rook::lookup_attacks_0_occ(king_sq) & r_n_q)
-                    | (bishop::lookup_attacks_0_occ(king_sq) & b_n_q)
-            };
+            let x_ray_checkers =
+                { Bitboard::empty() | (rook::lookup_attacks_0_occ(king_sq) & r_n_q) | (bishop::lookup_attacks_0_occ(king_sq) & b_n_q) };
 
             self.blockers = x_ray_checkers.fold(Bitboard::empty(), |acc, x_ray_checker| {
                 let between_squares = Bitboard::between(x_ray_checker, king_sq);
@@ -145,15 +140,11 @@ impl Clone for StateStack {
 }
 
 impl PartialEq for StateStack {
-    fn eq(&self, other: &Self) -> bool {
-        self.states[..self.current] == other.states[..other.current]
-    }
+    fn eq(&self, other: &Self) -> bool { self.states[..self.current] == other.states[..other.current] }
 }
 
 impl Default for StateStack {
-    fn default() -> Self {
-        Self::new(StateInfo::default())
-    }
+    fn default() -> Self { Self::new(StateInfo::default()) }
 }
 
 impl StateStack {
@@ -205,9 +196,7 @@ impl StateStack {
 
     /// Increment the current index.
     #[inline]
-    pub fn incr(&mut self) {
-        self.current += 1;
-    }
+    pub fn incr(&mut self) { self.current += 1; }
 
     /// Returns the popped state.
     #[inline]
@@ -241,9 +230,7 @@ impl Default for PieceInfo {
 
 impl PieceInfo {
     #[inline]
-    pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
-        self.get_color_bb(color) & self.get_piece_bb(piece_type)
-    }
+    pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard { self.get_color_bb(color) & self.get_piece_bb(piece_type) }
 
     #[inline]
     pub fn get_color_bb(&self, color: Color) -> Bitboard {
@@ -264,9 +251,7 @@ impl PieceInfo {
     // todo: these get_unchecked's are not neccesary anymore.
 
     #[inline]
-    pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
-        self.t_bitboards[piece_type.v() as usize]
-    }
+    pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard { self.t_bitboards[piece_type.v() as usize] }
 
     #[inline]
     fn get_piece_bb_mut(&mut self, piece_type: PieceType) -> &mut Bitboard {
@@ -277,9 +262,7 @@ impl PieceInfo {
     }
 
     #[inline]
-    pub fn get_occupancy(&self) -> Bitboard {
-        self.get_color_bb(colors::WHITE) | self.get_color_bb(colors::BLACK)
-    }
+    pub fn get_occupancy(&self) -> Bitboard { self.get_color_bb(colors::WHITE) | self.get_color_bb(colors::BLACK) }
 
     #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece {
@@ -322,12 +305,7 @@ impl PieceInfo {
 
     pub fn put_piece(&mut self, sq: Square, piece: Piece) {
         let target = Bitboard::from(sq);
-        debug_assert_eq!(
-            self.get_piece(sq),
-            Piece::default(),
-            "Piece already at {sq}: {}",
-            self.get_piece(sq)
-        );
+        debug_assert_eq!(self.get_piece(sq), Piece::default(), "Piece already at {sq}: {}", self.get_piece(sq));
         *self.get_piece_bb_mut(piece.piece_type()) |= target;
         *self.get_color_bb_mut(piece.color()) |= target;
         *self.get_piece_mut(sq) = piece;
@@ -335,15 +313,8 @@ impl PieceInfo {
     }
 
     pub fn move_piece(&mut self, from: Square, to: Square) {
-        debug_assert!(
-            self.get_piece(from) != Piece::default(),
-            "No piece at {from}"
-        );
-        debug_assert!(
-            self.get_piece(to) == Piece::default(),
-            "Piece already at {to}: {}",
-            self.get_piece(to)
-        );
+        debug_assert!(self.get_piece(from) != Piece::default(), "No piece at {from}");
+        debug_assert!(self.get_piece(to) == Piece::default(), "Piece already at {to}: {}", self.get_piece(to));
         let piece = self.get_piece(from);
         let from_to = Bitboard::from(from) | Bitboard::from(to);
         *self.get_color_bb_mut(piece.color()) ^= from_to;
@@ -487,9 +458,7 @@ impl PieceInfo {
             | (king::lookup_attacks(to) & kings)
     }
 
-    pub fn attackers_to_exist(&self, to: Square, color: Color, occ: Bitboard) -> bool {
-        !self.attackers_to(to, color, occ).is_empty()
-    }
+    pub fn attackers_to_exist(&self, to: Square, color: Color, occ: Bitboard) -> bool { !self.attackers_to(to, color, occ).is_empty() }
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -530,14 +499,10 @@ impl Position {
     }
 
     #[inline]
-    pub fn get_turn(&self) -> Turn {
-        self.state.get_current().turn
-    }
+    pub fn get_turn(&self) -> Turn { self.state.get_current().turn }
 
     #[inline]
-    pub fn get_ep_capture_square(&self) -> EpCaptureSquare {
-        self.state.get_current().ep_capture_square
-    }
+    pub fn get_ep_capture_square(&self) -> EpCaptureSquare { self.state.get_current().ep_capture_square }
 
     #[inline]
     pub fn get_ep_target_square(&self) -> EpTargetSquare {
@@ -558,29 +523,19 @@ impl Position {
     }
 
     #[inline]
-    pub fn get_castling(&self) -> CastlingRights {
-        self.state.get_current().castling
-    }
+    pub fn get_castling(&self) -> CastlingRights { self.state.get_current().castling }
 
     #[inline]
-    pub fn get_key(&self) -> zobrist::Hash {
-        self.state.get_current().key
-    }
+    pub fn get_key(&self) -> zobrist::Hash { self.state.get_current().key }
 
     #[inline]
-    pub fn get_check_state(&self) -> CheckState {
-        self.state.get_current().check_state
-    }
+    pub fn get_check_state(&self) -> CheckState { self.state.get_current().check_state }
 
     #[inline]
-    pub fn get_checkers(&self) -> Bitboard {
-        self.state.get_current().checkers
-    }
+    pub fn get_checkers(&self) -> Bitboard { self.state.get_current().checkers }
 
     #[inline]
-    pub fn get_blockers(&self) -> Bitboard {
-        self.state.get_current().blockers
-    }
+    pub fn get_blockers(&self) -> Bitboard { self.state.get_current().blockers }
 
     #[inline]
     pub fn has_threefold_repetition(&self) -> bool {
@@ -631,33 +586,21 @@ impl Position {
     }
 
     #[inline]
-    pub fn does_check(&self, mov: Move) -> CheckState {
-        self.piece_info.does_check(self.get_turn(), mov)
-    }
+    pub fn does_check(&self, mov: Move) -> CheckState { self.piece_info.does_check(self.get_turn(), mov) }
 
     #[inline]
-    pub fn is_insufficient_material(&self) -> bool {
-        self.piece_info.piece_counts.iter().sum::<i8>() <= 2
-    }
+    pub fn is_insufficient_material(&self) -> bool { self.piece_info.piece_counts.iter().sum::<i8>() <= 2 }
 
     #[inline]
-    pub fn plys_50(&self) -> Ply {
-        self.state.get_current().plys50
-    }
+    pub fn plys_50(&self) -> Ply { self.state.get_current().plys50 }
 
     #[inline]
-    pub fn ply(&self) -> Ply {
-        self.state.get_current().ply
-    }
+    pub fn ply(&self) -> Ply { self.state.get_current().ply }
 
-    pub fn full_move(&self) -> FullMoveCount {
-        self.ply().into()
-    }
+    pub fn full_move(&self) -> FullMoveCount { self.ply().into() }
 
     #[inline]
-    pub fn fifty_move_rule(&self) -> bool {
-        self.plys_50() >= Ply { v: 100 }
-    }
+    pub fn fifty_move_rule(&self) -> bool { self.plys_50() >= Ply { v: 100 } }
 
     /// Returns the game result if the position is in a terminal state, else
     /// None. has_moves: Whether this position has subsequent moves.
@@ -677,10 +620,7 @@ impl Position {
             })
         }
         // Then check if the position has reached some of the extra-rule endings.
-        else if self.has_threefold_repetition()
-            || self.fifty_move_rule()
-            || self.is_insufficient_material()
-        {
+        else if self.has_threefold_repetition() || self.fifty_move_rule() || self.is_insufficient_material() {
             Some(GameResult::Draw)
         }
         // Otherwise no game result.
@@ -736,9 +676,7 @@ impl Position {
         self.search_result_with(has_moves, search_depth)
     }
 
-    pub fn has_legal_moves(&self) -> bool {
-        fold_legal_moves(self, false, |_, _| ControlFlow::Break(true)).into_value()
-    }
+    pub fn has_legal_moves(&self) -> bool { fold_legal_moves(self, false, |_, _| ControlFlow::Break(true)).into_value() }
 
     /// Tests whether a (potentially corrupt) move is pseudo-legal in the
     /// current position. Used to validate moves coming from the transposition
@@ -765,10 +703,7 @@ impl Position {
 
         // Use the slower but simpler pseudo-legal generator for uncommon move
         // types (en passant, promotions and castling).
-        if !matches!(
-            flag,
-            move_flags::QUIET | move_flags::DOUBLE_PAWN_PUSH | move_flags::CAPTURE
-        ) {
+        if !matches!(flag, move_flags::QUIET | move_flags::DOUBLE_PAWN_PUSH | move_flags::CAPTURE) {
             let found = fold_pseudo_legal_moves(self, (), |_, m| {
                 if m == mov {
                     ControlFlow::Break(())
@@ -913,9 +848,7 @@ impl Position {
                 let piece = from;
                 let blockers = self.get_blockers();
                 let our_king = self.get_bitboard(piece_type::KING, stm).lsb();
-                let pin_mask = our_king
-                    .map(|k| pin_mask(piece, blockers, k))
-                    .unwrap_or(Bitboard::full());
+                let pin_mask = our_king.map(|k| pin_mask(piece, blockers, k)).unwrap_or(Bitboard::full());
 
                 // pinned pieces can only move along the ray of the pin
                 if (pin_mask & to.into()).is_empty() {
@@ -950,9 +883,7 @@ impl Position {
     ///
     /// This pub, because it is used for benchmarking.
     #[inline]
-    pub unsafe fn put_piece_unsafe(&mut self, sq: Square, piece: Piece) {
-        self.piece_info.put_piece(sq, piece)
-    }
+    pub unsafe fn put_piece_unsafe(&mut self, sq: Square, piece: Piece) { self.piece_info.put_piece(sq, piece) }
 
     /// # Safety
     /// This is unsafe, because it allows you to modify the internal
@@ -960,9 +891,7 @@ impl Position {
     ///
     /// This pub, because it is used for benchmarking.
     #[inline]
-    pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) {
-        self.piece_info.remove_piece(sq);
-    }
+    pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) { self.piece_info.remove_piece(sq); }
 
     /// # Safety
     /// This is unsafe, because it allows you to modify the internal
@@ -970,9 +899,7 @@ impl Position {
     ///
     /// This pub, because it is used for benchmarking.
     #[inline]
-    pub unsafe fn move_piece_unsafe(&mut self, from: Square, to: Square) {
-        self.piece_info.move_piece(from, to)
-    }
+    pub unsafe fn move_piece_unsafe(&mut self, from: Square, to: Square) { self.piece_info.move_piece(from, to) }
 
     /// Makes a move on the board.
     pub fn make_move(&mut self, m: Move) {
@@ -986,11 +913,7 @@ impl Position {
 
     pub fn make_move_for<P: Perspective>(&mut self, m: Move) {
         let us = P::COLOR;
-        debug_assert_eq!(
-            us,
-            self.get_turn(),
-            "Color parameter C must match the current turn."
-        );
+        debug_assert_eq!(us, self.get_turn(), "Color parameter C must match the current turn.");
 
         let (from, to, flag) = m.into();
         let moving_piece = self.get_piece(from);
@@ -1073,11 +996,8 @@ impl Position {
 
                         // Safety: A double pawn push destination square is the definition of
                         // an en passant square.
-                        next_state.ep_capture_square =
-                            unsafe { EpCaptureSquare::try_from(to).unwrap_unchecked() };
-                        next_state
-                            .key
-                            .toggle_ep_square(next_state.ep_capture_square);
+                        next_state.ep_capture_square = unsafe { EpCaptureSquare::try_from(to).unwrap_unchecked() };
+                        next_state.key.toggle_ep_square(next_state.ep_capture_square);
                     }
                     move_flags::PROMOTION_KNIGHT_C..=move_flags::CAPTURE_PROMOTION_QUEEN_C => {
                         // Safety: We just checked, that the flag is in a valid range.
@@ -1106,10 +1026,7 @@ impl Position {
 
         // update castling rights in the hash, if they have changed.
         if next_state.castling != curr_state.castling {
-            next_state
-                .key
-                .toggle_castling(curr_state.castling)
-                .toggle_castling(next_state.castling);
+            next_state.key.toggle_castling(curr_state.castling).toggle_castling(next_state.castling);
         }
 
         // update state stack
@@ -1128,11 +1045,7 @@ impl Position {
 
     pub fn unmake_move_for<P: Perspective>(&mut self, m: Move) {
         let us = P::COLOR;
-        debug_assert_eq!(
-            !us,
-            self.get_turn(),
-            "Color parameter C must be the opposite of the current turn."
-        );
+        debug_assert_eq!(!us, self.get_turn(), "Color parameter C must be the opposite of the current turn.");
 
         let (from, to, flag) = m.into();
 
@@ -1192,48 +1105,28 @@ impl Position {
 
     // Convenience wrappers
 
-    pub fn from_fen(fen: &str) -> Result<Self, FenParseError> {
-        Self::try_from(FenImport(&mut Tokenizer::new(fen)))
-    }
+    pub fn from_fen(fen: &str) -> Result<Self, FenParseError> { Self::try_from(FenImport(&mut Tokenizer::new(fen))) }
 
-    pub fn from_pgn(pgn: &str) -> Result<Self, PgnImportError> {
-        Self::try_from(PgnImport(&mut Tokenizer::new(pgn)))
-    }
+    pub fn from_pgn(pgn: &str) -> Result<Self, PgnImportError> { Self::try_from(PgnImport(&mut Tokenizer::new(pgn))) }
 
     #[inline]
-    pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard {
-        self.piece_info.get_bitboard(piece_type, color)
-    }
+    pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard { self.piece_info.get_bitboard(piece_type, color) }
 
     #[inline]
-    pub fn get_color_bb(&self, color: Color) -> Bitboard {
-        self.piece_info.get_color_bb(color)
-    }
+    pub fn get_color_bb(&self, color: Color) -> Bitboard { self.piece_info.get_color_bb(color) }
 
-    pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard {
-        self.piece_info.get_piece_bb(piece_type)
-    }
+    pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard { self.piece_info.get_piece_bb(piece_type) }
 
-    pub fn get_occupancy(&self) -> Bitboard {
-        self.piece_info.get_occupancy()
-    }
+    pub fn get_occupancy(&self) -> Bitboard { self.piece_info.get_occupancy() }
 
     #[inline]
-    pub fn get_piece(&self, sq: Square) -> Piece {
-        self.piece_info.get_piece(sq)
-    }
+    pub fn get_piece(&self, sq: Square) -> Piece { self.piece_info.get_piece(sq) }
 
-    pub fn get_piece_count(&self, piece: Piece) -> i8 {
-        self.piece_info.get_piece_count(piece)
-    }
+    pub fn get_piece_count(&self, piece: Piece) -> i8 { self.piece_info.get_piece_count(piece) }
 
-    pub fn piece_info(&self) -> &PieceInfo {
-        &self.piece_info
-    }
+    pub fn piece_info(&self) -> &PieceInfo { &self.piece_info }
 
-    pub fn state_info(&self) -> &StateInfo {
-        self.state.get_current()
-    }
+    pub fn state_info(&self) -> &StateInfo { self.state.get_current() }
 }
 
 pub struct PiecePlacementInfo<'a>(&'a Position);
@@ -1498,10 +1391,7 @@ impl TryFrom<&mut Tokenizer<'_>> for ReducedPgn {
                     value.consume_char(); // Consume the '['
 
                     let inner = value.take_until(']').ok_or(PgnParseError::MalformedTag)?;
-                    let (key, val) = inner
-                        .trim()
-                        .split_once(' ')
-                        .ok_or(PgnParseError::MalformedTag)?;
+                    let (key, val) = inner.trim().split_once(' ').ok_or(PgnParseError::MalformedTag)?;
 
                     // Strictly enforce the Reduced PGN specification keys.
                     let static_key: &'static str = match key {
@@ -1521,9 +1411,7 @@ impl TryFrom<&mut Tokenizer<'_>> for ReducedPgn {
 
                     tags.push(PgnTagPair(static_key, clean_val));
                 }
-                Some(_) if let Some(token) = value.next_token() => {
-                    moves.push(PgnMoveInfo::try_from(token)?)
-                }
+                Some(_) if let Some(token) = value.next_token() => moves.push(PgnMoveInfo::try_from(token)?),
                 // end of stream
                 _ => {
                     break;
@@ -1688,9 +1576,7 @@ pub enum PgnMoveInfo {
 }
 
 impl PgnMoveInfo {
-    pub fn is_annotation(&self) -> bool {
-        matches!(self, Self::Annotation(_))
-    }
+    pub fn is_annotation(&self) -> bool { matches!(self, Self::Annotation(_)) }
 }
 
 impl fmt::Display for PgnMoveInfo {
@@ -1796,9 +1682,7 @@ impl fmt::Debug for Position {
 }
 
 impl fmt::Display for Position {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&String::from(self))
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(&String::from(self)) }
 }
 impl From<&Position> for String {
     fn from(val: &Position) -> Self {
@@ -1807,8 +1691,7 @@ impl From<&Position> for String {
             result.push_str(&(rank + 1).to_string());
             result.push(' ');
             for file in 0..=7 {
-                let sq =
-                    Square::from((File::try_from(file).unwrap(), Rank::try_from(rank).unwrap()));
+                let sq = Square::from((File::try_from(file).unwrap(), Rank::try_from(rank).unwrap()));
                 let piece = val.get_piece(sq);
                 let c: char = piece.into();
                 result.push(c);
@@ -1837,9 +1720,7 @@ mod fen {
                 }
                 _ => {
                     let piece = Piece::try_from(char).map_err(FenParseError::InvalidPiece)?;
-                    let pos_sq = Square::try_from(sq as u8)
-                        .map_err(|_| FenParseError::InvalidFenSquare)?
-                        .flip_h();
+                    let pos_sq = Square::try_from(sq as u8).map_err(|_| FenParseError::InvalidFenSquare)?.flip_h();
 
                     piece_info.put_piece(pos_sq, piece);
                     sq -= 1;
@@ -1852,9 +1733,7 @@ mod fen {
         Ok(piece_info)
     }
 
-    pub fn side_to_move(fen: &mut Tokenizer<'_>) -> Result<Turn, FenParseError> {
-        Turn::try_from(fen).map_err(FenParseError::TurnPart)
-    }
+    pub fn side_to_move(fen: &mut Tokenizer<'_>) -> Result<Turn, FenParseError> { Turn::try_from(fen).map_err(FenParseError::TurnPart) }
 
     pub fn castling_ability(fen: &mut Tokenizer<'_>) -> Result<CastlingRights, FenParseError> {
         CastlingRights::try_from(fen).map_err(FenParseError::CastlingPart)
@@ -1864,9 +1743,7 @@ mod fen {
         EpTargetSquare::try_from(fen).map_err(FenParseError::EpSquarePart)
     }
 
-    pub fn halfmove_clock(fen: &mut Tokenizer<'_>) -> Result<Ply, FenParseError> {
-        Ply::try_from(fen).map_err(FenParseError::Plys50Part)
-    }
+    pub fn halfmove_clock(fen: &mut Tokenizer<'_>) -> Result<Ply, FenParseError> { Ply::try_from(fen).map_err(FenParseError::Plys50Part) }
 
     pub fn fullmove_counter(fen: &mut Tokenizer<'_>) -> Result<FullMoveCount, FenParseError> {
         FullMoveCount::try_from(fen).map_err(FenParseError::FullMoveCountPart)
@@ -2029,10 +1906,7 @@ impl TryFrom<&'_ mut Tokenizer<'_>> for EpdOp {
     fn try_from(tok: &mut Tokenizer) -> Result<Self, Self::Error> {
         let code = tok.next_token().ok_or(Self::Error::MissingCode)?;
 
-        let mut arg = tok
-            .skip_ws()
-            .take_until(';')
-            .ok_or(Self::Error::MissingArgumentOrSemicolon)?;
+        let mut arg = tok.skip_ws().take_until(';').ok_or(Self::Error::MissingArgumentOrSemicolon)?;
 
         if let Some(stripped_arg) = arg.strip_circumfix('"', '"') {
             arg = stripped_arg;
@@ -2050,9 +1924,7 @@ pub enum ParseOmmittableError<E> {
     Inner(#[from] E),
 }
 
-impl<'a, 'b, T: for<'c, 'd> TryFrom<&'c mut Tokenizer<'d>, Error: std::error::Error>>
-    TryFrom<&'a mut Tokenizer<'b>> for Ommittable<T>
-{
+impl<'a, 'b, T: for<'c, 'd> TryFrom<&'c mut Tokenizer<'d>, Error: std::error::Error>> TryFrom<&'a mut Tokenizer<'b>> for Ommittable<T> {
     type Error = ParseOmmittableError<<T as TryFrom<&'a mut Tokenizer<'b>>>::Error>;
 
     fn try_from(tok: &'a mut Tokenizer<'b>) -> Result<Self, Self::Error> {

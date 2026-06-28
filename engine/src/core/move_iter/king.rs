@@ -12,10 +12,7 @@ use crate::core::{
 
 use const_for::const_for;
 
-use super::{
-    FoldMoves, NoCheck, Options, SomeCheck, bishop::Bishop, map_captures, map_quiets, rook::Rook,
-    sliding_piece::SlidingAttacks,
-};
+use super::{FoldMoves, NoCheck, Options, SomeCheck, bishop::Bishop, map_captures, map_quiets, rook::Rook, sliding_piece::SlidingAttacks};
 
 pub struct King;
 
@@ -177,12 +174,7 @@ where
     try { init }
 }
 
-pub fn fold_legal_castling<B, F, R>(
-    pos: &Position,
-    mut init: B,
-    mut f: F,
-    enemy_attacks: Bitboard,
-) -> R
+pub fn fold_legal_castling<B, F, R>(pos: &Position, mut init: B, mut f: F, enemy_attacks: Bitboard) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,

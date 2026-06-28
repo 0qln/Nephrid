@@ -57,24 +57,16 @@ impl_variants! {
 
 impl CompassRose {
     #[inline]
-    pub const fn new(v: TCompassRose) -> Self {
-        CompassRose { v }
-    }
+    pub const fn new(v: TCompassRose) -> Self { CompassRose { v } }
 
     #[inline]
-    pub const fn scale(&self, factor: i8) -> Self {
-        CompassRose { v: self.v * factor }
-    }
+    pub const fn scale(&self, factor: i8) -> Self { CompassRose { v: self.v * factor } }
 
     #[inline]
-    pub const fn double(&self) -> Self {
-        self.scale(2)
-    }
+    pub const fn double(&self) -> Self { self.scale(2) }
 
     #[inline]
-    pub const fn neg(&self) -> Self {
-        CompassRose { v: -self.v }
-    }
+    pub const fn neg(&self) -> Self { CompassRose { v: -self.v } }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -106,19 +98,13 @@ impl Square {
     pub const MIN: Square = A1;
 
     #[inline]
-    pub const fn flip_h(self) -> Self {
-        Self { v: self.v ^ 7 }
-    }
+    pub const fn flip_h(self) -> Self { Self { v: self.v ^ 7 } }
 
     #[inline]
-    pub const fn flip_v(self) -> Self {
-        Self { v: self.v ^ 56 }
-    }
+    pub const fn flip_v(self) -> Self { Self { v: self.v ^ 56 } }
 
     #[inline]
-    pub const fn index(&self) -> usize {
-        self.v as usize
-    }
+    pub const fn index(&self) -> usize { self.v as usize }
 
     pub const fn compute_distance(self, other: Square) -> u8 {
         let file1 = File::from(self);
@@ -147,23 +133,17 @@ impl Square {
 
         unsafe {
             // Safety: sq is in range
-            *DISTANCES
-                .get_unchecked(self.v() as usize)
-                .get_unchecked(other.v() as usize)
+            *DISTANCES.get_unchecked(self.v() as usize).get_unchecked(other.v() as usize)
         }
     }
 }
 
 impl fmt::Display for Square {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", File::from(*self), Rank::from(*self))
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}{}", File::from(*self), Rank::from(*self)) }
 }
 
 impl fmt::Debug for Square {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}{:?}", File::from(*self), Rank::from(*self))
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{:?}{:?}", File::from(*self), Rank::from(*self)) }
 }
 
 pub type SquareParseError<T> = ValueOutOfRangeError<T>;
@@ -184,9 +164,7 @@ impl TryFrom<TSquare> for Square {
 
 impl const From<(File, Rank)> for Square {
     #[inline]
-    fn from(value: (File, Rank)) -> Self {
-        Square { v: value.0.v + value.1.v * 8u8 }
-    }
+    fn from(value: (File, Rank)) -> Self { Square { v: value.0.v + value.1.v * 8u8 } }
 }
 
 #[derive(Error, Debug)]
@@ -219,17 +197,11 @@ impl TryFrom<&mut Tokenizer<'_>> for Square {
 }
 
 impl Step for Square {
-    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
-        Step::steps_between(&start.v, &end.v)
-    }
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) { Step::steps_between(&start.v, &end.v) }
 
-    fn forward_checked(start: Self, count: usize) -> Option<Self> {
-        Self::try_from(Step::forward_checked(start.v, count)?).ok()
-    }
+    fn forward_checked(start: Self, count: usize) -> Option<Self> { Self::try_from(Step::forward_checked(start.v, count)?).ok() }
 
-    fn backward_checked(start: Self, count: usize) -> Option<Self> {
-        Self::try_from(Step::backward_checked(start.v, count)?).ok()
-    }
+    fn backward_checked(start: Self, count: usize) -> Option<Self> { Self::try_from(Step::backward_checked(start.v, count)?).ok() }
 }
 
 /// En passant target square is the square to which the capturing pawn is beeing
@@ -240,13 +212,9 @@ pub struct EpTargetSquare {
 }
 
 impl EpTargetSquare {
-    pub const fn v(&self) -> Option<Square> {
-        self.v
-    }
+    pub const fn v(&self) -> Option<Square> { self.v }
 
-    pub const fn none() -> Self {
-        Self { v: None }
-    }
+    pub const fn none() -> Self { Self { v: None } }
 }
 
 pub type EpTargetSquareParseError = ValueOutOfSetError<Rank>;
@@ -327,13 +295,9 @@ pub struct EpCaptureSquare {
 }
 
 impl EpCaptureSquare {
-    pub const fn v(&self) -> Option<Square> {
-        self.v
-    }
+    pub const fn v(&self) -> Option<Square> { self.v }
 
-    pub const fn none() -> Self {
-        Self { v: None }
-    }
+    pub const fn none() -> Self { Self { v: None } }
 }
 
 pub type EpCaptureSquareParseError = ValueOutOfSetError<Rank>;
@@ -400,17 +364,11 @@ impl_variants! {
 }
 
 impl Step for Rank {
-    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
-        Step::steps_between(&start.v, &end.v)
-    }
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) { Step::steps_between(&start.v, &end.v) }
 
-    fn forward_checked(start: Self, count: usize) -> Option<Self> {
-        Self::try_from(Step::forward_checked(start.v, count)?).ok()
-    }
+    fn forward_checked(start: Self, count: usize) -> Option<Self> { Self::try_from(Step::forward_checked(start.v, count)?).ok() }
 
-    fn backward_checked(start: Self, count: usize) -> Option<Self> {
-        Self::try_from(Step::backward_checked(start.v, count)?).ok()
-    }
+    fn backward_checked(start: Self, count: usize) -> Option<Self> { Self::try_from(Step::backward_checked(start.v, count)?).ok() }
 }
 
 impl Rank {
@@ -436,34 +394,24 @@ const fn clamp(input: i8, min: i8, max: i8) -> i8 {
 }
 
 impl Default for Rank {
-    fn default() -> Self {
-        ranks::_1
-    }
+    fn default() -> Self { ranks::_1 }
 }
 
 impl fmt::Display for Rank {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.v + 1)
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.v + 1) }
 }
 
 impl fmt::Debug for Rank {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.v + 1)
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.v + 1) }
 }
 
 impl const From<Square> for Rank {
     #[inline]
-    fn from(sq: Square) -> Self {
-        Rank { v: sq.v / 8 }
-    }
+    fn from(sq: Square) -> Self { Rank { v: sq.v / 8 } }
 }
 
 impl From<Rank> for i8 {
-    fn from(value: Rank) -> Self {
-        value.v as i8
-    }
+    fn from(value: Rank) -> Self { value.v as i8 }
 }
 
 pub type RankParseError<T> = ValueOutOfRangeError<T>;
@@ -498,17 +446,11 @@ pub struct File {
 }
 
 impl Step for File {
-    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
-        Step::steps_between(&start.v, &end.v)
-    }
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) { Step::steps_between(&start.v, &end.v) }
 
-    fn forward_checked(start: Self, count: usize) -> Option<Self> {
-        Self::try_from(Step::forward_checked(start.v, count)?).ok()
-    }
+    fn forward_checked(start: Self, count: usize) -> Option<Self> { Self::try_from(Step::forward_checked(start.v, count)?).ok() }
 
-    fn backward_checked(start: Self, count: usize) -> Option<Self> {
-        Self::try_from(Step::backward_checked(start.v, count)?).ok()
-    }
+    fn backward_checked(start: Self, count: usize) -> Option<Self> { Self::try_from(Step::backward_checked(start.v, count)?).ok() }
 }
 
 pub type TFile = u8;
@@ -537,28 +479,20 @@ impl File {
 }
 
 impl Default for File {
-    fn default() -> Self {
-        files::A
-    }
+    fn default() -> Self { files::A }
 }
 
 impl fmt::Display for File {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", Into::<char>::into(*self))
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", Into::<char>::into(*self)) }
 }
 
 impl fmt::Debug for File {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", Into::<char>::into(*self))
-    }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", Into::<char>::into(*self)) }
 }
 
 impl const From<Square> for File {
     #[inline]
-    fn from(sq: Square) -> Self {
-        File { v: sq.v % 8 }
-    }
+    fn from(sq: Square) -> Self { File { v: sq.v % 8 } }
 }
 
 pub type FileParseError<T> = ValueOutOfRangeError<T>;
@@ -606,9 +540,7 @@ impl TryFrom<char> for File {
 }
 
 impl From<File> for char {
-    fn from(val: File) -> Self {
-        (val.v + b'a') as char
-    }
+    fn from(val: File) -> Self { (val.v + b'a') as char }
 }
 
 #[derive(PartialEq, Debug, Copy, Clone)]
@@ -617,9 +549,7 @@ pub struct DiagA1H8 {
 }
 
 impl DiagA1H8 {
-    pub const fn v(&self) -> u8 {
-        self.v
-    }
+    pub const fn v(&self) -> u8 { self.v }
 }
 
 impl const From<Square> for DiagA1H8 {
@@ -637,9 +567,7 @@ pub struct DiagA8H1 {
 }
 
 impl DiagA8H1 {
-    pub const fn v(&self) -> u8 {
-        self.v
-    }
+    pub const fn v(&self) -> u8 { self.v }
 }
 
 impl const From<Square> for DiagA8H1 {
@@ -703,24 +631,16 @@ pub mod pawn_utils {
     }
 
     #[inline]
-    pub const fn double_step(c: Color) -> CompassRose {
-        single_step(c).double()
-    }
+    pub const fn double_step(c: Color) -> CompassRose { single_step(c).double() }
 
     #[inline]
-    pub const fn forward(bb: Bitboard, dir: CompassRose) -> Bitboard {
-        bb.shift(dir)
-    }
+    pub const fn forward(bb: Bitboard, dir: CompassRose) -> Bitboard { bb.shift(dir) }
 
     #[inline]
-    pub const fn backward(bb: Bitboard, dir: CompassRose) -> Bitboard {
-        bb.shift(dir.neg())
-    }
+    pub const fn backward(bb: Bitboard, dir: CompassRose) -> Bitboard { bb.shift(dir.neg()) }
 
     #[inline]
-    pub const fn capture(c: Color, dir: CompassRose) -> CompassRose {
-        CompassRose::new(dir.v() + single_step(c).v())
-    }
+    pub const fn capture(c: Color, dir: CompassRose) -> CompassRose { CompassRose::new(dir.v() + single_step(c).v()) }
 }
 
 pub mod castling {

@@ -5,13 +5,10 @@ use crate::{
         depth::Depth,
         eval::{
             self,
-            hce::{
-                self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility,
-                passed_pawns,
-            },
+            hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
         },
         r#move::MAX_LEGAL_MOVES,
-        params::ParamsRef,
+        params::MctsHceParamsRef,
         position::{CheckState, Position},
         search::{
             mcts::{
@@ -41,19 +38,8 @@ use crate::core::{
 struct StaticEvaluator;
 
 impl eval::StaticEvaluator for StaticEvaluator {
-    fn eval<P: Perspective>(
-        &self,
-        pos: &PieceInfo,
-        turn: Turn,
-        ep_sq: EpTargetSquare,
-        phase: TaperValue,
-    ) -> Score<P> {
-        fn static_value<P: Perspective>(
-            pos: &PieceInfo,
-            ep_sq: EpTargetSquare,
-            phase: TaperValue,
-            turn: Turn,
-        ) -> Score<P> {
+    fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
+        fn static_value<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, phase: TaperValue, turn: Turn) -> Score<P> {
             material::<P>(pos)
                 + mobility::<P>(pos, phase)
                 + hce::psqt::<P>(pos, phase)
@@ -115,26 +101,26 @@ pub struct EvalInfo<Moves: AsRef<[Move]>> {
     quality: Cp,
 
     // tunables
-    params: ParamsRef,
+    params: MctsHceParamsRef,
 }
 
 impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
-    pub fn new(moves: Moves, pos: &mut Position, params: ParamsRef) -> Self {
+    pub fn new(moves: Moves, pos: &mut Position, params: MctsHceParamsRef) -> Self {
         let quality: Cp = match pos.get_turn().v() {
-            colors::WHITE_C => qsearch::<_, perspectives::White, _>(
+            colors::WHITE_C => qsearch::<perspectives::White>(
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
-                params.clone(),
+                MctsHceParamsRef::clone(&params),
                 &StaticEvaluator,
                 Depth::new(30),
             )
             .into(),
-            colors::BLACK_C => qsearch::<_, perspectives::Black, _>(
+            colors::BLACK_C => qsearch::<perspectives::Black>(
                 pos,
                 Score::NEG_INF,
                 Score::POS_INF,
-                params.clone(),
+                MctsHceParamsRef::clone(&params),
                 &StaticEvaluator,
                 Depth::new(30),
             )
@@ -154,9 +140,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
 
     /// Convert QualityInput into Quality, where the Quality is relative to
     /// white.
-    pub fn quality(&self) -> Quality {
-        Quality::from(self.quality)
-    }
+    pub fn quality(&self) -> Quality { Quality::from(self.quality) }
 
     pub fn policy(&self, buf: &mut List<218 /* inlined MAX_LEGAL_MOVES */, f32>) -> Policy {
         let pos = &self.pos;
@@ -185,18 +169,18 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
     }
 }
 
-pub trait PolicyParams {
+pub const trait PolicyParams {
     fn policy_temperature(&self) -> f32;
 }
 
 #[derive(Debug, Clone)]
 pub struct HceEvaluator {
     policy_buf: Box<List<{ MAX_LEGAL_MOVES }, f32>>,
-    params: ParamsRef,
+    params: MctsHceParamsRef,
 }
 
 impl HceEvaluator {
-    pub fn new(params: ParamsRef) -> Self {
+    pub fn new(params: MctsHceParamsRef) -> Self {
         Self {
             policy_buf: Box::new(List::new()),
             params,
@@ -207,17 +191,12 @@ impl HceEvaluator {
 impl Evaluator for HceEvaluator {
     type TraceData = Option<EvalInfo<Vec<Move>>>;
 
-    fn trace<S: const Valid + HasBranches>(
-        &self,
-        node: NodeId<S>,
-        tree: &Tree,
-        pos: &mut Position,
-    ) -> Self::TraceData {
+    fn trace<S: const Valid + HasBranches>(&self, node: NodeId<S>, tree: &Tree, pos: &mut Position) -> Self::TraceData {
         node.try_into::<Branching>().map(|node| {
             EvalInfo::new(
                 tree.branches(node).iter().map(|b| b.mov()).collect(),
                 pos,
-                self.params.clone(),
+                MctsHceParamsRef::clone(&self.params),
             )
         })
     }

@@ -8,23 +8,15 @@ pub struct Depth {
 }
 
 impl Step for Depth {
-    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
-        Step::steps_between(&start.v, &end.v)
-    }
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) { Step::steps_between(&start.v, &end.v) }
 
-    fn forward_checked(start: Self, count: usize) -> Option<Self> {
-        Self::try_from(Step::forward_checked(start.v, count)?).ok()
-    }
+    fn forward_checked(start: Self, count: usize) -> Option<Self> { Self::try_from(Step::forward_checked(start.v, count)?).ok() }
 
-    fn backward_checked(start: Self, count: usize) -> Option<Self> {
-        Self::try_from(Step::backward_checked(start.v, count)?).ok()
-    }
+    fn backward_checked(start: Self, count: usize) -> Option<Self> { Self::try_from(Step::backward_checked(start.v, count)?).ok() }
 }
 
 impl fmt::Display for Depth {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.v)
-    }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.v) }
 }
 
 impl_op!(-|a: Depth, b: u8| -> Depth { Depth { v: a.v - b } });
@@ -48,9 +40,7 @@ impl TryFrom<&str> for Depth {
 impl FromStr for Depth {
     type Err = ParseIntError;
 
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Depth::try_from(value)
-    }
+    fn from_str(value: &str) -> Result<Self, Self::Err> { Depth::try_from(value) }
 }
 
 impl Depth {
@@ -58,17 +48,11 @@ impl Depth {
     pub const MAX: Depth = Depth { v: 250 };
     pub const NONE: Depth = Depth { v: 255 };
 
-    pub const fn v(&self) -> u8 {
-        self.v
-    }
+    pub const fn v(&self) -> u8 { self.v }
 
-    pub const fn index(&self) -> usize {
-        self.v as usize
-    }
+    pub const fn index(&self) -> usize { self.v as usize }
 
-    pub fn new(depth: u8) -> Depth {
-        Depth { v: depth }
-    }
+    pub fn new(depth: u8) -> Depth { Depth { v: depth } }
 }
 
 impl TryFrom<u8> for Depth {
@@ -84,15 +68,11 @@ impl TryFrom<u8> for Depth {
 }
 
 impl Default for Depth {
-    fn default() -> Self {
-        Depth::NONE
-    }
+    fn default() -> Self { Depth::NONE }
 }
 
 impl From<Ply> for Depth {
-    fn from(ply: Ply) -> Self {
-        Depth { v: ply.v as u8 }
-    }
+    fn from(ply: Ply) -> Self { Depth { v: ply.v as u8 } }
 }
 
 impl From<Height> for Depth {

@@ -1,13 +1,13 @@
 use std::mem::MaybeUninit;
 
-use rand::{rngs::SmallRng, RngCore, SeedableRng};
+use rand::{RngCore, SeedableRng, rngs::SmallRng};
 
 use engine::core::move_iter::{
     bishop::Bishop,
     rook::Rook,
     sliding_piece::{
-        magics::{find_magics, AttackTable, MagicGen},
         SlidingAttacks,
+        magics::{AttackTable, MagicGen, find_magics},
     },
 };
 

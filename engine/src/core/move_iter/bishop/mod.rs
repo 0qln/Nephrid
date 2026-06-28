@@ -1,24 +1,19 @@
-use crate::{
-    core::{
-        bitboard::Bitboard,
-        coordinates::{DiagA1H8, DiagA8H1, Square, compass_rose, squares},
-        move_iter::bishop,
-        piece::{IPieceType, PieceType, piece_type},
-    },
+use crate::core::{
+    bitboard::Bitboard,
+    coordinates::{DiagA1H8, DiagA8H1, Square, compass_rose, squares},
+    move_iter::bishop,
+    piece::{IPieceType, PieceType, piece_type},
 };
 use const_for::const_for;
 
 use super::sliding_piece::{self, SlidingAttacks, SlidingPieceType, magics::MagicGen};
 
-#[cfg(test)]
-mod tests;
+#[cfg(test)] mod tests;
 
 pub struct Bishop;
 
 impl Bishop {
-    fn compute_attacks_0_occ(sq: Square) -> Bitboard {
-        bishop::compute_attacks_0_occ(sq)
-    }
+    fn compute_attacks_0_occ(sq: Square) -> Bitboard { bishop::compute_attacks_0_occ(sq) }
 }
 
 impl IPieceType for Bishop {
@@ -26,9 +21,7 @@ impl IPieceType for Bishop {
 }
 
 impl MagicGen for Bishop {
-    fn relevant_occupancy(sq: Square) -> Bitboard {
-        Self::compute_attacks_0_occ(sq).and_not_c(Bitboard::edges())
-    }
+    fn relevant_occupancy(sq: Square) -> Bitboard { Self::compute_attacks_0_occ(sq).and_not_c(Bitboard::edges()) }
 
     fn relevant_occupancy_num_combinations() -> usize {
         // center is generally max
@@ -38,16 +31,12 @@ impl MagicGen for Bishop {
 }
 
 impl SlidingAttacks for Bishop {
-    fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
-        crate::core::move_iter::bishop::compute_attacks(sq, occupancy)
-    }
+    fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard { crate::core::move_iter::bishop::compute_attacks(sq, occupancy) }
 
     #[allow(static_mut_refs)]
     fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
         // Safety: The caller has to assert, that the table is initialized.
-        sliding_piece::magics::bishop_magics()
-            .get(sq)
-            .get(occupancy)
+        sliding_piece::magics::bishop_magics().get(sq).get(occupancy)
     }
 }
 

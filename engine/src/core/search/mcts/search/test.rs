@@ -1,12 +1,9 @@
 use crate::core::{
     config::Configuration,
     move_iter::sliding_piece::magics,
-    params::{IParams, Params, ParamsRef},
+    params::C_MctsHceParams,
     position::Position,
-    search::mcts::{
-        HceParts, MctsParts, NullNoiser, node::Tree, search::TreeSearcher,
-        select::ucb::UcbSelector, test::DummyEvaluator,
-    },
+    search::mcts::{HceParts, MctsParts, NullNoiser, node::Tree, search::TreeSearcher, select::ucb::UcbSelector, test::DummyEvaluator},
     zobrist,
 };
 
@@ -27,9 +24,9 @@ fn fuzz<const X: usize, P: MctsParts + Default>(pos: &'static str, rounds: usize
 
             let parts = P::default();
 
-            let mut searcher = TreeSearcher::<X, _, _, _>::new(
+            let mut searcher = TreeSearcher::<X, _, _, _, C_MctsHceParams>::new(
                 &mut pos_clone,
-                Params::default().shared(),
+                C_MctsHceParams,
                 parts.selector(),
                 parts.evaluator(),
                 parts.noiser(),
@@ -45,18 +42,11 @@ fn fuzz<const X: usize, P: MctsParts + Default>(pos: &'static str, rounds: usize
 
             assert_eq!(&pos, &pos_clone);
             assert_eq!(tree.size(), tree.compute_subtree_size(tree.root()));
-            assert_eq!(
-                tree.terminal_nodes(),
-                tree.compute_subtree_terminal_nodes_count(tree.root())
-            );
-            assert_eq!(
-                tree.maxheight(),
-                tree.compute_subtree_maxheight(tree.root())
-            );
+            assert_eq!(tree.terminal_nodes(), tree.compute_subtree_terminal_nodes_count(tree.root()));
+            assert_eq!(tree.maxheight(), tree.compute_subtree_maxheight(tree.root()));
             assert!(
                 tree.size() > iterations,
-                "Tree should have more nodes than iterations, but it has {} nodes and after {} \
-                 iterations",
+                "Tree should have more nodes than iterations, but it has {} nodes and after {} iterations",
                 tree.size(),
                 iterations
             );
@@ -68,28 +58,19 @@ fn fuzz<const X: usize, P: MctsParts + Default>(pos: &'static str, rounds: usize
 
 #[test]
 pub fn sa_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
-    fuzz::<1, HceParts>(
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        50_000,
-    );
+    fuzz::<1, HceParts>("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 50_000);
     Ok(())
 }
 
 #[test]
 pub fn sa_fuzz_bs_8() -> Result<(), Box<dyn Error>> {
-    fuzz::<8, HceParts>(
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        50_000,
-    );
+    fuzz::<8, HceParts>("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 50_000);
     Ok(())
 }
 
 #[test]
 pub fn sa_fuzz_bs_64() -> Result<(), Box<dyn Error>> {
-    fuzz::<64, HceParts>(
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        50_000,
-    );
+    fuzz::<64, HceParts>("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 50_000);
     Ok(())
 }
 
@@ -101,34 +82,19 @@ impl MctsParts for NoAnalysisParts {
     type Evaluator = DummyEvaluator;
     type Noiser = NullNoiser;
 
-    fn params(&self) -> ParamsRef {
-        Default::default()
-    }
+    fn selector(&self) -> Self::Selector { Default::default() }
 
-    fn selector(&self) -> Self::Selector {
-        Default::default()
-    }
+    fn evaluator(&self) -> Self::Evaluator { Default::default() }
 
-    fn evaluator(&self) -> Self::Evaluator {
-        Default::default()
-    }
-
-    fn noiser(&self) -> Self::Noiser {
-        Default::default()
-    }
+    fn noiser(&self) -> Self::Noiser { Default::default() }
 }
 
 impl From<&Configuration> for NoAnalysisParts {
-    fn from(_: &Configuration) -> Self {
-        Default::default()
-    }
+    fn from(_: &Configuration) -> Self { Default::default() }
 }
 
 #[test]
 pub fn na_fuzz_bs_1() -> Result<(), Box<dyn Error>> {
-    fuzz::<1, NoAnalysisParts>(
-        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-        500_000,
-    );
+    fuzz::<1, NoAnalysisParts>("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 500_000);
     Ok(())
 }

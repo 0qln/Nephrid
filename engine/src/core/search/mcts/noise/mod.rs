@@ -7,15 +7,15 @@ use crate::{
     core::{
         r#move::MAX_LEGAL_MOVES,
         search::mcts::{
-            eval::{Policy, Probability, Ratio},
+            eval::Policy,
             node::{NodeId, Tree, node_state::Evaluated},
         },
     },
+    math::{Probability, Ratio},
     misc::List,
 };
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
 
 pub trait Noiser {
     type Error: std::error::Error;
@@ -32,9 +32,7 @@ pub struct DirichletNoiser {
 }
 
 impl DirichletNoiser {
-    pub fn new(alpha: f32, eps: Ratio, rng: SmallRng) -> Self {
-        Self { alpha, eps, rng }
-    }
+    pub fn new(alpha: f32, eps: Ratio, rng: SmallRng) -> Self { Self { alpha, eps, rng } }
 
     pub fn gamma(&self) -> Result<Gamma<f32>, DirichletNoiseError> {
         let alpha = self.alpha;
@@ -61,9 +59,7 @@ impl Noiser for DirichletNoiser {
             let branches = node.branches();
             let gamma = self.gamma()?;
             let distr = gamma.sample_iter(&mut self.rng);
-            let noise = distr
-                .take(branches.len())
-                .collect::<List<{ MAX_LEGAL_MOVES }, _>>();
+            let noise = distr.take(branches.len()).collect::<List<{ MAX_LEGAL_MOVES }, _>>();
             let total = noise.iter().sum::<f32>();
 
             if total.is_zero() {
@@ -91,11 +87,5 @@ pub struct NullNoiser;
 impl Noiser for NullNoiser {
     type Error = Infallible;
 
-    fn apply_noise(
-        &mut self,
-        _node: NodeId<Evaluated>,
-        _tree: &mut Tree,
-    ) -> Result<(), Self::Error> {
-        Ok(())
-    }
+    fn apply_noise(&mut self, _node: NodeId<Evaluated>, _tree: &mut Tree) -> Result<(), Self::Error> { Ok(()) }
 }

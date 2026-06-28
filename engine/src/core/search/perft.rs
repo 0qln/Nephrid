@@ -10,15 +10,9 @@ use crate::{
 };
 use std::ops::ControlFlow;
 
-#[cfg(test)]
-pub mod test;
+#[cfg(test)] pub mod test;
 
-pub fn perft<Opt: Options>(
-    pos: &mut Position,
-    limit: &UciLimit,
-    ct: CancellationToken,
-    debug: DebugMode,
-) -> u64 {
+pub fn perft<Opt: Options>(pos: &mut Position, limit: &UciLimit, ct: CancellationToken, debug: DebugMode) -> u64 {
     let nodes = perft_inner_collect(
         pos,
         limit.depth,
@@ -57,24 +51,8 @@ pub fn perft_inner_collect(
     mut moves: impl FnMut(&Position, &mut MoveList),
 ) -> u64 {
     match pos.get_turn() {
-        colors::WHITE => perft_inner_collect_for::<perspectives::White>(
-            pos,
-            depth,
-            limit,
-            cancellation_token,
-            debug,
-            f,
-            &mut moves,
-        ),
-        colors::BLACK => perft_inner_collect_for::<perspectives::Black>(
-            pos,
-            depth,
-            limit,
-            cancellation_token,
-            debug,
-            f,
-            &mut moves,
-        ),
+        colors::WHITE => perft_inner_collect_for::<perspectives::White>(pos, depth, limit, cancellation_token, debug, f, &mut moves),
+        colors::BLACK => perft_inner_collect_for::<perspectives::Black>(pos, depth, limit, cancellation_token, debug, f, &mut moves),
         _ => unreachable!("Invalid program state."),
     }
 }
