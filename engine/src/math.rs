@@ -80,13 +80,13 @@ pub fn softmax<const N: usize>(mut xs: List<N, f32>, temperature: f32, _exps: &m
     let mut sum_vec = f32x8::splat(0.);
 
     let (xs_chunks, xs_rem) = xs.as_mut_slice().as_chunks_mut::<8>();
-    for x_chunk in xs_chunks.into_iter() {
+    for x_chunk in xs_chunks.iter_mut() {
         let exp_vec = ((f32x8::from(*x_chunk) - max_vec) / temp_vec).exp();
         *x_chunk = exp_vec.to_array();
         sum_vec += exp_vec;
     }
     let mut sum: f32 = sum_vec.to_array().iter().sum();
-    for x in xs_rem.into_iter() {
+    for x in xs_rem.iter_mut() {
         let exp = ((*x - max) / temperature).exp();
         *x = exp;
         sum += exp;
@@ -95,11 +95,11 @@ pub fn softmax<const N: usize>(mut xs: List<N, f32>, temperature: f32, _exps: &m
     // normalize
     let sum_vec = f32x8::splat(sum);
     let (xs_chunks, xs_rem) = xs.as_mut_slice().as_chunks_mut::<8>();
-    for x_chunk in xs_chunks.into_iter() {
+    for x_chunk in xs_chunks.iter_mut() {
         let norm_vec = f32x8::from(*x_chunk) / sum_vec;
         *x_chunk = norm_vec.to_array();
     }
-    for x in xs_rem.into_iter() {
+    for x in xs_rem.iter_mut() {
         let norm = *x / sum;
         *x = norm;
     }
