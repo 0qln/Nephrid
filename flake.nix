@@ -103,6 +103,7 @@
                 act
                 (python3.withPackages (ps: weather-factory-pkgs ps))
                 gnuplot
+                cargo-hack
               ])
               ++ (with pkgs-cuda; [
                 # reference: https://discourse.nixos.org/t/cuda-12-8-support-in-nixpkgs/60645/39
