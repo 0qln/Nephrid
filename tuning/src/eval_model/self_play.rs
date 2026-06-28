@@ -5,7 +5,6 @@ use engine::{
         config::Configuration,
         eval::GameResult,
         r#move::MoveList,
-        move_iter::fold_legal_moves,
         params::C_MctsNnParams,
         position::PgnResultValue,
         search::mcts::{
@@ -37,7 +36,6 @@ use rayon::{
 use std::{
     cmp::max,
     error::Error,
-    ops::ControlFlow,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -197,11 +195,7 @@ where
 }
 
 fn build_cached_decision<T: Target>(pos: &Position, best_move: Move, moving_color: Color) -> Decision<T> {
-    let mut moves = MoveList::new();
-    _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
-        moves.push(m);
-        ControlFlow::Continue::<(), _>(())
-    });
+    let moves = pos.collect_legals(MoveList::new());
 
     let visit_counts = moves
         .iter()

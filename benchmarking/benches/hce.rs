@@ -31,7 +31,7 @@ pub fn policy(c: &mut Criterion) {
 
     let mut pos = Position::start_position();
 
-    let moves = pos.collect_moves(MoveList::new());
+    let moves = pos.collect_legals(MoveList::new());
     let params = C_MctsHceParams;
     let eval = EvalInfo::new(moves, &mut pos, params.shared());
 

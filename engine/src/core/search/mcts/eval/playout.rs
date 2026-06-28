@@ -1,12 +1,9 @@
-use std::ops::ControlFlow;
-
 use itertools::Itertools;
 use rand::prelude::*;
 
 use crate::core::{
     color::colors,
     depth::Depth,
-    move_iter::fold_legal_moves,
     search::mcts::node::node_state::{Branching, Valid},
 };
 
@@ -28,16 +25,7 @@ impl PlayoutEvaluator {
         let mut depth = Depth::ROOT;
 
         loop {
-            let moves = {
-                let mut moves = Vec::new();
-                _ = fold_legal_moves(&pos, &mut moves, |acc, m| {
-                    ControlFlow::Continue::<(), _>({
-                        acc.push(m);
-                        acc
-                    })
-                });
-                moves
-            };
+            let moves = pos.collect_legals(Vec::new());
 
             // 1. Check for Terminal State / Draw Rules
             if let Some(result) = pos.search_result_with(!moves.is_empty(), depth) {

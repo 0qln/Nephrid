@@ -1,21 +1,7 @@
-use std::{hint::black_box, ops::ControlFlow, time::Duration};
+use std::{hint::black_box, time::Duration};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use engine::core::{
-    r#move::Move,
-    move_iter::{fold_legal_moves, sliding_piece::magics},
-    position::Position,
-    zobrist,
-};
-
-fn collect_legal_moves(pos: &Position) -> Vec<Move> {
-    fold_legal_moves(pos, Vec::new(), |mut acc, m| {
-        acc.push(m);
-        ControlFlow::Continue::<(), _>(acc)
-    })
-    .continue_value()
-    .unwrap()
-}
+use engine::core::{move_iter::sliding_piece::magics, position::Position, zobrist};
 
 pub fn is_pseudo_legal(c: &mut Criterion) {
     magics::init();
@@ -39,7 +25,7 @@ pub fn is_pseudo_legal(c: &mut Criterion) {
         let fen = fen_str.trim();
 
         let pos = Position::from_fen(fen).unwrap();
-        let moves = collect_legal_moves(&pos);
+        let moves = pos.collect_legals(Vec::new());
 
         let name = format!("is_pseudo_legal_{i}");
         group.bench_with_input(BenchmarkId::new(name, fen), &moves, |b, moves| {

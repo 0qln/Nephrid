@@ -1,13 +1,7 @@
 use std::{hint, ops::Try};
 
 use crate::core::{
-    bitboard::{Bitboard, BitboardIteratorExt},
-    castling::castling_sides,
-    coordinates::{File, Rank, Square, files, ranks, squares},
-    r#move::{Move, move_flags},
-    move_iter::{captures_targets, king, knight, pawn, quiets_targets},
-    piece::{IPieceType, PieceType, piece_type},
-    position::Position,
+    bitboard::{Bitboard, BitboardIteratorExt}, castling::castling_sides, color::Perspective, coordinates::{File, Rank, Square, files, ranks, squares}, r#move::{Move, move_flags}, move_iter::{captures_targets, king, knight, pawn, quiets_targets}, piece::{IPieceType, PieceType, piece_type}, position::Position
 };
 
 use const_for::const_for;
@@ -20,16 +14,14 @@ impl IPieceType for King {
     const ID: PieceType = piece_type::KING;
 }
 
-impl<O: Options> FoldMoves<NoCheck, O> for King {
+impl<P: Perspective, O: Options> FoldMoves<P, NoCheck, O> for King {
     #[inline(always)]
-    fn fold_moves<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+    fn fold_moves_for<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        let color = pos.get_turn();
-
-        let king_bb = pos.get_bitboard(King::ID, color);
+        let king_bb = pos.get_bitboard(King::ID, P::COLOR);
         if let Some(king) = king_bb.lsb() {
             if O::gen_quiets() {
                 if O::legal() {
@@ -51,12 +43,12 @@ impl<O: Options> FoldMoves<NoCheck, O> for King {
             };
 
             if O::gen_captures() {
-                let legal_captures = attacks & captures_targets::<NoCheck>(pos, color);
+                let legal_captures = attacks & captures_targets::<NoCheck>(pos, P::COLOR);
                 init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
             }
 
             if O::gen_quiets() {
-                let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, color);
+                let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, P::COLOR);
                 init = map_quiets(legal_quiets, king).try_fold(init, &mut f)?;
             }
 
@@ -70,16 +62,14 @@ impl<O: Options> FoldMoves<NoCheck, O> for King {
     }
 }
 
-impl<O: Options, C: SomeCheck> FoldMoves<C, O> for King {
+impl<P: Perspective, O: Options, C: SomeCheck> FoldMoves<P, C, O> for King {
     #[inline(always)]
-    fn fold_moves<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+    fn fold_moves_for<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        let color = pos.get_turn();
-
-        let king_bb = pos.get_bitboard(King::ID, color);
+        let king_bb = pos.get_bitboard(King::ID, P::COLOR);
         if let Some(king) = king_bb.lsb() {
             let attacks = if O::legal() {
                 // If the to square covers anything, it doesn't matter, because the king will be
@@ -93,12 +83,12 @@ impl<O: Options, C: SomeCheck> FoldMoves<C, O> for King {
             };
 
             if O::gen_captures() {
-                let legal_captures = attacks & captures_targets::<NoCheck>(pos, color);
+                let legal_captures = attacks & captures_targets::<NoCheck>(pos, P::COLOR);
                 init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
             }
 
             if O::gen_quiets() {
-                let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, color);
+                let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, P::COLOR);
                 init = map_quiets(legal_quiets, king).try_fold(init, &mut f)?;
             }
 

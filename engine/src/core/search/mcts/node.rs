@@ -21,13 +21,9 @@ use std::{
 
 use crate::core::{
     Move, Position,
-    move_iter::fold_legal_moves,
     search::mcts::{
         eval::{self, Policy},
-        node::{
-            node_state::{Branching, Evaluated, Leaf},
-            ops::ControlFlow,
-        },
+        node::node_state::{Branching, Evaluated, Leaf},
     },
 };
 
@@ -637,11 +633,7 @@ impl Tree {
             }
         }
 
-        let mut moves = Vec::with_capacity(35);
-        _ = fold_legal_moves(pos, &mut moves, |acc, m| {
-            acc.push(m);
-            ControlFlow::Continue::<(), _>(acc)
-        });
+        let moves = pos.collect_legals(Vec::with_capacity(35));
 
         let branches_count = MoveIndex::try_from(moves.len()).expect("fold_legal_moves will return all moves in a legal position and no more.");
         if branches_count == MoveIndex::from(0) {

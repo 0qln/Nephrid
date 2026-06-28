@@ -90,7 +90,11 @@ impl const ops::BitAnd<Bitboard> for Bitboard {
 impl_op!(^= |l: &mut Bitboard, r: Bitboard| { l.v ^= r.v } );
 impl_op!(|= |l: &mut Bitboard, r: Bitboard| { l.v |= r.v } );
 impl_op!(&= |l: &mut Bitboard, r: Bitboard| { l.v &= r.v } );
-impl_op!(!|x: Bitboard| -> Bitboard { Bitboard { v: !x.v } });
+
+impl const ops::Not for Bitboard {
+    type Output = Bitboard;
+    fn not(self) -> Self::Output { Bitboard { v: !self.v } }
+}
 
 impl Iterator for Bitboard {
     type Item = Square;
@@ -277,7 +281,7 @@ impl Bitboard {
     pub const fn ray_c(sq1: Square, sq2: Square) -> Self { Self::rays()[sq1.v() as usize][sq2.v() as usize] }
 
     #[inline]
-    pub fn between(sq1: Square, sq2: Square) -> Self {
+    pub const fn between(sq1: Square, sq2: Square) -> Self {
         static BETWEEN: [[Bitboard; 64]; 64] = {
             let mut between = [[Bitboard::empty(); 64]; 64];
             const_for!(sq1 in A1_C..(H8_C+1) => {

@@ -7,7 +7,15 @@ use pawn::Pawn;
 use queen::Queen;
 use rook::Rook;
 
-use crate::core::{r#move::move_flags, piece::IPieceType, position};
+use crate::core::{
+    color::{
+        Perspective, colors,
+        perspectives::{Black, White},
+    },
+    r#move::move_flags,
+    piece::IPieceType,
+    position,
+};
 
 use super::{bitboard::Bitboard, color::Color, coordinates::Square, r#move::Move, position::Position};
 
@@ -24,7 +32,7 @@ pub mod staged;
 
 /// To squares for quiet moves
 #[inline(always)]
-pub fn quiets_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard {
+pub const fn quiets_targets<C: const NoDoubleCheck>(pos: &Position, color: Color) -> Bitboard {
     match C::check_state() {
         RtCheckState::None => !pos.get_occupancy(),
         RtCheckState::Single => {
@@ -62,8 +70,8 @@ pub const trait Options {
     fn legal() -> bool { true }
 }
 
-pub trait FoldMoves<Check, O: Options> {
-    fn fold_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
+pub trait FoldMoves<P: Perspective, Check, O: Options> {
+    fn fold_moves_for<B, F, R>(pos: &Position, init: B, f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>;
@@ -74,23 +82,23 @@ use position::CheckState as RtCheckState;
 pub const trait CheckState {
     fn check_state() -> RtCheckState;
 }
-pub trait SomeCheck {}
-pub trait NoDoubleCheck: CheckState {}
+pub const trait SomeCheck {}
+pub const trait NoDoubleCheck: const CheckState {}
 
 pub struct NoCheck;
 impl const CheckState for NoCheck {
     #[inline(always)]
     fn check_state() -> RtCheckState { RtCheckState::None }
 }
-impl NoDoubleCheck for NoCheck {}
+impl const NoDoubleCheck for NoCheck {}
 
 pub struct SingleCheck;
 impl const CheckState for SingleCheck {
     #[inline(always)]
     fn check_state() -> RtCheckState { RtCheckState::Single }
 }
-impl SomeCheck for SingleCheck {}
-impl NoDoubleCheck for SingleCheck {}
+impl const SomeCheck for SingleCheck {}
+impl const NoDoubleCheck for SingleCheck {}
 
 struct DoubleCheck;
 impl const CheckState for DoubleCheck {
@@ -101,59 +109,59 @@ impl SomeCheck for DoubleCheck {}
 
 impl NoCheck {
     #[inline(always)]
-    fn fold_moves<O: Options, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+    fn fold_moves_for<P: Perspective, O: Options, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        init = <Rook as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
-        init = <Bishop as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
-        init = <Queen as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
-        init = <King as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
-        init = <Knight as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
-        init = <Pawn as FoldMoves<NoCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <Rook as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
+        init = <Bishop as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
+        init = <Queen as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
+        init = <King as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
+        init = <Knight as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
+        init = <Pawn as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
         try { init }
     }
 }
 
 impl SingleCheck {
     #[inline(always)]
-    fn fold_moves<O: Options, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+    fn fold_moves_for<P: Perspective, O: Options, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        init = <Rook as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
-        init = <Bishop as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
-        init = <Queen as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
-        init = <King as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
-        init = <Knight as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
-        init = <Pawn as FoldMoves<SingleCheck, O>>::fold_moves(pos, init, &mut f)?;
+        init = <Rook as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
+        init = <Bishop as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
+        init = <Queen as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
+        init = <King as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
+        init = <Knight as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
+        init = <Pawn as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
         try { init }
     }
 }
 
 impl DoubleCheck {
     #[inline(always)]
-    fn fold_moves<O: Options, B, F, R>(pos: &Position, init: B, f: F) -> R
+    fn fold_moves_for<P: Perspective, O: Options, B, F, R>(pos: &Position, init: B, f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        <King as FoldMoves<DoubleCheck, O>>::fold_moves(pos, init, f)
+        <King as FoldMoves<P, DoubleCheck, O>>::fold_moves_for(pos, init, f)
     }
 }
 
 #[inline]
-pub fn fold_moves<O: Options, B, F, R>(pos: &Position, init: B, f: F) -> R
+pub fn fold_moves_for<P: Perspective, O: Options, B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
     match pos.get_check_state() {
-        RtCheckState::None => NoCheck::fold_moves::<O, _, _, _>(pos, init, f),
-        RtCheckState::Single => SingleCheck::fold_moves::<O, _, _, _>(pos, init, f),
-        RtCheckState::Double => DoubleCheck::fold_moves::<O, _, _, _>(pos, init, f),
+        RtCheckState::None => NoCheck::fold_moves_for::<P, O, _, _, _>(pos, init, f),
+        RtCheckState::Single => SingleCheck::fold_moves_for::<P, O, _, _, _>(pos, init, f),
+        RtCheckState::Double => DoubleCheck::fold_moves_for::<P, O, _, _, _>(pos, init, f),
     }
 }
 
@@ -201,30 +209,44 @@ pub mod opt {
 }
 
 #[inline]
-pub fn fold_legal_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
+pub fn fold_moves<O: Options, B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    fold_moves::<opt::AllLegal, B, F, R>(pos, init, f)
+    match pos.get_turn() {
+        colors::WHITE => fold_moves_for::<White, O, B, F, R>(pos, init, f),
+        colors::BLACK => fold_moves_for::<Black, O, B, F, R>(pos, init, f),
+        // Safety: pos.get_turn() is guaranteed to return a valid color.
+        _ => unsafe { unreachable_unchecked() },
+    }
 }
 
 #[inline]
-pub fn fold_legal_captures<B, F, R>(pos: &Position, init: B, f: F) -> R
+pub fn fold_legal_moves_for<P: Perspective, B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    fold_moves::<opt::Captures, B, F, R>(pos, init, f)
+    fold_moves_for::<P, opt::AllLegal, B, F, R>(pos, init, f)
 }
 
 #[inline]
-pub fn fold_pseudo_legal_moves<B, F, R>(pos: &Position, init: B, f: F) -> R
+pub fn fold_legal_captures_for<P: Perspective, B, F, R>(pos: &Position, init: B, f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    fold_moves::<opt::AllPseudoLegal, B, F, R>(pos, init, f)
+    fold_moves_for::<P, opt::Captures, B, F, R>(pos, init, f)
+}
+
+#[inline]
+pub fn fold_pseudo_legal_moves_for<P: Perspective, B, F, R>(pos: &Position, init: B, f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    fold_moves_for::<P, opt::AllPseudoLegal, B, F, R>(pos, init, f)
 }
 
 #[inline]
@@ -266,4 +288,21 @@ fn map_bits(mut bits: usize, mask: Bitboard) -> Bitboard {
         bits >>= 1;
         acc | (val << pos)
     })
+}
+
+/// convenience wrapper
+#[deprecated(since = "0.0.0", note = "use fold_moves instead")]
+#[allow(dead_code)]
+pub fn dbg_fold_moves<T, C: const CheckState, O: Options, B, F, R>(pos: &Position, init: B, f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+    T: FoldMoves<White, C, O>,
+    T: FoldMoves<Black, C, O>,
+{
+    match pos.get_turn() {
+        colors::WHITE => <T as FoldMoves<White, C, O>>::fold_moves_for(pos, init, f),
+        colors::BLACK => <T as FoldMoves<Black, C, O>>::fold_moves_for(pos, init, f),
+        _ => unreachable!(),
+    }
 }

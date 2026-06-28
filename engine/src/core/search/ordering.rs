@@ -679,7 +679,7 @@ pub mod test {
                 return 1;
             }
 
-            let all_moves = pos.collect_moves(MoveList::new());
+            let all_moves = pos.collect_legals(MoveList::new());
 
             let hash_move = *all_moves.as_slice().choose(rng).unwrap_or(&Move::null());
 

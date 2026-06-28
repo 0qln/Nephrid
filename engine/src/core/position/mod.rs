@@ -1,6 +1,6 @@
 use crate::core::{
     eval::GameResult,
-    move_iter::{SingleCheck, captures_targets, king, pin_mask, queen::Queen, quiets_targets},
+    move_iter::{SingleCheck, captures_targets, fold_moves, king, opt::AllLegal, pin_mask, queen::Queen, quiets_targets},
 };
 use core::fmt;
 use std::{
@@ -21,10 +21,10 @@ use crate::{
             EpTargetSquareTokenizationError, File, Rank, RankParseError, Square, castling::castling_rank, files, pawn_utils, ranks, squares,
         },
         depth::Depth,
-        r#move::{Move, MoveList, SAN, SanParseError, move_flags},
+        r#move::{Move, SAN, SanParseError, move_flags},
         move_iter::{
             bishop::{self, Bishop},
-            fold_legal_moves, fold_pseudo_legal_moves,
+            fold_legal_moves_for, fold_pseudo_legal_moves_for,
             knight::{self},
             pawn,
             rook::{self, Rook},
@@ -156,9 +156,9 @@ impl StateStack {
 
     /// Returns a reference to the current state.
     #[inline]
-    pub fn get_current(&self) -> &StateInfo {
+    pub const fn get_current(&self) -> &StateInfo {
         // Safety: The current index is always in range
-        unsafe { self.states.get_unchecked(self.current) }
+        unsafe { self.states.as_slice().get_unchecked(self.current) }
     }
 
     pub fn get_prev(&self, go_back: usize) -> Option<&StateInfo> {
@@ -230,10 +230,10 @@ impl Default for PieceInfo {
 
 impl PieceInfo {
     #[inline]
-    pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard { self.get_color_bb(color) & self.get_piece_bb(piece_type) }
+    pub const fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard { self.get_color_bb(color) & self.get_piece_bb(piece_type) }
 
     #[inline]
-    pub fn get_color_bb(&self, color: Color) -> Bitboard {
+    pub const fn get_color_bb(&self, color: Color) -> Bitboard {
         // Safety:
         // It's not possible to safely create an instance of Color,
         // without checking that the value is in range.
@@ -251,7 +251,7 @@ impl PieceInfo {
     // todo: these get_unchecked's are not neccesary anymore.
 
     #[inline]
-    pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard { self.t_bitboards[piece_type.v() as usize] }
+    pub const fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard { self.t_bitboards[piece_type.v() as usize] }
 
     #[inline]
     fn get_piece_bb_mut(&mut self, piece_type: PieceType) -> &mut Bitboard {
@@ -262,7 +262,7 @@ impl PieceInfo {
     }
 
     #[inline]
-    pub fn get_occupancy(&self) -> Bitboard { self.get_color_bb(colors::WHITE) | self.get_color_bb(colors::BLACK) }
+    pub const fn get_occupancy(&self) -> Bitboard { self.get_color_bb(colors::WHITE) | self.get_color_bb(colors::BLACK) }
 
     #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece {
@@ -489,10 +489,17 @@ impl Position {
         position
     }
 
-    pub fn collect_moves(&self, mut move_list: MoveList) -> MoveList {
-        move_list.clear();
-        _ = fold_legal_moves::<_, _, _>(self, (), |_, m| {
-            move_list.push(m);
+    pub fn collect_legals<C: Extend<Move>>(&self, list: C) -> C {
+        match self.get_turn() {
+            colors::WHITE => self.collect_legals_for::<perspectives::White, _>(list),
+            colors::BLACK => self.collect_legals_for::<perspectives::Black, _>(list),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn collect_legals_for<P: Perspective, C: Extend<Move>>(&self, mut move_list: C) -> C {
+        _ = fold_legal_moves_for::<P, _, _, _>(self, (), |_, m| {
+            move_list.extend_one(m);
             ControlFlow::Continue::<(), _>(())
         });
         move_list
@@ -532,7 +539,7 @@ impl Position {
     pub fn get_check_state(&self) -> CheckState { self.state.get_current().check_state }
 
     #[inline]
-    pub fn get_checkers(&self) -> Bitboard { self.state.get_current().checkers }
+    pub const fn get_checkers(&self) -> Bitboard { self.state.get_current().checkers }
 
     #[inline]
     pub fn get_blockers(&self) -> Bitboard { self.state.get_current().blockers }
@@ -676,7 +683,7 @@ impl Position {
         self.search_result_with(has_moves, search_depth)
     }
 
-    pub fn has_legal_moves(&self) -> bool { fold_legal_moves(self, false, |_, _| ControlFlow::Break(true)).into_value() }
+    pub fn has_legal_moves(&self) -> bool { fold_moves::<AllLegal, _, _, _>(self, false, |_, _| ControlFlow::Break(true)).into_value() }
 
     /// Tests whether a (potentially corrupt) move is pseudo-legal in the
     /// current position. Used to validate moves coming from the transposition
@@ -704,7 +711,7 @@ impl Position {
         // Use the slower but simpler pseudo-legal generator for uncommon move
         // types (en passant, promotions and castling).
         if !matches!(flag, move_flags::QUIET | move_flags::DOUBLE_PAWN_PUSH | move_flags::CAPTURE) {
-            let found = fold_pseudo_legal_moves(self, (), |_, m| {
+            let found = fold_pseudo_legal_moves_for::<P, _, _, _>(self, (), |_, m| {
                 if m == mov {
                     ControlFlow::Break(())
                 }
@@ -1110,14 +1117,14 @@ impl Position {
     pub fn from_pgn(pgn: &str) -> Result<Self, PgnImportError> { Self::try_from(PgnImport(&mut Tokenizer::new(pgn))) }
 
     #[inline]
-    pub fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard { self.piece_info.get_bitboard(piece_type, color) }
+    pub const fn get_bitboard(&self, piece_type: PieceType, color: Color) -> Bitboard { self.piece_info.get_bitboard(piece_type, color) }
 
     #[inline]
     pub fn get_color_bb(&self, color: Color) -> Bitboard { self.piece_info.get_color_bb(color) }
 
     pub fn get_piece_bb(&self, piece_type: PieceType) -> Bitboard { self.piece_info.get_piece_bb(piece_type) }
 
-    pub fn get_occupancy(&self) -> Bitboard { self.piece_info.get_occupancy() }
+    pub const fn get_occupancy(&self) -> Bitboard { self.piece_info.get_occupancy() }
 
     #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece { self.piece_info.get_piece(sq) }

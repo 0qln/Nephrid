@@ -334,7 +334,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
             }
 
             let config = engine.config.lock().expect("Config dead :(");
-            let moves = pos.collect_moves(MoveList::new());
+            let moves = pos.collect_legals(MoveList::new());
             let hce_params = MctsHceParams::try_from_config(config)?;
             let eval = mcts::eval::hce::EvalInfo::new(moves.clone(), &mut pos, hce_params);
 
