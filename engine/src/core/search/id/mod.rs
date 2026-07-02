@@ -1,5 +1,5 @@
 use std::{
-    cmp::{Reverse, max, min},
+    cmp::{Reverse, min},
     hint::assert_unchecked,
     ops::ControlFlow,
     time::{Duration, Instant},
@@ -15,13 +15,12 @@ use crate::{
         coordinates::EpTargetSquare,
         depth::Depth,
         eval::{
-            self, GameResult, StaticEvaluator,
+            self, GameResult,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
         params::C_IdHceParams,
-        piece::piece_type,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
         search::{
@@ -72,32 +71,6 @@ impl eval::StaticEvaluator for HceEvaluator {
         let w_q = static_value::<P>(pos, ep_w, phase, turn);
         let b_q = static_value::<P::Opponent>(pos, ep_b, phase, turn);
         w_q + !b_q
-    }
-}
-
-struct HceThreatener;
-
-impl HceThreatener {
-    /// Finds the biggest incoming threat to `P`, giving a score for
-    /// `P::Opponent`.
-    fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
-        let moves = pos.collect_legals_for::<P::Opponent, _>(MoveList::new());
-
-        let mut max_threat = Score::<P::Opponent>::new(0);
-        for &mov in moves.iter() {
-            match pos.does_check(mov) {
-                CheckState::None => {}
-                CheckState::Single => return Score::new(hce::piece_score(piece_type::QUEEN)),
-                CheckState::Double => return Score::new(hce::piece_score(piece_type::QUEEN) + hce::piece_score(piece_type::ROOK)),
-            }
-
-            if mov.get_flag().is_capture() {
-                let see = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR);
-                max_threat = max(max_threat, Score::new(see as i32));
-            }
-        }
-
-        Score::new(0)
     }
 }
 
@@ -284,9 +257,9 @@ impl<'a> Searcher<'a> {
         mut alpha: Score<P>,
         beta: Score<P>,
     ) -> Score<P> {
-        let evaluator = &HceEvaluator;
-        // let threatener = &HceThreatener;
         debug_assert!(alpha < beta);
+
+        let evaluator = &HceEvaluator;
 
         // incremment stats
         stats.nodes += 1;
@@ -346,15 +319,6 @@ impl<'a> Searcher<'a> {
             color: P::COLOR,
             phase,
         };
-
-        // let s_score = tt_entry
-        //     .map(|e| Score::<P>::new(e.static_eval))
-        //     .unwrap_or_else(|| evaluator.eval(pieces, P::COLOR,
-        // pos.get_ep_target_square(), phase));
-
-        // let threat = tt_entry
-        //     .map(|e| Score::<P::Opponent>::new(e.threat))
-        //     .unwrap_or_else(|| threatener.threat::<P>(pos));
 
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
@@ -487,8 +451,6 @@ impl<'a> Searcher<'a> {
             key,
             depth,
             score: best_score.0,
-            // static_eval: s_score.0,
-            // threat: threat.0,
             bound: Bound::from_scores(orig_alpha, beta, best_score),
             mov: best_move,
         });
@@ -520,8 +482,6 @@ pub struct TTEntry {
     key: zobrist::Hash,
     depth: Depth,
     score: i32,
-    // static_eval: i32,
-    // threat: i32,
     bound: Bound,
     mov: Move,
 }
