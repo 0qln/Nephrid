@@ -1,12 +1,7 @@
 use std::ops::Try;
 
 use crate::core::{
-    bitboard::Bitboard,
-    coordinates::Square,
-    r#move::Move,
-    move_iter::{Options, captures_targets, quiets_targets},
-    piece::{IPieceType, piece_type},
-    position::Position,
+    bitboard::Bitboard, color::Perspective, coordinates::Square, r#move::Move, move_iter::{Options, captures_targets, quiets_targets}, piece::{IPieceType, piece_type}, position::Position
 };
 
 use super::{FoldMoves, NoDoubleCheck, map_captures, map_quiets, pin_mask};
@@ -20,21 +15,20 @@ pub trait SlidingAttacks {
 
 pub trait SlidingPieceType: SlidingAttacks + IPieceType {}
 
-impl<O: Options, C, T> FoldMoves<C, O> for T
+impl<P: Perspective, O: Options, C, T> FoldMoves<P, C, O> for T
 where
-    C: NoDoubleCheck,
+    C: const NoDoubleCheck,
     T: SlidingPieceType,
 {
     #[inline(always)]
-    fn fold_moves<B, F, R>(pos: &Position, init: B, mut f: F) -> R
+    fn fold_moves_for<B, F, R>(pos: &Position, init: B, mut f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        let color = pos.get_turn();
-        let our_king = pos.get_bitboard(piece_type::KING, color).lsb();
+        let our_king = pos.get_bitboard(piece_type::KING, P::COLOR).lsb();
 
-        pos.get_bitboard(T::ID, color).try_fold(init, move |mut acc, piece| {
+        pos.get_bitboard(T::ID, P::COLOR).try_fold(init, move |mut acc, piece| {
             let attacks = {
                 let occupancy = pos.get_occupancy();
                 let attacks = T::lookup_attacks(piece, occupancy);
@@ -49,12 +43,12 @@ where
             };
 
             if O::gen_captures() {
-                let legal_captures = attacks & captures_targets::<C>(pos, color);
+                let legal_captures = attacks & captures_targets::<C>(pos, P::COLOR);
                 acc = map_captures(legal_captures, piece).try_fold(acc, &mut f)?;
             }
 
             if O::gen_quiets() {
-                let legal_quiets = attacks & quiets_targets::<C>(pos, color);
+                let legal_quiets = attacks & quiets_targets::<C>(pos, P::COLOR);
                 acc = map_quiets(legal_quiets, piece).try_fold(acc, &mut f)?;
             }
 

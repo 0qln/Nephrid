@@ -16,9 +16,10 @@ use crate::{
         coordinates::{EpCaptureSquare, EpTargetSquare, File, Rank, Square, SquareTokenizationError, files, ranks},
         move_iter::{
             bishop::Bishop,
-            fold_legal_moves,
+            fold_moves,
             king::{self},
             knight,
+            opt::AllLegal,
             rook::Rook,
             sliding_piece::SlidingAttacks,
         },
@@ -337,7 +338,7 @@ impl<'a> fmt::Display for SAN<'a> {
             if candidates.pop_cnt_gt_1() {
                 // Only investigate legality of the candidates once we found a pseudo legal
                 // candidate.
-                let legal_mask = fold_legal_moves(self.context, Bitboard::empty(), |mut acc, mov| {
+                let legal_mask = fold_moves::<AllLegal, _, _, _>(self.context, Bitboard::empty(), |mut acc, mov| {
                     // Accumilate all from-squares, where there exists a legal move that
                     // has our to-square as destination.
                     if mov.get_to() == to {
@@ -561,7 +562,7 @@ impl<'a, 'b> TryFrom<StandardAlgebraicNotationParser<'a, 'b>> for Move {
 
         // Disambiguation
         let mut moves = MoveList::new();
-        _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
+        _ = fold_moves::<AllLegal, _, _, _>(pos, (), |_, m| {
             let m_flag = m.get_flag();
             let m_from = m.get_from();
             let m_piece = pos.get_piece(m.get_from());
@@ -647,6 +648,16 @@ impl TryFrom<LongAlgebraicUciNotation<'_, '_, '_>> for Move {
 #[derive(Clone)]
 pub struct MoveList {
     inner: List<{ Self::CAPACITY }, Move>,
+}
+
+impl Extend<Move> for MoveList {
+    fn extend<T: IntoIterator<Item = Move>>(&mut self, iter: T) {
+        for mov in iter {
+            self.push(mov)
+        }
+    }
+
+    fn extend_one(&mut self, item: Move) { self.push(item) }
 }
 
 impl AsRef<[Move]> for MoveList {

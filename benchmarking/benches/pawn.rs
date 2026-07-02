@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use std::{hint::black_box, ops::ControlFlow};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -6,7 +8,8 @@ use engine::core::{
     coordinates::squares,
     r#move::Move,
     move_iter::{
-        FoldMoves, NoCheck, opt,
+        NoCheck, dbg_fold_moves,
+        opt::AllLegal,
         pawn::{Pawn, lookup_attacks},
         sliding_piece::magics,
     },
@@ -35,7 +38,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
         let pos = Position::from_fen(input).unwrap();
         c.bench_with_input(BenchmarkId::new("pawn::move_iter::check_none", input), &pos, |b, pos| {
             b.iter(|| {
-                <Pawn as FoldMoves<NoCheck, opt::AllLegal>>::fold_moves(
+                dbg_fold_moves::<Pawn, NoCheck, AllLegal, _, _, _>(
                     black_box(pos),
                     black_box(0),
                     black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),

@@ -1,11 +1,11 @@
 use core::fmt;
-use std::{fmt::Display, ops::ControlFlow};
+use std::fmt::Display;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::core::{
     color::colors,
     coordinates::squares,
-    move_iter::{fold_legal_moves, sliding_piece::magics},
+    move_iter::sliding_piece::magics,
     piece::{Piece, piece_type},
     position::Position,
     zobrist,
@@ -96,12 +96,7 @@ pub fn make_move(c: &mut Criterion) {
 
     let fen = "2n1k3/1P6/8/4pP2/8/6B1/P2P4/R3K2R w KQ e6 0 1";
     let pos = Position::from_fen(fen).unwrap();
-    let moves = fold_legal_moves(&pos, Vec::new(), |mut acc, m| {
-        acc.push(m);
-        ControlFlow::Continue::<(), _>(acc)
-    })
-    .continue_value()
-    .unwrap();
+    let moves = pos.collect_legals(Vec::new());
 
     for m in moves.into_iter().unique_by(|m| m.get_flag()) {
         c.bench_with_input(BenchmarkId::new("position::make_move", m), &m, |b, &m| {

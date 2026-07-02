@@ -1,3 +1,5 @@
+#![allow(deprecated)]
+
 use std::{hint::black_box, ops::ControlFlow};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -5,7 +7,7 @@ use engine::core::{
     coordinates::squares,
     r#move::Move,
     move_iter::{
-        FoldMoves, NoCheck, SingleCheck,
+        NoCheck, SingleCheck, dbg_fold_moves,
         knight::{Knight, compute_attacks, lookup_attacks},
         opt,
         sliding_piece::magics,
@@ -34,7 +36,7 @@ pub fn move_iter_check_none(c: &mut Criterion) {
         let pos = Position::from_fen(input).unwrap();
         c.bench_with_input(BenchmarkId::new("knight::move_iter::check_none", input), &pos, |b, pos| {
             b.iter(|| {
-                <Knight as FoldMoves<NoCheck, opt::AllLegal>>::fold_moves(
+                dbg_fold_moves::<Knight, NoCheck, opt::AllLegal, _, _, _>(
                     black_box(pos),
                     black_box(0),
                     black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
@@ -54,7 +56,7 @@ pub fn move_iter_check_single(c: &mut Criterion) {
         let pos = Position::from_fen(input).unwrap();
         c.bench_with_input(BenchmarkId::new("knight::move_iter::check_single", input), &pos, |b, pos| {
             b.iter(|| {
-                <Knight as FoldMoves<SingleCheck, opt::AllLegal>>::fold_moves(
+                dbg_fold_moves::<Knight, SingleCheck, opt::AllLegal, _, _, _>(
                     black_box(pos),
                     black_box(0),
                     black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),

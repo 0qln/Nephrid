@@ -2,6 +2,7 @@ use std::ops::Try;
 
 use crate::core::{
     bitboard::Bitboard,
+    color::Perspective,
     coordinates::{CompassRose, Square, TCompassRose, compass_rose, squares},
     r#move::Move,
     move_iter::{captures_targets, map_captures, map_quiets, quiets_targets},
@@ -15,17 +16,15 @@ use super::{FoldMoves, NoDoubleCheck, Options};
 
 pub struct Knight;
 
-impl<O: Options, C: NoDoubleCheck> FoldMoves<C, O> for Knight {
+impl<P: Perspective, O: Options, C: const NoDoubleCheck> FoldMoves<P, C, O> for Knight {
     #[inline(always)]
-    fn fold_moves<B, F, R>(pos: &Position, init: B, mut f: F) -> R
+    fn fold_moves_for<B, F, R>(pos: &Position, init: B, mut f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        let color = pos.get_turn();
-
         let mut knights = {
-            let knights = pos.get_bitboard(piece_type::KNIGHT, color);
+            let knights = pos.get_bitboard(piece_type::KNIGHT, P::COLOR);
             if O::legal() {
                 // only unpinned knights if legal check required
                 knights & !pos.get_blockers()
@@ -39,12 +38,12 @@ impl<O: Options, C: NoDoubleCheck> FoldMoves<C, O> for Knight {
             let attacks = lookup_attacks(piece);
 
             if O::gen_captures() {
-                let captures = attacks & captures_targets::<C>(pos, color);
+                let captures = attacks & captures_targets::<C>(pos, P::COLOR);
                 acc = map_captures(captures, piece).try_fold(acc, &mut f)?;
             }
 
             if O::gen_quiets() {
-                let quiets = attacks & quiets_targets::<C>(pos, color);
+                let quiets = attacks & quiets_targets::<C>(pos, P::COLOR);
                 acc = map_quiets(quiets, piece).try_fold(acc, &mut f)?;
             }
 

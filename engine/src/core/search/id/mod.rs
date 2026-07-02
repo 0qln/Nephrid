@@ -19,7 +19,7 @@ use crate::{
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
-        move_iter::fold_legal_moves,
+        move_iter::{fold_moves, opt::AllLegal},
         params::C_IdHceParams,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
@@ -48,9 +48,9 @@ use crate::{
 /// confident position to produce a peaked (low-entropy) distribution.
 const ROOT_ENTROPY_TEMP: f32 = 0.3;
 
-struct StaticEvaluator;
+struct HceEvaluator;
 
-impl eval::StaticEvaluator for StaticEvaluator {
+impl eval::StaticEvaluator for HceEvaluator {
     fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
         fn static_value<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, phase: TaperValue, turn: Turn) -> Score<P> {
             material::<P>(pos)
@@ -183,7 +183,7 @@ struct Searcher<'a> {
 impl<'a> Searcher<'a> {
     fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, tt: &'a mut TranspositionTable<TTEntry>) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
-        _ = fold_legal_moves::<_, _, _>(pos, (), |_, m| {
+        _ = fold_moves::<AllLegal, _, _, _>(pos, (), |_, m| {
             stats.push(RootStats::new(m, 0));
             ControlFlow::Continue::<(), ()>(())
         });
@@ -259,6 +259,8 @@ impl<'a> Searcher<'a> {
     ) -> Score<P> {
         debug_assert!(alpha < beta);
 
+        let evaluator = &HceEvaluator;
+
         // incremment stats
         stats.nodes += 1;
 
@@ -280,7 +282,7 @@ impl<'a> Searcher<'a> {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return qsearch(pos, alpha, beta, C_IdHceParams, &StaticEvaluator, Depth::new(100));
+            return qsearch(pos, alpha, beta, C_IdHceParams, evaluator, Depth::new(100));
         }
 
         let pieces = pos.piece_info();
@@ -302,9 +304,8 @@ impl<'a> Searcher<'a> {
             return Score::new(entry.score);
         }
 
-        let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
-
         // move gen
+        let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
         let mut move_picker = if is_root {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }

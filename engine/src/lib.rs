@@ -24,6 +24,8 @@
 #![feature(const_ops)]
 #![feature(const_cmp)]
 #![feature(const_default)]
+#![feature(const_index)]
+#![feature(extend_one)]
 
 #[macro_use] extern crate impl_ops;
 

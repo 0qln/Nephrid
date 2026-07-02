@@ -2,11 +2,7 @@ use std::ops::ControlFlow;
 
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 
-use engine::core::{
-    move_iter::{fold_legal_moves, sliding_piece::magics},
-    position::Position,
-    zobrist,
-};
+use engine::core::{r#move::MoveList, move_iter::sliding_piece::magics, position::Position, zobrist};
 
 fn find_seeds() {
     magics::init();
@@ -30,7 +26,6 @@ struct SeedTestResult {
 
 fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
     let pos = Position::start_position();
-    let buffer = &mut vec![];
     let collisions = (0..rounds)
         .try_fold(0, |acc, _| {
             if acc >= min {
@@ -41,19 +36,13 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
 
             // simulate a random game...
             loop {
-                buffer.clear();
-                let _ = fold_legal_moves(pos, &mut *buffer, |acc, m| {
-                    ControlFlow::Continue::<(), _>({
-                        acc.push(m);
-                        acc
-                    })
-                });
-
-                if buffer.is_empty() || pos.fifty_move_rule() || pos.has_threefold_repetition() {
+                if let Some(_result) = pos.game_result() {
                     break;
                 }
 
-                let mov = buffer[rng.random_range(0..buffer.len())];
+                let buffer = pos.collect_legals(MoveList::new());
+
+                let mov = buffer.as_slice()[rng.random_range(0..buffer.len()) as usize];
                 pos.make_move(mov);
             }
 
