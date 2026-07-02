@@ -239,6 +239,7 @@ pub fn partial_sort_desc(slice: &mut [ScoredMove]) {
 /// If true, generates legals, if false, generates pseudo legals.
 pub const LEGAL: bool = true;
 
+// todo: stage for generating checks?
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum RtStage {

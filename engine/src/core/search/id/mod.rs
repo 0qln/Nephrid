@@ -83,6 +83,7 @@ impl HceThreatener {
     fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
         let mut max_threat = Score::<P::Opponent>::new(0);
 
+        // todo: only generate captures, promos, and checks.
         let moves = pos.collect_legals_for::<P::Opponent, _>(MoveList::new());
         for &mov in moves.iter() {
             match pos.does_check(mov) {
