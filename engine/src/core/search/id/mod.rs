@@ -295,6 +295,8 @@ impl<'a> Searcher<'a> {
 
         debug_assert!(alpha < beta);
 
+        let evaluator = &HceEvaluator;
+
         // incremment stats
         stats.nodes += 1;
 
