@@ -84,6 +84,7 @@ pub struct TunableParams<Base> {
     mcts_proven_loss_visit_threshold: VisitCount,
     mcts_killer_exploitation: f32,
     mcts_tt_best_move: f32,
+    id_nmp_reduction: Depth,
     _base: PhantomData<Base>,
 }
 
@@ -110,6 +111,10 @@ impl<B, X: Deref<Target = TunableParams<B>>> ChronoParams for X {
     fn entropy_target(&self) -> NormalizedEntropy { self.timeman_entropy_target }
 }
 
+impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
+    fn nmp_reduction(&self) -> Depth { self.id_nmp_reduction }
+}
+
 impl<B> TunableParams<B> {
     fn from_config<C: Deref<Target = Configuration>>(config: C) -> Self {
         let config = config.deref();
@@ -121,6 +126,7 @@ impl<B> TunableParams<B> {
         let mcts_proven_loss_visit_threshold = config.mcts_proven_loss_visit_threshold();
         let mcts_killer_exploitation = config.mcts_killer_exploitation();
         let mcts_tt_best_move = config.mcts_tt_best_move();
+        let id_nmp_reduction = config.id_nmp_reduction();
         Self {
             timeman_entropy_target,
             hce_policy_temp,
@@ -130,6 +136,7 @@ impl<B> TunableParams<B> {
             mcts_proven_loss_visit_threshold,
             mcts_killer_exploitation,
             mcts_tt_best_move,
+            id_nmp_reduction,
             _base: PhantomData,
         }
     }

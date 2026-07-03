@@ -1,6 +1,7 @@
 use crate::{
     core::{
         chrono::ChronoParams,
+        depth::Depth,
         eval::hce::TaperValue,
         search::{
             mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
@@ -310,6 +311,9 @@ pub struct Configuration {
 
     /// Target entropy for time management.
     timeman_entropy_target: ConfigOption<Spin<UciPercent>>,
+
+    /// [Iterative Deepening] Null Move Pruning reduction (R).
+    id_nmp_reduction: ConfigOption<Spin<UciInteger>>,
 }
 
 impl Configuration {
@@ -347,6 +351,7 @@ impl Configuration {
                 mcts_killer_exploitation: ConfigOption::new("mcts-killer-exploitation", Spin::<UciPercent>::new(_ratio(0.27), _ratio(0.), _ratio(10.))),
                 mcts_tt_best_move: ConfigOption::new("mcts-tt-best-move", Spin::<UciPercent>::new(_ratio(1.50), _ratio(0.), _ratio(10.))),
                 timeman_entropy_target: ConfigOption::new("timeman-entropy-target", Spin::<UciPercent>::new(_ratio(0.60), _ratio(0.), _ratio(1.))),
+                id_nmp_reduction: ConfigOption::new("id-nmp-reduction", Spin::new(2, 0, 10))
             },
         }
     }
@@ -415,6 +420,7 @@ impl Configuration {
     pub fn mcts_killer_exploitation(&self) -> f32 { self.mcts_killer_exploitation.value.get::<ratio>() }
     pub fn mcts_tt_best_move(&self) -> f32 { self.mcts_tt_best_move.value.get::<ratio>() }
     pub fn timeman_entropy_target(&self) -> math::NormalizedEntropy { NormalizedEntropy::new(self.timeman_entropy_target.value.get::<ratio>()) }
+    pub fn id_nmp_reduction(&self) -> Depth { Depth::new(self.id_nmp_reduction.value as u8) }
 }
 
 impl Configuration {
@@ -448,6 +454,7 @@ impl Configuration {
             #[cfg(feature = "tunable")] "mcts-tt-best-move" => self.mcts_tt_best_move.set(value),
             #[cfg(feature = "tunable")] "select-cpuct" => self.select_cpuct.set(value),
             #[cfg(feature = "tunable")] "timeman-entropy-target" => self.timeman_entropy_target.set(value),
+            #[cfg(feature = "tunable")] "id-nmp-reduction" => self.id_nmp_reduction.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -471,6 +478,7 @@ impl Configuration {
             println!("{}", self.mcts_tt_best_move);
             println!("{}", self.select_cpuct);
             println!("{}", self.timeman_entropy_target);
+            println!("{}", self.id_nmp_reduction);
         }
     }
 }

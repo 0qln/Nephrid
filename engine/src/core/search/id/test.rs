@@ -1,7 +1,7 @@
 use uom::si::{information::mebibyte, u64::Information};
 
 use super::*;
-use crate::core::{move_iter::sliding_piece::magics, search::limit::UciLimit};
+use crate::core::{move_iter::sliding_piece::magics, params::C_IdHceParams, search::limit::UciLimit};
 
 fn run_search(fen: &str, depth: u8) {
     magics::init();
