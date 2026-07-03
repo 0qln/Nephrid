@@ -23,6 +23,7 @@ wide = "1.5.0"
 [features]
 default = []
 tunable = []
+id-fhr = []
 
 [lints]
 workspace = true

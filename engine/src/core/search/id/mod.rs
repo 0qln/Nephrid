@@ -15,7 +15,7 @@ use crate::{
         coordinates::EpTargetSquare,
         depth::Depth,
         eval::{
-            self, GameResult, StaticEvaluator,
+            GameResult, StaticEvaluator,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
@@ -51,7 +51,7 @@ const ROOT_ENTROPY_TEMP: f32 = 0.3;
 
 struct HceEvaluator;
 
-impl eval::StaticEvaluator for HceEvaluator {
+impl StaticEvaluator for HceEvaluator {
     fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
         fn static_value<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, phase: TaperValue, turn: Turn) -> Score<P> {
             material::<P>(pos)
@@ -75,11 +75,13 @@ impl eval::StaticEvaluator for HceEvaluator {
     }
 }
 
+#[allow(dead_code)]
 struct HceThreatener;
 
 impl HceThreatener {
     /// Finds the biggest incoming threat to `P`, giving a score for
     /// `P::Opponent`.
+    #[allow(dead_code)]
     fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
         let mut max_threat = Score::<P::Opponent>::new(0);
 
@@ -285,8 +287,12 @@ impl<'a> Searcher<'a> {
         mut alpha: Score<P>,
         beta: Score<P>,
     ) -> Score<P> {
+        // todo: when implementing nnue, these should probably be generic parameters.
         let evaluator = &HceEvaluator;
+
+        #[cfg(feature = "id-fhr")]
         let threatener = &HceThreatener;
+
         debug_assert!(alpha < beta);
 
         // incremment stats
@@ -315,8 +321,8 @@ impl<'a> Searcher<'a> {
 
         let pieces = pos.piece_info();
         let phase = TaperValue::from_position(pieces);
-        let is_root_node = T::KIND == NodeKind::Root;
-        let is_cut_node = T::KIND == NodeKind::Cut;
+        let kind = T::KIND;
+        let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
         let orig_alpha = alpha;
         let tt_entry = self.tt.get(key);
@@ -349,34 +355,40 @@ impl<'a> Searcher<'a> {
             phase,
         };
 
+        #[cfg(feature = "id-fhr")]
         let (mut static_eval, mut threat) = (None, None);
-        let mut fhr_reduct = 0;
-
-        let in_check = pos.get_check_state() != CheckState::None;
 
         // fail-high reductions
-        if is_cut_node && !in_check {
-            let s_score = tt_entry
-                .and_then(|e| e.static_eval)
-                .map(Score::<P>::new)
-                .unwrap_or_else(|| evaluator.eval(pieces, P::COLOR, pos.get_ep_target_square(), phase));
+        let fhr_reduct = cfg_select! {
+            feature = "id-fhr" => {{
+                let in_check = pos.get_check_state() != CheckState::None;
 
-            let t_score = tt_entry
-                .and_then(|e| e.threat)
-                .map(Score::<P::Opponent>::new)
-                .unwrap_or_else(|| threatener.threat::<P>(pos));
+                if kind == NodeKind::Cut && !in_check {
+                    let s_score = tt_entry
+                        .and_then(|e| e.static_eval)
+                        .map(Score::<P>::new)
+                        .unwrap_or_else(|| evaluator.eval(pieces, P::COLOR, pos.get_ep_target_square(), phase));
 
-            // the quiet score of this position is the static score minus threat score (the
-            // best threat that the opponent can do).
-            let q_score = s_score + !t_score;
+                    let t_score = tt_entry
+                        .and_then(|e| e.threat)
+                        .map(Score::<P::Opponent>::new)
+                        .unwrap_or_else(|| threatener.threat::<P>(pos));
 
-            // if the quiet score
-            if q_score >= beta {
-                fhr_reduct = 1;
-            }
+                    (static_eval, threat) = (Some(s_score.0), Some(t_score.0));
 
-            (static_eval, threat) = (Some(s_score.0), Some(t_score.0));
-        }
+                    // the quiet score of this position is the static score minus threat score (the
+                    // best threat that the opponent can do).
+                    let q_score = s_score + !t_score;
+
+                    // if the quiet score
+                    if q_score >= beta { 1 } else { 0 }
+                }
+                else {
+                    0
+                }
+            }}
+            _ => 0
+        };
 
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
@@ -510,7 +522,9 @@ impl<'a> Searcher<'a> {
             key,
             depth,
             score: best_score.0,
+            #[cfg(feature = "id-fhr")]
             static_eval,
+            #[cfg(feature = "id-fhr")]
             threat,
             bound: Bound::from_scores(orig_alpha, beta, best_score),
             mov: best_move,
@@ -555,7 +569,9 @@ pub struct TTEntry {
     key: zobrist::Hash,
     depth: Depth,
     score: i32,
+    #[cfg(feature = "id-fhr")]
     static_eval: Option<i32>,
+    #[cfg(feature = "id-fhr")]
     threat: Option<i32>,
     bound: Bound,
     mov: Move,
