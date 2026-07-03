@@ -290,21 +290,43 @@ impl<'a> Searcher<'a> {
         let is_root = T::IS_ROOT;
         let key = pos.get_key();
         let orig_alpha = alpha;
-        let tt_entry = self.tt.get(key);
         let killers = self.ss.entry(rel_ply).killers.clone();
 
         // tt-cutoff
-        if !is_root
-            && let Some(entry) = tt_entry
-            && entry.depth >= depth
-            && ((entry.bound == Bound::Exact)
-                || (entry.bound == Bound::Lower && entry.score >= beta.0)
-                || (entry.bound == Bound::Upper && entry.score <= alpha.0))
         {
-            return Score::new(entry.score);
+            let tt_entry = self.tt.get(key);
+            if !is_root
+                && let Some(entry) = tt_entry
+                && entry.depth >= depth
+                && ((entry.bound == Bound::Exact)
+                    || (entry.bound == Bound::Lower && entry.score >= beta.0)
+                    || (entry.bound == Bound::Upper && entry.score <= alpha.0))
+            {
+                return Score::new(entry.score);
+            }
+        }
+
+        // null move pruning
+        const R: Depth = Depth::new(2);
+        let is_in_check = pos.get_check_state() != CheckState::None;
+        if !is_root && depth > R && !is_in_check && phase < TaperValue::new(8) {
+            pos.make_null_move();
+            let nm_score = !self.search::<P::Opponent, Normal>(
+                pos,
+                stats,
+                // scout with a reduced depth
+                depth - R - 1,
+                !(alpha + Score::new(1)),
+                !alpha,
+            );
+            pos.unmake_null_move();
+            if nm_score >= beta {
+                return nm_score;
+            }
         }
 
         // move gen
+        let tt_entry = self.tt.get(key);
         let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
         let mut move_picker = if is_root {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
