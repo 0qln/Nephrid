@@ -4,8 +4,10 @@ use crate::{
     core::{
         chrono::ChronoParams,
         config::{ConfigBuilder, Configuration},
+        depth::Depth,
         eval::hce::TaperValue,
         search::{
+            id::IdParams,
             mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
             quiesce::QSearchParams,
         },
@@ -267,4 +269,8 @@ impl const ChronoParams for C_IdHceParams {
 impl const QSearchParams for C_IdHceParams {
     fn futility_margin(&self) -> i32 { 166 }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+}
+
+impl const IdParams for C_IdHceParams {
+    fn nmp_reduction(&self) -> Depth { Depth::new(2) }
 }
