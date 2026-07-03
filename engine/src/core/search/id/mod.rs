@@ -1,5 +1,5 @@
 use std::{
-    cmp::{Reverse, min},
+    cmp::{Reverse, max, min},
     hint::assert_unchecked,
     ops::ControlFlow,
     time::{Duration, Instant},
@@ -15,12 +15,13 @@ use crate::{
         coordinates::EpTargetSquare,
         depth::Depth,
         eval::{
-            self, GameResult,
+            GameResult, StaticEvaluator,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
         params::C_IdHceParams,
+        piece::piece_type,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
         search::{
@@ -50,7 +51,7 @@ const ROOT_ENTROPY_TEMP: f32 = 0.3;
 
 struct HceEvaluator;
 
-impl eval::StaticEvaluator for HceEvaluator {
+impl StaticEvaluator for HceEvaluator {
     fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
         fn static_value<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, phase: TaperValue, turn: Turn) -> Score<P> {
             material::<P>(pos)
@@ -71,6 +72,35 @@ impl eval::StaticEvaluator for HceEvaluator {
         let w_q = static_value::<P>(pos, ep_w, phase, turn);
         let b_q = static_value::<P::Opponent>(pos, ep_b, phase, turn);
         w_q + !b_q
+    }
+}
+
+#[allow(dead_code)]
+struct HceThreatener;
+
+impl HceThreatener {
+    /// Finds the biggest incoming threat to `P`, giving a score for
+    /// `P::Opponent`.
+    #[allow(dead_code)]
+    fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
+        let mut max_threat = Score::<P::Opponent>::new(0);
+
+        // todo: only generate captures, promos, and checks.
+        let moves = pos.collect_legals_for::<P::Opponent, _>(MoveList::new());
+        for &mov in moves.iter() {
+            match pos.does_check(mov) {
+                CheckState::None => {}
+                CheckState::Single => return Score::new(hce::piece_score(piece_type::QUEEN)),
+                CheckState::Double => return Score::new(hce::piece_score(piece_type::QUEEN) + hce::piece_score(piece_type::ROOK)),
+            }
+
+            if mov.get_flag().is_capture() {
+                let see = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR);
+                max_threat = max(max_threat, Score::new(see as i32));
+            }
+        }
+
+        max_threat
     }
 }
 
@@ -257,9 +287,13 @@ impl<'a> Searcher<'a> {
         mut alpha: Score<P>,
         beta: Score<P>,
     ) -> Score<P> {
-        debug_assert!(alpha < beta);
-
+        // todo: when implementing nnue, these should probably be generic parameters.
         let evaluator = &HceEvaluator;
+
+        #[cfg(feature = "id-fhr")]
+        let threatener = &HceThreatener;
+
+        debug_assert!(alpha < beta);
 
         // incremment stats
         stats.nodes += 1;
@@ -285,17 +319,17 @@ impl<'a> Searcher<'a> {
             return qsearch(pos, alpha, beta, C_IdHceParams, evaluator, Depth::new(100));
         }
 
-        let pieces = pos.piece_info();
-        let phase = TaperValue::from_position(pieces);
-        let is_root = T::IS_ROOT;
+        let phase = TaperValue::from_position(pos.piece_info());
+        let kind = T::KIND;
+        let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
         let orig_alpha = alpha;
         let killers = self.ss.entry(rel_ply).killers.clone();
 
         // tt-cutoff
-        {
+       {
             let tt_entry = self.tt.get(key);
-            if !is_root
+            if !is_root_node
                 && let Some(entry) = tt_entry
                 && entry.depth >= depth
                 && ((entry.bound == Bound::Exact)
@@ -309,7 +343,7 @@ impl<'a> Searcher<'a> {
         // null move pruning
         const R: Depth = Depth::new(2);
         let is_in_check = pos.get_check_state() != CheckState::None;
-        if !is_root && depth > R && !is_in_check && phase < TaperValue::new(8) {
+        if !is_root_node && depth > R && !is_in_check && phase < TaperValue::new(8) {
             pos.make_null_move();
             let nm_score = !self.search::<P::Opponent, Normal>(
                 pos,
@@ -328,7 +362,7 @@ impl<'a> Searcher<'a> {
         // move gen
         let tt_entry = self.tt.get(key);
         let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
-        let mut move_picker = if is_root {
+        let mut move_picker = if is_root_node {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
         else {
@@ -340,6 +374,41 @@ impl<'a> Searcher<'a> {
             killers,
             color: P::COLOR,
             phase,
+        };
+
+        #[cfg(feature = "id-fhr")]
+        let (mut static_eval, mut threat) = (None, None);
+
+        // fail-high reductions
+        let fhr_reduct = cfg_select! {
+            feature = "id-fhr" => {{
+                let in_check = pos.get_check_state() != CheckState::None;
+
+                if kind == NodeKind::Cut && !in_check {
+                    let s_score = tt_entry
+                        .and_then(|e| e.static_eval)
+                        .map(Score::<P>::new)
+                        .unwrap_or_else(|| evaluator.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
+
+                    let t_score = tt_entry
+                        .and_then(|e| e.threat)
+                        .map(Score::<P::Opponent>::new)
+                        .unwrap_or_else(|| threatener.threat::<P>(pos));
+
+                    (static_eval, threat) = (Some(s_score.0), Some(t_score.0));
+
+                    // the quiet score of this position is the static score minus threat score (the
+                    // best threat that the opponent can do).
+                    let q_score = s_score + !t_score;
+
+                    // if the quiet score
+                    if q_score >= beta { 1 } else { 0 }
+                }
+                else {
+                    0
+                }
+            }}
+            _ => 0
         };
 
         let mut best_score = Score::NEG_INF;
@@ -356,13 +425,13 @@ impl<'a> Searcher<'a> {
             pos.make_move_for::<P>(m);
 
             // depth
-            let mut depth_extension = 0;
-            let mut depth_reduction = 0;
+            let (mut depth_ext, mut depth_reduct) = (0, 0);
+
             let gives_check = pos.get_check_state() != CheckState::None;
 
             // check extensions
             if gives_check {
-                depth_extension += 1;
+                depth_ext += 1;
             }
 
             // late move reductions
@@ -371,39 +440,41 @@ impl<'a> Searcher<'a> {
                 let d = depth.v() as f32;
                 let m = curr as f32;
                 let lmr = 0.99 + f32::ln(d) * f32::ln(m) / 3.14;
-                depth_reduction += lmr as u8;
+                depth_reduct += lmr as u8;
             }
 
             // recurse
             let score = {
-                let new_depth = depth - 1 + depth_extension;
+                let new_depth = depth - 1 + depth_ext;
+                let full_depth = new_depth.saturating_sub(fhr_reduct);
+                let reduced_depth = new_depth.saturating_sub(depth_reduct + fhr_reduct);
 
                 if curr == 0 {
                     // search with a full window to get an exact score.
-                    !self.search::<P::Opponent, Normal>(pos, stats, new_depth, !beta, !alpha)
+                    !self.search::<P::Opponent, Normal>(pos, stats, full_depth, !beta, !alpha)
                 }
                 else {
                     // assume that our move ordering is good the first move will be the best one.
                     // to prove that this move cannot improve our first move, perform a zero window
                     // search with [a,a+1] (~ [-(a-1),-a]). we don't care by how much this move is
                     // able to improve alpha since we assume that it cannot.
-                    let mut zws_score = !self.search::<P::Opponent, Normal>(
+                    let mut zws_score = !self.search::<P::Opponent, Cut>(
                         pos,
                         stats,
                         // scout with a reduced depth
-                        new_depth - depth_reduction,
+                        reduced_depth,
                         !(alpha + Score::new(1)),
                         !alpha,
                     );
 
                     // if the reduced depth search fails high, we must verify that it is actually
                     // good and do a full depth re-search.
-                    if zws_score > alpha && depth_reduction > 0 {
-                        zws_score = !self.search::<P::Opponent, Normal>(
+                    if zws_score > alpha && reduced_depth != full_depth {
+                        zws_score = !self.search::<P::Opponent, Cut>(
                             pos,
                             stats,
                             // research at full depth
-                            new_depth,
+                            full_depth,
                             // still zero-window.
                             !(alpha + Score::new(1)),
                             !alpha,
@@ -416,8 +487,7 @@ impl<'a> Searcher<'a> {
                         && zws_score < beta
                     {
                         !self.search::<P::Opponent, Normal>(
-                            pos, stats, new_depth, !beta, // new lower_bound, since it was able to beat alpha
-                            !zws_score,
+                            pos, stats, full_depth, !beta, !zws_score, // new lower_bound, since it was able to beat alpha
                         )
                     }
                     else {
@@ -433,7 +503,7 @@ impl<'a> Searcher<'a> {
                 return Score::new(0);
             }
 
-            if is_root {
+            if is_root_node {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
                 self.root_stats.as_mut_slice()[curr].set_score(
@@ -473,6 +543,10 @@ impl<'a> Searcher<'a> {
             key,
             depth,
             score: best_score.0,
+            #[cfg(feature = "id-fhr")]
+            static_eval,
+            #[cfg(feature = "id-fhr")]
+            threat,
             bound: Bound::from_scores(orig_alpha, beta, best_score),
             mov: best_move,
         });
@@ -481,21 +555,33 @@ impl<'a> Searcher<'a> {
     }
 }
 
-trait NodeType {
-    const IS_ROOT: bool;
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum NodeKind {
+    Root,
+    Normal,
+    Cut,
+}
+
+const trait NodeType {
+    const KIND: NodeKind;
 }
 
 mod node_types {
-    use super::NodeType;
+    use super::{NodeKind, NodeType};
 
     pub struct Root;
-    impl NodeType for Root {
-        const IS_ROOT: bool = true;
+    impl const NodeType for Root {
+        const KIND: NodeKind = NodeKind::Root;
     }
 
     pub struct Normal;
-    impl NodeType for Normal {
-        const IS_ROOT: bool = false;
+    impl const NodeType for Normal {
+        const KIND: NodeKind = NodeKind::Normal;
+    }
+
+    pub struct Cut;
+    impl const NodeType for Cut {
+        const KIND: NodeKind = NodeKind::Cut;
     }
 }
 
@@ -504,6 +590,10 @@ pub struct TTEntry {
     key: zobrist::Hash,
     depth: Depth,
     score: i32,
+    #[cfg(feature = "id-fhr")]
+    static_eval: Option<i32>,
+    #[cfg(feature = "id-fhr")]
+    threat: Option<i32>,
     bound: Bound,
     mov: Move,
 }
