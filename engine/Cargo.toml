@@ -23,6 +23,9 @@ wide = "1.5.0"
 [features]
 default = []
 tunable = []
+
+# fail-high reductions. currently disabled by default since they don't gain elo.
+# todo: that is probably due to bad (hce) static evaluation and bad (hce) threat detections. try using this again when nnue is implemented
 id-fhr = []
 
 [lints]
