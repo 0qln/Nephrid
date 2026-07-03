@@ -322,12 +322,13 @@ impl<'a> Searcher<'a> {
         let phase = TaperValue::from_position(pos.piece_info());
         let kind = T::KIND;
         let is_root_node = kind == NodeKind::Root;
+        let is_cut_node = kind == NodeKind::Cut;
         let key = pos.get_key();
         let orig_alpha = alpha;
         let killers = self.ss.entry(rel_ply).killers.clone();
 
         // tt-cutoff
-       {
+        {
             let tt_entry = self.tt.get(key);
             if !is_root_node
                 && let Some(entry) = tt_entry
@@ -343,7 +344,7 @@ impl<'a> Searcher<'a> {
         // null move pruning
         const R: Depth = Depth::new(2);
         let is_in_check = pos.get_check_state() != CheckState::None;
-        if !is_root_node && depth > R && !is_in_check && phase < TaperValue::new(8) {
+        if is_cut_node && depth > R && !is_in_check && phase < TaperValue::new(8) {
             pos.make_null_move();
             let nm_score = !self.search::<P::Opponent, Normal>(
                 pos,
@@ -384,7 +385,7 @@ impl<'a> Searcher<'a> {
             feature = "id-fhr" => {{
                 let in_check = pos.get_check_state() != CheckState::None;
 
-                if kind == NodeKind::Cut && !in_check {
+                if is_cut_node && !in_check {
                     let s_score = tt_entry
                         .and_then(|e| e.static_eval)
                         .map(Score::<P>::new)
