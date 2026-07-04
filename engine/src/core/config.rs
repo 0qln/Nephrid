@@ -324,6 +324,9 @@ pub struct Configuration {
 
     /// [Iterative Deepening] Null Move Pruning phase factor.
     id_nmp_phase_factor: ConfigOption<Spin<UciInteger>>,
+
+    /// [Iterative Deepening] Null Move Pruning margin.
+    id_nmp_margin: ConfigOption<Spin<UciInteger>>,
 }
 
 impl Configuration {
@@ -365,6 +368,7 @@ impl Configuration {
                 id_nmp_phase_threshold: ConfigOption::new("id-nmp-phase-threshold", Spin::new(8, 0, 24)),
                 id_nmp_depth_factor: ConfigOption::new("id-nmp-depth-factor", Spin::new(3, 1, 20)),
                 id_nmp_phase_factor: ConfigOption::new("id-nmp-phase-factor", Spin::new(7, 1, 50)),
+                id_nmp_margin: ConfigOption::new("id-nmp-margin", Spin::new(50, -350, 350))
             },
         }
     }
@@ -427,6 +431,7 @@ impl ConfigBuilder {
         cfg.id_nmp_phase_threshold.seed(params.nmp_phase_threshold().v() as i32);
         cfg.id_nmp_depth_factor.seed(params.nmp_depth_factor() as i32);
         cfg.id_nmp_phase_factor.seed(params.nmp_phase_factor() as i32);
+        cfg.id_nmp_margin.seed(params.nmp_margin() as i32);
         self
     }
 
@@ -448,6 +453,7 @@ impl Configuration {
     pub fn id_nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(self.id_nmp_phase_threshold.value as u32) }
     pub fn id_nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor.value as u8 }
     pub fn id_nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor.value as u32 }
+    pub fn id_nmp_margin(&self) -> i32 { self.id_nmp_margin.value as i32 }
 }
 
 impl Configuration {
@@ -483,6 +489,9 @@ impl Configuration {
             #[cfg(feature = "tunable")] "timeman-entropy-target" => self.timeman_entropy_target.set(value),
             #[cfg(feature = "tunable")] "id-nmp-reduction" => self.id_nmp_reduction.set(value),
             #[cfg(feature = "tunable")] "id-nmp-phase-threshold" => self.id_nmp_phase_threshold.set(value),
+            #[cfg(feature = "tunable")] "id-nmp-depth-factor" => self.id_nmp_depth_factor.set(value),
+            #[cfg(feature = "tunable")] "id-nmp-phase-factor" => self.id_nmp_phase_factor.set(value),
+            #[cfg(feature = "tunable")] "id-nmp-margin" => self.id_nmp_margin.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -508,6 +517,9 @@ impl Configuration {
             println!("{}", self.timeman_entropy_target);
             println!("{}", self.id_nmp_reduction);
             println!("{}", self.id_nmp_phase_threshold);
+            println!("{}", self.id_nmp_depth_factor);
+            println!("{}", self.id_nmp_phase_factor);
+            println!("{}", self.id_nmp_margin);
         }
     }
 }

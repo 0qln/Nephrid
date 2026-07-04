@@ -131,6 +131,7 @@ pub const trait IdParams {
     fn nmp_phase_threshold(&self) -> TaperValue;
     fn nmp_depth_factor(&self) -> u8;
     fn nmp_phase_factor(&self) -> u32;
+    fn nmp_margin(&self) -> i32;
 }
 
 pub fn go(
@@ -348,6 +349,15 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        let s_score = {
+            let tt_entry = self.tt.get(key);
+
+            tt_entry
+                .and_then(|e| e.static_eval)
+                .map(Score::<P>::new)
+                .unwrap_or_else(|| evaluator.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase))
+        };
+
         // null move pruning
         let nmp_r: Depth = params.nmp_reduction()
             // scale the reduction up based on depth
@@ -366,6 +376,9 @@ impl<'a> Searcher<'a> {
             // but we only have pawns and are more likely in a zugzwang position, this check will
             // not catch that
             && phase < params.nmp_phase_threshold()
+            // don't bother attempting to improve beta with a tempo down when our static eval is not
+            // even better than beta
+            && s_score >= beta - Score::<P>::new(params.nmp_margin())
         {
             pos.make_null_move();
 
@@ -414,11 +427,6 @@ impl<'a> Searcher<'a> {
                 let in_check = pos.get_check_state() != CheckState::None;
 
                 if is_cut_node && !in_check {
-                    let s_score = tt_entry
-                        .and_then(|e| e.static_eval)
-                        .map(Score::<P>::new)
-                        .unwrap_or_else(|| evaluator.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
-
                     let t_score = tt_entry
                         .and_then(|e| e.threat)
                         .map(Score::<P::Opponent>::new)
@@ -579,8 +587,7 @@ impl<'a> Searcher<'a> {
             key,
             depth,
             score: best_score.0,
-            #[cfg(feature = "id-fhr")]
-            static_eval,
+            static_eval: Some(s_score.0),
             #[cfg(feature = "id-fhr")]
             threat,
             bound: Bound::from_scores(orig_alpha, beta, best_score),
@@ -626,7 +633,6 @@ pub struct TTEntry {
     key: zobrist::Hash,
     depth: Depth,
     score: i32,
-    #[cfg(feature = "id-fhr")]
     static_eval: Option<i32>,
     #[cfg(feature = "id-fhr")]
     threat: Option<i32>,

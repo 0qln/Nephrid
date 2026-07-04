@@ -88,6 +88,7 @@ pub struct TunableParams<Base> {
     id_nmp_phase_threshold: TaperValue,
     id_nmp_depth_factor: u8,
     id_nmp_phase_factor: u32,
+    id_nmp_margin: i32,
     _base: PhantomData<Base>,
 }
 
@@ -119,6 +120,7 @@ impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
     fn nmp_phase_threshold(&self) -> TaperValue { self.id_nmp_phase_threshold }
     fn nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor }
     fn nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor }
+    fn nmp_margin(&self) -> i32 { self.id_nmp_margin }
 }
 
 impl<B> TunableParams<B> {
@@ -136,6 +138,7 @@ impl<B> TunableParams<B> {
         let id_nmp_phase_threshold = config.id_nmp_phase_threshold();
         let id_nmp_depth_factor = config.id_nmp_depth_factor();
         let id_nmp_phase_factor = config.id_nmp_phase_factor();
+        let id_nmp_margin = config.id_nmp_margin();
         Self {
             timeman_entropy_target,
             hce_policy_temp,
@@ -149,6 +152,7 @@ impl<B> TunableParams<B> {
             id_nmp_phase_threshold,
             id_nmp_depth_factor,
             id_nmp_phase_factor,
+            id_nmp_margin,
             _base: PhantomData,
         }
     }
@@ -295,6 +299,7 @@ impl const IdParams for C_IdHceParams {
     fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(8) }
     fn nmp_depth_factor(&self) -> u8 { 3 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
+    fn nmp_margin(&self) -> i32 { 50 }
 }
 
 // id nnue
