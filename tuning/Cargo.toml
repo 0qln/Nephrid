@@ -16,10 +16,15 @@ log-mdc = "0.1.0"
 clap = { version = "4.5.0", features = ["derive"] }
 clap_derive = { version = "4.5.0" }
 thiserror = "2.0.11"
+bullet = { git = "https://github.com/jw1912/bullet", package = "bullet_lib", features = ["cuda"] }
 
 [[bin]]
 name = "eval-model"
 path = "src/eval_model/main.rs"
+
+[[bin]]
+name = "nnue"
+path = "src/nnue/main.rs"
 
 [lints]
 workspace = true

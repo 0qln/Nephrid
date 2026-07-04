@@ -32,3 +32,4 @@ flamegraph.svg
 # ccbench
 ccbench/out
 ccbench/in/builds
+/checkpoints

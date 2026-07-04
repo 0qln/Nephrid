@@ -1,3 +1,5 @@
+use std::mem;
+
 use crate::core::{
     color::{Color, Perspective, colors},
     coordinates::{Square, squares},
@@ -15,15 +17,24 @@ pub const INPUT_SIZE: usize = PIECES * COLORS * SQUARES;
 pub const HIDDEN_SIZE: usize = 2 << 9;
 pub const OUTPUT_SIZE: usize = 1;
 
+// todo: use Cp::SCALE?
 pub const SCALE: TValue = 400;
 pub const QA: TValue = 255;
 pub const QB: TValue = 64;
 
+pub const NNUE: Network = unsafe { mem::transmute(*include_bytes!("../../../../checkpoints/simple-40/quantised.bin")) };
+
+#[repr(C)]
 pub struct Network {
-    acc_weights: [[TValue; HIDDEN_SIZE]; INPUT_SIZE],
+    acc_weights: [HiddenLayer; INPUT_SIZE],
     acc_biases: [TValue; HIDDEN_SIZE],
     out_weights: [TValue; colors::N_VARIANTS * HIDDEN_SIZE],
     out_bias: [TValue; OUTPUT_SIZE],
+}
+
+#[repr(C, align(64))]
+pub struct HiddenLayer {
+    vals: [TValue; HIDDEN_SIZE],
 }
 
 impl Network {
@@ -59,14 +70,14 @@ impl Accumulator {
 
     /// Add a feature to an accumulator.
     pub fn add_feature(&mut self, idx: usize, net: &Network) {
-        for (i, d) in self.values.iter_mut().zip(&net.acc_weights[idx]) {
+        for (i, d) in self.values.iter_mut().zip(&net.acc_weights[idx].vals) {
             *i += *d
         }
     }
 
     /// Remove a feature from an accumulator.
     pub fn remove_feature(&mut self, idx: usize, net: &Network) {
-        for (i, d) in self.values.iter_mut().zip(&net.acc_weights[idx]) {
+        for (i, d) in self.values.iter_mut().zip(&net.acc_weights[idx].vals) {
             *i -= *d
         }
     }
