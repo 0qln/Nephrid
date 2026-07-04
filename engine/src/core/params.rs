@@ -85,6 +85,7 @@ pub struct TunableParams<Base> {
     mcts_killer_exploitation: f32,
     mcts_tt_best_move: f32,
     id_nmp_reduction: Depth,
+    id_nmp_phase_threshold: TaperValue,
     _base: PhantomData<Base>,
 }
 
@@ -113,6 +114,7 @@ impl<B, X: Deref<Target = TunableParams<B>>> ChronoParams for X {
 
 impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
     fn nmp_reduction(&self) -> Depth { self.id_nmp_reduction }
+    fn nmp_phase_threshold(&self) -> TaperValue { self.id_nmp_phase_threshold }
 }
 
 impl<B> TunableParams<B> {
@@ -127,6 +129,7 @@ impl<B> TunableParams<B> {
         let mcts_killer_exploitation = config.mcts_killer_exploitation();
         let mcts_tt_best_move = config.mcts_tt_best_move();
         let id_nmp_reduction = config.id_nmp_reduction();
+        let id_nmp_phase_threshold = config.id_nmp_phase_threshold();
         Self {
             timeman_entropy_target,
             hce_policy_temp,
@@ -137,6 +140,7 @@ impl<B> TunableParams<B> {
             mcts_killer_exploitation,
             mcts_tt_best_move,
             id_nmp_reduction,
+            id_nmp_phase_threshold,
             _base: PhantomData,
         }
     }
@@ -265,7 +269,7 @@ const_params!(IdHce);
 impl IConfigBuilder for C_IdHceParams {
     fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
-        builder.chrono(self).qsearch(self)
+        builder.chrono(self).qsearch(self).id(self)
     }
 }
 
@@ -280,4 +284,9 @@ impl const QSearchParams for C_IdHceParams {
 
 impl const IdParams for C_IdHceParams {
     fn nmp_reduction(&self) -> Depth { Depth::new(2) }
+    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(8) }
 }
+
+// id nnue
+
+// todo...

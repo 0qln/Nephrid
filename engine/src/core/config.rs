@@ -4,8 +4,7 @@ use crate::{
         depth::Depth,
         eval::hce::TaperValue,
         search::{
-            mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
-            quiesce::QSearchParams,
+            id::IdParams, mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams}, quiesce::QSearchParams
         },
     },
     math::{self, NormalizedEntropy},
@@ -314,6 +313,9 @@ pub struct Configuration {
 
     /// [Iterative Deepening] Null Move Pruning reduction (R).
     id_nmp_reduction: ConfigOption<Spin<UciInteger>>,
+
+    /// [Iterative Deepening] Null Move Pruning phase threshold.
+    id_nmp_phase_threshold: ConfigOption<Spin<UciInteger>>,
 }
 
 impl Configuration {
@@ -351,7 +353,8 @@ impl Configuration {
                 mcts_killer_exploitation: ConfigOption::new("mcts-killer-exploitation", Spin::<UciPercent>::new(_ratio(0.27), _ratio(0.), _ratio(10.))),
                 mcts_tt_best_move: ConfigOption::new("mcts-tt-best-move", Spin::<UciPercent>::new(_ratio(1.50), _ratio(0.), _ratio(10.))),
                 timeman_entropy_target: ConfigOption::new("timeman-entropy-target", Spin::<UciPercent>::new(_ratio(0.60), _ratio(0.), _ratio(1.))),
-                id_nmp_reduction: ConfigOption::new("id-nmp-reduction", Spin::new(2, 0, 10))
+                id_nmp_reduction: ConfigOption::new("id-nmp-reduction", Spin::new(2, 0, 10)),
+                id_nmp_phase_threshold: ConfigOption::new("id-nmp-phase-threshold", Spin::new(8, 0, 24)),
             },
         }
     }
@@ -406,6 +409,15 @@ impl ConfigBuilder {
         self
     }
 
+    /// Seed the iterative-deepening options from [`IdParams`].
+    #[rustfmt::skip]
+    pub fn id(mut self, params: &impl IdParams) -> Self {
+        let cfg = &mut self.config;
+        cfg.id_nmp_reduction.seed(params.nmp_reduction().v() as i32);
+        cfg.id_nmp_phase_threshold.seed(params.nmp_phase_threshold().v() as i32);
+        self
+    }
+
     /// Finish building the [`Configuration`].
     pub fn build(self) -> Configuration { self.config }
 }
@@ -421,6 +433,7 @@ impl Configuration {
     pub fn mcts_tt_best_move(&self) -> f32 { self.mcts_tt_best_move.value.get::<ratio>() }
     pub fn timeman_entropy_target(&self) -> math::NormalizedEntropy { NormalizedEntropy::new(self.timeman_entropy_target.value.get::<ratio>()) }
     pub fn id_nmp_reduction(&self) -> Depth { Depth::new(self.id_nmp_reduction.value as u8) }
+    pub fn id_nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(self.id_nmp_phase_threshold.value as u32) }
 }
 
 impl Configuration {
@@ -455,6 +468,7 @@ impl Configuration {
             #[cfg(feature = "tunable")] "select-cpuct" => self.select_cpuct.set(value),
             #[cfg(feature = "tunable")] "timeman-entropy-target" => self.timeman_entropy_target.set(value),
             #[cfg(feature = "tunable")] "id-nmp-reduction" => self.id_nmp_reduction.set(value),
+            #[cfg(feature = "tunable")] "id-nmp-phase-threshold" => self.id_nmp_phase_threshold.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -479,6 +493,7 @@ impl Configuration {
             println!("{}", self.select_cpuct);
             println!("{}", self.timeman_entropy_target);
             println!("{}", self.id_nmp_reduction);
+            println!("{}", self.id_nmp_phase_threshold);
         }
     }
 }

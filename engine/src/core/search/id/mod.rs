@@ -128,6 +128,7 @@ impl Default for SearchStats {
 
 pub const trait IdParams {
     fn nmp_reduction(&self) -> Depth;
+    fn nmp_phase_threshold(&self) -> TaperValue;
 }
 
 pub fn go(
@@ -346,20 +347,28 @@ impl<'a> Searcher<'a> {
         }
 
         // null move pruning
-        let r: Depth = params.nmp_reduction();
+        let nmp_r: Depth = params.nmp_reduction();
         let is_in_check = pos.get_check_state() != CheckState::None;
-        if is_cut_node && depth > r && !is_in_check && phase < TaperValue::new(8) {
+        if is_cut_node && depth > nmp_r
+            // don't allow nmp when node is in check
+            && !is_in_check
+            // don't do nmp in endgames, where zugzwang is more likely
+            && phase < params.nmp_phase_threshold()
+        {
             pos.make_null_move();
+
             let nm_score = !self.search::<P::Opponent, Normal>(
                 params.clone(),
                 pos,
                 stats,
                 // scout with a reduced depth
-                depth - r - 1,
+                depth - nmp_r - 1,
                 !(alpha + Score::new(1)),
                 !alpha,
             );
+
             pos.unmake_null_move();
+
             if nm_score >= beta {
                 return nm_score;
             }
