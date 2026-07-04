@@ -4,8 +4,10 @@ use crate::{
     core::{
         chrono::ChronoParams,
         config::{ConfigBuilder, Configuration},
+        depth::Depth,
         eval::hce::TaperValue,
         search::{
+            id::IdParams,
             mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
             quiesce::QSearchParams,
         },
@@ -82,6 +84,11 @@ pub struct TunableParams<Base> {
     mcts_proven_loss_visit_threshold: VisitCount,
     mcts_killer_exploitation: f32,
     mcts_tt_best_move: f32,
+    id_nmp_reduction: Depth,
+    id_nmp_phase_threshold: TaperValue,
+    id_nmp_depth_factor: u8,
+    id_nmp_phase_factor: u32,
+    id_nmp_margin: i32,
     _base: PhantomData<Base>,
 }
 
@@ -108,6 +115,14 @@ impl<B, X: Deref<Target = TunableParams<B>>> ChronoParams for X {
     fn entropy_target(&self) -> NormalizedEntropy { self.timeman_entropy_target }
 }
 
+impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
+    fn nmp_reduction(&self) -> Depth { self.id_nmp_reduction }
+    fn nmp_phase_threshold(&self) -> TaperValue { self.id_nmp_phase_threshold }
+    fn nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor }
+    fn nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor }
+    fn nmp_margin(&self) -> i32 { self.id_nmp_margin }
+}
+
 impl<B> TunableParams<B> {
     fn from_config<C: Deref<Target = Configuration>>(config: C) -> Self {
         let config = config.deref();
@@ -119,6 +134,11 @@ impl<B> TunableParams<B> {
         let mcts_proven_loss_visit_threshold = config.mcts_proven_loss_visit_threshold();
         let mcts_killer_exploitation = config.mcts_killer_exploitation();
         let mcts_tt_best_move = config.mcts_tt_best_move();
+        let id_nmp_reduction = config.id_nmp_reduction();
+        let id_nmp_phase_threshold = config.id_nmp_phase_threshold();
+        let id_nmp_depth_factor = config.id_nmp_depth_factor();
+        let id_nmp_phase_factor = config.id_nmp_phase_factor();
+        let id_nmp_margin = config.id_nmp_margin();
         Self {
             timeman_entropy_target,
             hce_policy_temp,
@@ -128,6 +148,11 @@ impl<B> TunableParams<B> {
             mcts_proven_loss_visit_threshold,
             mcts_killer_exploitation,
             mcts_tt_best_move,
+            id_nmp_reduction,
+            id_nmp_phase_threshold,
+            id_nmp_depth_factor,
+            id_nmp_phase_factor,
+            id_nmp_margin,
             _base: PhantomData,
         }
     }
@@ -256,7 +281,7 @@ const_params!(IdHce);
 impl IConfigBuilder for C_IdHceParams {
     fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
-        builder.chrono(self).qsearch(self)
+        builder.chrono(self).qsearch(self).id(self)
     }
 }
 
@@ -268,3 +293,15 @@ impl const QSearchParams for C_IdHceParams {
     fn futility_margin(&self) -> i32 { 166 }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
 }
+
+impl const IdParams for C_IdHceParams {
+    fn nmp_reduction(&self) -> Depth { Depth::new(2) }
+    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(12) }
+    fn nmp_depth_factor(&self) -> u8 { 3 }
+    fn nmp_phase_factor(&self) -> u32 { 7 }
+    fn nmp_margin(&self) -> i32 { 48 }
+}
+
+// id nnue
+
+// todo...

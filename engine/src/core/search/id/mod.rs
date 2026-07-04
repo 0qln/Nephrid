@@ -20,7 +20,6 @@ use crate::{
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
-        params::C_IdHceParams,
         piece::piece_type,
         ply::Ply,
         position::{CheckState, PieceInfo, Position},
@@ -127,13 +126,21 @@ impl Default for SearchStats {
     }
 }
 
+pub const trait IdParams {
+    fn nmp_reduction(&self) -> Depth;
+    fn nmp_phase_threshold(&self) -> TaperValue;
+    fn nmp_depth_factor(&self) -> u8;
+    fn nmp_phase_factor(&self) -> u32;
+    fn nmp_margin(&self) -> i32;
+}
+
 pub fn go(
     pos: &mut Position,
     limit: UciLimit,
     _debug: &DebugMode,
     ct: CancellationToken,
     tt: &mut TranspositionTable<TTEntry>,
-    params: impl ChronoParams + QSearchParams,
+    params: impl ChronoParams + QSearchParams + IdParams + Clone,
 ) -> Option<Move> {
     let depth_lim = min(Depth::MAX, limit.depth);
 
@@ -142,7 +149,7 @@ pub fn go(
     let mut best_move = None;
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
-        let best_score = searcher.search_root(pos, &mut stats, depth);
+        let best_score = searcher.search_root(params.clone(), pos, &mut stats, depth);
 
         // make sure to break before messing up the order of the previous iteration with
         // the incomplete results from this iteration.
@@ -264,14 +271,14 @@ impl<'a> Searcher<'a> {
     }
 
     /// returns the score relative to the current player
-    fn search_root(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> i32 {
+    fn search_root(&mut self, params: impl QSearchParams + IdParams + Clone, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> i32 {
         match pos.get_turn() {
             colors::WHITE => {
-                self.search::<perspectives::White, Root>(pos, stats, depth, Score::NEG_INF, Score::POS_INF)
+                self.search::<perspectives::White, Root>(params, pos, stats, depth, Score::NEG_INF, Score::POS_INF)
                     .0
             }
             colors::BLACK => {
-                self.search::<perspectives::Black, Root>(pos, stats, depth, Score::NEG_INF, Score::POS_INF)
+                self.search::<perspectives::Black, Root>(params, pos, stats, depth, Score::NEG_INF, Score::POS_INF)
                     .0
             }
             _ => unreachable!(),
@@ -281,6 +288,7 @@ impl<'a> Searcher<'a> {
     /// returns the score relative to `P`
     fn search<P: Perspective, T: NodeType>(
         &mut self,
+        params: impl QSearchParams + IdParams + Clone,
         pos: &mut Position,
         stats: &mut SearchStats,
         depth: Depth,
@@ -294,8 +302,6 @@ impl<'a> Searcher<'a> {
         let threatener = &HceThreatener;
 
         debug_assert!(alpha < beta);
-
-        let evaluator = &HceEvaluator;
 
         // incremment stats
         stats.nodes += 1;
@@ -318,30 +324,82 @@ impl<'a> Searcher<'a> {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return qsearch(pos, alpha, beta, C_IdHceParams, evaluator, Depth::new(100));
+            return qsearch(pos, alpha, beta, params, evaluator, Depth::new(100));
         }
 
-        let pieces = pos.piece_info();
-        let phase = TaperValue::from_position(pieces);
+        let phase = TaperValue::from_position(pos.piece_info());
         let kind = T::KIND;
         let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
         let orig_alpha = alpha;
-        let tt_entry = self.tt.get(key);
         let killers = self.ss.entry(rel_ply).killers.clone();
 
         // tt-cutoff
-        if !is_root_node
-            && let Some(entry) = tt_entry
-            && entry.depth >= depth
-            && ((entry.bound == Bound::Exact)
-                || (entry.bound == Bound::Lower && entry.score >= beta.0)
-                || (entry.bound == Bound::Upper && entry.score <= alpha.0))
         {
-            return Score::new(entry.score);
+            let tt_entry = self.tt.get(key);
+            if !is_root_node
+                && let Some(entry) = tt_entry
+                && entry.depth >= depth
+                && ((entry.bound == Bound::Exact)
+                    || (entry.bound == Bound::Lower && entry.score >= beta.0)
+                    || (entry.bound == Bound::Upper && entry.score <= alpha.0))
+            {
+                return Score::new(entry.score);
+            }
+        }
+
+        // null move pruning
+        #[cfg(feature = "id-nmp")]
+        {
+            let nmp_r: Depth = params.nmp_reduction()
+                // scale the reduction up based on depth
+                + depth.div_floor(params.nmp_depth_factor());
+            // todo: test this idea
+            // // scale the reduction down based on phase (we want deeper searches in the
+            // endgame)
+            // - Depth::new(phase.v().div_floor(params.nmp_phase_factor()) as u8); // todo:
+            //   honestly phase could just be a u8
+            let is_in_check = pos.get_check_state() != CheckState::None;
+            if
+            // prevent recursive nmp
+            kind == NodeKind::Cut
+                // don't underflow depth
+                && depth > nmp_r
+                // don't allow nmp when node is in check
+                && !is_in_check
+                // don't do nmp in endgames, where zugzwang is more likely
+                && phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
+            // todo: this is showing a regression, probably cause of the expensive static eval...
+            // reducing nps. when we have a better static eval (e.g. nnue) or use the static eval
+            // anywhere else, maybe it's worth to try this again
+            // don't bother attempting to improve beta with a tempo down when our static eval is not
+            // even better than beta
+            // && s_score >= beta - Score::<P>::new(params.nmp_margin())
+            {
+                pos.make_null_move();
+
+                let nm_score = !self.search::<P::Opponent, Normal>(
+                    params.clone(),
+                    pos,
+                    stats,
+                    // scout with a reduced depth
+                    depth - nmp_r - 1,
+                    !(alpha + Score::new(1)),
+                    !alpha,
+                );
+
+                pos.unmake_null_move();
+
+                // todo: verification search?
+
+                if nm_score >= beta {
+                    return nm_score;
+                }
+            }
         }
 
         // move gen
+        let tt_entry = self.tt.get(key);
         let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
         let mut move_picker = if is_root_node {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
@@ -358,7 +416,7 @@ impl<'a> Searcher<'a> {
         };
 
         #[cfg(feature = "id-fhr")]
-        let (mut static_eval, mut threat) = (None, None);
+        let (mut threat, mut static_eval) = (None, None);
 
         // fail-high reductions
         let fhr_reduct = cfg_select! {
@@ -369,14 +427,14 @@ impl<'a> Searcher<'a> {
                     let s_score = tt_entry
                         .and_then(|e| e.static_eval)
                         .map(Score::<P>::new)
-                        .unwrap_or_else(|| evaluator.eval(pieces, P::COLOR, pos.get_ep_target_square(), phase));
+                        .unwrap_or_else(|| evaluator.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
 
                     let t_score = tt_entry
                         .and_then(|e| e.threat)
                         .map(Score::<P::Opponent>::new)
                         .unwrap_or_else(|| threatener.threat::<P>(pos));
 
-                    (static_eval, threat) = (Some(s_score.0), Some(t_score.0));
+                    (threat, static_eval) = (Some(t_score.0), Some(s_score.0));
 
                     // the quiet score of this position is the static score minus threat score (the
                     // best threat that the opponent can do).
@@ -432,7 +490,7 @@ impl<'a> Searcher<'a> {
 
                 if curr == 0 {
                     // search with a full window to get an exact score.
-                    !self.search::<P::Opponent, Normal>(pos, stats, full_depth, !beta, !alpha)
+                    !self.search::<P::Opponent, Normal>(params.clone(), pos, stats, full_depth, !beta, !alpha)
                 }
                 else {
                     // assume that our move ordering is good the first move will be the best one.
@@ -440,6 +498,7 @@ impl<'a> Searcher<'a> {
                     // search with [a,a+1] (~ [-(a-1),-a]). we don't care by how much this move is
                     // able to improve alpha since we assume that it cannot.
                     let mut zws_score = !self.search::<P::Opponent, Cut>(
+                        params.clone(),
                         pos,
                         stats,
                         // scout with a reduced depth
@@ -452,6 +511,7 @@ impl<'a> Searcher<'a> {
                     // good and do a full depth re-search.
                     if zws_score > alpha && reduced_depth != full_depth {
                         zws_score = !self.search::<P::Opponent, Cut>(
+                            params.clone(),
                             pos,
                             stats,
                             // research at full depth
@@ -468,7 +528,12 @@ impl<'a> Searcher<'a> {
                         && zws_score < beta
                     {
                         !self.search::<P::Opponent, Normal>(
-                            pos, stats, full_depth, !beta, !zws_score, // new lower_bound, since it was able to beat alpha
+                            params.clone(),
+                            pos,
+                            stats,
+                            full_depth,
+                            !beta,
+                            !zws_score, // new lower_bound, since it was able to beat alpha
                         )
                     }
                     else {

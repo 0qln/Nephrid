@@ -30,6 +30,13 @@ impl<P: Perspective, Rhs: Into<Score<P>>> ops::Add<Rhs> for Score<P> {
     fn add(self, rhs: Rhs) -> Self::Output { Self(self.0 + rhs.into().0, PhantomData) }
 }
 
+impl<P: Perspective, Rhs: Into<Score<P>>> ops::Sub<Rhs> for Score<P> {
+    type Output = Self;
+
+    #[inline(always)]
+    fn sub(self, rhs: Rhs) -> Self::Output { Self(self.0 - rhs.into().0, PhantomData) }
+}
+
 impl<P: Perspective> ops::Div<i32> for Score<P> {
     type Output = Self;
 

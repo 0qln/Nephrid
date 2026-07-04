@@ -908,6 +908,40 @@ impl Position {
     #[inline]
     pub unsafe fn move_piece_unsafe(&mut self, from: Square, to: Square) { self.piece_info.move_piece(from, to) }
 
+    pub fn make_null_move(&mut self) {
+        // Safety: During the lifetime of this pointer, no other pointer
+        // reads or writes to the memory location of the next state.
+        let next_state = unsafe {
+            self.state
+                .get_next(|prev| {
+                    StateInfo {
+                        // These don't change across leafes on the same depth...
+                        ply: prev.ply + 1,
+                        turn: !prev.turn,
+                        ..Default::default()
+                    }
+                })
+                .as_mut()
+        };
+        let curr_state = self.state.get_current();
+        let next_state = {
+            let s = next_state;
+            s.castling = curr_state.castling;
+            s.plys50 = curr_state.plys50 + 1;
+            s.ep_capture_square = EpCaptureSquare::default();
+            s.key = curr_state.key;
+            s.key.toggle_ep_square(curr_state.ep_capture_square);
+            s.key.toggle_turn();
+            s.captured_piece = Piece::default();
+            s
+        };
+        // update state stack
+        next_state.init(&self.piece_info);
+        self.state.incr();
+    }
+
+    pub fn unmake_null_move(&mut self) { let _ = self.state.pop_current(); }
+
     /// Makes a move on the board.
     pub fn make_move(&mut self, m: Move) {
         if self.get_turn() == colors::WHITE {
@@ -1131,9 +1165,20 @@ impl Position {
 
     pub fn get_piece_count(&self, piece: Piece) -> i8 { self.piece_info.get_piece_count(piece) }
 
-    pub fn piece_info(&self) -> &PieceInfo { &self.piece_info }
+    #[inline]
+    pub const fn piece_info(&self) -> &PieceInfo { &self.piece_info }
 
     pub fn state_info(&self) -> &StateInfo { self.state.get_current() }
+
+    pub const fn has_non_pawn_material<P: Perspective>(&self) -> bool {
+        let pieces = self.piece_info();
+        !(pieces.get_color_bb(P::COLOR)
+            & (pieces.get_piece_bb(piece_type::KNIGHT)
+                | pieces.get_piece_bb(piece_type::BISHOP)
+                | pieces.get_piece_bb(piece_type::ROOK)
+                | pieces.get_piece_bb(piece_type::QUEEN)))
+        .is_empty()
+    }
 }
 
 pub struct PiecePlacementInfo<'a>(&'a Position);

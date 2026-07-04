@@ -52,9 +52,10 @@ impl Depth {
 
     pub const fn index(&self) -> usize { self.v as usize }
 
-    pub fn new(depth: u8) -> Depth { Depth { v: depth } }
+    pub const fn new(depth: u8) -> Depth { Depth { v: depth } }
 
-    pub fn saturating_sub(&self, rhs: u8) -> Depth { Self { v: self.v.saturating_sub(rhs) } }
+    pub const fn saturating_sub(&self, rhs: u8) -> Depth { Self { v: self.v.saturating_sub(rhs) } }
+    pub const fn div_floor(&self, rhs: u8) -> Depth { Self { v: self.v.div_floor(rhs) } }
 }
 
 impl TryFrom<u8> for Depth {

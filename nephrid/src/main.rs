@@ -63,18 +63,10 @@ fn config() -> Configuration {
     let mut builder = Configuration::builder();
 
     builder = cfg_select! {
-        feature = "mcts-hce" => {{
-            mcts_hce_params_default().build_config(builder)
-        }},
-        feature = "mcts-nn" => {{
-            mcts_nn_params_default().build_config(builder)
-        }},
-        feature = "mcts-pure" => {{
-            mcts_pure_params_default().build_config(builder)
-        }},
-        feature = "id-hce" => {{
-            id_hce_params_default().build_config(builder)
-        }},
+        feature = "mcts-hce" => { mcts_hce_params_default().build_config(builder) },
+        feature = "mcts-nn" => { mcts_nn_params_default().build_config(builder) },
+        feature = "mcts-pure" => { mcts_pure_params_default().build_config(builder) },
+        feature = "id-hce" => { id_hce_params_default().build_config(builder) },
     };
 
     builder.build()

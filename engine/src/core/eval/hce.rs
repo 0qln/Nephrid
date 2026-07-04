@@ -277,6 +277,8 @@ impl TaperValue {
     }
 
     pub const fn v(&self) -> u32 { self.0 }
+
+    pub const fn div_floor(&self, rhs: u32) -> Self { Self(self.0.div_floor(rhs)) }
 }
 
 pub fn material<P: Perspective>(pos: &PieceInfo) -> Score<P> {
