@@ -321,6 +321,9 @@ pub struct Configuration {
 
     /// [Iterative Deepening] Null Move Pruning depth factor.
     id_nmp_depth_factor: ConfigOption<Spin<UciInteger>>,
+
+    /// [Iterative Deepening] Null Move Pruning phase factor.
+    id_nmp_phase_factor: ConfigOption<Spin<UciInteger>>,
 }
 
 impl Configuration {
@@ -360,7 +363,8 @@ impl Configuration {
                 timeman_entropy_target: ConfigOption::new("timeman-entropy-target", Spin::<UciPercent>::new(_ratio(0.60), _ratio(0.), _ratio(1.))),
                 id_nmp_reduction: ConfigOption::new("id-nmp-reduction", Spin::new(2, 0, 10)),
                 id_nmp_phase_threshold: ConfigOption::new("id-nmp-phase-threshold", Spin::new(8, 0, 24)),
-                id_nmp_depth_factor: ConfigOption::new("id-nmp-depth-factor", Spin::new(3, 1, 20))
+                id_nmp_depth_factor: ConfigOption::new("id-nmp-depth-factor", Spin::new(3, 1, 20)),
+                id_nmp_phase_factor: ConfigOption::new("id-nmp-phase-factor", Spin::new(7, 1, 50)),
             },
         }
     }
@@ -421,6 +425,8 @@ impl ConfigBuilder {
         let cfg = &mut self.config;
         cfg.id_nmp_reduction.seed(params.nmp_reduction().v() as i32);
         cfg.id_nmp_phase_threshold.seed(params.nmp_phase_threshold().v() as i32);
+        cfg.id_nmp_depth_factor.seed(params.nmp_depth_factor() as i32);
+        cfg.id_nmp_phase_factor.seed(params.nmp_phase_factor() as i32);
         self
     }
 
@@ -441,6 +447,7 @@ impl Configuration {
     pub fn id_nmp_reduction(&self) -> Depth { Depth::new(self.id_nmp_reduction.value as u8) }
     pub fn id_nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(self.id_nmp_phase_threshold.value as u32) }
     pub fn id_nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor.value as u8 }
+    pub fn id_nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor.value as u32 }
 }
 
 impl Configuration {
