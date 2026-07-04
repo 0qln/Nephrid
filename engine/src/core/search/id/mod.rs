@@ -129,6 +129,7 @@ impl Default for SearchStats {
 pub const trait IdParams {
     fn nmp_reduction(&self) -> Depth;
     fn nmp_phase_threshold(&self) -> TaperValue;
+    fn nmp_depth_factor(&self) -> u8;
 }
 
 pub fn go(
@@ -348,7 +349,7 @@ impl<'a> Searcher<'a> {
 
         // null move pruning
         let nmp_r: Depth = params.nmp_reduction()
-            // todo: + depth.div_floor(params.nmp_depth_factor());
+            + depth.div_floor(params.nmp_depth_factor());
             // todo: + phase.div_floor(params.nmp_phase_factor());
             ;
         let is_in_check = pos.get_check_state() != CheckState::None;

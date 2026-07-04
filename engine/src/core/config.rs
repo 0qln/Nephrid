@@ -4,7 +4,9 @@ use crate::{
         depth::Depth,
         eval::hce::TaperValue,
         search::{
-            id::IdParams, mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams}, quiesce::QSearchParams
+            id::IdParams,
+            mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
+            quiesce::QSearchParams,
         },
     },
     math::{self, NormalizedEntropy},
@@ -316,6 +318,9 @@ pub struct Configuration {
 
     /// [Iterative Deepening] Null Move Pruning phase threshold.
     id_nmp_phase_threshold: ConfigOption<Spin<UciInteger>>,
+
+    /// [Iterative Deepening] Null Move Pruning depth factor.
+    id_nmp_depth_factor: ConfigOption<Spin<UciInteger>>,
 }
 
 impl Configuration {
@@ -355,6 +360,7 @@ impl Configuration {
                 timeman_entropy_target: ConfigOption::new("timeman-entropy-target", Spin::<UciPercent>::new(_ratio(0.60), _ratio(0.), _ratio(1.))),
                 id_nmp_reduction: ConfigOption::new("id-nmp-reduction", Spin::new(2, 0, 10)),
                 id_nmp_phase_threshold: ConfigOption::new("id-nmp-phase-threshold", Spin::new(8, 0, 24)),
+                id_nmp_depth_factor: ConfigOption::new("id-nmp-depth-factor", Spin::new(3, 1, 20))
             },
         }
     }
@@ -434,6 +440,7 @@ impl Configuration {
     pub fn timeman_entropy_target(&self) -> math::NormalizedEntropy { NormalizedEntropy::new(self.timeman_entropy_target.value.get::<ratio>()) }
     pub fn id_nmp_reduction(&self) -> Depth { Depth::new(self.id_nmp_reduction.value as u8) }
     pub fn id_nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(self.id_nmp_phase_threshold.value as u32) }
+    pub fn id_nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor.value as u8 }
 }
 
 impl Configuration {

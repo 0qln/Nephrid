@@ -86,6 +86,7 @@ pub struct TunableParams<Base> {
     mcts_tt_best_move: f32,
     id_nmp_reduction: Depth,
     id_nmp_phase_threshold: TaperValue,
+    id_nmp_depth_factor: u8,
     _base: PhantomData<Base>,
 }
 
@@ -115,6 +116,7 @@ impl<B, X: Deref<Target = TunableParams<B>>> ChronoParams for X {
 impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
     fn nmp_reduction(&self) -> Depth { self.id_nmp_reduction }
     fn nmp_phase_threshold(&self) -> TaperValue { self.id_nmp_phase_threshold }
+    fn nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor }
 }
 
 impl<B> TunableParams<B> {
@@ -130,6 +132,7 @@ impl<B> TunableParams<B> {
         let mcts_tt_best_move = config.mcts_tt_best_move();
         let id_nmp_reduction = config.id_nmp_reduction();
         let id_nmp_phase_threshold = config.id_nmp_phase_threshold();
+        let id_nmp_depth_factor = config.id_nmp_depth_factor();
         Self {
             timeman_entropy_target,
             hce_policy_temp,
@@ -141,6 +144,7 @@ impl<B> TunableParams<B> {
             mcts_tt_best_move,
             id_nmp_reduction,
             id_nmp_phase_threshold,
+            id_nmp_depth_factor,
             _base: PhantomData,
         }
     }
@@ -285,6 +289,7 @@ impl const QSearchParams for C_IdHceParams {
 impl const IdParams for C_IdHceParams {
     fn nmp_reduction(&self) -> Depth { Depth::new(2) }
     fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(8) }
+    fn nmp_depth_factor(&self) -> u8 { 3 }
 }
 
 // id nnue
