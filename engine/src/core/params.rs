@@ -296,7 +296,7 @@ impl const QSearchParams for C_IdHceParams {
 
 impl const IdParams for C_IdHceParams {
     fn nmp_reduction(&self) -> Depth { Depth::new(2) }
-    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(8) }
+    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(12) }
     fn nmp_depth_factor(&self) -> u8 { 3 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
     fn nmp_margin(&self) -> i32 { 48 }
