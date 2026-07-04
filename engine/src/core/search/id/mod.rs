@@ -350,10 +350,13 @@ impl<'a> Searcher<'a> {
 
         // null move pruning
         let nmp_r: Depth = params.nmp_reduction()
-            // scale the reduction based on depth
-            + depth.div_floor(params.nmp_depth_factor())
-            // scale the reduction based on phase
-            + Depth::new(phase.v().div_floor(params.nmp_phase_factor()) as u8); // todo: honestly phase could just be a u8
+            // scale the reduction up based on depth
+            + depth.div_floor(params.nmp_depth_factor());
+        // todo: test this idea
+        // // scale the reduction down based on phase (we want deeper searches in the
+        // endgame)
+        // - Depth::new(phase.v().div_floor(params.nmp_phase_factor()) as u8); // todo:
+        //   honestly phase could just be a u8
         let is_in_check = pos.get_check_state() != CheckState::None;
         if is_cut_node && depth > nmp_r
             // don't allow nmp when node is in check
