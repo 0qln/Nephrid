@@ -299,7 +299,7 @@ impl const IdParams for C_IdHceParams {
     fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(8) }
     fn nmp_depth_factor(&self) -> u8 { 3 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
-    fn nmp_margin(&self) -> i32 { 50 }
+    fn nmp_margin(&self) -> i32 { 48 }
 }
 
 // id nnue
