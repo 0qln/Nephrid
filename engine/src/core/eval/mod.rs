@@ -8,6 +8,7 @@ use crate::core::{
 };
 
 pub mod hce;
+pub mod nnue;
 
 pub trait StaticEvaluator {
     fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P>;
