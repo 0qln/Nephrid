@@ -347,7 +347,10 @@ impl<'a> Searcher<'a> {
         }
 
         // null move pruning
-        let nmp_r: Depth = params.nmp_reduction();
+        let nmp_r: Depth = params.nmp_reduction()
+            // todo: + depth.div_floor(params.nmp_depth_factor());
+            // todo: + phase.div_floor(params.nmp_phase_factor());
+            ;
         let is_in_check = pos.get_check_state() != CheckState::None;
         if is_cut_node && depth > nmp_r
             // don't allow nmp when node is in check
