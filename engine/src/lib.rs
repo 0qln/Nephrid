@@ -26,6 +26,7 @@
 #![feature(const_default)]
 #![feature(const_index)]
 #![feature(extend_one)]
+#![feature(int_roundings)]
 
 #[macro_use] extern crate impl_ops;
 
