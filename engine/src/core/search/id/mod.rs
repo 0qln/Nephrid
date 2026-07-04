@@ -416,7 +416,7 @@ impl<'a> Searcher<'a> {
         };
 
         #[cfg(feature = "id-fhr")]
-        let (mut static_eval, mut threat) = (None, None);
+        let mut threat = None;
 
         // fail-high reductions
         let fhr_reduct = cfg_select! {
@@ -429,7 +429,7 @@ impl<'a> Searcher<'a> {
                         .map(Score::<P::Opponent>::new)
                         .unwrap_or_else(|| threatener.threat::<P>(pos));
 
-                    (static_eval, threat) = (Some(s_score.0), Some(t_score.0));
+                    threat = Some(t_score.0);
 
                     // the quiet score of this position is the static score minus threat score (the
                     // best threat that the opponent can do).

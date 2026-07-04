@@ -431,7 +431,7 @@ impl ConfigBuilder {
         cfg.id_nmp_phase_threshold.seed(params.nmp_phase_threshold().v() as i32);
         cfg.id_nmp_depth_factor.seed(params.nmp_depth_factor() as i32);
         cfg.id_nmp_phase_factor.seed(params.nmp_phase_factor() as i32);
-        cfg.id_nmp_margin.seed(params.nmp_margin() as i32);
+        cfg.id_nmp_margin.seed(params.nmp_margin());
         self
     }
 
@@ -453,7 +453,7 @@ impl Configuration {
     pub fn id_nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(self.id_nmp_phase_threshold.value as u32) }
     pub fn id_nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor.value as u8 }
     pub fn id_nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor.value as u32 }
-    pub fn id_nmp_margin(&self) -> i32 { self.id_nmp_margin.value as i32 }
+    pub fn id_nmp_margin(&self) -> i32 { self.id_nmp_margin.value }
 }
 
 impl Configuration {
