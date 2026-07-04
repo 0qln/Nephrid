@@ -1165,9 +1165,20 @@ impl Position {
 
     pub fn get_piece_count(&self, piece: Piece) -> i8 { self.piece_info.get_piece_count(piece) }
 
-    pub fn piece_info(&self) -> &PieceInfo { &self.piece_info }
+    #[inline]
+    pub const fn piece_info(&self) -> &PieceInfo { &self.piece_info }
 
     pub fn state_info(&self) -> &StateInfo { self.state.get_current() }
+
+    pub const fn has_non_pawn_material<P: Perspective>(&self) -> bool {
+        let pieces = self.piece_info();
+        !(pieces.get_color_bb(P::COLOR)
+            & (pieces.get_piece_bb(piece_type::KNIGHT)
+                | pieces.get_piece_bb(piece_type::BISHOP)
+                | pieces.get_piece_bb(piece_type::ROOK)
+                | pieces.get_piece_bb(piece_type::QUEEN)))
+        .is_empty()
+    }
 }
 
 pub struct PiecePlacementInfo<'a>(&'a Position);

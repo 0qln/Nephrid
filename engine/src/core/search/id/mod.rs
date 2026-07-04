@@ -372,10 +372,7 @@ impl<'a> Searcher<'a> {
             // don't allow nmp when node is in check
             && !is_in_check
             // don't do nmp in endgames, where zugzwang is more likely
-            // bug: this checks the global phase (of both players) so if the enemy still has pieces
-            // but we only have pawns and are more likely in a zugzwang position, this check will
-            // not catch that
-            && phase < params.nmp_phase_threshold()
+            && phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
             // don't bother attempting to improve beta with a tempo down when our static eval is not
             // even better than beta
             && s_score >= beta - Score::<P>::new(params.nmp_margin())
