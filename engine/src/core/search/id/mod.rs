@@ -349,15 +349,6 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        let s_score = {
-            let tt_entry = self.tt.get(key);
-
-            tt_entry
-                .and_then(|e| e.static_eval)
-                .map(Score::<P>::new)
-                .unwrap_or_else(|| evaluator.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase))
-        };
-
         // null move pruning
         let nmp_r: Depth = params.nmp_reduction()
             // scale the reduction up based on depth
@@ -373,9 +364,12 @@ impl<'a> Searcher<'a> {
             && !is_in_check
             // don't do nmp in endgames, where zugzwang is more likely
             && phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
-            // don't bother attempting to improve beta with a tempo down when our static eval is not
-            // even better than beta
-            && s_score >= beta - Score::<P>::new(params.nmp_margin())
+        // todo: this is showing a regression, probably cause of the expensive static eval...
+        // reducing nps. when we have a better static eval (e.g. nnue) or use the static eval
+        // anywhere else, maybe it's worth to try this again
+        // don't bother attempting to improve beta with a tempo down when our static eval is not
+        // even better than beta
+        // && s_score >= beta - Score::<P>::new(params.nmp_margin())
         {
             pos.make_null_move();
 
@@ -416,7 +410,7 @@ impl<'a> Searcher<'a> {
         };
 
         #[cfg(feature = "id-fhr")]
-        let mut threat = None;
+        let (mut threat, mut static_eval) = (None, None);
 
         // fail-high reductions
         let fhr_reduct = cfg_select! {
@@ -424,12 +418,17 @@ impl<'a> Searcher<'a> {
                 let in_check = pos.get_check_state() != CheckState::None;
 
                 if is_cut_node && !in_check {
+                    let s_score = tt_entry
+                        .and_then(|e| e.static_eval)
+                        .map(Score::<P>::new)
+                        .unwrap_or_else(|| evaluator.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
+
                     let t_score = tt_entry
                         .and_then(|e| e.threat)
                         .map(Score::<P::Opponent>::new)
                         .unwrap_or_else(|| threatener.threat::<P>(pos));
 
-                    threat = Some(t_score.0);
+                    (threat, static_eval) = (Some(t_score.0), Some(s_score.0));
 
                     // the quiet score of this position is the static score minus threat score (the
                     // best threat that the opponent can do).
@@ -584,7 +583,8 @@ impl<'a> Searcher<'a> {
             key,
             depth,
             score: best_score.0,
-            static_eval: Some(s_score.0),
+            #[cfg(feature = "id-fhr")]
+            static_eval,
             #[cfg(feature = "id-fhr")]
             threat,
             bound: Bound::from_scores(orig_alpha, beta, best_score),
@@ -630,6 +630,7 @@ pub struct TTEntry {
     key: zobrist::Hash,
     depth: Depth,
     score: i32,
+    #[cfg(feature = "id-fhr")]
     static_eval: Option<i32>,
     #[cfg(feature = "id-fhr")]
     threat: Option<i32>,
