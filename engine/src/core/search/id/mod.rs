@@ -330,7 +330,6 @@ impl<'a> Searcher<'a> {
         let phase = TaperValue::from_position(pos.piece_info());
         let kind = T::KIND;
         let is_root_node = kind == NodeKind::Root;
-        let is_cut_node = kind == NodeKind::Cut;
         let key = pos.get_key();
         let orig_alpha = alpha;
         let killers = self.ss.entry(rel_ply).killers.clone();
@@ -350,45 +349,52 @@ impl<'a> Searcher<'a> {
         }
 
         // null move pruning
-        let nmp_r: Depth = params.nmp_reduction()
-            // scale the reduction up based on depth
-            + depth.div_floor(params.nmp_depth_factor());
-        // todo: test this idea
-        // // scale the reduction down based on phase (we want deeper searches in the
-        // endgame)
-        // - Depth::new(phase.v().div_floor(params.nmp_phase_factor()) as u8); // todo:
-        //   honestly phase could just be a u8
-        let is_in_check = pos.get_check_state() != CheckState::None;
-        if is_cut_node && depth > nmp_r
-            // don't allow nmp when node is in check
-            && !is_in_check
-            // don't do nmp in endgames, where zugzwang is more likely
-            && phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
-        // todo: this is showing a regression, probably cause of the expensive static eval...
-        // reducing nps. when we have a better static eval (e.g. nnue) or use the static eval
-        // anywhere else, maybe it's worth to try this again
-        // don't bother attempting to improve beta with a tempo down when our static eval is not
-        // even better than beta
-        // && s_score >= beta - Score::<P>::new(params.nmp_margin())
+        #[cfg(feature = "id-nmp")]
         {
-            pos.make_null_move();
+            let nmp_r: Depth = params.nmp_reduction()
+                // scale the reduction up based on depth
+                + depth.div_floor(params.nmp_depth_factor());
+            // todo: test this idea
+            // // scale the reduction down based on phase (we want deeper searches in the
+            // endgame)
+            // - Depth::new(phase.v().div_floor(params.nmp_phase_factor()) as u8); // todo:
+            //   honestly phase could just be a u8
+            let is_in_check = pos.get_check_state() != CheckState::None;
+            if
+            // prevent recursive nmp
+            kind == NodeKind::Cut
+                // don't underflow depth
+                && depth > nmp_r
+                // don't allow nmp when node is in check
+                && !is_in_check
+                // don't do nmp in endgames, where zugzwang is more likely
+                && phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
+            // todo: this is showing a regression, probably cause of the expensive static eval...
+            // reducing nps. when we have a better static eval (e.g. nnue) or use the static eval
+            // anywhere else, maybe it's worth to try this again
+            // don't bother attempting to improve beta with a tempo down when our static eval is not
+            // even better than beta
+            // && s_score >= beta - Score::<P>::new(params.nmp_margin())
+            {
+                pos.make_null_move();
 
-            let nm_score = !self.search::<P::Opponent, Normal>(
-                params.clone(),
-                pos,
-                stats,
-                // scout with a reduced depth
-                depth - nmp_r - 1,
-                !(alpha + Score::new(1)),
-                !alpha,
-            );
+                let nm_score = !self.search::<P::Opponent, Normal>(
+                    params.clone(),
+                    pos,
+                    stats,
+                    // scout with a reduced depth
+                    depth - nmp_r - 1,
+                    !(alpha + Score::new(1)),
+                    !alpha,
+                );
 
-            pos.unmake_null_move();
+                pos.unmake_null_move();
 
-            // todo: verification search?
+                // todo: verification search?
 
-            if nm_score >= beta {
-                return nm_score;
+                if nm_score >= beta {
+                    return nm_score;
+                }
             }
         }
 
@@ -417,7 +423,7 @@ impl<'a> Searcher<'a> {
             feature = "id-fhr" => {{
                 let in_check = pos.get_check_state() != CheckState::None;
 
-                if is_cut_node && !in_check {
+                if kind == NodeKind::Cut && !in_check {
                     let s_score = tt_entry
                         .and_then(|e| e.static_eval)
                         .map(Score::<P>::new)
