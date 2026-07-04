@@ -7,7 +7,7 @@ use engine::{
         move_iter::sliding_piece::magics,
         params::C_IdHceParams,
         position::Position,
-        search::{id::{self, TTEntry}, limit::UciLimit, tt::TranspositionTable},
+        search::{id::{self, HceEvaluator, TTEntry}, limit::UciLimit, tt::TranspositionTable},
         zobrist,
     },
     misc::{CancellationToken, DebugMode},
@@ -36,7 +36,7 @@ fn search_with_node_target(pos: &mut Position) {
     let hash_size = Information::new::<mebibyte>(16);
     let mut tt = TranspositionTable::<TTEntry>::new_of_size(hash_size);
 
-    id::go(pos, limit, &debug, ct, &mut tt, C_IdHceParams);
+    id::go(pos, limit, &debug, ct, &mut tt, &mut HceEvaluator, C_IdHceParams);
 }
 
 pub fn id_nps(c: &mut Criterion) {

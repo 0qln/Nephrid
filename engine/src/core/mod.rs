@@ -374,6 +374,11 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
 
             Ok(())
         }
+        Some("nnue") => {
+            // todo: just like above show the static evaluation of the position
+            // but with nnue
+            Ok(())
+        }
         Some("position") => {
             let process_move = |engine: &mut Engine, mov| -> Result<(), Box<dyn Error>> {
                 // decode move

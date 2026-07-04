@@ -12,10 +12,11 @@ mcts-pure = []
 mcts-nn = []
 mcts-hce = []
 id-hce = []
+id-nnue = []
 
 tunable = ["engine/tunable"]
 
-default = ["id-hce"]
+default = ["id-nnue"]
 
 [dependencies]
 burn = { version = "0.19.1", features = ["ndarray"] }

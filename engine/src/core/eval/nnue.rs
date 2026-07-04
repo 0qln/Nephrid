@@ -65,7 +65,7 @@ pub struct Accumulator {
 impl Accumulator {
     pub fn init(net: &Network) -> Self {
         //
-        Self { values: net.acc_biases.clone() }
+        Self { values: net.acc_biases }
     }
 
     /// Add a feature to an accumulator.

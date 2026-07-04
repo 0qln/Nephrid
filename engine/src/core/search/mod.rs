@@ -1,4 +1,5 @@
 use crate::core::{
+    eval::StaticEvaluator,
     params::{IParams, IdHceParams, IdHceParamsRef},
     search::{mcts::search::MctsParams, score::Cp, tt::TranspositionTable},
 };
@@ -74,19 +75,21 @@ pub trait SearchWorker {
 }
 
 /// Iterative deepening worker.
-pub struct IdWorker {
+pub struct IdWorker<E: StaticEvaluator> {
     // todo: don't store the construction information here but the tt and timeman itself
     tt: TranspositionTable<id::TTEntry>,
     params: IdHceParamsRef,
+    eval: E,
 }
 
-impl SearchWorker for IdWorker {
+impl<E: StaticEvaluator + Default> SearchWorker for IdWorker<E> {
     type X = IdHceParams;
 
     fn new() -> Self {
         Self {
             tt: TranspositionTable::new(0),
             params: <Self::X as Default>::default().shared(),
+            eval: E::default(),
         }
     }
 
@@ -102,7 +105,7 @@ impl SearchWorker for IdWorker {
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
-                let best_move = id::go(&mut pos, limit, &debug, ct, &mut self.tt, self.params.clone());
+                let best_move = id::go(&mut pos, limit, &debug, ct, &mut self.tt, &mut self.eval, self.params.clone());
 
                 if let Some(mov) = best_move {
                     println!("bestmove {mov}");
