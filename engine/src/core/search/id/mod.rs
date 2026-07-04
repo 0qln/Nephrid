@@ -362,6 +362,9 @@ impl<'a> Searcher<'a> {
             // don't allow nmp when node is in check
             && !is_in_check
             // don't do nmp in endgames, where zugzwang is more likely
+            // bug: this checks the global phase (of both players) so if the enemy still has pieces
+            // but we only have pawns and are more likely in a zugzwang position, this check will
+            // not catch that
             && phase < params.nmp_phase_threshold()
         {
             pos.make_null_move();
@@ -377,6 +380,8 @@ impl<'a> Searcher<'a> {
             );
 
             pos.unmake_null_move();
+
+            // todo: verification search?
 
             if nm_score >= beta {
                 return nm_score;
