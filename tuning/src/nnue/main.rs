@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use bullet::{
     game::inputs::Chess768,
     nn::optimiser::AdamW,
@@ -44,8 +46,10 @@ fn main() {
             l1.forward(hidden_layer)
         });
 
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
+
     let schedule = TrainingSchedule {
-        net_id: "simple".to_string(),
+        net_id: format!("nnue-{timestamp}-{INPUT_SIZE}-{HIDDEN_SIZE}_{SCALE}*{QA}*{QB}"),
         eval_scale: SCALE as f32,
         steps: TrainingSteps {
             batch_size: 16_384,
@@ -72,7 +76,7 @@ fn main() {
     let data_loader = {
         use loader::sfbinpack::{MoveType, PieceType, SfBinpackLoader, TrainingDataEntry};
 
-        let file_path = "resources/datasets/binpack/test80-2024-06-jun-2tb7p.min-v2.v6.binpack";
+        let file_path = "resources/datasets/binpack/test80-2024-02-feb-2tb7p.min-v2.v6.binpack";
         let buffer_size_mb = 1024;
         let threads = 4;
         fn filter(entry: &TrainingDataEntry) -> bool {
