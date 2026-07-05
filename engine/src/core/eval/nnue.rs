@@ -1,7 +1,10 @@
 use std::mem;
 
 use crate::core::{
-    color::{Color, Perspective, colors},
+    color::{
+        Color, Perspective, colors,
+        perspectives::{Black, White},
+    },
     coordinates::{Square, squares},
     piece::{Piece, PieceType, piece_type},
     position::{PieceInfo, PieceInfoObserver},
@@ -92,40 +95,51 @@ pub struct AccumulatorPair {
 impl PieceInfoObserver for AccumulatorPair {
     fn on_init(&mut self, pos: &PieceInfo) {
         for sq in squares::A1..squares::H8 {
-            // todo
-            // if let Some(p) = pos.piece_at(sq) {
-            //     self.on_piece_put(sq, p);
-            // }
+            let p = pos.get_piece(sq);
+            if p.piece_type() != piece_type::NONE {
+                self.on_piece_put(sq, p);
+            }
         }
     }
 
     fn on_piece_put(&mut self, sq: Square, p: Piece) {
-        // let idx = input_index::<colors::WHITE>(sq, pt, c);
-        // self.white.add_feature(idx, &NNUE);
-        // let idx = input_index::<colors::BLACK>(sq, pt, c);
-        // self.black.add_feature(idx, &NNUE);
+        let (c, pt) = p.unpack();
+
+        let idx = input_index::<White>(sq, pt, c);
+        self.white.add_feature(idx, &NNUE);
+
+        let idx = input_index::<Black>(sq, pt, c);
+        self.black.add_feature(idx, &NNUE);
     }
 
     fn on_piece_removed(&mut self, sq: Square, p: Piece) {
-        // let idx = input_index::<colors::WHITE>(sq, pt, c);
-        // self.white.remove_feature(idx, &NNUE);
-        // let idx = input_index::<colors::BLACK>(sq, pt, c);
-        // self.black.remove_feature(idx, &NNUE);
+        let (c, pt) = p.unpack();
+
+        let idx_w = input_index::<White>(sq, pt, c);
+        self.white.remove_feature(idx_w, &NNUE);
+
+        let idx_b = input_index::<Black>(sq, pt, c);
+        self.black.remove_feature(idx_b, &NNUE);
     }
 
     fn on_piece_moved(&mut self, from: Square, to: Square, p: Piece) {
-        todo!()
-        // let idx = input_index::<colors::WHITE>(from, pt, c);
-        // self.white.remove_feature(idx, &NNUE);
-        // let idx = input_index::<colors::WHITE>(to, pt, c);
-        // self.white.add_feature(idx, &NNUE);
-        // let idx = input_index::<colors::BLACK>(from, pt, c);
-        // self.black.remove_feature(idx, &NNUE);
-        // let idx = input_index::<colors::BLACK>(to, pt, c);
-        // self.black.add_feature(idx, &NNUE);
+        let (c, pt) = p.unpack();
+
+        let from_idx_w = input_index::<White>(from, pt, c);
+        self.white.remove_feature(from_idx_w, &NNUE);
+
+        let from_idx_b = input_index::<Black>(from, pt, c);
+        self.black.remove_feature(from_idx_b, &NNUE);
+
+        let to_idx_w = input_index::<White>(to, pt, c);
+        self.white.add_feature(to_idx_w, &NNUE);
+
+        let to_idx_b = input_index::<Black>(to, pt, c);
+        self.black.add_feature(to_idx_b, &NNUE);
     }
 }
 
+#[inline(always)]
 pub fn input_index<P: Perspective>(sq: Square, pt: PieceType, c: Color) -> usize {
     let (mut sq, mut c) = (sq, c);
 
@@ -135,8 +149,8 @@ pub fn input_index<P: Perspective>(sq: Square, pt: PieceType, c: Color) -> usize
     }
 
     let c = c.v() as usize;
-    let pt = pt.v() as usize;
     let sq = sq.v() as usize;
+    let pt = pt.v() as usize - 1;
 
     c * PIECES * SQUARES + pt * SQUARES + sq
 }
