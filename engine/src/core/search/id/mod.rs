@@ -83,7 +83,9 @@ pub struct NnueEvaluator<'a> {
 
 impl<'a> NnueEvaluator<'a> {
     fn new(nnue: &'a nnue::Network) -> Self {
-        if let Err(e) = nnue.check_health() {
+        if cfg!(debug_assertions)
+            && let Err(e) = nnue.check_health()
+        {
             eprintln!("NNUE health check failed: {}", e);
         }
 
