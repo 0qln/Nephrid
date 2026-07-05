@@ -52,6 +52,12 @@ pub struct Network {
 
 impl Network {
     pub fn forward(&self, acc_stm: &Accumulator, acc_nstm: &Accumulator) -> i32 {
+        #[cfg(debug_assertions)]
+        {
+            acc_stm.check_health().expect("Unhealthy accumulator");
+            acc_nstm.check_health().expect("Unhealthy accumulator");
+        }
+
         let mut eval: i32 = 0;
 
         for (&value, &weight) in acc_stm.values.iter().zip(&self.out_weights[..HIDDEN_SIZE]) {
@@ -131,26 +137,68 @@ impl CheckHealth for Network {
 
 pub struct Accumulator {
     values: [TValue; HIDDEN_SIZE],
+
+    /// This field is only used in debug builds to verify that the accumulator
+    /// is consistent with the features added/removed.
+    #[cfg(debug_assertions)]
+    inputs: [TValue; INPUT_SIZE],
 }
 
 impl Accumulator {
     pub fn init(net: &Network) -> Self {
-        //
-        Self { values: net.acc_biases.vals }
+        Self {
+            values: net.acc_biases.vals,
+
+            #[cfg(debug_assertions)]
+            inputs: [0; INPUT_SIZE],
+        }
     }
 
     /// Add a feature to an accumulator.
     pub fn add_feature(&mut self, idx: usize, net: &Network) {
-        for (i, d) in self.values.iter_mut().zip(&net.acc_weights[idx].vals) {
-            *i += *d
+        #[cfg(debug_assertions)]
+        {
+            self.inputs[idx] += 1;
+        }
+
+        for (val, weight) in self.values.iter_mut().zip(&net.acc_weights[idx].vals) {
+            *val += *weight
         }
     }
 
     /// Remove a feature from an accumulator.
     pub fn remove_feature(&mut self, idx: usize, net: &Network) {
-        for (i, d) in self.values.iter_mut().zip(&net.acc_weights[idx].vals) {
-            *i -= *d
+        #[cfg(debug_assertions)]
+        {
+            self.inputs[idx] -= 1;
         }
+
+        for (val, weight) in self.values.iter_mut().zip(&net.acc_weights[idx].vals) {
+            *val -= *weight
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum CheckAccumulatorHealthError {
+    #[error("Accumulator input at index {idx} wasn't 0 or 1")]
+    InputIsntOne { idx: usize, value: i16 },
+}
+
+#[cfg(debug_assertions)]
+impl CheckHealth for Accumulator {
+    type Error = CheckAccumulatorHealthError;
+
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        for (idx, &val) in self.inputs.iter().enumerate() {
+            if val != 0 && val != 1 {
+                return Err(CheckAccumulatorHealthError::InputIsntOne { idx, value: val });
+            }
+        }
+
+        // todo: check that each accumulated val is a multiple of its inputs * w - bias
+
+        Ok(())
     }
 }
 
@@ -161,6 +209,11 @@ pub struct AccumulatorPair {
 
 impl PieceInfoObserver for AccumulatorPair {
     fn on_init(&mut self, pos: &PieceInfo) {
+        // reset
+        self.white = Accumulator::init(&NNUE);
+        self.black = Accumulator::init(&NNUE);
+
+        // put pieces
         for sq in squares::A1..=squares::H8 {
             let p = pos.get_piece(sq);
             if p.piece_type() != piece_type::NONE {
