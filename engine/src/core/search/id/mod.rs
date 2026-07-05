@@ -38,7 +38,7 @@ use crate::{
         zobrist,
     },
     math::{self, NormalizedEntropy},
-    misc::{CancellationToken, DebugMode, List},
+    misc::{CancellationToken, CheckHealth, DebugMode, List},
 };
 
 #[cfg(test)] pub mod test;
@@ -83,6 +83,10 @@ pub struct NnueEvaluator<'a> {
 
 impl<'a> NnueEvaluator<'a> {
     fn new(nnue: &'a nnue::Network) -> Self {
+        if let Err(e) = nnue.check_health() {
+            eprintln!("NNUE health check failed: {}", e);
+        }
+
         let accs = nnue::AccumulatorPair {
             white: nnue::Accumulator::init(nnue),
             black: nnue::Accumulator::init(nnue),

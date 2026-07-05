@@ -1,13 +1,18 @@
 use std::mem;
 
-use crate::core::{
-    color::{
-        Color, Perspective, colors,
-        perspectives::{Black, White},
+use thiserror::Error;
+
+use crate::{
+    core::{
+        color::{
+            Color, Perspective, colors,
+            perspectives::{Black, White},
+        },
+        coordinates::{Square, squares},
+        piece::{Piece, PieceType, piece_type},
+        position::{PieceInfo, PieceInfoObserver},
     },
-    coordinates::{Square, squares},
-    piece::{Piece, PieceType, piece_type},
-    position::{PieceInfo, PieceInfoObserver},
+    misc::{CheckHealth, CheckHealthResult},
 };
 
 pub type TValue = i16;
@@ -28,17 +33,17 @@ pub const QB: TValue = 64;
 
 pub const NNUE: Network = unsafe { mem::transmute(*include_bytes!("../../../../checkpoints/simple-40/quantised.bin")) };
 
+#[repr(C, align(64))]
+pub struct HiddenLayer {
+    vals: [TValue; HIDDEN_SIZE],
+}
+
 #[repr(C)]
 pub struct Network {
     acc_weights: [HiddenLayer; INPUT_SIZE],
     acc_biases: [TValue; HIDDEN_SIZE],
     out_weights: [TValue; colors::N_VARIANTS * HIDDEN_SIZE],
     out_bias: [TValue; OUTPUT_SIZE],
-}
-
-#[repr(C, align(64))]
-pub struct HiddenLayer {
-    vals: [TValue; HIDDEN_SIZE],
 }
 
 impl Network {
@@ -59,6 +64,64 @@ impl Network {
         eval /= TEval::from(QA) * TEval::from(QB);
 
         eval
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum CheckNnueHealthError {
+    #[error("NNUE network is all zeros. likely corrupted!")]
+    AllZero,
+
+    #[error("Value {value} at index {idx} in {field} is out of expected range")]
+    OutOfRange { field: &'static str, idx: usize, value: i16 },
+}
+
+impl CheckHealth for Network {
+    type Error = CheckNnueHealthError;
+
+    fn check_health(&self) -> CheckHealthResult<Self::Error> {
+        const MAX_ABS: i16 = 2000;
+
+        fn check_slice(slice: &[i16], field: &'static str) -> Result<(), CheckNnueHealthError> {
+            for (idx, &val) in slice.iter().enumerate() {
+                if val.abs() > MAX_ABS {
+                    return Err(CheckNnueHealthError::OutOfRange { field, idx, value: val });
+                }
+            }
+            Ok(())
+        }
+
+        // acc_weights
+        for (layer_idx, layer) in self.acc_weights.iter().enumerate() {
+            let field = format!("acc_weights[{}]", layer_idx);
+            check_slice(&layer.vals, Box::leak(field.into_boxed_str()))?;
+        }
+
+        // acc_biases
+        check_slice(&self.acc_biases, "acc_biases")?;
+
+        // out_weights
+        check_slice(&self.out_weights, "out_weights")?;
+
+        // out_bias
+        check_slice(&self.out_bias, "out_bias")?;
+
+        // verify not all zeros (sum of absolute values > 0)
+        let total_abs: i64 = self
+            .acc_weights
+            .iter()
+            .flat_map(|layer| layer.vals.iter())
+            .chain(self.acc_biases.iter())
+            .chain(self.out_weights.iter())
+            .chain(self.out_bias.iter())
+            .map(|&x| x.abs() as i64)
+            .sum();
+
+        if total_abs == 0 {
+            return Err(CheckNnueHealthError::AllZero);
+        }
+
+        Ok(())
     }
 }
 

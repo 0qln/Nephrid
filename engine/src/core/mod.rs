@@ -1,8 +1,15 @@
 use crate::core::{
-    eval::hce::{self}, params::{IParams, MctsHceParams}, position::PieceInfoObserver, search::{
+    eval::{
+        StaticEvaluator,
+        hce::{self},
+    },
+    params::{IParams, MctsHceParams},
+    position::PieceInfoObserver,
+    search::{
+        id,
         mcts::{self},
         score::Cp,
-    }
+    },
 };
 use search::mode::Mode;
 use std::{
@@ -54,8 +61,8 @@ pub struct Game {
     position: Position,
 }
 
-// todo: replace PieceInfoObserver `&mut ()` with calls to the nnue.observe() somehow? but that's on
-// the search workers thread so how do we access it?
+// todo: replace PieceInfoObserver `&mut ()` with calls to the nnue.observe()
+// somehow? but that's on the search workers thread so how do we access it?
 
 #[derive(Debug, Error)]
 pub enum EpdImportError {
@@ -376,8 +383,24 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
             Ok(())
         }
         Some("nnue") => {
-            // todo: just like above show the static evaluation of the position
-            // but with nnue
+            use color::perspectives::{Black, White};
+
+            let pos = engine.game.position();
+            let pieces = pos.piece_info();
+            let turn = pos.get_turn();
+            let ep_sq = pos.get_ep_target_square();
+            let phase = hce::TaperValue::from_position(pieces);
+
+            let mut eval = id::NnueEvaluator::<'static>::default();
+            eval.observe().on_init(pieces);
+
+            let eval_w = eval.eval::<White>(pieces, turn, ep_sq, phase);
+            let eval_b = eval.eval::<Black>(pieces, turn, ep_sq, phase);
+
+            println!("NNUE Evaluation:");
+            println!("  White: {eval_w}");
+            println!("  Black: {eval_b}");
+
             Ok(())
         }
         Some("position") => {
