@@ -1,4 +1,9 @@
-use std::mem;
+use std::{
+    fs::File,
+    io::{self, Read},
+    mem,
+    path::Path,
+};
 
 use thiserror::Error;
 
@@ -31,11 +36,37 @@ pub const SCALE: TValue = 400;
 pub const QA: TValue = 255;
 pub const QB: TValue = 64;
 
-pub const NNUE: Network = unsafe {
-    mem::transmute(*include_bytes!(
-        "../../../../checkpoints/nnue-1783259751942-768-256_400*255*64-40/quantised.bin"
-    ))
-};
+pub type NetworkBytes = [u8; size_of::<Network>()];
+
+pub static DEFAULT_NNUE: NetworkBytes = *include_bytes!("../../../../checkpoints/nnue-1783259751942-768-256_400*255*64-40/quantised.bin");
+
+static mut NNUE: Network = unsafe { mem::transmute::<NetworkBytes, Network>(DEFAULT_NNUE) };
+
+/// Gets a nnue, defaulting to some default net if the user net paniced during
+/// initialization.
+#[allow(static_mut_refs)]
+pub fn get_nnue() -> &'static Network { unsafe { &NNUE } }
+
+pub fn read_net_bytes(path: &Path) -> Result<NetworkBytes, io::Error> {
+    let mut f = File::open(path)?;
+    let mut bytes = [0u8; size_of::<Network>()];
+    f.read_exact(&mut bytes)?;
+    Ok(bytes)
+}
+
+#[allow(static_mut_refs)]
+pub fn set_nnue(bytes: NetworkBytes) -> Result<(), CheckNnueHealthError> {
+    let net: Network = unsafe { mem::transmute::<NetworkBytes, Network>(bytes) };
+    net.check_health()?;
+
+    unsafe {
+        NNUE = net;
+    }
+
+    println!("NNUE network updated successfully.");
+
+    Ok(())
+}
 
 #[repr(C, align(64))]
 pub struct HiddenLayer {
@@ -207,11 +238,20 @@ pub struct AccumulatorPair {
     pub black: Accumulator,
 }
 
+impl AccumulatorPair {
+    pub fn new(net: &Network) -> Self {
+        Self {
+            white: Accumulator::init(net),
+            black: Accumulator::init(net),
+        }
+    }
+}
+
 impl PieceInfoObserver for AccumulatorPair {
     fn on_init(&mut self, pos: &PieceInfo) {
         // reset
-        self.white = Accumulator::init(&NNUE);
-        self.black = Accumulator::init(&NNUE);
+        self.white = Accumulator::init(get_nnue());
+        self.black = Accumulator::init(get_nnue());
 
         // put pieces
         for sq in squares::A1..=squares::H8 {
@@ -224,14 +264,14 @@ impl PieceInfoObserver for AccumulatorPair {
 
     fn on_piece_put(&mut self, sq: Square, p: Piece) {
         let (c, pt) = p.unpack();
-        self.white.add_feature(input_index::<White>(sq, pt, c), &NNUE);
-        self.black.add_feature(input_index::<Black>(sq, pt, c), &NNUE);
+        self.white.add_feature(input_index::<White>(sq, pt, c), get_nnue());
+        self.black.add_feature(input_index::<Black>(sq, pt, c), get_nnue());
     }
 
     fn on_piece_removed(&mut self, sq: Square, p: Piece) {
         let (c, pt) = p.unpack();
-        self.white.remove_feature(input_index::<White>(sq, pt, c), &NNUE);
-        self.black.remove_feature(input_index::<Black>(sq, pt, c), &NNUE);
+        self.white.remove_feature(input_index::<White>(sq, pt, c), get_nnue());
+        self.black.remove_feature(input_index::<Black>(sq, pt, c), get_nnue());
     }
 
     fn on_piece_moved(&mut self, from: Square, to: Square, p: Piece) {

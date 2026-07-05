@@ -391,7 +391,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
             let ep_sq = pos.get_ep_target_square();
             let phase = hce::TaperValue::from_position(pieces);
 
-            let mut eval = id::NnueEvaluator::<'static>::default();
+            let mut eval = id::NnueEvaluator::default();
             eval.observe().on_init(pieces);
 
             let eval_w = eval.eval::<White>(pieces, turn, ep_sq, phase);

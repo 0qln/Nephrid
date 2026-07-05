@@ -1,10 +1,14 @@
+use std::{convert::Infallible, ops::Deref};
+
 use crate::{
     core::{
         color::{Perspective, perspectives},
+        config::Configuration,
         coordinates::EpTargetSquare,
         depth::Depth,
         eval::{
-            self, hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns}
+            self,
+            hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
         },
         r#move::MAX_LEGAL_MOVES,
         params::MctsHceParamsRef,
@@ -58,6 +62,8 @@ impl eval::StaticEvaluator for StaticEvaluator {
         let b_q = static_value::<P::Opponent>(pos, ep_b, phase, turn);
         w_q + !b_q
     }
+
+    fn try_from_config<C: Deref<Target = Configuration>>(_: C) -> Result<Self, Infallible> { Ok(Self) }
 }
 
 #[derive(Debug, PartialEq, Default)]

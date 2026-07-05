@@ -1,7 +1,11 @@
+use core::fmt;
 use std::{
     cmp::{Reverse, max, min},
+    convert::Infallible,
     hint::{assert_unchecked, unreachable_unchecked},
-    ops::ControlFlow,
+    ops::{ControlFlow, Deref},
+    path::PathBuf,
+    str::FromStr,
     time::{Duration, Instant},
 };
 
@@ -12,12 +16,13 @@ use crate::{
             Color, Perspective, colors,
             perspectives::{self},
         },
+        config::Configuration,
         coordinates::EpTargetSquare,
         depth::Depth,
         eval::{
             GameResult, StaticEvaluator,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
-            nnue,
+            nnue::{self},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
@@ -74,6 +79,8 @@ impl StaticEvaluator for HceEvaluator {
         let b_q = static_value::<P::Opponent>(pos, ep_b, phase, turn);
         w_q + !b_q
     }
+
+    fn try_from_config<C: Deref<Target = Configuration>>(_cfg: C) -> Result<Self, Infallible> { Ok(Self) }
 }
 
 pub struct NnueEvaluator<'a> {
@@ -89,12 +96,13 @@ impl<'a> NnueEvaluator<'a> {
             eprintln!("NNUE health check failed: {}", e);
         }
 
-        let accs = nnue::AccumulatorPair {
-            white: nnue::Accumulator::init(nnue),
-            black: nnue::Accumulator::init(nnue),
-        };
-        Self { nnue, accs }
+        let accs = nnue::AccumulatorPair::new(nnue);
+        Self { accs, nnue }
     }
+}
+
+impl Default for NnueEvaluator<'static> {
+    fn default() -> Self { Self::new(nnue::get_nnue()) }
 }
 
 impl<'a> StaticEvaluator for NnueEvaluator<'a> {
@@ -109,10 +117,20 @@ impl<'a> StaticEvaluator for NnueEvaluator<'a> {
     }
 
     fn observe(&mut self) -> &mut impl PieceInfoObserver { &mut self.accs }
-}
 
-impl Default for NnueEvaluator<'static> {
-    fn default() -> Self { Self::new(&nnue::NNUE) }
+    fn try_from_config<C: Deref<Target = Configuration>>(cfg: C) -> Result<Self, impl fmt::Display> {
+        let nnue_str = cfg.nnue_path();
+        let nnue_bytes = if nnue_str.is_empty() {
+            nnue::DEFAULT_NNUE
+        }
+        else {
+            let nnue_path = PathBuf::from_str(nnue_str).expect("Infallible was returned??");
+            nnue::read_net_bytes(&nnue_path).map_err(|e| format!("Bad nnue file: {e}"))?
+        };
+        nnue::set_nnue(nnue_bytes).map_err(|e| format!("Unhealthy nnue: {e}"))?;
+
+        Ok::<_, String>(Self::new(nnue::get_nnue()))
+    }
 }
 
 #[allow(dead_code)]

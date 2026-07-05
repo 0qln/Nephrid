@@ -130,10 +130,11 @@ impl<E: StaticEvaluator + Default> SearchWorker for IdWorker<E> {
                 Ok(())
             }
             Command::Configure(config) => {
-                let cfg = config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
+                let cfg = || config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")));
 
-                self.tt = TranspositionTable::new_of_size(cfg.hash());
-                self.params = IdHceParams::try_from_config(cfg).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
+                self.tt = TranspositionTable::new_of_size(cfg()?.hash());
+                self.params = IdHceParams::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
+                self.eval = E::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
 
                 Ok(())
             }
