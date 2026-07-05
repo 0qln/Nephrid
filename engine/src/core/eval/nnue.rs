@@ -23,7 +23,7 @@ const COLORS: usize = colors::N_VARIANTS;
 const SQUARES: usize = squares::N_VARIANTS;
 
 pub const INPUT_SIZE: usize = PIECES * COLORS * SQUARES;
-pub const HIDDEN_SIZE: usize = 2 << 9;
+pub const HIDDEN_SIZE: usize = 2 << 7;
 pub const OUTPUT_SIZE: usize = 1;
 
 // todo: use Cp::SCALE?
@@ -31,7 +31,11 @@ pub const SCALE: TValue = 400;
 pub const QA: TValue = 255;
 pub const QB: TValue = 64;
 
-pub const NNUE: Network = unsafe { mem::transmute(*include_bytes!("../../../../checkpoints/simple-40/quantised.bin")) };
+pub const NNUE: Network = unsafe {
+    mem::transmute(*include_bytes!(
+        "../../../../checkpoints/nnue-1783259751942-768-256_400*255*64-40/quantised.bin"
+    ))
+};
 
 #[repr(C, align(64))]
 pub struct HiddenLayer {
@@ -41,7 +45,7 @@ pub struct HiddenLayer {
 #[repr(C)]
 pub struct Network {
     acc_weights: [HiddenLayer; INPUT_SIZE],
-    acc_biases: [TValue; HIDDEN_SIZE],
+    acc_biases: HiddenLayer,
     out_weights: [TValue; colors::N_VARIANTS * HIDDEN_SIZE],
     out_bias: [TValue; OUTPUT_SIZE],
 }
@@ -98,7 +102,7 @@ impl CheckHealth for Network {
         }
 
         // acc_biases
-        check_slice(&self.acc_biases, "acc_biases")?;
+        check_slice(&self.acc_biases.vals, "acc_biases")?;
 
         // out_weights
         check_slice(&self.out_weights, "out_weights")?;
@@ -111,7 +115,7 @@ impl CheckHealth for Network {
             .acc_weights
             .iter()
             .flat_map(|layer| layer.vals.iter())
-            .chain(self.acc_biases.iter())
+            .chain(self.acc_biases.vals.iter())
             .chain(self.out_weights.iter())
             .chain(self.out_bias.iter())
             .map(|&x| x.abs() as i64)
@@ -132,7 +136,7 @@ pub struct Accumulator {
 impl Accumulator {
     pub fn init(net: &Network) -> Self {
         //
-        Self { values: net.acc_biases }
+        Self { values: net.acc_biases.vals }
     }
 
     /// Add a feature to an accumulator.
@@ -157,7 +161,7 @@ pub struct AccumulatorPair {
 
 impl PieceInfoObserver for AccumulatorPair {
     fn on_init(&mut self, pos: &PieceInfo) {
-        for sq in squares::A1..squares::H8 {
+        for sq in squares::A1..=squares::H8 {
             let p = pos.get_piece(sq);
             if p.piece_type() != piece_type::NONE {
                 self.on_piece_put(sq, p);
@@ -167,38 +171,19 @@ impl PieceInfoObserver for AccumulatorPair {
 
     fn on_piece_put(&mut self, sq: Square, p: Piece) {
         let (c, pt) = p.unpack();
-
-        let idx = input_index::<White>(sq, pt, c);
-        self.white.add_feature(idx, &NNUE);
-
-        let idx = input_index::<Black>(sq, pt, c);
-        self.black.add_feature(idx, &NNUE);
+        self.white.add_feature(input_index::<White>(sq, pt, c), &NNUE);
+        self.black.add_feature(input_index::<Black>(sq, pt, c), &NNUE);
     }
 
     fn on_piece_removed(&mut self, sq: Square, p: Piece) {
         let (c, pt) = p.unpack();
-
-        let idx_w = input_index::<White>(sq, pt, c);
-        self.white.remove_feature(idx_w, &NNUE);
-
-        let idx_b = input_index::<Black>(sq, pt, c);
-        self.black.remove_feature(idx_b, &NNUE);
+        self.white.remove_feature(input_index::<White>(sq, pt, c), &NNUE);
+        self.black.remove_feature(input_index::<Black>(sq, pt, c), &NNUE);
     }
 
     fn on_piece_moved(&mut self, from: Square, to: Square, p: Piece) {
-        let (c, pt) = p.unpack();
-
-        let from_idx_w = input_index::<White>(from, pt, c);
-        self.white.remove_feature(from_idx_w, &NNUE);
-
-        let from_idx_b = input_index::<Black>(from, pt, c);
-        self.black.remove_feature(from_idx_b, &NNUE);
-
-        let to_idx_w = input_index::<White>(to, pt, c);
-        self.white.add_feature(to_idx_w, &NNUE);
-
-        let to_idx_b = input_index::<Black>(to, pt, c);
-        self.black.add_feature(to_idx_b, &NNUE);
+        self.on_piece_removed(from, p);
+        self.on_piece_put(to, p);
     }
 }
 
