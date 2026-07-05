@@ -23,7 +23,7 @@ use crate::{
         move_iter::{fold_moves, opt::AllLegal},
         piece::piece_type,
         ply::Ply,
-        position::{CheckState, PieceInfo, Position},
+        position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
             id::node_types::*,
             limit::UciLimit,
@@ -101,6 +101,8 @@ impl<'a> StaticEvaluator for NnueEvaluator<'a> {
         let nnue_eval = self.nnue.forward(stm_acc, nstm_acc);
         Score::new(nnue_eval)
     }
+
+    fn observe(&mut self) -> &mut impl PieceInfoObserver { &mut self.accs }
 }
 
 impl Default for NnueEvaluator<'static> {
@@ -494,7 +496,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             // }
 
             // make the move
-            pos.make_move_for::<P>(m);
+            pos.make_move_for::<P>(m, self.eval.observe());
 
             // depth
             let (mut depth_ext, mut depth_reduct) = (0, 0);
@@ -576,7 +578,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             };
 
             // unmake the move
-            pos.unmake_move_for::<P>(m);
+            pos.unmake_move_for::<P>(m, self.eval.observe());
 
             if self.aborted {
                 return Score::new(0);

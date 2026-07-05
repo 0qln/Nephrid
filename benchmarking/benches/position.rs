@@ -100,7 +100,7 @@ pub fn make_move(c: &mut Criterion) {
 
     for m in moves.into_iter().unique_by(|m| m.get_flag()) {
         c.bench_with_input(BenchmarkId::new("position::make_move", m), &m, |b, &m| {
-            b.iter_batched(|| pos.clone(), |mut pos| pos.make_move(m), BatchSize::PerIteration)
+            b.iter_batched(|| pos.clone(), |mut pos| pos.make_move(m, &mut ()), BatchSize::PerIteration)
         });
     }
 }

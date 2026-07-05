@@ -4,8 +4,7 @@ use crate::{
         coordinates::EpTargetSquare,
         depth::Depth,
         eval::{
-            self,
-            hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
+            self, hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns}
         },
         r#move::MAX_LEGAL_MOVES,
         params::MctsHceParamsRef,
@@ -112,7 +111,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 Score::NEG_INF,
                 Score::POS_INF,
                 MctsHceParamsRef::clone(&params),
-                &StaticEvaluator,
+                &mut StaticEvaluator,
                 Depth::new(30),
             )
             .into(),
@@ -121,7 +120,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 Score::NEG_INF,
                 Score::POS_INF,
                 MctsHceParamsRef::clone(&params),
-                &StaticEvaluator,
+                &mut StaticEvaluator,
                 Depth::new(30),
             )
             .into(),

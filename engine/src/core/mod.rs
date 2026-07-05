@@ -1,10 +1,8 @@
 use crate::core::{
-    eval::hce::{self},
-    params::{IParams, MctsHceParams},
-    search::{
+    eval::hce::{self}, params::{IParams, MctsHceParams}, position::PieceInfoObserver, search::{
         mcts::{self},
         score::Cp,
-    },
+    }
 };
 use search::mode::Mode;
 use std::{
@@ -56,6 +54,9 @@ pub struct Game {
     position: Position,
 }
 
+// todo: replace PieceInfoObserver `&mut ()` with calls to the nnue.observe() somehow? but that's on
+// the search workers thread so how do we access it?
+
 #[derive(Debug, Error)]
 pub enum EpdImportError {
     #[error("EPD line parsing failed: {0}")]
@@ -66,10 +67,10 @@ pub enum EpdImportError {
 }
 
 impl Game {
-    pub fn from_moves(position: Position, moves: impl Iterator<Item = Move>) -> Self {
+    pub fn from_moves(position: Position, moves: impl Iterator<Item = Move>, obsv: &mut impl PieceInfoObserver) -> Self {
         let mut game = Self::from_position(position);
         for mov in moves {
-            game.push_move(mov);
+            game.push_move(mov, obsv);
         }
         game
     }
@@ -80,27 +81,27 @@ impl Game {
 
     pub fn from_fen(fen: FenImport<'_, '_>) -> Result<Self, FenParseError> { Ok(Self::from_position(Position::try_from(fen)?)) }
 
-    pub fn from_epd(epd: EpdLineImport<'_, '_>) -> Result<Self, EpdImportError> {
+    pub fn from_epd(epd: EpdLineImport<'_, '_>, obsv: &mut impl PieceInfoObserver) -> Result<Self, EpdImportError> {
         let (pos, ops) = epd.try_into()?;
         let mut game = Self::from_position(pos);
 
         if let Some(op) = ops.iter().find(|op| matches!(op.0.as_ref(), "sm")) {
             let EpdOp(_, mov) = op;
             let mov = Move::from_san(mov, &game.position)?;
-            game.push_move(mov);
+            game.push_move(mov, obsv);
         }
 
         Ok(game)
     }
 
-    pub fn from_pgn(pgn: PgnImport<'_, '_>) -> Result<Self, PgnImportError> {
+    pub fn from_pgn(pgn: PgnImport<'_, '_>, obsv: &mut impl PieceInfoObserver) -> Result<Self, PgnImportError> {
         let pgn = ReducedPgn::try_from(pgn.0)?;
 
         let position = pgn.start_position()?;
         let mut game = Self::from_position(position);
         for san in pgn.moves() {
             let mov = Move::from_san(san, &game.position)?;
-            game.push_move(mov);
+            game.push_move(mov, obsv);
         }
         Ok(game)
     }
@@ -111,9 +112,9 @@ impl Game {
 
     pub fn position_mut(&mut self) -> &mut Position { &mut self.position }
 
-    pub fn push_move(&mut self, mov: Move) {
+    pub fn push_move(&mut self, mov: Move, obsv: &mut impl PieceInfoObserver) {
         self.history.push(mov);
-        self.position.make_move(mov);
+        self.position.make_move(mov, obsv);
     }
 
     pub fn to_pgn(&self) -> ReducedPgn { ReducedPgn::from_current_pos(self.position.clone(), &self.history[..]) }
@@ -385,7 +386,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
                 let mov = Move::from_lan(mov, engine.game.position())?;
 
                 // advance the position
-                engine.game.push_move(mov);
+                engine.game.push_move(mov, &mut ());
 
                 // also advance the mcts game tree
                 let game_tree_caching = engine.config.lock().map(|c| c.game_tree_caching()).unwrap_or(false);
@@ -420,8 +421,8 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
             else {
                 // 1. Parse the new base position into a temporary game state
                 let mut new_game = match tokenizer.next_token() {
-                    Some("pgn") => Game::from_pgn(PgnImport(&mut tokenizer))?,
-                    Some("epd") => Game::from_epd(EpdLineImport(&mut tokenizer))?,
+                    Some("pgn") => Game::from_pgn(PgnImport(&mut tokenizer), &mut ())?,
+                    Some("epd") => Game::from_epd(EpdLineImport(&mut tokenizer), &mut ())?,
                     Some("fen") => Game::from_fen(FenImport(&mut tokenizer))?,
                     Some("startpos") => Game::from_position(Position::start_position()),
                     None => return Err(UciError::MissingArgument("value").into()),
@@ -434,7 +435,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
                 if tokenizer.next_token() == Some("moves") {
                     for tok in tokenizer.tokens() {
                         let mov = Move::from_lan(tok, new_game.position())?;
-                        new_game.push_move(mov);
+                        new_game.push_move(mov, &mut ());
                     }
                 }
 

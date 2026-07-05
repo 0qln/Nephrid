@@ -1,6 +1,7 @@
 use crate::core::{
     eval::StaticEvaluator,
     params::{IParams, IdHceParams, IdHceParamsRef},
+    position::PieceInfoObserver,
     search::{mcts::search::MctsParams, score::Cp, tt::TranspositionTable},
 };
 use thiserror::Error;
@@ -105,6 +106,10 @@ impl<E: StaticEvaluator + Default> SearchWorker for IdWorker<E> {
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
+                // todo: initiating the nnue before every search works for now, but we can
+                // probably just do it on the fly in AdvanceState...
+                self.eval.observe().on_init(pos.piece_info());
+
                 let best_move = id::go(&mut pos, limit, &debug, ct, &mut self.tt, &mut self.eval, self.params.clone());
 
                 if let Some(mov) = best_move {
@@ -175,7 +180,7 @@ where
             Command::PrintPv(pos) => {
                 let pv = self.mcts_state.tree.principal_line();
                 let continuation = pv.0.into_iter().map(|b| b.mov());
-                let game = Game::from_moves(pos, continuation);
+                let game = Game::from_moves(pos, continuation, &mut ());
                 let pgn = game.to_pgn();
                 println!("Principal Variation:\n{pgn}");
                 Ok(())

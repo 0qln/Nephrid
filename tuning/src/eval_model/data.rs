@@ -135,7 +135,7 @@ impl FenDataset {
                             err
                         })
                         .ok()?;
-                    pos.make_move(mov);
+                    pos.make_move(mov, &mut ());
                 }
 
                 // output the fen for the line

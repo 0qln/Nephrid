@@ -3,7 +3,8 @@ use std::mem;
 use crate::core::{
     color::{Color, Perspective, colors},
     coordinates::{Square, squares},
-    piece::{PieceType, piece_type},
+    piece::{Piece, PieceType, piece_type},
+    position::{PieceInfo, PieceInfoObserver},
 };
 
 pub type TValue = i16;
@@ -86,6 +87,43 @@ impl Accumulator {
 pub struct AccumulatorPair {
     pub white: Accumulator,
     pub black: Accumulator,
+}
+
+impl PieceInfoObserver for AccumulatorPair {
+    fn on_init(&mut self, pos: &PieceInfo) {
+        for sq in squares::A1..squares::H8 {
+            // todo
+            // if let Some(p) = pos.piece_at(sq) {
+            //     self.on_piece_put(sq, p);
+            // }
+        }
+    }
+
+    fn on_piece_put(&mut self, sq: Square, p: Piece) {
+        // let idx = input_index::<colors::WHITE>(sq, pt, c);
+        // self.white.add_feature(idx, &NNUE);
+        // let idx = input_index::<colors::BLACK>(sq, pt, c);
+        // self.black.add_feature(idx, &NNUE);
+    }
+
+    fn on_piece_removed(&mut self, sq: Square, p: Piece) {
+        // let idx = input_index::<colors::WHITE>(sq, pt, c);
+        // self.white.remove_feature(idx, &NNUE);
+        // let idx = input_index::<colors::BLACK>(sq, pt, c);
+        // self.black.remove_feature(idx, &NNUE);
+    }
+
+    fn on_piece_moved(&mut self, from: Square, to: Square, p: Piece) {
+        todo!()
+        // let idx = input_index::<colors::WHITE>(from, pt, c);
+        // self.white.remove_feature(idx, &NNUE);
+        // let idx = input_index::<colors::WHITE>(to, pt, c);
+        // self.white.add_feature(idx, &NNUE);
+        // let idx = input_index::<colors::BLACK>(from, pt, c);
+        // self.black.remove_feature(idx, &NNUE);
+        // let idx = input_index::<colors::BLACK>(to, pt, c);
+        // self.black.add_feature(idx, &NNUE);
+    }
 }
 
 pub fn input_index<P: Perspective>(sq: Square, pt: PieceType, c: Color) -> usize {

@@ -711,9 +711,9 @@ pub mod test {
             while let Some(mov) = picker.next(pos, &scorer) {
                 got.push(mov);
                 cnt += 1;
-                pos.make_move(mov);
+                pos.make_move(mov, &mut ());
                 recurse_test(pos, rng, depth - 1);
-                pos.unmake_move(mov);
+                pos.unmake_move(mov, &mut ());
             }
 
             let expected = all_moves.len() as u64;

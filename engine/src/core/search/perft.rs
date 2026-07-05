@@ -79,7 +79,7 @@ pub fn perft_inner_collect_for<P: Perspective>(
 
     let mut acc = 0;
     for &m in move_list.iter() {
-        pos.make_move_for::<P>(m);
+        pos.make_move_for::<P>(m, &mut ());
         let c = perft_inner_collect_for::<P::Opponent>(
             pos,
             depth - 1,
@@ -90,7 +90,7 @@ pub fn perft_inner_collect_for<P: Perspective>(
             moves,
         );
         f(m, c, limit.depth - depth, debug.get());
-        pos.unmake_move_for::<P>(m);
+        pos.unmake_move_for::<P>(m, &mut ());
         acc += c;
     }
     acc
