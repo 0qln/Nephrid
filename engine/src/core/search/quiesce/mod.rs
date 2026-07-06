@@ -40,7 +40,7 @@ pub fn qsearch<P: Perspective>(
     let stm = P::COLOR;
     let piece_info = pos.piece_info();
     let phase = TaperValue::from_position(piece_info);
-    let static_eval = || eval.eval(piece_info, stm, pos.get_ep_target_square(), phase);
+    let mut static_eval = || eval.eval(piece_info, stm, pos.get_ep_target_square(), phase);
 
     if depth == Depth::new(0) {
         return static_eval();

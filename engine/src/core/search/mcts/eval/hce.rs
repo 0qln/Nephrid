@@ -41,7 +41,7 @@ use crate::core::{
 struct StaticEvaluator;
 
 impl eval::StaticEvaluator for StaticEvaluator {
-    fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
+    fn eval<P: Perspective>(&mut self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
         fn static_value<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, phase: TaperValue, turn: Turn) -> Score<P> {
             material::<P>(pos)
                 + mobility::<P>(pos, phase)
