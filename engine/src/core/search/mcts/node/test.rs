@@ -74,7 +74,7 @@ fn test_node_expand_from_standard_position() {
         assert!(!branches.is_empty());
         for branch in branches {
             let mut pos_copy = pos.clone();
-            pos_copy.make_move(branch.mov()); // Asserting this doesn't panic
+            pos_copy.make_move(branch.mov(), &mut ()); // Asserting this doesn't panic
         }
     }
     else {
@@ -429,7 +429,7 @@ fn test_advance_to_deeper_level_updates_pointers_correctly() {
 
     // Fake a position for child expansion to simulate depth
     let mut pos_copy = pos.clone();
-    pos_copy.make_move(level_1_branch.mov());
+    pos_copy.make_move(level_1_branch.mov(), &mut ());
     tree.expand_node(child_leaf, &pos_copy, Depth::new(1));
 
     let initial_size_before_gc = tree.size();

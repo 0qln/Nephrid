@@ -277,6 +277,9 @@ pub struct Configuration {
     /// Path to nn weights file.
     weights_path: ConfigOption<StringOption>,
 
+    /// Path to quantized nnue weights file. If empty, uses shipped nnue.
+    nnue_path: ConfigOption<StringOption>,
+
     /// Whether to keep the game tree in between `go`-commands.
     game_tree_caching: ConfigOption<Check>,
 
@@ -353,6 +356,7 @@ impl Configuration {
                 dirichlet_alpha: ConfigOption::new("dirichlet-alpha", Spin::<UciPercent>::new(_ratio(0.3), _ratio(0.), _ratio(10.))),
                 dirichlet_epsilon: ConfigOption::new("dirichlet-epsilon", Spin::<UciPercent>::new(_ratio(0.25), _ratio(0.), _ratio(1.))),
                 weights_path: ConfigOption::new("weights-path", StringOption::new("./weights")),
+                nnue_path: ConfigOption::new("nnue-path", StringOption::new("")),
                 game_tree_caching: ConfigOption::new("game-tree-caching", Check::new(true)),
                 gui_lag: ConfigOption::new("gui-lag", Spin::<UciMillis>::new(_millis(100), _millis(1), _millis(10_000))),
                 ponder: ConfigOption::new("ponder", Check::new(true)),
@@ -462,6 +466,7 @@ impl Configuration {
     pub fn dirichlet_alpha(&self) -> f32 { self.dirichlet_alpha.value.get::<ratio>() }
     pub fn dirichlet_epsilon(&self) -> f32 { self.dirichlet_epsilon.value.get::<ratio>() }
     pub fn weights_path(&self) -> &str { &self.weights_path.value }
+    pub fn nnue_path(&self) -> &str { &self.nnue_path.value }
     pub fn game_tree_caching(&self) -> bool { self.game_tree_caching.value }
     pub fn gui_lag(&self) -> u16 { self.gui_lag.value.get::<millisecond>() as u16 }
     pub fn ponder(&self) -> bool { self.ponder.value }
@@ -479,6 +484,7 @@ impl Configuration {
             "ponder" => self.ponder.set(value),
             "threads" => self.threads.set(value),
             "weights-path" => Ok(self.weights_path.set(value)),
+            "nnue-path" => Ok(self.nnue_path.set(value)),
             #[cfg(feature = "tunable")] "eval-delta-pruning-threshold" => self.eval_delta_pruning_threshold.set(value),
             #[cfg(feature = "tunable")] "eval-futility-margin" => self.eval_futility_margin.set(value),
             #[cfg(feature = "tunable")] "eval-policy-temperature" => self.eval_policy_temperature.set(value),
@@ -506,6 +512,7 @@ impl Configuration {
         println!("{}", self.ponder);
         println!("{}", self.threads);
         println!("{}", self.weights_path);
+        println!("{}", self.nnue_path);
         if cfg!(feature = "tunable") {
             println!("{}", self.eval_delta_pruning_threshold);
             println!("{}", self.eval_futility_margin);

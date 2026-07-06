@@ -1,5 +1,7 @@
 use crate::core::{
+    eval::StaticEvaluator,
     params::{IParams, IdHceParams, IdHceParamsRef},
+    position::PieceInfoObserver,
     search::{mcts::search::MctsParams, score::Cp, tt::TranspositionTable},
 };
 use thiserror::Error;
@@ -74,19 +76,21 @@ pub trait SearchWorker {
 }
 
 /// Iterative deepening worker.
-pub struct IdWorker {
+pub struct IdWorker<E: StaticEvaluator> {
     // todo: don't store the construction information here but the tt and timeman itself
     tt: TranspositionTable<id::TTEntry>,
     params: IdHceParamsRef,
+    eval: E,
 }
 
-impl SearchWorker for IdWorker {
+impl<E: StaticEvaluator + Default> SearchWorker for IdWorker<E> {
     type X = IdHceParams;
 
     fn new() -> Self {
         Self {
             tt: TranspositionTable::new(0),
             params: <Self::X as Default>::default().shared(),
+            eval: E::default(),
         }
     }
 
@@ -102,7 +106,11 @@ impl SearchWorker for IdWorker {
                 Ok(())
             }
             Command::Normal(mut pos, limit, ct, debug) => {
-                let best_move = id::go(&mut pos, limit, &debug, ct, &mut self.tt, self.params.clone());
+                // todo: initiating the nnue before every search works for now, but we can
+                // probably just do it on the fly in AdvanceState...
+                self.eval.observe().on_init(pos.piece_info());
+
+                let best_move = id::go(&mut pos, limit, &debug, ct, &mut self.tt, &mut self.eval, self.params.clone());
 
                 if let Some(mov) = best_move {
                     println!("bestmove {mov}");
@@ -122,10 +130,11 @@ impl SearchWorker for IdWorker {
                 Ok(())
             }
             Command::Configure(config) => {
-                let cfg = config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
+                let cfg = || config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")));
 
-                self.tt = TranspositionTable::new_of_size(cfg.hash());
-                self.params = IdHceParams::try_from_config(cfg).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
+                self.tt = TranspositionTable::new_of_size(cfg()?.hash());
+                self.params = IdHceParams::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
+                self.eval = E::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
 
                 Ok(())
             }
@@ -172,7 +181,7 @@ where
             Command::PrintPv(pos) => {
                 let pv = self.mcts_state.tree.principal_line();
                 let continuation = pv.0.into_iter().map(|b| b.mov());
-                let game = Game::from_moves(pos, continuation);
+                let game = Game::from_moves(pos, continuation, &mut ());
                 let pgn = game.to_pgn();
                 println!("Principal Variation:\n{pgn}");
                 Ok(())

@@ -15,7 +15,10 @@ mod search {
             search::MctsWorker<MPV, Config, Params>
         },
         feature = "id-hce" => {
-            search::IdWorker
+            search::IdWorker<search::id::HceEvaluator>
+        },
+        feature = "id-nnue" => {
+            search::IdWorker<search::id::NnueEvaluator<'static>>
         },
     };
 
@@ -25,6 +28,7 @@ mod search {
         feature = "mcts-nn"   => params::MctsNnParams,
         feature = "mcts-pure" => params::MctsPureParams,
         feature = "id-hce"    => params::IdHceParams,
+        feature = "id-nnue"   => params::IdNnueParams,
     };
 
     #[allow(dead_code)]
@@ -38,6 +42,7 @@ mod search {
         feature = "mcts-hce"  => 1,
         feature = "mcts-pure" => 1,
         feature = "id-hce"    => 1,
+        feature = "id-nnue"   => 1,
         all(feature = "mcts-nn", feature = "nn-backend-cuda") => 64,
         all(feature = "mcts-nn", feature = "nn-backend-ndarray") => 1,
     };
@@ -67,6 +72,7 @@ fn config() -> Configuration {
         feature = "mcts-nn" => { mcts_nn_params_default().build_config(builder) },
         feature = "mcts-pure" => { mcts_pure_params_default().build_config(builder) },
         feature = "id-hce" => { id_hce_params_default().build_config(builder) },
+        feature = "id-nnue" => { id_nnue_params_default().build_config(builder) },
     };
 
     builder.build()

@@ -209,7 +209,11 @@ impl Piece {
         unsafe { Color::from_v(self.v & 1) }
     }
 
+    #[inline]
     pub const fn v(&self) -> TPiece { self.v }
+
+    #[inline]
+    pub const fn unpack(&self) -> (Color, PieceType) { (self.color(), self.piece_type()) }
 }
 
 impl const From<(Color, PieceType)> for Piece {

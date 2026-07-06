@@ -292,7 +292,7 @@ impl PieceInfo {
         unsafe { self.piece_counts.get_unchecked_mut(piece.v() as usize) }
     }
 
-    pub fn remove_piece(&mut self, sq: Square) -> Piece {
+    pub fn remove_piece(&mut self, sq: Square, obsv: &mut impl PieceInfoObserver) -> Piece {
         let target = Bitboard::from(sq);
         let piece = self.get_piece(sq);
         debug_assert_ne!(piece, Piece::default(), "No piece at {sq}");
@@ -300,19 +300,24 @@ impl PieceInfo {
         *self.get_color_bb_mut(piece.color()) ^= target;
         *self.get_piece_mut(sq) = Piece::default();
         *self.get_piece_count_mut(piece) -= 1;
+
+        obsv.on_piece_removed(sq, piece);
+
         piece
     }
 
-    pub fn put_piece(&mut self, sq: Square, piece: Piece) {
+    pub fn put_piece(&mut self, sq: Square, piece: Piece, obsv: &mut impl PieceInfoObserver) {
         let target = Bitboard::from(sq);
         debug_assert_eq!(self.get_piece(sq), Piece::default(), "Piece already at {sq}: {}", self.get_piece(sq));
         *self.get_piece_bb_mut(piece.piece_type()) |= target;
         *self.get_color_bb_mut(piece.color()) |= target;
         *self.get_piece_mut(sq) = piece;
         *self.get_piece_count_mut(piece) += 1;
+
+        obsv.on_piece_put(sq, piece);
     }
 
-    pub fn move_piece(&mut self, from: Square, to: Square) {
+    pub fn move_piece(&mut self, from: Square, to: Square, obsv: &mut impl PieceInfoObserver) {
         debug_assert!(self.get_piece(from) != Piece::default(), "No piece at {from}");
         debug_assert!(self.get_piece(to) == Piece::default(), "Piece already at {to}: {}", self.get_piece(to));
         let piece = self.get_piece(from);
@@ -321,6 +326,8 @@ impl PieceInfo {
         *self.get_piece_bb_mut(piece.piece_type()) ^= from_to;
         *self.get_piece_mut(from) = Piece::default();
         *self.get_piece_mut(to) = piece;
+
+        obsv.on_piece_moved(from, to, piece);
     }
 
     /// Whether the move is a checking move
@@ -459,6 +466,20 @@ impl PieceInfo {
     }
 
     pub fn attackers_to_exist(&self, to: Square, color: Color, occ: Bitboard) -> bool { !self.attackers_to(to, color, occ).is_empty() }
+}
+
+pub trait PieceInfoObserver {
+    fn on_init(&mut self, piece_info: &PieceInfo);
+    fn on_piece_put(&mut self, sq: Square, piece: Piece);
+    fn on_piece_removed(&mut self, sq: Square, piece: Piece);
+    fn on_piece_moved(&mut self, from: Square, to: Square, piece: Piece);
+}
+
+impl PieceInfoObserver for () {
+    fn on_init(&mut self, _piece_info: &PieceInfo) {}
+    fn on_piece_put(&mut self, _sq: Square, _piece: Piece) {}
+    fn on_piece_removed(&mut self, _sq: Square, _piece: Piece) {}
+    fn on_piece_moved(&mut self, _from: Square, _to: Square, _piece: Piece) {}
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -890,7 +911,7 @@ impl Position {
     ///
     /// This pub, because it is used for benchmarking.
     #[inline]
-    pub unsafe fn put_piece_unsafe(&mut self, sq: Square, piece: Piece) { self.piece_info.put_piece(sq, piece) }
+    pub unsafe fn put_piece_unsafe(&mut self, sq: Square, piece: Piece) { self.piece_info.put_piece(sq, piece, &mut ()) }
 
     /// # Safety
     /// This is unsafe, because it allows you to modify the internal
@@ -898,7 +919,7 @@ impl Position {
     ///
     /// This pub, because it is used for benchmarking.
     #[inline]
-    pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) { self.piece_info.remove_piece(sq); }
+    pub unsafe fn remove_piece_unsafe(&mut self, sq: Square) { self.piece_info.remove_piece(sq, &mut ()); }
 
     /// # Safety
     /// This is unsafe, because it allows you to modify the internal
@@ -906,7 +927,7 @@ impl Position {
     ///
     /// This pub, because it is used for benchmarking.
     #[inline]
-    pub unsafe fn move_piece_unsafe(&mut self, from: Square, to: Square) { self.piece_info.move_piece(from, to) }
+    pub unsafe fn move_piece_unsafe(&mut self, from: Square, to: Square) { self.piece_info.move_piece(from, to, &mut ()) }
 
     pub fn make_null_move(&mut self) {
         // Safety: During the lifetime of this pointer, no other pointer
@@ -943,16 +964,17 @@ impl Position {
     pub fn unmake_null_move(&mut self) { let _ = self.state.pop_current(); }
 
     /// Makes a move on the board.
-    pub fn make_move(&mut self, m: Move) {
+    pub fn make_move(&mut self, m: Move, obsv: &mut impl PieceInfoObserver) {
         if self.get_turn() == colors::WHITE {
-            self.make_move_for::<perspectives::White>(m);
+            self.make_move_for::<perspectives::White>(m, obsv);
         }
         else {
-            self.make_move_for::<perspectives::Black>(m);
+            self.make_move_for::<perspectives::Black>(m, obsv);
         }
     }
 
-    pub fn make_move_for<P: Perspective>(&mut self, m: Move) {
+    // todo: just use an observer for the zobrist key updates?
+    pub fn make_move_for<P: Perspective>(&mut self, m: Move, obsv: &mut impl PieceInfoObserver) {
         let us = P::COLOR;
         debug_assert_eq!(us, self.get_turn(), "Color parameter C must match the current turn.");
 
@@ -1005,7 +1027,7 @@ impl Position {
                 _ => (self.get_piece(to), to),
             };
 
-            self.piece_info.remove_piece(captured_sq);
+            self.piece_info.remove_piece(captured_sq, obsv);
 
             next_state.captured_piece = captured_piece;
             next_state.key.toggle_piece_sq(captured_sq, captured_piece);
@@ -1016,14 +1038,14 @@ impl Position {
             // castling
             piece_type::KING => {
                 // move king
-                self.piece_info.move_piece(from, to);
+                self.piece_info.move_piece(from, to, obsv);
                 next_state.key.move_piece_sq(from, to, moving_piece);
 
                 // move rook if castle
                 let rank = castling_rank(P::COLOR);
                 let rook = Piece::from((P::COLOR, piece_type::ROOK));
                 if let Some((r_from, r_to)) = Move::rook_castling(flag, rank) {
-                    self.piece_info.move_piece(r_from, r_to);
+                    self.piece_info.move_piece(r_from, r_to, obsv);
                     next_state.key.move_piece_sq(r_from, r_to, rook);
                 }
             }
@@ -1032,7 +1054,7 @@ impl Position {
                 match flag.v() {
                     move_flags::DOUBLE_PAWN_PUSH_C => {
                         // move the pawn
-                        self.piece_info.move_piece(from, to);
+                        self.piece_info.move_piece(from, to, obsv);
                         next_state.key.move_piece_sq(from, to, moving_piece);
 
                         // Safety: A double pawn push destination square is the definition of
@@ -1044,14 +1066,14 @@ impl Position {
                         // Safety: We just checked, that the flag is in a valid range.
                         let promo_t = unsafe { PromoPieceType::try_from(flag).unwrap_unchecked() };
                         let promo = Piece::from((P::COLOR, promo_t));
-                        self.piece_info.remove_piece(from);
+                        self.piece_info.remove_piece(from, obsv);
                         next_state.key.toggle_piece_sq(from, moving_piece);
-                        self.piece_info.put_piece(to, promo);
+                        self.piece_info.put_piece(to, promo, obsv);
                         next_state.key.toggle_piece_sq(to, promo);
                     }
                     _ => {
                         // move the pawn
-                        self.piece_info.move_piece(from, to);
+                        self.piece_info.move_piece(from, to, obsv);
                         next_state.key.move_piece_sq(from, to, moving_piece);
                     }
                 }
@@ -1060,7 +1082,7 @@ impl Position {
             }
             _ => {
                 // move the piece
-                self.piece_info.move_piece(from, to);
+                self.piece_info.move_piece(from, to, obsv);
                 next_state.key.move_piece_sq(from, to, moving_piece);
             }
         }
@@ -1075,16 +1097,16 @@ impl Position {
         self.state.incr();
     }
 
-    pub fn unmake_move(&mut self, m: Move) {
+    pub fn unmake_move(&mut self, m: Move, obsv: &mut impl PieceInfoObserver) {
         if self.get_turn() == colors::BLACK {
-            self.unmake_move_for::<perspectives::White>(m);
+            self.unmake_move_for::<perspectives::White>(m, obsv);
         }
         else {
-            self.unmake_move_for::<perspectives::Black>(m);
+            self.unmake_move_for::<perspectives::Black>(m, obsv);
         }
     }
 
-    pub fn unmake_move_for<P: Perspective>(&mut self, m: Move) {
+    pub fn unmake_move_for<P: Perspective>(&mut self, m: Move, obsv: &mut impl PieceInfoObserver) {
         let us = P::COLOR;
         debug_assert_eq!(!us, self.get_turn(), "Color parameter C must be the opposite of the current turn.");
 
@@ -1101,25 +1123,25 @@ impl Position {
                 let rank = castling_rank(P::COLOR);
                 let rook_from = Square::from((files::H, rank));
                 let rook_to = Square::from((files::F, rank));
-                self.piece_info.move_piece(rook_to, rook_from);
+                self.piece_info.move_piece(rook_to, rook_from, obsv);
             }
             move_flags::QUEEN_CASTLE_C => {
                 let rank = castling_rank(P::COLOR);
                 let rook_from = Square::from((files::A, rank));
                 let rook_to = Square::from((files::D, rank));
-                self.piece_info.move_piece(rook_to, rook_from);
+                self.piece_info.move_piece(rook_to, rook_from, obsv);
             }
             // promotions
             move_flags::PROMOTION_KNIGHT_C..=move_flags::CAPTURE_PROMOTION_QUEEN_C => {
                 let pawn = Piece::from((P::COLOR, piece_type::PAWN));
-                self.piece_info.remove_piece(to);
-                self.piece_info.put_piece(to, pawn);
+                self.piece_info.remove_piece(to, obsv);
+                self.piece_info.put_piece(to, pawn, obsv);
             }
             _ => {}
         }
 
         // move the piece
-        self.piece_info.move_piece(to, from);
+        self.piece_info.move_piece(to, from, obsv);
 
         // captures
         let captured_piece = popped_state.captured_piece;
@@ -1133,7 +1155,7 @@ impl Position {
                 _ => to,
             };
 
-            self.piece_info.put_piece(captured_sq, captured_piece);
+            self.piece_info.put_piece(captured_sq, captured_piece, obsv);
         }
     }
 
@@ -1319,7 +1341,7 @@ impl ReducedPgn {
             xs.insert(0, PgnMoveInfo::GameTerminationMarker(game_result));
 
             for mov in moves.iter().rev().cloned() {
-                pos.unmake_move(mov);
+                pos.unmake_move(mov, &mut ());
 
                 let stm = pos.get_turn();
                 let fmc = pos.full_move();
@@ -1381,7 +1403,7 @@ impl ReducedPgn {
                 let san = format!("{}", SAN { context: pos, mov });
                 xs.push(PgnMoveInfo::Move(san));
 
-                pos.make_move(mov);
+                pos.make_move(mov, &mut ());
             }
 
             let game_result = PgnResultValue(pos.game_result());
@@ -1391,7 +1413,7 @@ impl ReducedPgn {
         };
 
         for mov in moves.iter().rev().cloned() {
-            pos.unmake_move(mov);
+            pos.unmake_move(mov, &mut ());
         }
 
         let fen = format!("{}", FenExport(pos));
@@ -1498,7 +1520,7 @@ impl<'a, 'b> TryFrom<PgnImport<'a, 'b>> for Position {
         let mut position = pgn.start_position()?;
 
         for san in pgn.moves() {
-            position.make_move(Move::from_san(san, &position)?);
+            position.make_move(Move::from_san(san, &position)?, &mut ());
         }
 
         Ok(position)
@@ -1774,7 +1796,7 @@ mod fen {
                     let piece = Piece::try_from(char).map_err(FenParseError::InvalidPiece)?;
                     let pos_sq = Square::try_from(sq as u8).map_err(|_| FenParseError::InvalidFenSquare)?.flip_h();
 
-                    piece_info.put_piece(pos_sq, piece);
+                    piece_info.put_piece(pos_sq, piece, &mut ());
                     sq -= 1;
                 }
             }

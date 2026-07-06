@@ -39,7 +39,7 @@ impl PlayoutEvaluator {
 
             // 3. Make a random move
             let mov = moves[self.rng.random_range(0..moves.len())];
-            pos.make_move(mov);
+            pos.make_move(mov, &mut ());
 
             depth += 1;
         }

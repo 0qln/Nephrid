@@ -30,7 +30,7 @@ pub fn qsearch<P: Perspective>(
     mut alpha: Score<P>,
     beta: Score<P>,
     params: impl QSearchParams + Clone,
-    static_evaluator: &impl StaticEvaluator,
+    eval: &mut impl StaticEvaluator,
     depth: Depth,
 ) -> Score<P> {
     let in_check = pos.get_check_state() != CheckState::None;
@@ -40,7 +40,7 @@ pub fn qsearch<P: Perspective>(
     let stm = P::COLOR;
     let piece_info = pos.piece_info();
     let phase = TaperValue::from_position(piece_info);
-    let static_eval = || static_evaluator.eval(piece_info, stm, pos.get_ep_target_square(), phase);
+    let static_eval = || eval.eval(piece_info, stm, pos.get_ep_target_square(), phase);
 
     if depth == Depth::new(0) {
         return static_eval();
@@ -97,11 +97,11 @@ pub fn qsearch<P: Perspective>(
             }
         }
 
-        pos.make_move_for::<P>(m);
+        pos.make_move_for::<P>(m, eval.observe());
 
-        let score = !qsearch(pos, !beta, !alpha, params.clone(), static_evaluator, depth - 1);
+        let score = !qsearch(pos, !beta, !alpha, params.clone(), eval, depth - 1);
 
-        pos.unmake_move_for::<P>(m);
+        pos.unmake_move_for::<P>(m, eval.observe());
 
         if score >= beta {
             return score;

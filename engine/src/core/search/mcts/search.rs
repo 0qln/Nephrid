@@ -482,7 +482,7 @@ where
         // let depth = Depth::new(self.selection.iter_path_up(parent_sel_id).count() as
         // u8);
 
-        self.position.make_move_for::<P>(mov);
+        self.position.make_move_for::<P>(mov, &mut ());
         let depth = depth + 1;
         let turn = self.position.get_turn();
 
@@ -525,7 +525,7 @@ where
             Switch::Terminal(node) => self.select_terminal(tree, parent_sel_id, node, depth),
         };
 
-        self.position.unmake_move_for::<P>(mov);
+        self.position.unmake_move_for::<P>(mov, &mut ());
     }
 
     #[inline]

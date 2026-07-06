@@ -1,7 +1,11 @@
+use core::fmt;
 use std::{
     cmp::{Reverse, max, min},
-    hint::assert_unchecked,
-    ops::ControlFlow,
+    convert::Infallible,
+    hint::{assert_unchecked, unreachable_unchecked},
+    ops::{ControlFlow, Deref},
+    path::PathBuf,
+    str::FromStr,
     time::{Duration, Instant},
 };
 
@@ -12,17 +16,19 @@ use crate::{
             Color, Perspective, colors,
             perspectives::{self},
         },
+        config::Configuration,
         coordinates::EpTargetSquare,
         depth::Depth,
         eval::{
             GameResult, StaticEvaluator,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
+            nnue::{self},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
         piece::piece_type,
         ply::Ply,
-        position::{CheckState, PieceInfo, Position},
+        position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
             id::node_types::*,
             limit::UciLimit,
@@ -37,7 +43,7 @@ use crate::{
         zobrist,
     },
     math::{self, NormalizedEntropy},
-    misc::{CancellationToken, DebugMode, List},
+    misc::{CancellationToken, CheckHealth, DebugMode, List},
 };
 
 #[cfg(test)] pub mod test;
@@ -48,7 +54,8 @@ use crate::{
 /// confident position to produce a peaked (low-entropy) distribution.
 const ROOT_ENTROPY_TEMP: f32 = 0.3;
 
-struct HceEvaluator;
+#[derive(Default)]
+pub struct HceEvaluator;
 
 impl StaticEvaluator for HceEvaluator {
     fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
@@ -71,6 +78,58 @@ impl StaticEvaluator for HceEvaluator {
         let w_q = static_value::<P>(pos, ep_w, phase, turn);
         let b_q = static_value::<P::Opponent>(pos, ep_b, phase, turn);
         w_q + !b_q
+    }
+
+    fn try_from_config<C: Deref<Target = Configuration>>(_cfg: C) -> Result<Self, Infallible> { Ok(Self) }
+}
+
+pub struct NnueEvaluator<'a> {
+    nnue: &'a nnue::Network,
+    accs: nnue::AccumulatorPair,
+}
+
+impl<'a> NnueEvaluator<'a> {
+    fn new(nnue: &'a nnue::Network) -> Self {
+        if cfg!(debug_assertions)
+            && let Err(e) = nnue.check_health()
+        {
+            eprintln!("NNUE health check failed: {}", e);
+        }
+
+        let accs = nnue::AccumulatorPair::new(nnue);
+        Self { accs, nnue }
+    }
+}
+
+impl Default for NnueEvaluator<'static> {
+    fn default() -> Self { Self::new(nnue::get_nnue()) }
+}
+
+impl<'a> StaticEvaluator for NnueEvaluator<'a> {
+    fn eval<P: Perspective>(&self, _: &PieceInfo, _: Turn, _: EpTargetSquare, _: TaperValue) -> Score<P> {
+        let (stm_acc, nstm_acc) = match P::COLOR {
+            colors::WHITE => (&self.accs.white, &self.accs.black),
+            colors::BLACK => (&self.accs.black, &self.accs.white),
+            _ => unsafe { unreachable_unchecked() },
+        };
+        let nnue_eval = self.nnue.forward(stm_acc, nstm_acc);
+        Score::new(nnue_eval)
+    }
+
+    fn observe(&mut self) -> &mut impl PieceInfoObserver { &mut self.accs }
+
+    fn try_from_config<C: Deref<Target = Configuration>>(cfg: C) -> Result<Self, impl fmt::Display> {
+        let nnue_str = cfg.nnue_path();
+        let nnue_bytes = if nnue_str.is_empty() {
+            nnue::DEFAULT_NNUE
+        }
+        else {
+            let nnue_path = PathBuf::from_str(nnue_str).expect("Infallible was returned??");
+            nnue::read_net_bytes(&nnue_path).map_err(|e| format!("Bad nnue file: {e}"))?
+        };
+        nnue::set_nnue(nnue_bytes).map_err(|e| format!("Unhealthy nnue: {e}"))?;
+
+        Ok::<_, String>(Self::new(nnue::get_nnue()))
     }
 }
 
@@ -140,11 +199,12 @@ pub fn go(
     _debug: &DebugMode,
     ct: CancellationToken,
     tt: &mut TranspositionTable<TTEntry>,
+    eval: &mut impl StaticEvaluator,
     params: impl ChronoParams + QSearchParams + IdParams + Clone,
 ) -> Option<Move> {
     let depth_lim = min(Depth::MAX, limit.depth);
 
-    let mut searcher = Searcher::new(pos, limit, ct, tt);
+    let mut searcher = Searcher::new(pos, limit, ct, tt, eval);
     let mut stats = SearchStats::default();
     let mut best_move = None;
 
@@ -206,19 +266,20 @@ impl RootStats {
     fn set_score(&mut self, score: MoveScore) { self.mov.set_score(score); }
 }
 
-struct Searcher<'a> {
+struct Searcher<'a, 'b, E: StaticEvaluator> {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
     root_ply: Ply,
     limit: UciLimit,
     time_man: TimeMan,
     ct: CancellationToken,
     aborted: bool,
-    tt: &'a mut TranspositionTable<TTEntry>,
     ss: SearchStack,
+    tt: &'a mut TranspositionTable<TTEntry>,
+    eval: &'b mut E,
 }
 
-impl<'a> Searcher<'a> {
-    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, tt: &'a mut TranspositionTable<TTEntry>) -> Self {
+impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
+    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, tt: &'a mut TranspositionTable<TTEntry>, eval: &'b mut E) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_moves::<AllLegal, _, _, _>(pos, (), |_, m| {
             stats.push(RootStats::new(m, 0));
@@ -234,8 +295,9 @@ impl<'a> Searcher<'a> {
             time_man,
             ct,
             aborted: false,
-            tt,
             ss: SearchStack::new(),
+            tt,
+            eval,
         }
     }
 
@@ -295,9 +357,6 @@ impl<'a> Searcher<'a> {
         mut alpha: Score<P>,
         beta: Score<P>,
     ) -> Score<P> {
-        // todo: when implementing nnue, these should probably be generic parameters.
-        let evaluator = &HceEvaluator;
-
         #[cfg(feature = "id-fhr")]
         let threatener = &HceThreatener;
 
@@ -324,7 +383,7 @@ impl<'a> Searcher<'a> {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return qsearch(pos, alpha, beta, params, evaluator, Depth::new(100));
+            return qsearch(pos, alpha, beta, params, self.eval, Depth::new(100));
         }
 
         let phase = TaperValue::from_position(pos.piece_info());
@@ -348,6 +407,55 @@ impl<'a> Searcher<'a> {
             }
         }
 
+        // todo: these 'is it already computed? if so, return it.' are not required.
+        // they are just for convenience when compiling with different
+        // features... find a clean way to solve this or make sure the compiler
+        // can understand when they will already be computed...
+
+        #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
+        let mut static_eval = None;
+
+        #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
+        let mut lazy_static_eval = |this: &Self, pos: &Position| {
+            // is it already computed? if so, return it.
+            if let Some(eval) = static_eval {
+                return eval;
+            }
+
+            let tt_entry = this.tt.get(key);
+
+            let eval = tt_entry
+                .and_then(|e| e.static_eval)
+                .map(Score::<P>::new)
+                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
+
+            static_eval = Some(eval);
+
+            eval
+        };
+
+        #[cfg(feature = "id-fhr")]
+        let mut threat = None;
+
+        #[cfg(feature = "id-fhr")]
+        let mut lazy_threat_score = |this: &Self, pos: &Position| {
+            // is it already computed? if so, return it.
+            if let Some(score) = threat {
+                return score;
+            }
+
+            let tt_entry = this.tt.get(key);
+
+            let score = tt_entry
+                .and_then(|e| e.threat)
+                .map(Score::<P::Opponent>::new)
+                .unwrap_or_else(|| threatener.threat::<P>(pos));
+
+            threat = Some(score);
+
+            score
+        };
+
         // null move pruning
         #[cfg(feature = "id-nmp")]
         {
@@ -360,21 +468,16 @@ impl<'a> Searcher<'a> {
             // - Depth::new(phase.v().div_floor(params.nmp_phase_factor()) as u8); // todo:
             //   honestly phase could just be a u8
             let is_in_check = pos.get_check_state() != CheckState::None;
-            if
-            // prevent recursive nmp
-            kind == NodeKind::Cut
+            if kind == NodeKind::Cut
                 // don't underflow depth
                 && depth > nmp_r
                 // don't allow nmp when node is in check
                 && !is_in_check
                 // don't do nmp in endgames, where zugzwang is more likely
                 && phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
-            // todo: this is showing a regression, probably cause of the expensive static eval...
-            // reducing nps. when we have a better static eval (e.g. nnue) or use the static eval
-            // anywhere else, maybe it's worth to try this again
-            // don't bother attempting to improve beta with a tempo down when our static eval is not
-            // even better than beta
-            // && s_score >= beta - Score::<P>::new(params.nmp_margin())
+                // don't bother attempting to improve beta with a tempo down when our static eval is not
+                // even better than beta
+                && lazy_static_eval(self, pos) >= beta - Score::new(params.nmp_margin()) - Score::new((depth.v() * 15) as i32)
             {
                 pos.make_null_move();
 
@@ -415,30 +518,15 @@ impl<'a> Searcher<'a> {
             phase,
         };
 
-        #[cfg(feature = "id-fhr")]
-        let (mut threat, mut static_eval) = (None, None);
-
         // fail-high reductions
         let fhr_reduct = cfg_select! {
             feature = "id-fhr" => {{
                 let in_check = pos.get_check_state() != CheckState::None;
 
                 if kind == NodeKind::Cut && !in_check {
-                    let s_score = tt_entry
-                        .and_then(|e| e.static_eval)
-                        .map(Score::<P>::new)
-                        .unwrap_or_else(|| evaluator.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
-
-                    let t_score = tt_entry
-                        .and_then(|e| e.threat)
-                        .map(Score::<P::Opponent>::new)
-                        .unwrap_or_else(|| threatener.threat::<P>(pos));
-
-                    (threat, static_eval) = (Some(t_score.0), Some(s_score.0));
-
                     // the quiet score of this position is the static score minus threat score (the
                     // best threat that the opponent can do).
-                    let q_score = s_score + !t_score;
+                    let q_score = lazy_static_eval(self, pos) + !lazy_threat_score(self, pos);
 
                     // if the quiet score
                     if q_score >= beta { 1 } else { 0 }
@@ -461,7 +549,7 @@ impl<'a> Searcher<'a> {
             // }
 
             // make the move
-            pos.make_move_for::<P>(m);
+            pos.make_move_for::<P>(m, self.eval.observe());
 
             // depth
             let (mut depth_ext, mut depth_reduct) = (0, 0);
@@ -543,7 +631,7 @@ impl<'a> Searcher<'a> {
             };
 
             // unmake the move
-            pos.unmake_move_for::<P>(m);
+            pos.unmake_move_for::<P>(m, self.eval.observe());
 
             if self.aborted {
                 return Score::new(0);
@@ -589,10 +677,10 @@ impl<'a> Searcher<'a> {
             key,
             depth,
             score: best_score.0,
+            #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
+            static_eval: static_eval.map(|s| s.0),
             #[cfg(feature = "id-fhr")]
-            static_eval,
-            #[cfg(feature = "id-fhr")]
-            threat,
+            threat: threat.map(|t| t.0),
             bound: Bound::from_scores(orig_alpha, beta, best_score),
             mov: best_move,
         });
@@ -636,7 +724,7 @@ pub struct TTEntry {
     key: zobrist::Hash,
     depth: Depth,
     score: i32,
-    #[cfg(feature = "id-fhr")]
+    #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
     static_eval: Option<i32>,
     #[cfg(feature = "id-fhr")]
     threat: Option<i32>,

@@ -77,12 +77,12 @@ fn three_fold_repetition() {
 
     for _ in 0..2 {
         // make some moves
-        pos.make_move(mov_w0);
-        pos.make_move(mov_b0);
+        pos.make_move(mov_w0, &mut ());
+        pos.make_move(mov_b0, &mut ());
 
         // get back into the position
-        pos.make_move(mov_w1);
-        pos.make_move(mov_b1);
+        pos.make_move(mov_w1, &mut ());
+        pos.make_move(mov_b1, &mut ());
     }
 
     test(pos, Some(GameResult::Draw));

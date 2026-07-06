@@ -614,7 +614,7 @@ where
             let target = P::Target::from(&mcts_state.tree);
             decisions.push(Decision { input, target, state });
 
-            game.push_move(mov);
+            game.push_move(mov, &mut ());
             mcts_state.advance_to(mov);
             completed_moves += 1;
         }

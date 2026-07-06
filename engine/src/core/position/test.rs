@@ -36,7 +36,7 @@ fn test_fen_encoding(expected_fen: &str, fen: &str, moves: Vec<Move>) {
 
     let mut pos = Position::from_fen(fen).expect("Should not fail.");
     for mov in moves.into_iter() {
-        pos.make_move(mov);
+        pos.make_move(mov, &mut ());
     }
 
     assert_eq!(format!("{}", FenExport(&pos)), expected_fen);
@@ -187,7 +187,7 @@ fn build_twofold_repetition_position() -> Position {
         Move::new(F6, G8, QUIET),
     ];
     for mv in moves {
-        pos.make_move(mv);
+        pos.make_move(mv, &mut ());
     }
     pos
 }

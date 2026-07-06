@@ -304,4 +304,28 @@ impl const IdParams for C_IdHceParams {
 
 // id nnue
 
-// todo...
+const_params!(IdNnue);
+
+impl IConfigBuilder for C_IdNnueParams {
+    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+        //
+        builder.chrono(self).qsearch(self).id(self)
+    }
+}
+
+impl const ChronoParams for C_IdNnueParams {
+    fn entropy_target(&self) -> NormalizedEntropy { NormalizedEntropy::new_c(0.55) }
+}
+
+impl const QSearchParams for C_IdNnueParams {
+    fn futility_margin(&self) -> i32 { 166 }
+    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+}
+
+impl const IdParams for C_IdNnueParams {
+    fn nmp_reduction(&self) -> Depth { Depth::new(2) }
+    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(12) }
+    fn nmp_depth_factor(&self) -> u8 { 3 }
+    fn nmp_phase_factor(&self) -> u32 { 7 }
+    fn nmp_margin(&self) -> i32 { -100 }
+}

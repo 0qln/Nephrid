@@ -1,6 +1,9 @@
+use std::{convert::Infallible, ops::Deref};
+
 use crate::{
     core::{
         color::{Perspective, perspectives},
+        config::Configuration,
         coordinates::EpTargetSquare,
         depth::Depth,
         eval::{
@@ -59,6 +62,8 @@ impl eval::StaticEvaluator for StaticEvaluator {
         let b_q = static_value::<P::Opponent>(pos, ep_b, phase, turn);
         w_q + !b_q
     }
+
+    fn try_from_config<C: Deref<Target = Configuration>>(_: C) -> Result<Self, Infallible> { Ok(Self) }
 }
 
 #[derive(Debug, PartialEq, Default)]
@@ -112,7 +117,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 Score::NEG_INF,
                 Score::POS_INF,
                 MctsHceParamsRef::clone(&params),
-                &StaticEvaluator,
+                &mut StaticEvaluator,
                 Depth::new(30),
             )
             .into(),
@@ -121,7 +126,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 Score::NEG_INF,
                 Score::POS_INF,
                 MctsHceParamsRef::clone(&params),
-                &StaticEvaluator,
+                &mut StaticEvaluator,
                 Depth::new(30),
             )
             .into(),

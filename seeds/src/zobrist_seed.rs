@@ -43,7 +43,7 @@ fn test_seed(rounds: usize, rng: &mut SmallRng, min: usize) -> SeedTestResult {
                 let buffer = pos.collect_legals(MoveList::new());
 
                 let mov = buffer.as_slice()[rng.random_range(0..buffer.len()) as usize];
-                pos.make_move(mov);
+                pos.make_move(mov, &mut ());
             }
 
             todo!(

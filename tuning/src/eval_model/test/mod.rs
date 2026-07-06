@@ -341,7 +341,7 @@ pub fn learn_mate_in_2() {
                 .mov();
 
             let best_move = result.0.unwrap();
-            pos.make_move(best_move);
+            pos.make_move(best_move, &mut ());
             mcts_state.advance_to(best_move);
 
             log::info!(target: "test", "Best move: {best_move}");

@@ -23,12 +23,12 @@ fn same_position_same_key() {
     let key_begin = pos.get_key();
 
     // make some moves
-    pos.make_move(Move::new(G1, F3, QUIET));
-    pos.make_move(Move::new(G8, F6, QUIET));
+    pos.make_move(Move::new(G1, F3, QUIET), &mut ());
+    pos.make_move(Move::new(G8, F6, QUIET), &mut ());
 
     // get back into the position
-    pos.make_move(Move::new(F3, G1, QUIET));
-    pos.make_move(Move::new(F6, G8, QUIET));
+    pos.make_move(Move::new(F3, G1, QUIET), &mut ());
+    pos.make_move(Move::new(F6, G8, QUIET), &mut ());
 
     let key_end = pos.get_key();
 
@@ -50,10 +50,10 @@ fn move_piece_back_and_forth() {
     let key_begin = pos.get_key();
 
     // make some moves
-    pos.make_move(Move::new(G1, F3, QUIET));
+    pos.make_move(Move::new(G1, F3, QUIET), &mut ());
 
     // get back into the position
-    pos.make_move(Move::new(F3, G1, QUIET));
+    pos.make_move(Move::new(F3, G1, QUIET), &mut ());
 
     let key_end = pos.get_key();
 
