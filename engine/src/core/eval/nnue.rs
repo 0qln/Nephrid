@@ -18,7 +18,7 @@ use crate::{
         piece::{Piece, PieceType, piece_type},
         position::{PieceInfo, PieceInfoObserver},
     },
-    misc::{CheckHealth, CheckHealthResult},
+    misc::{CheckHealth, CheckHealthResult, List},
 };
 
 pub type TValue = i16;
@@ -253,18 +253,18 @@ struct AccUpdates {
     reset: bool,
 
     /// The pieces that were put on the board.
-    puts: Vec<AccPut>,
+    puts: Box<List<1024, AccPut>>,
 
     /// The pieces that were removed from the board.
-    removes: Vec<AccRemove>,
+    removes: Box<List<1024, AccRemove>>,
 }
 
 impl AccUpdates {
     fn new() -> Self {
         Self {
             reset: false,
-            puts: Vec::with_capacity(32),
-            removes: Vec::with_capacity(32),
+            puts: Default::default(),
+            removes: Default::default(),
         }
     }
 
@@ -283,13 +283,13 @@ impl AccUpdates {
             self.reset = false;
         }
 
-        for put in self.puts.drain(..) {
+        for put in self.puts.drain() {
             let (c, pt) = put.p.unpack();
             acc_white.add_feature(input_index::<White>(put.sq, pt, c), net);
             acc_black.add_feature(input_index::<Black>(put.sq, pt, c), net);
         }
 
-        for remove in self.removes.drain(..) {
+        for remove in self.removes.drain() {
             let (c, pt) = remove.p.unpack();
             acc_white.remove_feature(input_index::<White>(remove.sq, pt, c), net);
             acc_black.remove_feature(input_index::<Black>(remove.sq, pt, c), net);
