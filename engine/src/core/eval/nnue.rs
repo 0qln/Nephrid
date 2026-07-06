@@ -328,8 +328,24 @@ impl AccUpdates {
                 continue;
             }
 
-            acc_white.update_feature(input_index_for::<White>(sq, pt, c), net, cnt);
-            acc_black.update_feature(input_index_for::<Black>(sq, pt, c), net, cnt);
+            let idx_w = input_index_for::<White>(sq, pt, c);
+            let idx_b = input_index_for::<Black>(sq, pt, c);
+
+            match cnt {
+                // +1 or -1 generates much better assembly so switch here
+                1 => {
+                    acc_white.add_feature(idx_w, net);
+                    acc_black.add_feature(idx_b, net);
+                }
+                -1 => {
+                    acc_white.remove_feature(idx_w, net);
+                    acc_black.remove_feature(idx_b, net);
+                }
+                _ => {
+                    acc_white.update_feature(idx_w, net, cnt);
+                    acc_black.update_feature(idx_b, net, cnt);
+                }
+            }
         }
     }
 }
