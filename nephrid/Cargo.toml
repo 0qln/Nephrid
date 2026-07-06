@@ -12,7 +12,7 @@ mcts-pure = []
 mcts-nn = []
 mcts-hce = []
 id-hce = []
-id-nnue = []
+id-nnue = ["engine/id-nmp"]
 
 tunable = ["engine/tunable"]
 

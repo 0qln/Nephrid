@@ -28,7 +28,6 @@ tunable = []
 # todo: that is probably due to bad (hce) static evaluation and bad (hce) threat detections. try using this again when nnue is implemented
 id-fhr = []
 
-# null move pruning shows to be kinda useluss :), disabled by default
 id-nmp = []
 
 [lints]

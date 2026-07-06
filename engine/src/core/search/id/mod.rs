@@ -407,6 +407,55 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             }
         }
 
+        // todo: these 'is it already computed? if so, return it.' are not required.
+        // they are just for convenience when compiling with different
+        // features... find a clean way to solve this or make sure the compiler
+        // can understand when they will already be computed...
+
+        #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
+        let mut static_eval = None;
+
+        #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
+        let mut lazy_static_eval = |this: &Self, pos: &Position| {
+            // is it already computed? if so, return it.
+            if let Some(eval) = static_eval {
+                return eval;
+            }
+
+            let tt_entry = this.tt.get(key);
+
+            let eval = tt_entry
+                .and_then(|e| e.static_eval)
+                .map(Score::<P>::new)
+                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
+
+            static_eval = Some(eval);
+
+            eval
+        };
+
+        #[cfg(feature = "id-fhr")]
+        let mut threat = None;
+
+        #[cfg(feature = "id-fhr")]
+        let mut lazy_threat_score = |this: &Self, pos: &Position| {
+            // is it already computed? if so, return it.
+            if let Some(score) = threat {
+                return score;
+            }
+
+            let tt_entry = this.tt.get(key);
+
+            let score = tt_entry
+                .and_then(|e| e.threat)
+                .map(Score::<P::Opponent>::new)
+                .unwrap_or_else(|| threatener.threat::<P>(pos));
+
+            threat = Some(score);
+
+            score
+        };
+
         // null move pruning
         #[cfg(feature = "id-nmp")]
         {
@@ -419,21 +468,16 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             // - Depth::new(phase.v().div_floor(params.nmp_phase_factor()) as u8); // todo:
             //   honestly phase could just be a u8
             let is_in_check = pos.get_check_state() != CheckState::None;
-            if
-            // prevent recursive nmp
-            kind == NodeKind::Cut
+            if kind == NodeKind::Cut
                 // don't underflow depth
                 && depth > nmp_r
                 // don't allow nmp when node is in check
                 && !is_in_check
                 // don't do nmp in endgames, where zugzwang is more likely
                 && phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
-            // todo: this is showing a regression, probably cause of the expensive static eval...
-            // reducing nps. when we have a better static eval (e.g. nnue) or use the static eval
-            // anywhere else, maybe it's worth to try this again
-            // don't bother attempting to improve beta with a tempo down when our static eval is not
-            // even better than beta
-            // && s_score >= beta - Score::<P>::new(params.nmp_margin())
+                // don't bother attempting to improve beta with a tempo down when our static eval is not
+                // even better than beta
+                && lazy_static_eval(self, pos) >= beta - Score::new(params.nmp_margin()) - Score::new((depth.v() * 15) as i32)
             {
                 pos.make_null_move();
 
@@ -474,30 +518,15 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             phase,
         };
 
-        #[cfg(feature = "id-fhr")]
-        let (mut threat, mut static_eval) = (None, None);
-
         // fail-high reductions
         let fhr_reduct = cfg_select! {
             feature = "id-fhr" => {{
                 let in_check = pos.get_check_state() != CheckState::None;
 
                 if kind == NodeKind::Cut && !in_check {
-                    let s_score = tt_entry
-                        .and_then(|e| e.static_eval)
-                        .map(Score::<P>::new)
-                        .unwrap_or_else(|| self.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
-
-                    let t_score = tt_entry
-                        .and_then(|e| e.threat)
-                        .map(Score::<P::Opponent>::new)
-                        .unwrap_or_else(|| threatener.threat::<P>(pos));
-
-                    (threat, static_eval) = (Some(t_score.0), Some(s_score.0));
-
                     // the quiet score of this position is the static score minus threat score (the
                     // best threat that the opponent can do).
-                    let q_score = s_score + !t_score;
+                    let q_score = lazy_static_eval(self, pos) + !lazy_threat_score(self, pos);
 
                     // if the quiet score
                     if q_score >= beta { 1 } else { 0 }
@@ -648,10 +677,10 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             key,
             depth,
             score: best_score.0,
+            #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
+            static_eval: static_eval.map(|s| s.0),
             #[cfg(feature = "id-fhr")]
-            static_eval,
-            #[cfg(feature = "id-fhr")]
-            threat,
+            threat: threat.map(|t| t.0),
             bound: Bound::from_scores(orig_alpha, beta, best_score),
             mov: best_move,
         });
@@ -695,7 +724,7 @@ pub struct TTEntry {
     key: zobrist::Hash,
     depth: Depth,
     score: i32,
-    #[cfg(feature = "id-fhr")]
+    #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
     static_eval: Option<i32>,
     #[cfg(feature = "id-fhr")]
     threat: Option<i32>,
