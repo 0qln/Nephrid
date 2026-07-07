@@ -316,6 +316,9 @@ pub struct Configuration {
     /// Target entropy for time management.
     timeman_entropy_target: ConfigOption<Spin<UciPercent>>,
 
+    /// Target move streak for time management.
+    timeman_movestreak_target: ConfigOption<Spin<UciInteger>>,
+
     /// [Iterative Deepening] Null Move Pruning reduction (R).
     id_nmp_reduction: ConfigOption<Spin<UciInteger>>,
 
@@ -368,6 +371,7 @@ impl Configuration {
                 mcts_killer_exploitation: ConfigOption::new("mcts-killer-exploitation", Spin::<UciPercent>::new(_ratio(0.27), _ratio(0.), _ratio(10.))),
                 mcts_tt_best_move: ConfigOption::new("mcts-tt-best-move", Spin::<UciPercent>::new(_ratio(1.50), _ratio(0.), _ratio(10.))),
                 timeman_entropy_target: ConfigOption::new("timeman-entropy-target", Spin::<UciPercent>::new(_ratio(0.60), _ratio(0.), _ratio(1.))),
+                timeman_movestreak_target: ConfigOption::new("timeman-movestreak-target", Spin::new(5, 0, 10)),
                 id_nmp_reduction: ConfigOption::new("id-nmp-reduction", Spin::new(2, 0, 10)),
                 id_nmp_phase_threshold: ConfigOption::new("id-nmp-phase-threshold", Spin::new(8, 0, 24)),
                 id_nmp_depth_factor: ConfigOption::new("id-nmp-depth-factor", Spin::new(3, 1, 20)),
@@ -376,6 +380,8 @@ impl Configuration {
             },
         }
     }
+
+    pub fn timeman_movestreak_target(&self) -> u32 { todo!() }
 }
 
 #[derive(Debug, Clone)]
@@ -423,7 +429,9 @@ impl ConfigBuilder {
     #[rustfmt::skip]
     pub fn chrono(mut self, params: &impl ChronoParams) -> Self {
         let cfg = &mut self.config;
+        #[allow(deprecated)]
         cfg.timeman_entropy_target.seed(Ratio::new::<ratio>(params.entropy_target().v()));
+        cfg.timeman_movestreak_target.seed(params.movestreak_target() as i32);
         self
     }
 

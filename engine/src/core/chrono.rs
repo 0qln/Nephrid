@@ -11,7 +11,12 @@ use crate::{
 pub const trait ChronoParams {
     /// Fraction of the maximum possible root entropy below which the engine is
     /// considered confident enough to stop searching early.
+    #[deprecated(
+        note = "Elo improves but sometimes the engine blunders when a move on depth 1 looks like the only promising one. Not using this for now."
+    )]
     fn entropy_target(&self) -> NormalizedEntropy;
+
+    fn movestreak_target(&self) -> u32;
 }
 
 #[derive(Debug)]
@@ -28,11 +33,18 @@ pub struct TimeMan {
     /// Soft bound: stop once the current root entropy drops to/below this.
     entropy_target: NormalizedEntropy,
 
+    /// Soft bound: stop once the one move has been the best for x times in a
+    /// row.
+    movestreak_target: u32,
+
     /// Time allocated per move
     time_per_move: Duration,
 
     /// Curr Stats
     curr_entropy: NormalizedEntropy,
+
+    /// Current move streak
+    curr_movestreak: u32,
 }
 
 impl TimeMan {
@@ -50,10 +62,12 @@ impl TimeMan {
             time_target: time_limit,
 
             entropy_target: NormalizedEntropy::zero(),
+            movestreak_target: u32::MAX,
 
             time_per_move,
 
             curr_entropy: NormalizedEntropy::one(),
+            curr_movestreak: 0,
         }
     }
 
@@ -86,18 +100,17 @@ impl TimeMan {
     pub fn reached_target(&self) -> bool {
         let curr_time = Instant::now();
 
-        curr_time >= self.time_target || self.curr_entropy.v() <= self.entropy_target.v()
+        curr_time >= self.time_target || self.curr_entropy.v() <= self.entropy_target.v() || self.curr_movestreak >= self.movestreak_target
     }
 
     pub fn set_curr_entropy(&mut self, entropy: NormalizedEntropy) { self.curr_entropy = entropy; }
+    pub fn set_curr_movestreak(&mut self, movestreak: u32) { self.curr_movestreak = movestreak; }
 
     pub fn hint_entropy_target(&mut self, entropy: NormalizedEntropy) { self.entropy_target = entropy; }
-
+    pub fn hint_movestreak_target(&mut self, movestreak: u32) { self.movestreak_target = movestreak; }
     pub fn hint_time_target(&mut self, time: Instant) { self.time_target = time; }
 
     pub fn time_start(&self) -> Instant { self.time_start }
-
     pub fn time_limit(&self) -> Instant { self.time_limit }
-
     pub fn search_time(&self) -> Duration { Instant::now() - self.time_start }
 }
