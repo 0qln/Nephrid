@@ -64,8 +64,6 @@ pub fn set_nnue(bytes: NetworkBytes) -> Result<(), CheckNnueHealthError> {
         NNUE = net;
     }
 
-    println!("NNUE network updated successfully.");
-
     Ok(())
 }
 
