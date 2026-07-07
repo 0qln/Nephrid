@@ -37,3 +37,6 @@ ccbench/in/builds
 checkpoints/**/raw.bin
 checkpoints/**/optimiser_state
 **/log.txt
+
+# nix
+result
