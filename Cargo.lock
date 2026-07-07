@@ -2302,7 +2302,7 @@ dependencies = [
 
 [[package]]
 name = "engine"
-version = "26.7.3+7b9d086"
+version = "26.7.7+73e79db"
 dependencies = [
  "approx",
  "burn",
@@ -4072,7 +4072,7 @@ dependencies = [
 
 [[package]]
 name = "nephrid"
-version = "26.7.3+7b9d086"
+version = "26.7.7+73e79db"
 dependencies = [
  "assert_cmd",
  "burn",
