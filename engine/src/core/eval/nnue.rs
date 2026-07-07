@@ -1,3 +1,4 @@
+use crate::core::{depth::Depth, id::SearchStack};
 use std::{
     fs::File,
     hint::unreachable_unchecked,
@@ -167,6 +168,7 @@ impl CheckHealth for Network {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Accumulator {
     values: [TValue; HIDDEN_SIZE],
 
@@ -269,6 +271,7 @@ impl FeatureUpdates {
     }
 }
 
+#[derive(Clone, Default)]
 struct AccUpdates {
     /// Before you apply anything, reset everything.
     reset: bool,
@@ -357,16 +360,19 @@ struct IndexInfo {
     c: Color,
 }
 
+#[derive(Clone, Copy)]
 pub struct AccumulatorPair {
-    updates: AccUpdates,
     white: Accumulator,
     black: Accumulator,
+}
+
+impl Default for AccumulatorPair {
+    fn default() -> Self { Self::new(get_nnue()) }
 }
 
 impl AccumulatorPair {
     pub fn new(net: &Network) -> Self {
         Self {
-            updates: AccUpdates::new(),
             white: Accumulator::init(net),
             black: Accumulator::init(net),
         }
@@ -407,6 +413,17 @@ impl PieceInfoObserver for AccumulatorPair {
         self.on_piece_removed(from, p);
         self.on_piece_put(to, p);
     }
+}
+
+#[derive(Default)]
+pub struct AccumulatorStack {
+    updates: AccUpdates,
+    accs: SearchStack<AccumulatorPair>,
+    curr: Depth,
+}
+
+impl AccumulatorStack {
+    pub fn current_mut(&mut self) -> &mut AccumulatorPair { self.accs.get_mut(self.curr) }
 }
 
 #[inline(always)]

@@ -97,11 +97,13 @@ pub fn qsearch<P: Perspective>(
             }
         }
 
-        pos.make_move_for::<P>(m, eval.observe());
+        eval.forward();
+        pos.make_move_for::<P>(m, eval.observe_forward());
 
         let score = !qsearch(pos, !beta, !alpha, params.clone(), eval, depth - 1);
 
-        pos.unmake_move_for::<P>(m, eval.observe());
+        pos.unmake_move_for::<P>(m, eval.observe_backward());
+        eval.backward();
 
         if score >= beta {
             return score;

@@ -22,7 +22,7 @@ use crate::{
         eval::{
             GameResult, StaticEvaluator,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
-            nnue::{self},
+            nnue::{self, AccumulatorStack},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
@@ -43,7 +43,7 @@ use crate::{
         zobrist,
     },
     math::{self, NormalizedEntropy},
-    misc::{CancellationToken, CheckHealth, DebugMode, List},
+    misc::{CancellationToken, DebugMode, List},
 };
 
 #[cfg(test)] pub mod test;
@@ -83,36 +83,46 @@ impl StaticEvaluator for HceEvaluator {
     fn try_from_config<C: Deref<Target = Configuration>>(_cfg: C) -> Result<Self, Infallible> { Ok(Self) }
 }
 
-pub struct NnueEvaluator<'a> {
-    nnue: &'a nnue::Network,
-    accs: nnue::AccumulatorPair,
+pub struct NnueEvaluator {
+    accs: AccumulatorStack,
 }
 
-impl<'a> NnueEvaluator<'a> {
-    fn new(nnue: &'a nnue::Network) -> Self {
-        if cfg!(debug_assertions)
-            && let Err(e) = nnue.check_health()
-        {
-            eprintln!("NNUE health check failed: {}", e);
-        }
+impl NnueEvaluator {
+    fn new() -> Self {
+        // if cfg!(debug_assertions)
+        //     && let Err(e) = nnue.check_health()
+        // {
+        //     eprintln!("NNUE health check failed: {}", e);
+        // }
 
-        let accs = nnue::AccumulatorPair::new(nnue);
-        Self { accs, nnue }
+        Self {
+            accs: AccumulatorStack::default(),
+            curr: Depth::ROOT,
+        }
     }
 }
 
-impl Default for NnueEvaluator<'static> {
-    fn default() -> Self { Self::new(nnue::get_nnue()) }
+impl Default for NnueEvaluator {
+    fn default() -> Self { Self::new() }
 }
 
-impl<'a> StaticEvaluator for NnueEvaluator<'a> {
+impl StaticEvaluator for NnueEvaluator {
     fn eval<P: Perspective>(&mut self, _: &PieceInfo, _: Turn, _: EpTargetSquare, _: TaperValue) -> Score<P> {
-        let (stm_acc, nstm_acc) = self.accs.get_mut_for::<P>(self.nnue);
+        let accs = self.accs.current_mut();
+        let (stm_acc, nstm_acc) = accs.accs.get_mut_for::<P>(self.nnue);
         let nnue_eval = self.nnue.forward(stm_acc, nstm_acc);
         Score::new(nnue_eval)
     }
 
-    fn observe(&mut self) -> &mut impl PieceInfoObserver { &mut self.accs }
+    fn forward(&mut self) {
+        let old = self.curr;
+        self.curr = old + 1;
+        *self.accs.entry_mut(self.curr) = self.accs.entry_mut(old).clone();
+    }
+
+    fn backward(&mut self) { self.curr -= 1; }
+
+    fn observe_foward(&mut self) -> &mut impl PieceInfoObserver { self.accs.current_mut() }
 
     fn try_from_config<C: Deref<Target = Configuration>>(cfg: C) -> Result<Self, impl fmt::Display> {
         let nnue_str = cfg.nnue_path();
@@ -125,7 +135,7 @@ impl<'a> StaticEvaluator for NnueEvaluator<'a> {
         };
         nnue::set_nnue(nnue_bytes).map_err(|e| format!("Unhealthy nnue: {e}"))?;
 
-        Ok::<_, String>(Self::new(nnue::get_nnue()))
+        Ok::<_, String>(Self::new())
     }
 }
 
@@ -269,7 +279,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator> {
     time_man: TimeMan,
     ct: CancellationToken,
     aborted: bool,
-    ss: SearchStack,
+    ss: SearchStack<SearchEntry>,
     tt: &'a mut TranspositionTable<TTEntry>,
     eval: &'b mut E,
 }
@@ -387,7 +397,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
         let orig_alpha = alpha;
-        let killers = self.ss.entry(rel_ply).killers.clone();
+        let killers = self.ss.get(rel_ply).killers.clone();
 
         // tt-cutoff
         {
@@ -545,7 +555,8 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             // }
 
             // make the move
-            pos.make_move_for::<P>(m, self.eval.observe());
+            self.eval.forward();
+            pos.make_move_for::<P>(m, self.eval.observe_foward());
 
             // depth
             let (mut depth_ext, mut depth_reduct) = (0, 0);
@@ -627,12 +638,15 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             };
 
             // unmake the move
-            pos.unmake_move_for::<P>(m, self.eval.observe());
+            pos.unmake_move_for::<P>(m, self.eval.observe_backward());
+            self.eval.backward();
 
+            // check for cancellation
             if self.aborted {
                 return Score::new(0);
             }
 
+            // update root moves
             if is_root_node {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
@@ -655,7 +669,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
                     if !m.get_flag().is_capture() && m != tt_move {
-                        self.ss.entry_mut(rel_ply).killers._push(m);
+                        self.ss.get_mut(rel_ply).killers._push(m);
                     }
 
                     // fail high
@@ -754,25 +768,29 @@ impl Bound {
 }
 
 #[derive(Default)]
-struct SearchStack {
-    entries: Vec<SearchEntry>,
+pub struct SearchStack<T> {
+    entries: Vec<T>,
 }
 
-impl SearchStack {
+impl<T: Clone + Default> SearchStack<T> {
     pub fn new() -> Self {
         Self {
-            entries: vec![SearchEntry::default(); Depth::MAX.v() as usize + 1],
+            entries: vec![T::default(); Depth::MAX.v() as usize + 1],
         }
     }
+}
 
-    pub fn entry_mut(&mut self, ply: Depth) -> &mut SearchEntry {
+impl<T> SearchStack<T> {
+    pub fn get_mut(&mut self, ply: Depth) -> &mut T {
         let idx = ply.v() as usize;
+
         // Safety: entries is atleast Depth::MAX + 1
         unsafe { self.entries.get_unchecked_mut(idx) }
     }
 
-    pub fn entry(&self, ply: Depth) -> &SearchEntry {
+    pub fn get(&self, ply: Depth) -> &T {
         let idx = ply.v() as usize;
+
         // Safety: entries is atleast Depth::MAX + 1
         unsafe { self.entries.get_unchecked(idx) }
     }
