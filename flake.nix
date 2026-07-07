@@ -53,7 +53,7 @@
           packageDerivation = features:
             rustPlatform.buildRustPackage {
               pname = packageName features;
-              version = "nn";
+              version = "26.7.7+73e79db";
               src = ./.;
               inherit cargoLock;
               buildNoDefaultFeatures = true;
