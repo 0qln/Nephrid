@@ -33,6 +33,43 @@
             cargo = rustToolchain;
             rustc = rustToolchain;
           };
+
+          cargoLock = {
+            allowBuiltinFetchGit = true;
+            lockFile = ./Cargo.lock;
+          };
+
+          variants = [
+            ["mcts-nn"]
+            ["mcts-hce"]
+            ["id-hce"]
+            ["id-nnue"]
+          ];
+
+          variantStr = features: strings.intersperse "-" features;
+
+          packageName = features: "nephrid-${strings.concatStrings (variantStr features)}";
+
+          packageDerivation = features:
+            rustPlatform.buildRustPackage {
+              pname = packageName features;
+              version = "nn";
+              src = ./.;
+              inherit cargoLock;
+              buildNoDefaultFeatures = true;
+              buildFeatures = features;
+              nativeBuildInputs = [pkgs.pkg-config];
+              buildInputs =
+                [pkgs.zlib]
+                ++ (with pkgs-cuda; [
+                  cudaPackages_12_8.cuda_cudart
+                  cudaPackages_12_8.cudnn
+                  cudaPackages_12_8.cudatoolkit
+                ]);
+              meta.mainProgram = "nephrid";
+              cargoBuildFlags = ["--bin" "nephrid"];
+              cargoTestFlags = ["--bin" "nephrid"];
+            };
         in {
           _module.args.pkgs-cuda = import inputs.nixpkgs-cuda {
             inherit system;
@@ -53,42 +90,10 @@
             overlays = [(import inputs.rust-overlay)];
           };
 
-          packages = {
-            nephrid-nn = rustPlatform.buildRustPackage {
-              pname = "nephrid";
-              version = "nn";
-              src = ./.;
-              cargoLock.lockFile = ./Cargo.lock;
-              buildNoDefaultFeatures = true;
-              buildFeatures = ["mcts-nn"];
-              nativeBuildInputs = [pkgs.pkg-config];
-              buildInputs =
-                [pkgs.zlib]
-                ++ (with pkgs-cuda; [
-                  cudaPackages_12_8.cuda_cudart
-                  cudaPackages_12_8.cudnn
-                  cudaPackages_12_8.cudatoolkit
-                ]);
-              meta.mainProgram = "nephrid";
-              cargoBuildFlags = ["--bin" "nephrid"];
-              cargoTestFlags = ["--bin" "nephrid"];
-            };
-
-            nephrid-hce = rustPlatform.buildRustPackage {
-              pname = "nephrid";
-              version = "hce";
-              src = ./.;
-              cargoLock.lockFile = ./Cargo.lock;
-              buildNoDefaultFeatures = true;
-              buildFeatures = ["mcts-hce"];
-              nativeBuildInputs = [pkgs.pkg-config];
-              meta.mainProgram = "nephrid";
-              cargoBuildFlags = ["--bin" "nephrid"];
-              cargoTestFlags = ["--bin" "nephrid"];
-            };
-
-            default = config.packages.nephrid-hce;
-          };
+          packages = mkMerge [
+            (builtins.listToAttrs (map (features: nameValuePair (packageName features) (packageDerivation features)) variants))
+            {default = config.packages.nephrid-id-nnue;}
+          ];
 
           devShells.default = pkgs.mkShell {
             packages = let
