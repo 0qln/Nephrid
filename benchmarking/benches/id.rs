@@ -7,7 +7,11 @@ use engine::{
         move_iter::sliding_piece::magics,
         params::C_IdHceParams,
         position::Position,
-        search::{id::{self, HceEvaluator, TTEntry}, limit::UciLimit, tt::TranspositionTable},
+        search::{
+            data::TranspositionTable,
+            id::{self, HceEvaluator, TTEntry},
+            limit::UciLimit,
+        },
         zobrist,
     },
     misc::{CancellationToken, DebugMode},

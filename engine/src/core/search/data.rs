@@ -1,16 +1,37 @@
-use uom::si::{u64::Information, information::byte};
+use std::marker::PhantomData;
 
-use crate::core::zobrist;
+use uom::si::{information::byte, u64::Information};
 
-pub struct TranspositionTable<Data> {
-    entries: Box<[Option<Data>]>,
+use crate::core::{r#move::Move, search::score::AnyScore, zobrist};
+
+pub const trait TTKey {
+    fn key(&self) -> zobrist::Hash;
 }
 
-impl<Data: ZKey + Clone> TranspositionTable<Data> {
+pub const trait TTMove {
+    fn mov(&self) -> Move;
+}
+
+pub const trait TTStaticEval {
+    fn static_eval(&self) -> AnyScore;
+}
+
+pub trait ReplacementStrategy {
+    type Data;
+    fn should_replace(old: &Self::Data, new: &Self::Data) -> bool;
+}
+
+pub struct TranspositionTable<Data, Strat> {
+    entries: Box<[Option<Data>]>,
+    strat: PhantomData<Strat>,
+}
+
+impl<Data: Clone, S> TranspositionTable<Data, S> {
     pub fn new(size: usize) -> Self {
         const fn const_none<T>() -> Option<T> { None }
         Self {
             entries: (vec![const { const_none() }; size]).into_boxed_slice(),
+            strat: PhantomData,
         }
     }
 
@@ -20,7 +41,9 @@ impl<Data: ZKey + Clone> TranspositionTable<Data> {
         let num_entries = (bytes / entry_size).max(1);
         Self::new(num_entries)
     }
+}
 
+impl<Data: TTKey, S> TranspositionTable<Data, S> {
     /// Number of entries
     #[inline]
     pub fn size(&self) -> usize { self.entries.len() }
@@ -65,6 +88,18 @@ impl<Data: ZKey + Clone> TranspositionTable<Data> {
     pub fn entries_mut(&mut self) -> impl Iterator<Item = &mut Data> { self.entries.iter_mut().flatten() }
 }
 
-pub trait ZKey {
-    fn key(&self) -> zobrist::Hash;
+impl<Data: TTKey, Strat: ReplacementStrategy<Data = Data>> TranspositionTable<Data, Strat> {
+    pub fn try_insert(&mut self, data: Data) {
+        let key = data.key();
+        let idx = key.index(self.size());
+
+        if let Some(old_data) = &self.entries[idx] {
+            if Strat::should_replace(old_data, &data) {
+                self.entries[idx] = Some(data);
+            }
+        }
+        else {
+            self.entries[idx] = Some(data);
+        }
+    }
 }

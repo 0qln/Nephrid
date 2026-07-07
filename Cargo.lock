@@ -2316,6 +2316,7 @@ dependencies = [
  "rand_distr 0.5.1",
  "ringbuf",
  "rustc-hash 2.1.2",
+ "saturating_cast",
  "thiserror 2.0.18",
  "uom",
  "wide",
@@ -5410,6 +5411,12 @@ checksum = "bc984f4f9ceb736a7bb755c3e3bd17dc56370af2600c9780dcc48c66453da34d"
 dependencies = [
  "regex",
 ]
+
+[[package]]
+name = "saturating_cast"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fc4972f129a0ea378b69fa7c186d63255606e362ad00795f00b869dea5265eb"
 
 [[package]]
 name = "scheduled-thread-pool"

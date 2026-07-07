@@ -6,7 +6,7 @@ use crate::{
         move_iter::{bishop::Bishop, king, knight, pawn, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks},
         piece::{PieceType, piece_type},
         position::PieceInfo,
-        search::score::{Penalty, Score},
+        search::score::{AnyScore, Penalty, Score, scores},
         turn::Turn,
     },
     impl_variants,
@@ -640,6 +640,6 @@ pub fn hygge_king<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P
         Score::new(phase.weighted_eval(0, score))
     }
     else {
-        Score::new(0)
+        Score::new(scores::DRAW)
     }
 }

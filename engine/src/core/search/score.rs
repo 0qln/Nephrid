@@ -1,13 +1,85 @@
-use core::fmt;
-use std::{marker::PhantomData, ops};
+use std::{fmt, marker::PhantomData, ops};
 
-use crate::core::color::Perspective;
+use saturating_cast::SaturatingCast;
+
+use crate::{
+    core::color::{Color, Perspective},
+    impl_variants,
+};
+
+type RawScore = i32;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct AnyScore {
+    v: RawScore,
+}
+
+impl fmt::Display for AnyScore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { self.v.fmt(f) }
+}
+
+impl_variants! {
+    RawScore as AnyScore in scores {
+        DRAW = 0,
+        POS_INF = 30_000,
+        NEG_INF = -30_000,
+        INVALID = 0xdead_beef,
+    }
+}
+
+impl AnyScore {
+    pub const fn new(val: i32) -> Self { Self { v: val } }
+
+    /// Get this score in the context of `relative_to`.
+    pub const fn contextualize<P: Perspective>(self, relative_to: Color) -> Score<P> {
+        if P::COLOR == relative_to {
+            unsafe { self.interpret_as::<P>() }
+        }
+        else {
+            unsafe { (-self).interpret_as::<P>() }
+        }
+    }
+
+    /// # Safety
+    ///
+    /// The caller has to make sure that `self` is actually of perspective `P`.
+    pub const unsafe fn interpret_as<P: Perspective>(self) -> Score<P> { Score::<P>::new(self) }
+}
+
+impl const ops::Neg for AnyScore {
+    type Output = Self;
+    #[inline(always)]
+    fn neg(self) -> Self::Output { Self::new(-self.v) }
+}
+
+impl const ops::Add for AnyScore {
+    type Output = Self;
+    #[inline(always)]
+    fn add(self, rhs: Self) -> Self::Output { Self::new(self.v + rhs.v) }
+}
+
+impl const ops::Sub for AnyScore {
+    type Output = Self;
+    #[inline(always)]
+    fn sub(self, rhs: Self) -> Self::Output { Self::new(self.v - rhs.v) }
+}
+
+impl const ops::Div<AnyScore> for AnyScore {
+    type Output = Self;
+    #[inline(always)]
+    fn div(self, rhs: AnyScore) -> Self::Output { Self::new(self.v / rhs.v) }
+}
+
+impl const From<AnyScore> for RawScore {
+    #[inline(always)]
+    fn from(val: AnyScore) -> Self { val.v }
+}
 
 /// A penalty for `P`
-pub struct Penalty<P: Perspective>(pub i32, PhantomData<P>);
+pub struct Penalty<P: Perspective>(pub AnyScore, PhantomData<P>);
 
 impl<P: Perspective> fmt::Display for Penalty<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "Penalty<{}>({})", P::COLOR, self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Penalty<{}>({})", P::COLOR, self.0) }
 }
 
 impl<P: Perspective> From<Penalty<P>> for Score<P> {
@@ -17,38 +89,35 @@ impl<P: Perspective> From<Penalty<P>> for Score<P> {
 
 /// A bonus for `P`
 #[derive(Debug, Copy, Clone)]
-pub struct Score<P: Perspective>(pub i32, PhantomData<P>);
+pub struct Score<P: Perspective>(pub AnyScore, PhantomData<P>);
 
 impl<P: Perspective> fmt::Display for Score<P> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "Score<{}>({})", P::COLOR, self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Score<{}>({})", P::COLOR, self.0) }
 }
 
-impl<P: Perspective, Rhs: Into<Score<P>>> ops::Add<Rhs> for Score<P> {
+impl<P: Perspective, Rhs: const Into<Score<P>>> const ops::Add<Rhs> for Score<P> {
     type Output = Self;
-
     #[inline(always)]
-    fn add(self, rhs: Rhs) -> Self::Output { Self(self.0 + rhs.into().0, PhantomData) }
+    fn add(self, rhs: Rhs) -> Self::Output { Self::new(self.0 + rhs.into().0) }
 }
 
-impl<P: Perspective, Rhs: Into<Score<P>>> ops::Sub<Rhs> for Score<P> {
+impl<P: Perspective, Rhs: const Into<Score<P>>> const ops::Sub<Rhs> for Score<P> {
     type Output = Self;
-
     #[inline(always)]
-    fn sub(self, rhs: Rhs) -> Self::Output { Self(self.0 - rhs.into().0, PhantomData) }
+    fn sub(self, rhs: Rhs) -> Self::Output { Self::new(self.0 - rhs.into().0) }
 }
 
-impl<P: Perspective> ops::Div<i32> for Score<P> {
+impl<P: Perspective> const ops::Div<AnyScore> for Score<P> {
     type Output = Self;
-
     #[inline(always)]
-    fn div(self, rhs: i32) -> Self::Output { Self(self.0 / rhs, PhantomData) }
+    fn div(self, rhs: AnyScore) -> Self::Output { Self::new(self.0 / rhs) }
 }
 
 impl<P: Perspective> Eq for Score<P> {}
 
 impl<P: Perspective> Ord for Score<P> {
     #[inline(always)]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.0.cmp(&other.0).then_with(|| self.1.cmp(&other.1)) }
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.0.cmp(&other.0) }
 }
 
 impl<P: Perspective> PartialOrd for Score<P> {
@@ -62,16 +131,13 @@ impl<P: Perspective> PartialEq for Score<P> {
 }
 
 impl<P: Perspective> Score<P> {
-    pub const POS_INF: Self = Self::new(30_000);
-    pub const NEG_INF: Self = Self::new(-30_000);
-
     #[inline(always)]
-    pub const fn new(val: i32) -> Self { Self(val, PhantomData) }
+    pub const fn new(val: AnyScore) -> Self { Self(val, PhantomData) }
 }
 
 impl<P: Perspective> Penalty<P> {
     #[inline(always)]
-    pub const fn new(val: i32) -> Self { Self(val, PhantomData) }
+    pub const fn new(val: AnyScore) -> Self { Self(val, PhantomData) }
 }
 
 // not using the `-` operator because this is not really just arithmetic
@@ -84,15 +150,12 @@ impl<P: Perspective> ops::Not for Score<P> {
     fn not(self) -> Self::Output { Score::new(-self.0) }
 }
 
+// todo:
 impl<P: Perspective> From<Score<P>> for Cp {
     #[inline(always)]
     fn from(value: Score<P>) -> Self {
-        if P::IS_WHITE {
-            Cp { v: value.0 as i16 }
-        }
-        else {
-            Cp { v: (-value.0) as i16 }
-        }
+        let v: TCp = value.0.v.saturating_cast();
+        if P::IS_WHITE { Cp { v } } else { Cp { v: -v } }
     }
 }
 

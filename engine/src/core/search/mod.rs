@@ -2,7 +2,7 @@ use crate::core::{
     eval::StaticEvaluator,
     params::{IParams, IdHceParams, IdHceParamsRef},
     position::PieceInfoObserver,
-    search::{mcts::search::MctsParams, score::Cp, tt::TranspositionTable},
+    search::{data::TranspositionTable, mcts::search::MctsParams, score::Cp},
 };
 use thiserror::Error;
 
@@ -43,6 +43,7 @@ use crate::{
     misc::DebugMode,
 };
 
+pub mod data;
 pub mod id;
 pub mod limit;
 pub mod mcts;
@@ -52,7 +53,6 @@ pub mod perft;
 pub mod quiesce;
 pub mod score;
 pub mod strat;
-pub mod tt;
 
 pub struct SearchThread {
     pub tx: Sender<Command>,

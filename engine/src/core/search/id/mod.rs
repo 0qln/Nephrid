@@ -9,6 +9,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(any(feature = "id-fhr", feature = "id-nmp"))] use crate::core::search::score::AnyScore;
 use crate::{
     core::{
         chrono::{ChronoParams, TimeMan},
@@ -30,14 +31,14 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
+            data::{self, TranspositionTable},
             id::node_types::*,
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
-            quiesce::{QSearchParams, qsearch},
+            quiesce::{QSearchParams, QSearcher},
             score::{Cp, Score},
             strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth},
-            tt::{self, TranspositionTable},
         },
         turn::Turn,
         zobrist,
@@ -150,7 +151,7 @@ impl HceThreatener {
 
             if mov.get_flag().is_capture() {
                 let see = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR);
-                max_threat = max(max_threat, Score::new(see as i32));
+                max_threat = max(max_threat, Score::new(see.into()));
             }
         }
 
@@ -190,7 +191,7 @@ pub const trait IdParams {
     fn nmp_phase_threshold(&self) -> TaperValue;
     fn nmp_depth_factor(&self) -> u8;
     fn nmp_phase_factor(&self) -> u32;
-    fn nmp_margin(&self) -> i32;
+    fn nmp_margin(&self) -> AnyScore;
 }
 
 pub fn go(
@@ -198,7 +199,7 @@ pub fn go(
     limit: UciLimit,
     _debug: &DebugMode,
     ct: CancellationToken,
-    tt: &mut TranspositionTable<TTEntry>,
+    tt: &mut TT,
     eval: &mut impl StaticEvaluator,
     params: impl ChronoParams + QSearchParams + IdParams + Clone,
 ) -> Option<Move> {
@@ -284,12 +285,12 @@ struct Searcher<'a, 'b, E: StaticEvaluator> {
     ct: CancellationToken,
     aborted: bool,
     ss: SearchStack,
-    tt: &'a mut TranspositionTable<TTEntry>,
+    tt: &'a mut TT,
     eval: &'b mut E,
 }
 
 impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
-    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, tt: &'a mut TranspositionTable<TTEntry>, eval: &'b mut E) -> Self {
+    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, tt: &'a mut TT, eval: &'b mut E) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_moves::<AllLegal, _, _, _>(pos, (), |_, m| {
             stats.push(RootStats::new(m, 0));
@@ -343,14 +344,16 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
     }
 
     /// returns the score relative to the current player
-    fn search_root(&mut self, params: impl QSearchParams + IdParams + Clone, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> i32 {
+    fn search_root(&mut self, params: impl QSearchParams + IdParams + Clone, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> AnyScore {
+        let alpha = Score::new(AnyScore::NEG_INF);
+        let beta = Score::new(AnyScore::POS_INF);
         match pos.get_turn() {
             colors::WHITE => {
-                self.search::<perspectives::White, Root>(params, pos, stats, depth, Score::NEG_INF, Score::POS_INF)
+                self.search::<perspectives::White, Root>(params, pos, stats, depth, alpha, beta)
                     .0
             }
             colors::BLACK => {
-                self.search::<perspectives::Black, Root>(params, pos, stats, depth, Score::NEG_INF, Score::POS_INF)
+                self.search::<perspectives::Black, Root>(params, pos, stats, depth, alpha, beta)
                     .0
             }
             _ => unreachable!(),
@@ -393,7 +396,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return qsearch(pos, alpha, beta, params, self.eval, Depth::new(100));
+            return QSearcher::new(self.tt).go(pos, alpha, beta, params, self.eval, Depth::new(100));
         }
 
         let phase = TaperValue::from_position(pos.piece_info());
@@ -423,7 +426,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         // can understand when they will already be computed...
 
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
-        let mut static_eval = None;
+        let mut static_eval = Score::<P>::INVALID;
 
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
         let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
@@ -435,7 +438,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             let tt_entry = this.tt.get(key);
 
             let eval = tt_entry
-                .and_then(|e| e.static_eval)
+                .map(|e| e.static_eval)
                 .map(Score::<P>::new)
                 .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
 
@@ -729,21 +732,43 @@ mod node_types {
     }
 }
 
+pub type TT = TranspositionTable<TTEntry, TTReplace>;
+
 #[derive(Clone)]
 pub struct TTEntry {
     key: zobrist::Hash,
     depth: Depth,
-    score: i32,
+    score: AnyScore,
     #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
-    static_eval: Option<i32>,
+    static_eval: AnyScore,
     #[cfg(feature = "id-fhr")]
-    threat: Option<i32>,
+    threat: AnyScore,
     bound: Bound,
     mov: Move,
 }
 
-impl tt::ZKey for TTEntry {
+impl data::TTKey for TTEntry {
     fn key(&self) -> zobrist::Hash { self.key }
+}
+
+impl data::TTMove for TTEntry {
+    fn mov(&self) -> Move { self.mov }
+}
+
+#[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
+impl data::TTStaticEval for TTEntry {
+    fn static_eval(&self) -> AnyScore { self.static_eval }
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct TTReplace;
+
+impl data::ReplacementStrategy for TTReplace {
+    type Data = TTEntry;
+
+    fn should_replace(old: &TTEntry, new: &TTEntry) -> bool {
+        new.depth > old.depth || (new.depth == old.depth && new.bound == Bound::Exact && old.bound != Bound::Exact)
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

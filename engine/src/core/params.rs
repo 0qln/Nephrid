@@ -10,6 +10,7 @@ use crate::{
             id::IdParams,
             mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
             quiesce::QSearchParams,
+            score::AnyScore,
         },
     },
     math::NormalizedEntropy,
@@ -79,7 +80,7 @@ pub struct TunableParams<Base> {
     timeman_entropy_target: NormalizedEntropy,
     timeman_movestreak_target: u32,
     hce_policy_temp: f32,
-    hce_q_futility_margin: i32,
+    hce_q_futility_margin: AnyScore,
     hce_q_delta_pruning_threshold: TaperValue,
     select_cpuct: f32,
     mcts_proven_loss_visit_threshold: VisitCount,
@@ -89,7 +90,7 @@ pub struct TunableParams<Base> {
     id_nmp_phase_threshold: TaperValue,
     id_nmp_depth_factor: u8,
     id_nmp_phase_factor: u32,
-    id_nmp_margin: i32,
+    id_nmp_margin: AnyScore,
     _base: PhantomData<Base>,
 }
 
@@ -104,7 +105,7 @@ impl<B, X: Deref<Target = TunableParams<B>>> MctsParams for X {
 }
 
 impl<B, X: Deref<Target = TunableParams<B>>> QSearchParams for X {
-    fn futility_margin(&self) -> i32 { self.hce_q_futility_margin }
+    fn futility_margin(&self) -> AnyScore { self.hce_q_futility_margin }
     fn delta_pruning_threshold(&self) -> TaperValue { self.hce_q_delta_pruning_threshold }
 }
 
@@ -122,7 +123,7 @@ impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
     fn nmp_phase_threshold(&self) -> TaperValue { self.id_nmp_phase_threshold }
     fn nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor }
     fn nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor }
-    fn nmp_margin(&self) -> i32 { self.id_nmp_margin }
+    fn nmp_margin(&self) -> AnyScore { self.id_nmp_margin }
 }
 
 impl<B> TunableParams<B> {
@@ -227,7 +228,7 @@ impl const MctsParams for C_MctsHceParams {
 
 #[rustfmt::skip]
 impl const QSearchParams for C_MctsHceParams {
-    #[inline(always)] fn futility_margin(&self) -> i32 { 166 }
+    #[inline(always)] fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     #[inline(always)] fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
 }
 
@@ -295,7 +296,7 @@ impl const ChronoParams for C_IdHceParams {
 }
 
 impl const QSearchParams for C_IdHceParams {
-    fn futility_margin(&self) -> i32 { 166 }
+    fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
 }
 
@@ -304,7 +305,7 @@ impl const IdParams for C_IdHceParams {
     fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(12) }
     fn nmp_depth_factor(&self) -> u8 { 3 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
-    fn nmp_margin(&self) -> i32 { 48 }
+    fn nmp_margin(&self) -> AnyScore { AnyScore::new(48) }
 }
 
 // id nnue
@@ -324,7 +325,7 @@ impl const ChronoParams for C_IdNnueParams {
 }
 
 impl const QSearchParams for C_IdNnueParams {
-    fn futility_margin(&self) -> i32 { 166 }
+    fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
 }
 
@@ -333,5 +334,5 @@ impl const IdParams for C_IdNnueParams {
     fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(12) }
     fn nmp_depth_factor(&self) -> u8 { 6 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
-    fn nmp_margin(&self) -> i32 { -100 }
+    fn nmp_margin(&self) -> AnyScore { AnyScore::new(-100) }
 }

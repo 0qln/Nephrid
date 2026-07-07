@@ -5,9 +5,15 @@ use thiserror::Error;
 
 use crate::{impl_variants_with_assertion, misc::ValueOutOfSetError, uci::tokens::Tokenizer};
 
-#[derive(PartialEq, Eq, Copy, Clone, Default)]
+#[derive(Eq, Copy, Clone, Default)]
 pub struct Color {
     v: TColor,
+}
+
+impl const PartialEq for Color {
+    fn eq(&self, other: &Self) -> bool {
+        self.v == other.v
+    }
 }
 
 pub type TColor = u8;
