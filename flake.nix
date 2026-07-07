@@ -50,10 +50,14 @@
 
           packageName = features: "nephrid-${strings.concatStrings (variantStr features)}";
 
+          engineToml = builtins.fromTOML (builtins.readFile ./nephrid/Cargo.toml);
+
+          version = engineToml.package.version;
+
           packageDerivation = features:
             rustPlatform.buildRustPackage {
               pname = packageName features;
-              version = "26.7.7+73e79db";
+              inherit version;
               src = ./.;
               inherit cargoLock;
               buildNoDefaultFeatures = true;
