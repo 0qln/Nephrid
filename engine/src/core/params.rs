@@ -77,6 +77,7 @@ pub type TunableParamsRef<B> = std::rc::Rc<TunableParams<B>>;
 #[derive(Debug, Clone)]
 pub struct TunableParams<Base> {
     timeman_entropy_target: NormalizedEntropy,
+    timeman_movestreak_target: u32,
     hce_policy_temp: f32,
     hce_q_futility_margin: i32,
     hce_q_delta_pruning_threshold: TaperValue,
@@ -113,6 +114,7 @@ impl<B, X: Deref<Target = TunableParams<B>>> PolicyParams for X {
 
 impl<B, X: Deref<Target = TunableParams<B>>> ChronoParams for X {
     fn entropy_target(&self) -> NormalizedEntropy { self.timeman_entropy_target }
+    fn movestreak_target(&self) -> u32 { self.timeman_movestreak_target }
 }
 
 impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
@@ -127,6 +129,7 @@ impl<B> TunableParams<B> {
     fn from_config<C: Deref<Target = Configuration>>(config: C) -> Self {
         let config = config.deref();
         let timeman_entropy_target = config.timeman_entropy_target();
+        let timeman_movestreak_target = config.timeman_movestreak_target();
         let hce_policy_temp = config.eval_policy_temperature();
         let hce_q_futility_margin = config.eval_futility_margin();
         let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
@@ -141,6 +144,7 @@ impl<B> TunableParams<B> {
         let id_nmp_margin = config.id_nmp_margin();
         Self {
             timeman_entropy_target,
+            timeman_movestreak_target,
             hce_policy_temp,
             hce_q_futility_margin,
             hce_q_delta_pruning_threshold,
@@ -287,6 +291,7 @@ impl IConfigBuilder for C_IdHceParams {
 
 impl const ChronoParams for C_IdHceParams {
     fn entropy_target(&self) -> NormalizedEntropy { NormalizedEntropy::new_c(0.55) }
+    fn movestreak_target(&self) -> u32 { 6 }
 }
 
 impl const QSearchParams for C_IdHceParams {
@@ -315,6 +320,7 @@ impl IConfigBuilder for C_IdNnueParams {
 
 impl const ChronoParams for C_IdNnueParams {
     fn entropy_target(&self) -> NormalizedEntropy { NormalizedEntropy::new_c(0.55) }
+    fn movestreak_target(&self) -> u32 { 4 }
 }
 
 impl const QSearchParams for C_IdNnueParams {
@@ -325,7 +331,7 @@ impl const QSearchParams for C_IdNnueParams {
 impl const IdParams for C_IdNnueParams {
     fn nmp_reduction(&self) -> Depth { Depth::new(2) }
     fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(12) }
-    fn nmp_depth_factor(&self) -> u8 { 3 }
+    fn nmp_depth_factor(&self) -> u8 { 6 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
     fn nmp_margin(&self) -> i32 { -100 }
 }

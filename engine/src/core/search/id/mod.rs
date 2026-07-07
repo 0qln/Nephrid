@@ -167,6 +167,9 @@ pub struct SearchStats {
 
     /// Entropy of the last completed iteration.
     pub root_entropy: NormalizedEntropy,
+
+    /// Number of times the best move has been the best move in a row.
+    pub root_movestreak: u32,
 }
 
 impl Default for SearchStats {
@@ -177,6 +180,7 @@ impl Default for SearchStats {
             iter_time: Duration::ZERO,
             // Max uncertainty until a policy is computed
             root_entropy: NormalizedEntropy::one(),
+            root_movestreak: 0,
         }
     }
 }
@@ -203,6 +207,7 @@ pub fn go(
     let mut searcher = Searcher::new(pos, limit, ct, tt, eval);
     let mut stats = SearchStats::default();
     let mut best_move = None;
+    let mut last_best_move;
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
         let best_score = searcher.search_root(params.clone(), pos, &mut stats, depth);
@@ -212,6 +217,8 @@ pub fn go(
         if searcher.aborted {
             break;
         }
+
+        last_best_move = searcher.root_best_move();
 
         searcher.sort_root();
 
@@ -228,10 +235,16 @@ pub fn go(
             let root_policy = math::softmax(root_logits, ROOT_ENTROPY_TEMP, &mut List::new());
             math::normalized_entropy(&root_policy)
         };
+        stats.root_movestreak = if best_move == last_best_move {
+            stats.root_movestreak + 1
+        }
+        else {
+            0
+        };
 
         searcher.time_man.hint_time_target(searcher.time_man.time_limit() - stats.iter_time);
-        searcher.time_man.hint_entropy_target(params.entropy_target());
-        searcher.time_man.set_curr_entropy(stats.root_entropy);
+        searcher.time_man.hint_movestreak_target(params.movestreak_target());
+        searcher.time_man.set_curr_movestreak(stats.root_movestreak);
 
         if searcher.should_stop(&stats) || searcher.time_man.reached_target() {
             break;
@@ -241,6 +254,7 @@ pub fn go(
     best_move
 }
 
+#[derive(Debug)]
 struct RootStats {
     mov: ScoredMove,
 }
