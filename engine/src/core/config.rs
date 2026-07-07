@@ -39,10 +39,10 @@ pub trait UciUnit {
 pub struct UciPercent;
 impl UciUnit for UciPercent {
     type Quantity = Ratio;
-    type Raw = f32;
+    type Raw = i32;
 
-    fn to_quantity(raw: Self::Raw) -> Self::Quantity { Ratio::new::<percent>(raw) }
-    fn to_raw(qty: &Self::Quantity) -> Self::Raw { qty.get::<percent>() }
+    fn to_quantity(raw: Self::Raw) -> Self::Quantity { Ratio::new::<percent>(raw as f32) }
+    fn to_raw(qty: &Self::Quantity) -> Self::Raw { qty.get::<percent>().round() as i32 }
 }
 
 #[derive(Debug, Clone)]
