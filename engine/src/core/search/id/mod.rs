@@ -2,7 +2,7 @@ use core::fmt;
 use std::{
     cmp::{Reverse, max, min},
     convert::Infallible,
-    hint::{assert_unchecked, unreachable_unchecked},
+    hint::assert_unchecked,
     ops::{ControlFlow, Deref},
     path::PathBuf,
     str::FromStr,
@@ -58,7 +58,7 @@ const ROOT_ENTROPY_TEMP: f32 = 0.3;
 pub struct HceEvaluator;
 
 impl StaticEvaluator for HceEvaluator {
-    fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
+    fn eval<P: Perspective>(&mut self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P> {
         fn static_value<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, phase: TaperValue, turn: Turn) -> Score<P> {
             material::<P>(pos)
                 + mobility::<P>(pos, phase)
@@ -106,12 +106,8 @@ impl Default for NnueEvaluator<'static> {
 }
 
 impl<'a> StaticEvaluator for NnueEvaluator<'a> {
-    fn eval<P: Perspective>(&self, _: &PieceInfo, _: Turn, _: EpTargetSquare, _: TaperValue) -> Score<P> {
-        let (stm_acc, nstm_acc) = match P::COLOR {
-            colors::WHITE => (&self.accs.white, &self.accs.black),
-            colors::BLACK => (&self.accs.black, &self.accs.white),
-            _ => unsafe { unreachable_unchecked() },
-        };
+    fn eval<P: Perspective>(&mut self, _: &PieceInfo, _: Turn, _: EpTargetSquare, _: TaperValue) -> Score<P> {
+        let (stm_acc, nstm_acc) = self.accs.get_mut_for::<P>(self.nnue);
         let nnue_eval = self.nnue.forward(stm_acc, nstm_acc);
         Score::new(nnue_eval)
     }
@@ -416,7 +412,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         let mut static_eval = None;
 
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
-        let mut lazy_static_eval = |this: &Self, pos: &Position| {
+        let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
             // is it already computed? if so, return it.
             if let Some(eval) = static_eval {
                 return eval;

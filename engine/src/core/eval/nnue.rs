@@ -1,5 +1,6 @@
 use std::{
     fs::File,
+    hint::unreachable_unchecked,
     io::{self, Read},
     mem,
     path::Path,
@@ -82,7 +83,7 @@ pub struct Network {
 }
 
 impl Network {
-    pub fn forward(&self, acc_stm: &Accumulator, acc_nstm: &Accumulator) -> i32 {
+    pub fn forward(&self, acc_stm: &mut Accumulator, acc_nstm: &mut Accumulator) -> i32 {
         #[cfg(debug_assertions)]
         {
             acc_stm.check_health().expect("Unhealthy accumulator");
@@ -91,11 +92,11 @@ impl Network {
 
         let mut eval: i32 = 0;
 
-        for (&value, &weight) in acc_stm.values.iter().zip(&self.out_weights[..HIDDEN_SIZE]) {
+        for (&value, &weight) in acc_stm.values().iter().zip(&self.out_weights[..HIDDEN_SIZE]) {
             eval += activation(value) * TEval::from(weight);
         }
 
-        for (&value, &weight) in acc_nstm.values.iter().zip(&self.out_weights[HIDDEN_SIZE..]) {
+        for (&value, &weight) in acc_nstm.values().iter().zip(&self.out_weights[HIDDEN_SIZE..]) {
             eval += activation(value) * TEval::from(weight);
         }
 
@@ -208,6 +209,19 @@ impl Accumulator {
             *val -= *weight
         }
     }
+
+    pub fn update_feature(&mut self, idx: usize, net: &Network, update: i16) {
+        #[cfg(debug_assertions)]
+        {
+            self.inputs[idx] += update;
+        }
+
+        for (val, weight) in self.values.iter_mut().zip(&net.acc_weights[idx].vals) {
+            *val += *weight * update;
+        }
+    }
+
+    pub fn values(&mut self) -> [i16; HIDDEN_SIZE] { self.values }
 }
 
 #[derive(Debug, Error)]
@@ -233,16 +247,140 @@ impl CheckHealth for Accumulator {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FeatureUpdates {
+    counts: [[[i8; SQUARES]; PIECES]; COLORS],
+}
+
+impl Default for FeatureUpdates {
+    fn default() -> Self {
+        Self {
+            counts: [[[0; SQUARES]; PIECES]; COLORS],
+        }
+    }
+}
+
+impl FeatureUpdates {
+    pub fn get_mut(&mut self, sq: Square, pt: PieceType, c: Color) -> &mut i8 {
+        let c = c.v() as usize;
+        let pt = pt.v() as usize - 1;
+        let sq = sq.v() as usize;
+        unsafe { self.counts.get_unchecked_mut(c).get_unchecked_mut(pt).get_unchecked_mut(sq) }
+    }
+}
+
+struct AccUpdates {
+    /// Before you apply anything, reset everything.
+    reset: bool,
+
+    /// The pieces that were put(+) or removed(-) on the board.
+    updates: FeatureUpdates,
+
+    /// Which features have been updated?
+    updated: Vec<IndexInfo>,
+}
+
+impl AccUpdates {
+    fn new() -> Self {
+        Self {
+            reset: false,
+            updates: Default::default(),
+            updated: Vec::with_capacity(16),
+        }
+    }
+
+    fn put(&mut self, sq: Square, p: Piece) { self.update(sq, p, 1); }
+    fn remove(&mut self, sq: Square, p: Piece) { self.update(sq, p, -1); }
+
+    fn update(&mut self, sq: Square, p: Piece, delta: i8) {
+        let (c, pt) = p.unpack();
+
+        let cnt = self.updates.get_mut(sq, pt, c);
+
+        if *cnt == 0 {
+            self.updated.push(IndexInfo { sq, pt, c });
+        }
+
+        *cnt += delta;
+    }
+
+    fn reset(&mut self) {
+        self.updates = Default::default();
+        self.reset = true;
+    }
+
+    fn apply(&mut self, acc_white: &mut Accumulator, acc_black: &mut Accumulator, net: &Network) {
+        if self.reset {
+            *acc_white = Accumulator::init(net);
+            *acc_black = Accumulator::init(net);
+            self.reset = false;
+        }
+
+        for IndexInfo { sq, pt, c } in self.updated.drain(..) {
+            let cnt = {
+                let ptr = self.updates.get_mut(sq, pt, c);
+                let val = *ptr;
+                *ptr = 0;
+                val as i16
+            };
+
+            if cnt == 0 {
+                continue;
+            }
+
+            let idx_w = input_index_for::<White>(sq, pt, c);
+            let idx_b = input_index_for::<Black>(sq, pt, c);
+
+            match cnt {
+                // +1 or -1 generates much better assembly so switch here
+                1 => {
+                    acc_white.add_feature(idx_w, net);
+                    acc_black.add_feature(idx_b, net);
+                }
+                -1 => {
+                    acc_white.remove_feature(idx_w, net);
+                    acc_black.remove_feature(idx_b, net);
+                }
+                _ => {
+                    acc_white.update_feature(idx_w, net, cnt);
+                    acc_black.update_feature(idx_b, net, cnt);
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct IndexInfo {
+    sq: Square,
+    pt: PieceType,
+    c: Color,
+}
+
 pub struct AccumulatorPair {
-    pub white: Accumulator,
-    pub black: Accumulator,
+    updates: AccUpdates,
+    white: Accumulator,
+    black: Accumulator,
 }
 
 impl AccumulatorPair {
     pub fn new(net: &Network) -> Self {
         Self {
+            updates: AccUpdates::new(),
             white: Accumulator::init(net),
             black: Accumulator::init(net),
+        }
+    }
+
+    pub fn sync(&mut self, net: &Network) { self.updates.apply(&mut self.white, &mut self.black, net); }
+
+    pub fn get_mut_for<P: Perspective>(&mut self, net: &Network) -> (&mut Accumulator, &mut Accumulator) {
+        self.sync(net);
+
+        match P::COLOR {
+            colors::WHITE => (&mut self.white, &mut self.black),
+            colors::BLACK => (&mut self.black, &mut self.white),
+            _ => unsafe { unreachable_unchecked() },
         }
     }
 }
@@ -250,29 +388,20 @@ impl AccumulatorPair {
 impl PieceInfoObserver for AccumulatorPair {
     fn on_init(&mut self, pos: &PieceInfo) {
         // reset
-        self.white = Accumulator::init(get_nnue());
-        self.black = Accumulator::init(get_nnue());
+        self.updates.reset();
 
         // put pieces
         for sq in squares::A1..=squares::H8 {
             let p = pos.get_piece(sq);
             if p.piece_type() != piece_type::NONE {
-                self.on_piece_put(sq, p);
+                self.updates.put(sq, p);
             }
         }
     }
 
-    fn on_piece_put(&mut self, sq: Square, p: Piece) {
-        let (c, pt) = p.unpack();
-        self.white.add_feature(input_index::<White>(sq, pt, c), get_nnue());
-        self.black.add_feature(input_index::<Black>(sq, pt, c), get_nnue());
-    }
+    fn on_piece_put(&mut self, sq: Square, p: Piece) { self.updates.put(sq, p); }
 
-    fn on_piece_removed(&mut self, sq: Square, p: Piece) {
-        let (c, pt) = p.unpack();
-        self.white.remove_feature(input_index::<White>(sq, pt, c), get_nnue());
-        self.black.remove_feature(input_index::<Black>(sq, pt, c), get_nnue());
-    }
+    fn on_piece_removed(&mut self, sq: Square, p: Piece) { self.updates.remove(sq, p); }
 
     fn on_piece_moved(&mut self, from: Square, to: Square, p: Piece) {
         self.on_piece_removed(from, p);
@@ -281,7 +410,7 @@ impl PieceInfoObserver for AccumulatorPair {
 }
 
 #[inline(always)]
-pub fn input_index<P: Perspective>(sq: Square, pt: PieceType, c: Color) -> usize {
+fn input_index_for<P: Perspective>(sq: Square, pt: PieceType, c: Color) -> usize {
     let (mut sq, mut c) = (sq, c);
 
     if P::COLOR == colors::BLACK {
@@ -289,6 +418,11 @@ pub fn input_index<P: Perspective>(sq: Square, pt: PieceType, c: Color) -> usize
         sq = sq.flip_v();
     }
 
+    input_index(sq, pt, c)
+}
+
+#[inline(always)]
+fn input_index(sq: Square, pt: PieceType, c: Color) -> usize {
     let c = c.v() as usize;
     let sq = sq.v() as usize;
     let pt = pt.v() as usize - 1;

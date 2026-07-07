@@ -9,7 +9,7 @@ pub mod hce;
 pub mod nnue;
 
 pub trait StaticEvaluator: Sized {
-    fn eval<P: Perspective>(&self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P>;
+    fn eval<P: Perspective>(&mut self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P>;
 
     fn try_from_config<C: Deref<Target = Configuration>>(config: C) -> Result<Self, impl fmt::Display>;
 

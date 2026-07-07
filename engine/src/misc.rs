@@ -419,6 +419,22 @@ impl<const N: usize, T> List<N, T> {
         }
     }
 
+    #[inline]
+    pub unsafe fn get_unchecked(&self, index: usize) -> &T {
+        // SAFETY: The caller must ensure that `index` is less than `self.len`, which
+        // guarantees that the element has been initialized via the `push`
+        // method.
+        unsafe { self.items.get_unchecked(index).assume_init_ref() }
+    }
+
+    #[inline]
+    pub unsafe fn read_unchecked(&self, index: usize) -> T {
+        // SAFETY: The caller must ensure that `index` is less than `self.len`, which
+        // guarantees that the element has been initialized via the `push`
+        // method.
+        unsafe { self.items.get_unchecked(index).assume_init_read() }
+    }
+
     /// # Safety
     /// The caller must ensure that `T` and `T2` have the exact same size and
     /// alignment, and that the bitwise representation of `T2` is a valid
@@ -433,6 +449,34 @@ impl<const N: usize, T> List<N, T> {
             len: src.len,
             items: unsafe { std::ptr::read((&src.items as *const [MaybeUninit<T2>; N]).cast::<[MaybeUninit<T>; N]>()) },
         }
+    }
+
+    pub fn drain(&mut self) -> impl Iterator<Item = T> {
+        struct Drain<'a, const N: usize, T> {
+            len: usize,
+            list: &'a mut List<N, T>,
+            index: usize,
+        }
+
+        impl<'a, const N: usize, T> Iterator for Drain<'a, N, T> {
+            type Item = T;
+            fn next(&mut self) -> Option<Self::Item> {
+                if self.index < self.len {
+                    let item = unsafe { self.list.read_unchecked(self.index) };
+                    self.index += 1;
+                    Some(item)
+                }
+                else {
+                    None
+                }
+            }
+        }
+
+        // after this function has finished, all items will be removed
+        let len = self.len;
+        self.len = 0;
+
+        Drain { list: self, len, index: 0 }
     }
 }
 
