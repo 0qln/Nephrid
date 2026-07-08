@@ -372,7 +372,7 @@ impl Configuration {
                 mcts_killer_exploitation: ConfigOption::new("mcts-killer-exploitation", Spin::<UciPercent>::new(_ratio(0.27), _ratio(0.), _ratio(10.))),
                 mcts_tt_best_move: ConfigOption::new("mcts-tt-best-move", Spin::<UciPercent>::new(_ratio(1.50), _ratio(0.), _ratio(10.))),
                 timeman_entropy_target: ConfigOption::new("timeman-entropy-target", Spin::<UciPercent>::new(_ratio(0.60), _ratio(0.), _ratio(1.))),
-                timeman_movestreak_target: ConfigOption::new("timeman-movestreak-target", Spin::new(5, 0, 10)),
+                timeman_movestreak_target: ConfigOption::new("timeman-movestreak-target", Spin::new(5, 0, 20)),
                 id_nmp_reduction: ConfigOption::new("id-nmp-reduction", Spin::new(2, 0, 10)),
                 id_nmp_phase_threshold: ConfigOption::new("id-nmp-phase-threshold", Spin::new(8, 0, 24)),
                 id_nmp_depth_factor: ConfigOption::new("id-nmp-depth-factor", Spin::new(3, 1, 20)),
@@ -381,8 +381,6 @@ impl Configuration {
             },
         }
     }
-
-    pub fn timeman_movestreak_target(&self) -> u32 { todo!() }
 }
 
 #[derive(Debug, Clone)]
@@ -462,6 +460,7 @@ impl Configuration {
     pub fn mcts_killer_exploitation(&self) -> f32 { self.mcts_killer_exploitation.value.get::<ratio>() }
     pub fn mcts_tt_best_move(&self) -> f32 { self.mcts_tt_best_move.value.get::<ratio>() }
     pub fn timeman_entropy_target(&self) -> math::NormalizedEntropy { NormalizedEntropy::new(self.timeman_entropy_target.value.get::<ratio>()) }
+    pub fn timeman_movestreak_target(&self) -> u32 { self.timeman_movestreak_target.value as u32 }
     pub fn id_nmp_reduction(&self) -> Depth { Depth::new(self.id_nmp_reduction.value as u8) }
     pub fn id_nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(self.id_nmp_phase_threshold.value as u32) }
     pub fn id_nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor.value as u8 }
@@ -531,6 +530,7 @@ impl Configuration {
             println!("{}", self.mcts_tt_best_move);
             println!("{}", self.select_cpuct);
             println!("{}", self.timeman_entropy_target);
+            println!("{}", self.timeman_movestreak_target);
             println!("{}", self.id_nmp_reduction);
             println!("{}", self.id_nmp_phase_threshold);
             println!("{}", self.id_nmp_depth_factor);
