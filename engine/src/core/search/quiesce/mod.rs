@@ -102,16 +102,19 @@ impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Clone, R: ReplacementStr
         }
 
         // move gen
+        let tt_move_flag = tt_move.get_flag();
         let scorer = MoveScorer { color: P::COLOR, phase, tt_move };
         let mut move_picker = MovePicker::new_with_max_stage(
             // don't search tt_move if we don't search only captures.
-            if in_check && tt_move.get_flag().is_capture() {
+            if in_check || !(tt_move_flag.is_capture() || tt_move_flag.is_promo()) {
                 Move::null()
             }
             else {
                 tt_move
             },
+            // todo: killers if were in check (looking at quiets)?
             RbSet::<Move, 2>::default(),
+            // if in check, we only want to search captures and promos, otherwise we want to search all moves.
             if in_check {
                 RtStage::Done
             }

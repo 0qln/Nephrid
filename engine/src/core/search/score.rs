@@ -17,10 +17,6 @@ pub struct AnyScore {
     v: RawScore,
 }
 
-impl const Default for AnyScore {
-    fn default() -> Self { scores::NULL }
-}
-
 impl const PartialEq for AnyScore {
     fn eq(&self, other: &Self) -> bool { self.v == other.v }
 }
@@ -73,13 +69,29 @@ impl const From<i16> for AnyScore {
 
 impl<T: const Into<RawScore>> const ops::AddAssign<T> for AnyScore {
     #[inline(always)]
-    fn add_assign(&mut self, rhs: T) { self.v += rhs.into(); }
+    fn add_assign(&mut self, rhs: T) {
+        #[cfg(debug_assertions)]
+        {
+            if *self == scores::NULL {
+                panic!("Cannot add to a NULL score");
+            }
+        }
+        self.v += rhs.into();
+    }
 }
 
 impl SaturatingCast for AnyScore {}
 
 impl SaturatingElement<MoveScore> for AnyScore {
-    fn as_element(self) -> MoveScore { (self.v().clamp(MoveScore::MIN.into(), MoveScore::MAX.into())) as MoveScore }
+    fn as_element(self) -> MoveScore {
+        #[cfg(debug_assertions)]
+        {
+            if self == scores::NULL {
+                panic!("Cannot convert a NULL score to a MoveScore");
+            }
+        }
+        (self.v().clamp(MoveScore::MIN.into(), MoveScore::MAX.into())) as MoveScore
+    }
 }
 
 impl const ops::Neg for AnyScore {
