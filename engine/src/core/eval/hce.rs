@@ -26,7 +26,7 @@ impl Psqt {
 
 const PIECE_SCORES: [i32; piece_type::N_VARIANTS] = [0, 100, 300, 300, 500, 800, 0];
 
-pub const fn piece_score(pt: PieceType) -> i32 { PIECE_SCORES[pt.v() as usize] }
+pub const fn piece_score(pt: PieceType) -> AnyScore { PIECE_SCORES[pt.v() as usize].into() }
 
 #[rustfmt::skip]
 const MG_PAWN_TABLE: Psqt = Psqt([
@@ -270,10 +270,12 @@ impl TaperValue {
         Self(piece_phases::TOTAL_C.saturating_sub(inv_phase))
     }
 
-    pub const fn weighted_eval(&self, mg_eval: i32, eg_eval: i32) -> i32 {
+    pub const fn weighted_eval(&self, mg_eval: AnyScore, eg_eval: AnyScore) -> AnyScore {
         let phase = self.0 as i32;
         let total = piece_phases::TOTAL_C as i32;
-        ((mg_eval * (total - phase)) + (eg_eval * phase)) / total
+        let mg_eval = mg_eval.v();
+        let eg_eval = eg_eval.v();
+        AnyScore::new(((mg_eval * (total - phase)) + (eg_eval * phase)) / total)
     }
 
     pub const fn v(&self) -> u32 { self.0 }
@@ -283,7 +285,8 @@ impl TaperValue {
 
 pub fn material<P: Perspective>(pos: &PieceInfo) -> Score<P> {
     let score = (piece_type::PAWN..piece_type::KING)
-        .map(|p| pos.get_bitboard(p, P::COLOR).pop_cnt() as i32 * piece_score(p))
+        .map(|p| pos.get_bitboard(p, P::COLOR).pop_cnt() as i32 * piece_score(p).v())
+        .map(AnyScore::new)
         .sum();
 
     Score::new(score)
@@ -637,7 +640,7 @@ pub fn hygge_king<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P
 
         let score = knight_bonuses + queen_bonuses + king_bonus;
 
-        Score::new(phase.weighted_eval(0, score))
+        Score::new(phase.weighted_eval(0, score).into())
     }
     else {
         Score::new(scores::DRAW)

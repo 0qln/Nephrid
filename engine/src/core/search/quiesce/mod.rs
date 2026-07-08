@@ -9,10 +9,10 @@ use crate::core::{
     piece::{PromoPieceType, piece_type},
     position::{CheckState, Position},
     search::{
-        data::{ReplacementStrategy, TTKey, TTMove, TranspositionTable},
+        data::{ReplacementStrategy, TTIsValid, TTKey, TTMove, TTStaticEval, TranspositionTable},
         id::RbSet,
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
-        score::{AnyScore, Score},
+        score::{AnyScore, Score, scores},
     },
 };
 
@@ -31,7 +31,7 @@ impl<'a, E, R> QSearcher<'a, E, R> {
     pub fn new(tt: &'a mut TT<E, R>) -> Self { Self { tt } }
 }
 
-impl<'a, E: TTKey + TTMove + Clone, R: ReplacementStrategy<Data = E>> QSearcher<'a, E, R> {
+impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Default + Clone, R: ReplacementStrategy<Data = E>> QSearcher<'a, E, R> {
     /// # Q-Search
     ///
     /// Make the position quiet.
@@ -46,19 +46,33 @@ impl<'a, E: TTKey + TTMove + Clone, R: ReplacementStrategy<Data = E>> QSearcher<
         eval: &mut impl StaticEvaluator,
         depth: Depth,
     ) -> Score<P> {
-        let mut best_value = Score::NEG_INF;
+        let mut best_value = Score::new(scores::NEG_INF);
 
         let in_check = pos.get_check_state() != CheckState::None;
         let stm = P::COLOR;
         let piece_info = pos.piece_info();
         let phase = TaperValue::from_position(piece_info);
         let key = pos.get_key();
-        let tt_entry = self.tt.get(key);
 
-        let mut static_eval = || tt_entry.eval.eval(piece_info, stm, pos.get_ep_target_square(), phase);
+        let mut static_eval = |this: &mut Self| {
+            let tt_score = this.tt.raw_mut(key).and_then(|e| e.static_eval_mut().validated_mut());
+
+            // try fetching from tt in case there's already a valid entry here, don't overwrite
+            if let Some(valid_score) = tt_score {
+                // Safety: we can interpret it as a Score<P> without worrying about perspective for
+                // most positions, unless there is a zobrist hash key collision.
+                return unsafe { valid_score.interpret_as() }
+            }
+
+            // else compute
+            let score = eval.eval(piece_info, stm, pos.get_ep_target_square(), phase);
+
+            this.tt.get_mut(key);
+
+            score
+        };
 
         if depth == Depth::new(0) {
-            self.tt.try_insert(pos.get_key().with_tt_move(Move::null()));
 
             return static_eval();
         }

@@ -16,7 +16,7 @@ use crate::{
         },
         coordinates::{Square, squares},
         piece::{Piece, PieceType, piece_type},
-        position::{PieceInfo, PieceInfoObserver},
+        position::{PieceInfo, PieceInfoObserver}, search::score::AnyScore,
     },
     misc::{CheckHealth, CheckHealthResult},
 };
@@ -81,7 +81,7 @@ pub struct Network {
 }
 
 impl Network {
-    pub fn forward(&self, acc_stm: &mut Accumulator, acc_nstm: &mut Accumulator) -> i32 {
+    pub fn forward(&self, acc_stm: &mut Accumulator, acc_nstm: &mut Accumulator) -> AnyScore {
         #[cfg(debug_assertions)]
         {
             acc_stm.check_health().expect("Unhealthy accumulator");
@@ -103,7 +103,7 @@ impl Network {
         eval *= TEval::from(SCALE);
         eval /= TEval::from(QA) * TEval::from(QB);
 
-        eval
+        AnyScore::from(eval)
     }
 }
 

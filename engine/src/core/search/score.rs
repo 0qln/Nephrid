@@ -1,4 +1,4 @@
-use std::{fmt, marker::PhantomData, ops};
+use std::{fmt, iter, marker::PhantomData, ops};
 
 use saturating_cast::SaturatingCast;
 
@@ -7,11 +7,19 @@ use crate::{
     impl_variants,
 };
 
-type RawScore = i32;
+pub type RawScore = i32;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, Eq, PartialOrd, Ord)]
 pub struct AnyScore {
     v: RawScore,
+}
+
+impl const Default for AnyScore {
+    fn default() -> Self { scores::NULL }
+}
+
+impl const PartialEq for AnyScore {
+    fn eq(&self, other: &Self) -> bool { self.v == other.v }
 }
 
 impl fmt::Display for AnyScore {
@@ -23,16 +31,19 @@ impl_variants! {
         DRAW = 0,
         POS_INF = 30_000,
         NEG_INF = -30_000,
-        INVALID = 0xdead_beef,
+        NULL = 0xdead_beef,
     }
 }
 
 impl AnyScore {
     pub const fn new(val: i32) -> Self { Self { v: val } }
 
+    pub const fn validated(&self) -> Option<AnyScore> { if *self == scores::NULL { None } else { Some(*self) } }
+    pub const fn validated_mut(&mut self) -> Option<&mut AnyScore> { if *self == scores::NULL { None } else { Some(self) } }
+
     /// Get this score in the context of `relative_to`.
     pub const fn contextualize<P: Perspective>(self, relative_to: Color) -> Score<P> {
-        if P::COLOR == relative_to {
+        if P::COLOR.v() == relative_to.v() {
             unsafe { self.interpret_as::<P>() }
         }
         else {
@@ -70,9 +81,26 @@ impl const ops::Div<AnyScore> for AnyScore {
     fn div(self, rhs: AnyScore) -> Self::Output { Self::new(self.v / rhs.v) }
 }
 
+impl const ops::Mul<AnyScore> for AnyScore {
+    type Output = Self;
+    #[inline(always)]
+    fn mul(self, rhs: AnyScore) -> Self::Output { Self::new(self.v * rhs.v) }
+}
+
+impl iter::Sum for AnyScore {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self { v: 0 }, |acc, x| acc + x)
+    }
+}
+
 impl const From<AnyScore> for RawScore {
     #[inline(always)]
     fn from(val: AnyScore) -> Self { val.v }
+}
+
+impl const From<RawScore> for AnyScore {
+    #[inline(always)]
+    fn from(val: RawScore) -> Self { Self::new(val) }
 }
 
 /// A penalty for `P`
@@ -82,7 +110,7 @@ impl<P: Perspective> fmt::Display for Penalty<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Penalty<{}>({})", P::COLOR, self.0) }
 }
 
-impl<P: Perspective> From<Penalty<P>> for Score<P> {
+impl<P: Perspective> const From<Penalty<P>> for Score<P> {
     #[inline(always)]
     fn from(val: Penalty<P>) -> Self { Score::new(-val.0) }
 }
