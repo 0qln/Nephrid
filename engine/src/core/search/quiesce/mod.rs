@@ -104,7 +104,13 @@ impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Clone, R: ReplacementStr
         // move gen
         let scorer = MoveScorer { color: P::COLOR, phase, tt_move };
         let mut move_picker = MovePicker::new_with_max_stage(
-            tt_move,
+            // don't search tt_move if we don't search only captures.
+            if in_check && tt_move.get_flag().is_capture() {
+                Move::null()
+            }
+            else {
+                tt_move
+            },
             RbSet::<Move, 2>::default(),
             if in_check {
                 RtStage::Done
