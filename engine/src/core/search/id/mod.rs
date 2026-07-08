@@ -799,7 +799,27 @@ impl data::ReplacementStrategy for TTReplace {
     type Data = TTEntry;
 
     fn should_replace(old: &TTEntry, new: &TTEntry) -> bool {
-        new.depth > old.depth || (new.depth == old.depth && new.bound == Bound::Exact && old.bound != Bound::Exact)
+        if old.depth == Depth::NONE {
+            return true;
+        }
+
+        if new.depth == Depth::NONE {
+            return false;
+        }
+
+        if new.depth > old.depth {
+            return true;
+        }
+
+        if new.depth < old.depth {
+            return false;
+        }
+
+        if new.bound == Bound::Exact && old.bound != Bound::Exact {
+            return true;
+        }
+
+        false
     }
 }
 
