@@ -324,14 +324,14 @@ impl const ChronoParams for C_IdNnueParams {
 }
 
 impl const QSearchParams for C_IdNnueParams {
-    fn futility_margin(&self) -> i32 { 166 }
-    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+    fn futility_margin(&self) -> i32 { 167 }
+    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(15) }
 }
 
 impl const IdParams for C_IdNnueParams {
-    fn nmp_reduction(&self) -> Depth { Depth::new(2) }
-    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(12) }
-    fn nmp_depth_factor(&self) -> u8 { 6 }
+    fn nmp_reduction(&self) -> Depth { Depth::new(1) }
+    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(9) }
+    fn nmp_depth_factor(&self) -> u8 { 3 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
-    fn nmp_margin(&self) -> i32 { -100 }
+    fn nmp_margin(&self) -> i32 { 50 }
 }
