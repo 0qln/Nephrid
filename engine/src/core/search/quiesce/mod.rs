@@ -102,7 +102,7 @@ impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Clone, R: ReplacementStr
         }
 
         // move gen
-        let scorer = MoveScorer { color: P::COLOR, phase };
+        let scorer = MoveScorer { color: P::COLOR, phase, tt_move };
         let mut move_picker = MovePicker::new_with_max_stage(
             tt_move,
             RbSet::<Move, 2>::default(),
@@ -164,12 +164,14 @@ impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Clone, R: ReplacementStr
 struct MoveScorer {
     color: Color,
     phase: TaperValue,
+    tt_move: Move,
 }
 impl ordering::MoveScorer for MoveScorer {
     fn score<S: Stage>(&self, pos: &Position, mov: Move) -> MoveScore {
         match S::stage() {
             ordering::RtStage::YieldHashMove => {
-                todo!("we don't yet have a hashmove in qsearch")
+                debug_assert!(mov == self.tt_move, "hashmove stage should only yield the tt move");
+                0
             }
             ordering::RtStage::GenerateCapturesAndPromos | ordering::RtStage::YieldGoodCapturesAndPromos | ordering::RtStage::YieldBadCaptures => {
                 let pieces = pos.piece_info();

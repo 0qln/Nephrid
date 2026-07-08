@@ -14,14 +14,18 @@ use crate::{
         params::MctsHceParamsRef,
         position::{CheckState, Position},
         search::{
-            id, mcts::{
+            id,
+            mcts::{
                 eval::{Evaluator, Guess, Logits, Policy, Quality},
                 node::{
                     NodeId, Tree,
                     node_state::{HasBranches, Valid},
                 },
                 search::{BatchItem, Selection},
-            }, ordering::{self}, quiesce::QSearcher, score::{AnyScore, Cp, Score, scores}
+            },
+            ordering::{self},
+            quiesce::QSearcher,
+            score::{AnyScore, Cp, Score, scores},
         },
         turn::Turn,
     },
@@ -109,26 +113,28 @@ pub struct EvalInfo<Moves: AsRef<[Move]>> {
 impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
     pub fn new(moves: Moves, pos: &mut Position, params: MctsHceParamsRef) -> Self {
         // todo: store tt somewhere
-        let mut tt = id::TT::new(0);
+        let mut tt = id::TT::new(1);
         let quality: Cp = match pos.get_turn().v() {
-            colors::WHITE_C => QSearcher::new(&mut tt).go::<perspectives::White>(
-                pos,
-                Score::new(scores::NEG_INF),
-                Score::new(scores::POS_INF),
-                MctsHceParamsRef::clone(&params),
-                &mut StaticEvaluator,
-                Depth::new(30),
-            )
-            .into(),
-            colors::BLACK_C => QSearcher::new(&mut tt).go::<perspectives::Black>(
-                pos,
-                Score::new(scores::NEG_INF),
-                Score::new(scores::POS_INF),
-                MctsHceParamsRef::clone(&params),
-                &mut StaticEvaluator,
-                Depth::new(30),
-            )
-            .into(),
+            colors::WHITE_C => QSearcher::new(&mut tt)
+                .go::<perspectives::White>(
+                    pos,
+                    Score::new(scores::NEG_INF),
+                    Score::new(scores::POS_INF),
+                    MctsHceParamsRef::clone(&params),
+                    &mut StaticEvaluator,
+                    Depth::new(30),
+                )
+                .into(),
+            colors::BLACK_C => QSearcher::new(&mut tt)
+                .go::<perspectives::Black>(
+                    pos,
+                    Score::new(scores::NEG_INF),
+                    Score::new(scores::POS_INF),
+                    MctsHceParamsRef::clone(&params),
+                    &mut StaticEvaluator,
+                    Depth::new(30),
+                )
+                .into(),
             _ => unreachable!(),
         };
         Self {
@@ -161,7 +167,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             let from = mov.get_from();
             let to = mov.get_to();
             let piece = pos.get_piece(from).piece_type();
-            let psqt: AnyScore = ordering::psqt(phase, piece, from, to, mov.get_flag(), color).into(); 
+            let psqt: AnyScore = ordering::psqt(phase, piece, from, to, mov.get_flag(), color).into();
             let see: AnyScore = ordering::see(pos, mov, color).into();
             let check: AnyScore = PolicyInput::check_bonus(phase, pos, color, mov);
             let meta: AnyScore = PolicyInput::meta(pos, mov, state).into();
