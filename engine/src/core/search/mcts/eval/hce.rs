@@ -14,17 +14,14 @@ use crate::{
         params::MctsHceParamsRef,
         position::{CheckState, Position},
         search::{
-            mcts::{
+            id, mcts::{
                 eval::{Evaluator, Guess, Logits, Policy, Quality},
                 node::{
                     NodeId, Tree,
                     node_state::{HasBranches, Valid},
                 },
                 search::{BatchItem, Selection},
-            },
-            ordering::{self},
-            quiesce::qsearch,
-            score::{Cp, Score},
+            }, ordering::{self}, quiesce::QSearcher, score::{AnyScore, Cp, Score, scores}
         },
         turn::Turn,
     },
@@ -75,14 +72,14 @@ impl PolicyInput {
         0
     }
 
-    pub fn check_bonus(_phase: TaperValue, pos: &PieceInfo, turn: Turn, mov: Move) -> i32 {
+    pub fn check_bonus(phase: TaperValue, pos: &PieceInfo, turn: Turn, mov: Move) -> AnyScore {
         let check = pos.does_check(turn, mov);
         let score = match check {
-            CheckState::None => 0,
-            CheckState::Single => 50,
-            CheckState::Double => 100,
+            CheckState::None => AnyScore::new(0),
+            CheckState::Single => AnyScore::new(50),
+            CheckState::Double => AnyScore::new(100),
         };
-        _phase.weighted_eval(0, score)
+        phase.weighted_eval(scores::DRAW, score)
     }
 }
 
@@ -111,20 +108,22 @@ pub struct EvalInfo<Moves: AsRef<[Move]>> {
 
 impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
     pub fn new(moves: Moves, pos: &mut Position, params: MctsHceParamsRef) -> Self {
+        // todo: store tt somewhere
+        let mut tt = id::TT::new(0);
         let quality: Cp = match pos.get_turn().v() {
-            colors::WHITE_C => qsearch::<perspectives::White>(
+            colors::WHITE_C => QSearcher::new(&mut tt).go::<perspectives::White>(
                 pos,
-                Score::NEG_INF,
-                Score::POS_INF,
+                Score::new(scores::NEG_INF),
+                Score::new(scores::POS_INF),
                 MctsHceParamsRef::clone(&params),
                 &mut StaticEvaluator,
                 Depth::new(30),
             )
             .into(),
-            colors::BLACK_C => qsearch::<perspectives::Black>(
+            colors::BLACK_C => QSearcher::new(&mut tt).go::<perspectives::Black>(
                 pos,
-                Score::NEG_INF,
-                Score::POS_INF,
+                Score::new(scores::NEG_INF),
+                Score::new(scores::POS_INF),
                 MctsHceParamsRef::clone(&params),
                 &mut StaticEvaluator,
                 Depth::new(30),
@@ -162,12 +161,13 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             let from = mov.get_from();
             let to = mov.get_to();
             let piece = pos.get_piece(from).piece_type();
-            let score = ordering::psqt(phase, piece, from, to, mov.get_flag(), color) as i32
-                + ordering::see(pos, mov, color) as i32
-                + PolicyInput::check_bonus(phase, pos, color, mov)
-                + PolicyInput::meta(pos, mov, state);
+            let psqt: AnyScore = ordering::psqt(phase, piece, from, to, mov.get_flag(), color).into(); 
+            let see: AnyScore = ordering::see(pos, mov, color).into();
+            let check: AnyScore = PolicyInput::check_bonus(phase, pos, color, mov).into();
+            let meta: AnyScore = PolicyInput::meta(pos, mov, state).into();
+            let score = psqt + see + check + meta;
 
-            logits.push(score as f32);
+            logits.push(score.v() as f32);
         }
 
         Policy::from_logits(Logits(logits), self.params.policy_temperature(), buf)

@@ -2,6 +2,8 @@ use std::{cmp::min, ops::Range};
 
 use std::ops::ControlFlow;
 
+use saturating_cast::SaturatingCast;
+
 use crate::{
     core::{
         bitboard::Bitboard,
@@ -18,6 +20,7 @@ use crate::{
         search::{
             id::RbSet,
             ordering::stages::{GenerateCapturesAndPromos, GenerateQuiets},
+            score::scores,
         },
     },
     misc::List,
@@ -28,7 +31,7 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
     let to = mov.get_to();
     let from = mov.get_from();
 
-    let mut gain = [0; 32];
+    let mut gain = [scores::DRAW; 32];
     let mut depth = Depth::ROOT;
 
     let mut occupancy = pos.get_occupancy();
@@ -37,7 +40,7 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
 
     // initial gain
     gain[0] = {
-        let mut initial_gain = 0;
+        let mut initial_gain = scores::DRAW;
 
         // en passant
         if let Some(sq) = mov.get_capture_sq() {
@@ -52,7 +55,7 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
         }
 
         // return early on quiet moves
-        if initial_gain == 0 && mov.get_capture_sq().is_none() {
+        if initial_gain == scores::DRAW && mov.get_capture_sq().is_none() {
             return 0;
         }
 
@@ -95,7 +98,7 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
         gain[depth.index() - 1] = min(gain[depth.index() - 1], -gain[depth.index()]);
     }
 
-    gain[0].try_into().unwrap_or_else(|_| todo!("TODO: how to handle this"))
+    gain[0].saturating_cast()
 }
 
 /// PSQT bonus/penalty for a move.
@@ -107,7 +110,7 @@ pub fn psqt(phase: TaperValue, piece: PieceType, from: Square, to: Square, flag:
     let to_piece = PromoPieceType::try_from(flag).map_or(piece, |p| p.v());
     let new_score = tapered_psqt(phase, to_piece, to, color);
 
-    (new_score - curr_score)
+    (new_score.v() - curr_score.v())
         .try_into()
         .unwrap_or_else(|_| todo!("TODO: prove that this diff will not exceed i16"))
 }
@@ -584,7 +587,7 @@ pub mod test {
         let mov = Move::new(squares::E4, squares::D5, move_flags::CAPTURE);
 
         // Expected: Gains the pawn
-        run_see_test(fen, mov, colors::WHITE, piece_score(piece_type::PAWN).try_into().unwrap());
+        run_see_test(fen, mov, colors::WHITE, piece_score(piece_type::PAWN).saturating_cast());
     }
 
     #[test]
@@ -598,7 +601,7 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            (piece_score(piece_type::PAWN) - piece_score(piece_type::PAWN)).try_into().unwrap(),
+            (piece_score(piece_type::PAWN) - piece_score(piece_type::PAWN)).saturating_cast(),
         );
     }
 
@@ -614,7 +617,7 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            (-piece_score(piece_type::QUEEN) + piece_score(piece_type::PAWN)).try_into().unwrap(),
+            (-piece_score(piece_type::QUEEN) + piece_score(piece_type::PAWN)).saturating_cast(),
         );
     }
 
@@ -632,9 +635,7 @@ pub mod test {
             fen,
             mov,
             colors::WHITE,
-            (piece_score(piece_type::BISHOP) - piece_score(piece_type::ROOK) + piece_score(piece_type::ROOK))
-                .try_into()
-                .unwrap(),
+            (piece_score(piece_type::BISHOP) - piece_score(piece_type::ROOK) + piece_score(piece_type::ROOK)).saturating_cast(),
         );
     }
 
@@ -646,7 +647,7 @@ pub mod test {
         let mov = Move::new(squares::E5, squares::D6, move_flags::EN_PASSANT);
 
         // Expected: +100 for the pawn.
-        run_see_test(fen, mov, colors::WHITE, piece_score(piece_type::PAWN).try_into().unwrap());
+        run_see_test(fen, mov, colors::WHITE, piece_score(piece_type::PAWN).saturating_cast());
     }
 
     #[test]
@@ -665,8 +666,7 @@ pub mod test {
             mov,
             colors::WHITE,
             (piece_score(piece_type::ROOK) + piece_score(piece_type::QUEEN) - piece_score(piece_type::PAWN) - piece_score(piece_type::QUEEN))
-                .try_into()
-                .unwrap(),
+                .saturating_cast(),
         );
     }
 

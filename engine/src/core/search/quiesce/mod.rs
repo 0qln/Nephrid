@@ -21,7 +21,7 @@ pub const trait QSearchParams {
     fn delta_pruning_threshold(&self) -> TaperValue;
 }
 
-pub type TT<Data, Strat: ReplacementStrategy<Data = Data>> = TranspositionTable<Data, Strat>;
+pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
 
 pub struct QSearcher<'a, Entry, Replace> {
     tt: &'a mut TT<Entry, Replace>,
@@ -31,7 +31,7 @@ impl<'a, E, R> QSearcher<'a, E, R> {
     pub fn new(tt: &'a mut TT<E, R>) -> Self { Self { tt } }
 }
 
-impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Default + Clone, R: ReplacementStrategy<Data = E>> QSearcher<'a, E, R> {
+impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>> QSearcher<'a, E, R> {
     /// # Q-Search
     ///
     /// Make the position quiet.
@@ -49,38 +49,49 @@ impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Default + Clone, R: Repl
         let mut best_value = Score::new(scores::NEG_INF);
 
         let in_check = pos.get_check_state() != CheckState::None;
-        let stm = P::COLOR;
         let piece_info = pos.piece_info();
         let phase = TaperValue::from_position(piece_info);
         let key = pos.get_key();
 
-        let mut static_eval = |this: &mut Self| {
-            let tt_score = this.tt.raw_mut(key).and_then(|e| e.static_eval_mut().validated_mut());
-
-            // try fetching from tt in case there's already a valid entry here, don't overwrite
-            if let Some(valid_score) = tt_score {
-                // Safety: we can interpret it as a Score<P> without worrying about perspective for
-                // most positions, unless there is a zobrist hash key collision.
-                return unsafe { valid_score.interpret_as() }
+        let mut static_eval = Score::<P>::new(scores::NULL);
+        let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
+            // is it already computed? if so, return it.
+            if let Some(_) = static_eval.0.validated() {
+                return static_eval;
             }
 
-            // else compute
-            let score = eval.eval(piece_info, stm, pos.get_ep_target_square(), phase);
+            let mut compute = || eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase);
 
-            this.tt.get_mut(key);
+            // check the tt
+            if let Some(tt_entry) = this.tt.raw_mut(key) {
+                let tt_score = tt_entry.static_eval();
+                // if the tt contains a valid static_eval, return it.
+                if let Some(_) = tt_score.validated() {
+                    static_eval = unsafe { tt_score.interpret_as() };
+                }
+                // else compute it
+                else {
+                    static_eval = compute();
+                }
+            }
+            // if theres a foreign tt entry blocking our current key, just compute and don't store.
+            else {
+                static_eval = compute();
+            }
 
-            score
+            static_eval
         };
 
         if depth == Depth::new(0) {
-
-            return static_eval();
+            return lazy_static_eval(self, pos);
         }
-        let tt_move = tt_entry.and_then(|entry| entry.tt_move()).unwrap_or(Move::null());
+
+        let tt_entry = self.tt.raw_mut(key);
+        let tt_move = tt_entry.map(|entry| entry.mov()).unwrap_or(Move::null());
 
         // stand pad if not in check
         if !in_check {
-            best_value = static_eval();
+            best_value = lazy_static_eval(self, pos);
 
             if best_value >= beta {
                 return best_value;
@@ -114,12 +125,12 @@ impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Default + Clone, R: Repl
                 let value_bonus = PromoPieceType::try_from(m.get_flag())
                     .ok()
                     .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
-                    .unwrap_or(0);
+                    .unwrap_or(scores::DRAW);
 
                 let captured_value = m
                     .get_capture_sq()
                     .map(|capt_sq| piece_score(pos.get_piece(capt_sq).piece_type()))
-                    .unwrap_or(0);
+                    .unwrap_or(scores::DRAW);
 
                 let futility_margin = params.futility_margin();
                 let futility_score = captured_value + value_bonus + futility_margin;

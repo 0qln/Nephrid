@@ -195,13 +195,13 @@ const PSQT_EG: [Psqt; piece_type::N_VARIANTS] = [
 const PSQT: [[Psqt; piece_type::N_VARIANTS]; game_phases::N_VARIANTS] = [PSQT_MG, PSQT_EG];
 
 #[inline]
-pub fn psqt_score(phase: GamePhase, piece: PieceType, sq: Square, color: Color) -> i32 {
+pub fn psqt_score(phase: GamePhase, piece: PieceType, sq: Square, color: Color) -> AnyScore {
     let sq = if color == colors::WHITE { sq.flip_v() } else { sq };
-    PSQT[phase.v() as usize][piece.v() as usize].get(sq)
+    PSQT[phase.v() as usize][piece.v() as usize].get(sq).into()
 }
 
 #[inline]
-pub fn tapered_psqt(phase: TaperValue, piece: PieceType, sq: Square, color: Color) -> i32 {
+pub fn tapered_psqt(phase: TaperValue, piece: PieceType, sq: Square, color: Color) -> AnyScore {
     let mg = psqt_score(game_phases::MG, piece, sq, color);
     let eg = psqt_score(game_phases::EG, piece, sq, color);
     phase.weighted_eval(mg, eg)
@@ -299,18 +299,16 @@ pub fn mobility<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> 
     let score = (piece_type::KNIGHT..piece_type::KING)
         .map(|pt| {
             let pieces = pos.get_bitboard(pt, color);
-            let scores: i32 = pieces
+            let scores: AnyScore = pieces
                 .map(|sq| match pt {
                     piece_type::KNIGHT => {
                         let attacks = knight::lookup_attacks(sq);
-                        let score = attacks.pop_cnt() * 5;
-                        let score = score as i32;
+                        let score: AnyScore = (attacks.pop_cnt() as i32 * 5).into();
                         phase.weighted_eval(score, score)
                     }
                     piece_type::BISHOP => {
                         let attacks = <Bishop as SlidingAttacks>::lookup_attacks(sq, occ);
-                        let score = attacks.pop_cnt() * 5;
-                        let score = score as i32;
+                        let score: AnyScore = (attacks.pop_cnt() as i32 * 5).into();
                         phase.weighted_eval(score, score)
                     }
                     piece_type::ROOK => {
@@ -321,14 +319,14 @@ pub fn mobility<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> 
                         let hort_cnt = horizontal.pop_cnt();
                         phase.weighted_eval(
                             // vertical mobility is more valuable in the opening
-                            (vert_cnt * 3 + hort_cnt * 1) as i32,
-                            (vert_cnt * 5 + hort_cnt * 5) as i32,
+                            ((vert_cnt * 3 + hort_cnt * 1) as i32).into(),
+                            ((vert_cnt * 5 + hort_cnt * 5) as i32).into(),
                         )
                     }
                     piece_type::QUEEN => {
                         let attacks = <Queen as SlidingAttacks>::lookup_attacks(sq, occ);
-                        let score = attacks.pop_cnt() * 5;
-                        score as i32
+                        let score = attacks.pop_cnt() as i32 * 5;
+                        score.into()
                     }
                     _ => unreachable!(),
                 })
@@ -359,7 +357,7 @@ pub fn pawn_shield<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Squ
     let score = p1_score * 10 + p2_score_strong * 5 + p2_score_weak * 4;
 
     // we don't want the pawns from trying to promote in the endgame
-    let score = phase.weighted_eval(score, 0);
+    let score = phase.weighted_eval(score.into(), scores::DRAW);
 
     Score::new(score)
 }
@@ -446,7 +444,7 @@ pub fn pawn_storm_penalty<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare
 
     let storm_danger_penalty = unblocked_pawns.pop_cnt() * 10 + nomnom_pawns.pop_cnt() * 30;
 
-    Penalty::<P>::new(storm_danger_penalty as i32)
+    Penalty::<P>::new(AnyScore::from(storm_danger_penalty as i32))
 }
 
 pub fn open_king_file_penalty<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Square) -> Penalty<P> {
@@ -490,9 +488,9 @@ pub fn open_king_file_penalty<P: Perspective>(pos: &PieceInfo, phase: TaperValue
         }
     }
 
-    let score = phase.weighted_eval(penalty, 0);
+    let penalty = phase.weighted_eval(penalty.into(), scores::DRAW);
 
-    Penalty::<P>::new(score)
+    Penalty::<P>::new(penalty)
 }
 
 pub fn king_safety<P: Perspective>(pos: &PieceInfo, _ep_sq: EpTargetSquare, _turn: Turn, phase: TaperValue) -> Score<P> {
@@ -501,7 +499,7 @@ pub fn king_safety<P: Perspective>(pos: &PieceInfo, _ep_sq: EpTargetSquare, _tur
         // + pawn_storm_penalty::<P>(pos, ep_sq, turn, king)
     }
     else {
-        Score::new(0)
+        scores::DRAW.into()
     }
 }
 
@@ -566,19 +564,19 @@ pub fn passed_pawns<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, turn
         + protective_rooks.pop_cnt() as i32 * 20
         - aggressor_rooks.pop_cnt() as i32 * 15;
 
-    Score::new(score as i32)
+    Score::from(score)
 }
 
 pub fn bishop_pair<P: Perspective>(pos: &PieceInfo) -> Score<P> {
     let bishop_cnt = pos.get_bitboard(piece_type::BISHOP, P::COLOR).pop_cnt();
     let score = if bishop_cnt >= 2 { 75 } else { 0 };
-    Score::new(score)
+    Score::from(score)
 }
 
 pub fn psqt<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
-    fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> i32 {
+    fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> AnyScore {
         (piece_type::PAWN..=piece_type::KING)
-            .map(|piece| pos.get_bitboard(piece, color).map(|sq| psqt_score(phase, piece, sq, color)).sum::<i32>())
+            .map(|piece| pos.get_bitboard(piece, color).map(|sq| psqt_score(phase, piece, sq, color)).sum::<AnyScore>())
             .sum()
     }
 
@@ -640,7 +638,7 @@ pub fn hygge_king<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P
 
         let score = knight_bonuses + queen_bonuses + king_bonus;
 
-        Score::new(phase.weighted_eval(0, score).into())
+        Score::new(phase.weighted_eval(scores::DRAW, score.into()).into())
     }
     else {
         Score::new(scores::DRAW)

@@ -1,9 +1,12 @@
 use std::{fmt, iter, marker::PhantomData, ops};
 
-use saturating_cast::SaturatingCast;
+use saturating_cast::{SaturatingCast, SaturatingElement};
 
 use crate::{
-    core::color::{Color, Perspective},
+    core::{
+        color::{Color, Perspective},
+        search::ordering::MoveScore,
+    },
     impl_variants,
 };
 
@@ -31,7 +34,7 @@ impl_variants! {
         DRAW = 0,
         POS_INF = 30_000,
         NEG_INF = -30_000,
-        NULL = 0xdead_beef,
+        NULL = 0x_C0FFEE,
     }
 }
 
@@ -55,6 +58,27 @@ impl AnyScore {
     ///
     /// The caller has to make sure that `self` is actually of perspective `P`.
     pub const unsafe fn interpret_as<P: Perspective>(self) -> Score<P> { Score::<P>::new(self) }
+}
+
+impl const From<u8> for AnyScore {
+    #[inline(always)]
+    fn from(val: u8) -> Self { Self::new(RawScore::from(val)) }
+}
+
+impl const From<i16> for AnyScore {
+    #[inline(always)]
+    fn from(val: i16) -> Self { Self::new(RawScore::from(val)) }
+}
+
+impl<T: const Into<RawScore>> const ops::AddAssign<T> for AnyScore {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: T) { self.v += rhs.into(); }
+}
+
+impl SaturatingCast for AnyScore {}
+
+impl SaturatingElement<MoveScore> for AnyScore {
+    fn as_element(self) -> MoveScore { (self.v().clamp(MoveScore::MIN.into(), MoveScore::MAX.into())) as MoveScore }
 }
 
 impl const ops::Neg for AnyScore {
@@ -88,9 +112,7 @@ impl const ops::Mul<AnyScore> for AnyScore {
 }
 
 impl iter::Sum for AnyScore {
-    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
-        iter.fold(Self { v: 0 }, |acc, x| acc + x)
-    }
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self { iter.fold(Self { v: 0 }, |acc, x| acc + x) }
 }
 
 impl const From<AnyScore> for RawScore {
@@ -118,6 +140,14 @@ impl<P: Perspective> const From<Penalty<P>> for Score<P> {
 /// A bonus for `P`
 #[derive(Debug, Copy, Clone)]
 pub struct Score<P: Perspective>(pub AnyScore, PhantomData<P>);
+
+impl<P: Perspective, T> const From<T> for Score<P>
+where
+    AnyScore: const From<T>,
+{
+    #[inline(always)]
+    fn from(val: T) -> Self { unsafe { AnyScore::from(val).interpret_as() } }
+}
 
 impl<P: Perspective> fmt::Display for Score<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Score<{}>({})", P::COLOR, self.0) }
@@ -178,15 +208,6 @@ impl<P: Perspective> ops::Not for Score<P> {
     fn not(self) -> Self::Output { Score::new(-self.0) }
 }
 
-// todo:
-impl<P: Perspective> From<Score<P>> for Cp {
-    #[inline(always)]
-    fn from(value: Score<P>) -> Self {
-        let v: TCp = value.0.v.saturating_cast();
-        if P::IS_WHITE { Cp { v } } else { Cp { v: -v } }
-    }
-}
-
 /// Centi pawns
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct Cp {
@@ -201,4 +222,19 @@ impl Cp {
     pub fn v(&self) -> TCp { self.v }
 
     pub fn new(v: TCp) -> Self { Self { v } }
+}
+
+impl From<AnyScore> for Cp {
+    fn from(value: AnyScore) -> Self {
+        let v: TCp = value.v.saturating_cast();
+        Cp { v }
+    }
+}
+
+impl<P: Perspective> From<Score<P>> for Cp {
+    #[inline(always)]
+    fn from(value: Score<P>) -> Self {
+        let v: TCp = value.0.v.saturating_cast();
+        if P::IS_WHITE { Cp { v } } else { Cp { v: -v } }
+    }
 }

@@ -38,7 +38,7 @@ fn search_with_node_target(pos: &mut Position) {
     let debug = DebugMode::off();
     let ct = CancellationToken::new();
     let hash_size = Information::new::<mebibyte>(16);
-    let mut tt = TranspositionTable::<TTEntry>::new_of_size(hash_size);
+    let mut tt = id::TT::new_of_size(hash_size);
 
     id::go(pos, limit, &debug, ct, &mut tt, &mut HceEvaluator, C_IdHceParams);
 }

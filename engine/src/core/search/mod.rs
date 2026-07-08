@@ -78,7 +78,7 @@ pub trait SearchWorker {
 /// Iterative deepening worker.
 pub struct IdWorker<E: StaticEvaluator> {
     // todo: don't store the construction information here but the tt and timeman itself
-    tt: TranspositionTable<id::TTEntry>,
+    tt: id::TT,
     params: IdHceParamsRef,
     eval: E,
 }
