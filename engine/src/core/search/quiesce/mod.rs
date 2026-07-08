@@ -9,7 +9,7 @@ use crate::core::{
     piece::{PromoPieceType, piece_type},
     position::{CheckState, Position},
     search::{
-        data::{ReplacementStrategy, TTIsValid, TTKey, TTMove, TTStaticEval, TranspositionTable},
+        data::{ReplacementStrategy, TTKey, TTMove, TTStaticEval, TranspositionTable},
         id::RbSet,
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::{AnyScore, Score, scores},
@@ -31,7 +31,7 @@ impl<'a, E, R> QSearcher<'a, E, R> {
     pub fn new(tt: &'a mut TT<E, R>) -> Self { Self { tt } }
 }
 
-impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>> QSearcher<'a, E, R> {
+impl<'a, E: TTKey + TTMove + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>> QSearcher<'a, E, R> {
     /// # Q-Search
     ///
     /// Make the position quiet.
@@ -64,7 +64,7 @@ impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Clone, R: ReplacementStr
 
             // check the tt
             if let Some(tt_entry) = this.tt.raw_mut(key) {
-                let tt_score = tt_entry.static_eval();
+                let tt_score = tt_entry.static_eval_mut();
                 // if the tt contains a valid static_eval, return it.
                 if tt_score.validated().is_some() {
                     static_eval = unsafe { tt_score.interpret_as() };
@@ -72,6 +72,7 @@ impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Clone, R: ReplacementStr
                 // else compute it
                 else {
                     static_eval = compute();
+                    *tt_score = static_eval.0;
                 }
             }
             // if theres a foreign tt entry blocking our current key, just compute and don't store.

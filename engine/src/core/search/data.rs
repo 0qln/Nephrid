@@ -4,13 +4,13 @@ use uom::si::{information::byte, u64::Information};
 
 use crate::core::{r#move::Move, search::score::AnyScore, zobrist};
 
-pub const trait TTIsValid {
-    fn is_valid(&self) -> bool;
-    fn new_invalid() -> Self;
+// pub const trait TTIsValid {
+//     fn is_valid(&self) -> bool;
+//     fn new_invalid() -> Self;
 
-    fn as_validated(&self) -> Option<&Self> { if self.is_valid() { Some(self) } else { None } }
-    fn as_validated_mut(&mut self) -> Option<&mut Self> { if self.is_valid() { Some(self) } else { None } }
-}
+//     fn as_validated(&self) -> Option<&Self> { if self.is_valid() { Some(self)
+// } else { None } }     fn as_validated_mut(&mut self) -> Option<&mut Self> {
+// if self.is_valid() { Some(self) } else { None } } }
 
 pub const trait TTKey {
     fn key(&self) -> zobrist::Hash;
@@ -35,11 +35,11 @@ pub struct TranspositionTable<Data, Strat> {
     strat: PhantomData<Strat>,
 }
 
-impl<Data: Clone + const TTIsValid, S> TranspositionTable<Data, S> {
+impl<Data: Clone + const Default, S> TranspositionTable<Data, S> {
     pub fn new(size: usize) -> Self {
-        const fn const_invalid<T: const TTIsValid>() -> T { T::new_invalid() }
+        const fn const_default<T: const Default>() -> T { T::default() }
         Self {
-            entries: (vec![const { const_invalid() }; size]).into_boxed_slice(),
+            entries: (vec![const { const_default() }; size]).into_boxed_slice(),
             strat: PhantomData,
         }
     }
@@ -58,35 +58,21 @@ impl<Data, S> TranspositionTable<Data, S> {
     pub fn size(&self) -> usize { self.entries.len() }
 }
 
-impl<Data: TTKey + TTIsValid, S> TranspositionTable<Data, S> {
+impl<Data: TTKey, S> TranspositionTable<Data, S> {
     /// Get data for the given key.
     #[inline]
     pub fn get(&self, key: zobrist::Hash) -> Option<&Data> {
         let idx = key.index(self.size());
-        let entry = &self.entries[idx];
-        if let Some(data) = entry.as_validated()
-            && data.key() == key
-        {
-            Some(data)
-        }
-        else {
-            None
-        }
+        let data = &self.entries[idx];
+        if data.key() == key { Some(data) } else { None }
     }
 
     /// Get data for the given key.
     #[inline]
     pub fn get_mut(&mut self, key: zobrist::Hash) -> Option<&mut Data> {
         let idx = key.index(self.size());
-        let entry = &mut self.entries[idx];
-        if let Some(data) = entry.as_validated_mut()
-            && data.key() == key
-        {
-            Some(data)
-        }
-        else {
-            None
-        }
+        let data = &mut self.entries[idx];
+        if data.key() == key { Some(data) } else { None }
     }
 
     /// Get data for the given key.
@@ -99,6 +85,7 @@ impl<Data: TTKey + TTIsValid, S> TranspositionTable<Data, S> {
 
     /// Insert and overwrite in any case.
     #[inline]
+    #[deprecated(note = "Use `try_insert` with an always-true-strategy instead.")]
     pub fn insert(&mut self, data: Data) {
         let key = data.key();
         let idx = key.index(self.size());
@@ -123,17 +110,13 @@ impl<Data: TTKey + TTIsValid, S> TranspositionTable<Data, S> {
     // self.entries.iter_mut().flatten() }
 }
 
-impl<Data: TTKey + TTIsValid, Strat: ReplacementStrategy<Data = Data>> TranspositionTable<Data, Strat> {
+impl<Data: TTKey, Strat: ReplacementStrategy<Data = Data>> TranspositionTable<Data, Strat> {
     pub fn try_insert(&mut self, data: Data) {
         let key = data.key();
         let idx = key.index(self.size());
+        let old_data = &self.entries[idx];
 
-        if let Some(old_data) = &self.entries[idx].as_validated() {
-            if Strat::should_replace(old_data, &data) {
-                self.entries[idx] = data;
-            }
-        }
-        else {
+        if Strat::should_replace(old_data, &data) {
             self.entries[idx] = data;
         }
     }

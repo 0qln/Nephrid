@@ -438,8 +438,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             // check the tt
             if let Some(tt_entry) = this.tt.raw_mut(key) {
                 use crate::core::search::data::TTStaticEval;
-
-                let tt_score = tt_entry.static_eval();
+                let tt_score = tt_entry.static_eval_mut();
                 // if the tt contains a valid static_eval, return it.
                 if tt_score.is_valid() {
                     static_eval = unsafe { tt_score.interpret_as() };
@@ -447,6 +446,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                 // else compute it
                 else {
                     static_eval = compute();
+                    *tt_score = static_eval.0;
                 }
             }
             // if theres a foreign tt entry blocking our current key, just compute and don't store.
@@ -471,7 +471,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
             // check the tt
             if let Some(tt_entry) = this.tt.raw_mut(key) {
-                let tt_threat = &tt_entry.threat;
+                let tt_threat = &mut tt_entry.threat;
                 // if the tt contains a valid static_eval, return it.
                 if tt_threat.is_valid() {
                     threat = unsafe { tt_threat.interpret_as() };
@@ -479,6 +479,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                 // else compute it
                 else {
                     threat = compute();
+                    *tt_threat = threat.0;
                 }
             }
             // if theres a foreign tt entry blocking our current key, just compute and don't store.
@@ -705,7 +706,6 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         }
 
         self.tt.try_insert(TTEntry {
-            valid: true,
             key,
             depth,
             score: best_score.0,
@@ -754,7 +754,6 @@ pub type TT = TranspositionTable<TTEntry, TTReplace>;
 
 #[derive(Clone)]
 pub struct TTEntry {
-    valid: bool,
     key: zobrist::Hash,
     depth: Depth,
     score: AnyScore,
@@ -778,13 +777,11 @@ impl const data::TTStaticEval for TTEntry {
     fn static_eval_mut(&mut self) -> &mut AnyScore { &mut self.static_eval }
 }
 
-impl const data::TTIsValid for TTEntry {
-    fn is_valid(&self) -> bool { self.valid }
-    fn new_invalid() -> Self {
+impl const Default for TTEntry {
+    fn default() -> Self {
         Self {
-            valid: false,
             key: zobrist::Hash::default(),
-            depth: Depth::ROOT,
+            depth: Depth::NONE,
             score: scores::NULL,
             static_eval: scores::NULL,
             #[cfg(feature = "id-fhr")]
