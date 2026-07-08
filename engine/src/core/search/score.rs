@@ -41,6 +41,7 @@ impl_variants! {
 impl AnyScore {
     pub const fn new(val: i32) -> Self { Self { v: val } }
 
+    pub const fn is_valid(&self) -> bool { *self != scores::NULL }
     pub const fn validated(&self) -> Option<AnyScore> { if *self == scores::NULL { None } else { Some(*self) } }
     pub const fn validated_mut(&mut self) -> Option<&mut AnyScore> { if *self == scores::NULL { None } else { Some(self) } }
 

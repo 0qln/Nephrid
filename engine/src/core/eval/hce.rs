@@ -638,7 +638,7 @@ pub fn hygge_king<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P
 
         let score = knight_bonuses + queen_bonuses + king_bonus;
 
-        Score::new(phase.weighted_eval(scores::DRAW, score.into()).into())
+        Score::new(phase.weighted_eval(scores::DRAW, score.into()))
     }
     else {
         Score::new(scores::DRAW)

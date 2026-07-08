@@ -111,7 +111,7 @@ impl<'a> StaticEvaluator for NnueEvaluator<'a> {
     fn eval<P: Perspective>(&mut self, _: &PieceInfo, _: Turn, _: EpTargetSquare, _: TaperValue) -> Score<P> {
         let (stm_acc, nstm_acc) = self.accs.get_mut_for::<P>(self.nnue);
         let nnue_eval = self.nnue.forward(stm_acc, nstm_acc);
-        Score::new(nnue_eval.into())
+        Score::new(nnue_eval)
     }
 
     fn observe(&mut self) -> &mut impl PieceInfoObserver { &mut self.accs }
@@ -365,6 +365,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         mut alpha: Score<P>,
         beta: Score<P>,
     ) -> Score<P> {
+        #[cfg(feature = "id-fhr")]
         let threatener = &HceThreatener;
 
         debug_assert!(alpha < beta);
@@ -420,11 +421,15 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         // can understand when they will already be computed...
 
         // this node's static eval.
+        #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
         let mut static_eval = Score::<P>::new(scores::NULL);
+        #[cfg(not(any(feature = "id-fhr", feature = "id-nmp")))]
+        let static_eval = Score::<P>::new(scores::NULL);
 
+        #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
         let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
             // is it already computed? if so, return it.
-            if let Some(_) = static_eval.0.validated() {
+            if static_eval.0.is_valid() {
                 return static_eval;
             }
 
@@ -436,7 +441,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
                 let tt_score = tt_entry.static_eval();
                 // if the tt contains a valid static_eval, return it.
-                if let Some(_) = tt_score.validated() {
+                if tt_score.is_valid() {
                     static_eval = unsafe { tt_score.interpret_as() };
                 }
                 // else compute it
@@ -458,17 +463,17 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         #[cfg(feature = "id-fhr")]
         let mut lazy_threat_score = |this: &mut Self, pos: &Position| {
             // is it already computed? if so, return it.
-            if let Some(_) = threat.0.validated() {
+            if threat.0.is_valid() {
                 return threat;
             }
 
-            let mut compute = || threatener.threat::<P>(pos);
+            let compute = || threatener.threat::<P>(pos);
 
             // check the tt
             if let Some(tt_entry) = this.tt.raw_mut(key) {
                 let tt_threat = &tt_entry.threat;
                 // if the tt contains a valid static_eval, return it.
-                if let Some(_) = tt_threat.validated() {
+                if tt_threat.is_valid() {
                     threat = unsafe { tt_threat.interpret_as() };
                 }
                 // else compute it
@@ -754,7 +759,7 @@ pub struct TTEntry {
     depth: Depth,
     score: AnyScore,
     static_eval: AnyScore,
-            #[cfg(feature = "id-fhr")]
+    #[cfg(feature = "id-fhr")]
     threat: AnyScore,
     bound: Bound,
     mov: Move,

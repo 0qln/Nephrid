@@ -8,8 +8,7 @@ use engine::{
         params::C_IdHceParams,
         position::Position,
         search::{
-            data::TranspositionTable,
-            id::{self, HceEvaluator, TTEntry},
+            id::{self, HceEvaluator},
             limit::UciLimit,
         },
         zobrist,

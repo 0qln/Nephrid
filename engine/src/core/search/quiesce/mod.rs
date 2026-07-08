@@ -56,7 +56,7 @@ impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Clone, R: ReplacementStr
         let mut static_eval = Score::<P>::new(scores::NULL);
         let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
             // is it already computed? if so, return it.
-            if let Some(_) = static_eval.0.validated() {
+            if static_eval.0.validated().is_some() {
                 return static_eval;
             }
 
@@ -66,7 +66,7 @@ impl<'a, E: TTKey + TTMove + TTIsValid + TTStaticEval + Clone, R: ReplacementStr
             if let Some(tt_entry) = this.tt.raw_mut(key) {
                 let tt_score = tt_entry.static_eval();
                 // if the tt contains a valid static_eval, return it.
-                if let Some(_) = tt_score.validated() {
+                if tt_score.validated().is_some() {
                     static_eval = unsafe { tt_score.interpret_as() };
                 }
                 // else compute it
