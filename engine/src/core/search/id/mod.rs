@@ -32,7 +32,14 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable}, limit::UciLimit, mcts::eval::Quality, ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage}, quiesce::{self, QSearchParams, QSearcher}, score::{AnyScore, Cp, Score, scores}, strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth}, tree::{NodeKind, NodeType, node_types::*}
+            data::{self, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+            limit::UciLimit,
+            mcts::eval::Quality,
+            ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
+            quiesce::{self, QSearchParams, QSearcher},
+            score::{AnyScore, Cp, Score, scores},
+            strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth},
+            tree::{NodeKind, NodeType, node_types::*},
         },
         turn::Turn,
         zobrist,
@@ -608,8 +615,6 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                     !self.search::<P::Opponent, Normal>(params.clone(), pos, stats, full_depth, !beta, !alpha)
                 }
                 else {
-                    let one = Score::new(1.into());
-
                     // assume that our move ordering is good the first move will be the best one.
                     // to prove that this move cannot improve our first move, perform a zero window
                     // search with [a,a+1] (~ [-(a-1),-a]). we don't care by how much this move is
@@ -620,7 +625,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                         stats,
                         // scout with a reduced depth
                         reduced_depth,
-                        !(alpha + one),
+                        !(alpha + 1),
                         !alpha,
                     );
 
@@ -634,7 +639,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                             // research at full depth
                             full_depth,
                             // still zero-window.
-                            !(alpha + one),
+                            !(alpha + 1),
                             !alpha,
                         );
                     }
@@ -737,7 +742,7 @@ impl From<quiesce::TTEntry> for TTEntry {
             #[cfg(feature = "id-fhr")]
             threat: scores::NULL,
             bound: e.bound(),
-            mov: e.mov()
+            mov: e.mov(),
         }
     }
 }
