@@ -2,8 +2,18 @@ use std::marker::PhantomData;
 
 use uom::si::{information::byte, u64::Information};
 
-use crate::core::{depth::Depth, r#move::Move, search::{id, score::AnyScore}, zobrist};
+use crate::core::{
+    depth::Depth,
+    r#move::Move,
+    search::{id, score::AnyScore},
+    zobrist,
+};
 
+// todo: either use a TTIsValid struct with a bool field in the TTEntry
+// (currently that adds no size), and then use this to validate that an entry is
+// valid if the TTEntry struck contains fields that cannot be validated
+// themselfes (like Score::NULL), or use some kind of compile time validity
+// token?
 // pub const trait TTIsValid {
 //     fn is_valid(&self) -> bool;
 //     fn new_invalid() -> Self;
@@ -87,6 +97,9 @@ impl<Data: TTKey, S> TranspositionTable<Data, S> {
         if data.key() == key { Some(data) } else { None }
     }
 
+    // todo: this is the same as get_mut, but with a different name. maybe remove
+    // one of them. or do actual validation in get_mut as it was originally
+    // intended.
     /// Get data for the given key.
     #[inline]
     pub fn raw_mut(&mut self, key: zobrist::Hash) -> Option<&mut Data> {
