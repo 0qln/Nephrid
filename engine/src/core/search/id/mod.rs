@@ -521,7 +521,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                     stats,
                     // scout with a reduced depth
                     depth - nmp_r - 1,
-                    !(alpha + Score::from(1)),
+                    !(alpha + 1),
                     !alpha,
                 );
 
