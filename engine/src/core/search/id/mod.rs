@@ -734,6 +734,9 @@ pub struct TTEntry {
 
 impl From<quiesce::TTEntry> for TTEntry {
     fn from(e: quiesce::TTEntry) -> Self {
+        // todo: make sure there is no actual moving happening here and the compiler
+        // should just inline the construction in the qsearch function from the
+        // quiesce::TTEntry here.
         Self {
             key: e.key(),
             depth: e.depth(),
