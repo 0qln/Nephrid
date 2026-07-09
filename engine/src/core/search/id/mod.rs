@@ -286,6 +286,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator> {
     ss: SearchStack,
     tt: &'a mut TranspositionTable<TTEntry>,
     eval: &'b mut E,
+    phase: TaperValue,
 }
 
 impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
@@ -308,6 +309,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             ss: SearchStack::new(),
             tt,
             eval,
+            phase: TaperValue::from_position(pos.piece_info()),
         }
     }
 
@@ -396,7 +398,6 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             return qsearch(pos, alpha, beta, params, self.eval, Depth::new(100));
         }
 
-        let phase = TaperValue::from_position(pos.piece_info());
         let kind = T::KIND;
         let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
@@ -437,7 +438,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             let eval = tt_entry
                 .and_then(|e| e.static_eval)
                 .map(Score::<P>::new)
-                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
+                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase));
 
             static_eval = Some(eval);
 
@@ -484,7 +485,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                 // don't allow nmp when node is in check
                 && !is_in_check
                 // don't do nmp in endgames, where zugzwang is more likely
-                && phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
+                && self.phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
                 // don't bother attempting to improve beta with a tempo down when our static eval is not
                 // even better than beta
                 && lazy_static_eval(self, pos) >= beta - Score::new(params.nmp_margin()) - Score::new((depth.v() * 15) as i32)
@@ -525,7 +526,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             tt_move,
             killers,
             color: P::COLOR,
-            phase,
+            phase: self.phase,
         };
 
         // fail-high reductions
@@ -559,7 +560,8 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             // }
 
             // make the move
-            pos.make_move_for::<P>(m, self.eval.observe());
+            let phase_before = self.phase;
+            pos.make_move_for::<P>(m, &mut (&mut self.phase, self.eval.observe()));
 
             // depth
             let (mut depth_ext, mut depth_reduct) = (0, 0);
@@ -642,6 +644,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
             // unmake the move
             pos.unmake_move_for::<P>(m, self.eval.observe());
+            self.phase = phase_before;
 
             if self.aborted {
                 return Score::new(0);
