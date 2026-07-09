@@ -15,10 +15,10 @@ mod search {
             search::MctsWorker<MPV, Config, Params>
         },
         feature = "id-hce" => {
-            search::IdWorker<search::id::HceEvaluator>
+            search::IdWorker<search::id::HceEvaluator, Params>
         },
         feature = "id-nnue" => {
-            search::IdWorker<search::id::NnueEvaluator<'static>>
+            search::IdWorker<search::id::NnueEvaluator<'static>, Params>
         },
     };
 
