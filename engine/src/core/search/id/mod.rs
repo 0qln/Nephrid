@@ -395,7 +395,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return qsearch(pos, alpha, beta, params, self.eval, Depth::new(100));
+            return qsearch(pos, self.phase, alpha, beta, params, self.eval, Depth::new(100));
         }
 
         let kind = T::KIND;
