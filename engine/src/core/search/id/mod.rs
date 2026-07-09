@@ -32,7 +32,7 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, TTBound, TTDepth, TTKey, TTScore, TTStaticEval, TranspositionTable}, limit::UciLimit, mcts::eval::Quality, ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage}, quiesce::{self, QSearchParams, QSearcher}, score::{AnyScore, Cp, Score, scores}, strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth}, tree::{NodeKind, NodeType, node_types::*}
+            data::{self, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable}, limit::UciLimit, mcts::eval::Quality, ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage}, quiesce::{self, QSearchParams, QSearcher}, score::{AnyScore, Cp, Score, scores}, strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth}, tree::{NodeKind, NodeType, node_types::*}
         },
         turn::Turn,
         zobrist,
@@ -737,7 +737,7 @@ impl From<quiesce::TTEntry> for TTEntry {
             #[cfg(feature = "id-fhr")]
             threat: scores::NULL,
             bound: e.bound(),
-            mov: Move::null()
+            mov: e.mov()
         }
     }
 }

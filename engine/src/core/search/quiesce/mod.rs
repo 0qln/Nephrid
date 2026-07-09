@@ -141,6 +141,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         );
 
         // recurse
+        let mut best_move = Move::null();
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
             // if !pos.is_legal_for::<P>(m) {
             //     continue;
@@ -174,6 +175,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
             if score > best_score {
                 best_score = score;
+                best_move = m;
             }
             if score > alpha {
                 alpha = score;
@@ -191,6 +193,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             score: best_score.0,
             static_eval: static_eval.0,
             bound: Bound::from_scores(beta - 1, beta, best_score),
+            mov: best_move,
         });
 
         best_score
@@ -203,6 +206,11 @@ pub struct TTEntry {
     score: AnyScore,
     static_eval: AnyScore,
     bound: Bound,
+    mov: Move,
+}
+
+impl const TTMove for TTEntry {
+    fn mov(&self) -> Move { self.mov }
 }
 
 impl const TTKey for TTEntry {
