@@ -225,7 +225,7 @@ pub struct PiecePhase {
     v: TPiecePhase,
 }
 
-pub type TPiecePhase = u32;
+pub type TPiecePhase = i32;
 
 impl_variants! {
     TPiecePhase as PiecePhase in piece_phases {
@@ -257,31 +257,31 @@ const fn piece_phase(piece: PieceType) -> PiecePhase { PIECE_PHASES[piece.v() as
 ///  0 => early game
 /// 24 => late game
 #[derive(PartialEq, Debug, Default, Copy, Clone, PartialOrd)]
-pub struct TaperValue(u32);
+pub struct TaperValue(i32);
 
 impl TaperValue {
-    pub const fn new(val: u32) -> Self {
-        debug_assert!(val <= piece_phases::TOTAL_C);
+    pub const fn new(val: i32) -> Self {
+        debug_assert!(val <= piece_phases::TOTAL_C && val >= 0);
         Self(val)
     }
 
     pub fn from_position(pos: &PieceInfo) -> Self {
         let inv_phase = (piece_type::PAWN..piece_type::KING)
-            .map(|p| pos.get_piece_bb(p).pop_cnt() * PIECE_PHASES[p.v() as usize].v())
-            .sum::<u32>();
+            .map(|p| pos.get_piece_bb(p).pop_cnt() as i32 * PIECE_PHASES[p.v() as usize].v())
+            .sum::<i32>();
 
         Self(piece_phases::TOTAL_C.saturating_sub(inv_phase))
     }
 
     pub const fn weighted_eval(&self, mg_eval: i32, eg_eval: i32) -> i32 {
-        let phase = self.0 as i32;
-        let total = piece_phases::TOTAL_C as i32;
+        let phase = self.v();
+        let total = piece_phases::TOTAL_C;
         ((mg_eval * (total - phase)) + (eg_eval * phase)) / total
     }
 
-    pub const fn v(&self) -> u32 { self.0 }
+    pub const fn v(&self) -> i32 { self.0.clamp(0, piece_phases::TOTAL_C) }
 
-    pub const fn div_floor(&self, rhs: u32) -> Self { Self(self.0.div_floor(rhs)) }
+    pub const fn div_floor(&self, rhs: i32) -> Self { Self(self.0.div_floor(rhs)) }
 }
 
 impl PieceInfoObserver for TaperValue {
@@ -292,7 +292,7 @@ impl PieceInfoObserver for TaperValue {
         let phase_delta = piece_phase(p_type);
 
         // increases remaining material, which brings us closer to early-game (0)
-        self.0 = self.0.saturating_sub(phase_delta.v());
+        self.0 -= phase_delta.v();
     }
 
     fn on_piece_removed(&mut self, _sq: Square, piece: Piece) {
