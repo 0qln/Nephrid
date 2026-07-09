@@ -51,6 +51,10 @@ impl AnyScore {
         }
     }
 
+    // todo: instead of the Score::<P>::From<AnyScore> functions we should be using
+    // this one and prove everywhere that casting this anyscore to perspective `P`
+    // is a valid thing to do in that context.
+    //
     /// # Safety
     ///
     /// The caller has to make sure that `self` is actually of perspective `P`.
