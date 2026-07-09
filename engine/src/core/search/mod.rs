@@ -54,6 +54,7 @@ pub mod perft;
 pub mod quiesce;
 pub mod score;
 pub mod strat;
+pub mod tree;
 
 pub struct SearchThread {
     pub tx: Sender<Command>,

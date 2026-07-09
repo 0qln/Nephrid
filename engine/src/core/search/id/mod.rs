@@ -32,14 +32,7 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, TTBound, TTDepth, TTKey, TTScore, TTStaticEval, TranspositionTable},
-            id::node_types::*,
-            limit::UciLimit,
-            mcts::eval::Quality,
-            ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
-            quiesce::{self, QSearchParams, QSearcher},
-            score::{AnyScore, Cp, Score, scores},
-            strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth},
+            data::{self, TTBound, TTDepth, TTKey, TTScore, TTStaticEval, TranspositionTable}, limit::UciLimit, mcts::eval::Quality, ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage}, quiesce::{self, QSearchParams, QSearcher}, score::{AnyScore, Cp, Score, scores}, strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth}, tree::{NodeKind, NodeType, node_types::*}
         },
         turn::Turn,
         zobrist,
@@ -391,7 +384,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return QSearcher::new(self.tt).go(pos, alpha, beta, params, self.eval, Depth::new(100));
+            return QSearcher::new(self.tt).go::<P, T>(pos, alpha, beta, params, self.eval, Depth::new(100));
         }
 
         let phase = TaperValue::from_position(pos.piece_info());
@@ -717,36 +710,6 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         });
 
         best_score
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum NodeKind {
-    Root,
-    Normal,
-    Cut,
-}
-
-const trait NodeType {
-    const KIND: NodeKind;
-}
-
-mod node_types {
-    use super::{NodeKind, NodeType};
-
-    pub struct Root;
-    impl const NodeType for Root {
-        const KIND: NodeKind = NodeKind::Root;
-    }
-
-    pub struct Normal;
-    impl const NodeType for Normal {
-        const KIND: NodeKind = NodeKind::Normal;
-    }
-
-    pub struct Cut;
-    impl const NodeType for Cut {
-        const KIND: NodeKind = NodeKind::Cut;
     }
 }
 

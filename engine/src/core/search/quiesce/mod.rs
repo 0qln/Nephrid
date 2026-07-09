@@ -13,6 +13,7 @@ use crate::core::{
         id::{Bound, RbSet},
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::{AnyScore, Score, scores},
+        tree::{NodeKind, NodeType},
     },
     zobrist,
 };
@@ -32,13 +33,15 @@ impl<'a, E, R> QSearcher<'a, E, R> {
     pub fn new(tt: &'a mut TT<E, R>) -> Self { Self { tt } }
 }
 
-impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>> QSearcher<'a, E, R> {
+impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>>
+    QSearcher<'a, E, R>
+{
     /// # Q-Search
     ///
     /// Make the position quiet.
     ///
     /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
-    pub fn go<P: Perspective>(
+    pub fn go<P: Perspective, T: NodeType>(
         &mut self,
         pos: &mut Position,
         mut alpha: Score<P>,
@@ -93,7 +96,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // tt cutoff
         {
-            if let Some(entry) = tt_entry
+            if T::KIND == NodeKind::Cut
+                && let Some(entry) = tt_entry
                 && ((entry.bound() == Bound::Exact)
                     || (entry.bound() == Bound::Lower && entry.score() >= beta.0)
                     || (entry.bound() == Bound::Upper && entry.score() <= alpha.0))
@@ -164,7 +168,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
             pos.make_move_for::<P>(m, eval.observe());
 
-            let score = !self.go(pos, !beta, !alpha, params.clone(), eval, depth - 1);
+            let score = !self.go::<P::Opponent, T>(pos, !beta, !alpha, params.clone(), eval, depth - 1);
 
             pos.unmake_move_for::<P>(m, eval.observe());
 

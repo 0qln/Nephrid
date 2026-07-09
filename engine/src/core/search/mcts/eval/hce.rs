@@ -25,7 +25,7 @@ use crate::{
             },
             ordering::{self},
             quiesce::QSearcher,
-            score::{AnyScore, Cp, Score, scores},
+            score::{AnyScore, Cp, Score, scores}, tree::node_types,
         },
         turn::Turn,
     },
@@ -116,7 +116,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
         let mut tt = id::TT::new(1);
         let quality: Cp = match pos.get_turn().v() {
             colors::WHITE_C => QSearcher::new(&mut tt)
-                .go::<perspectives::White>(
+                .go::<perspectives::White, node_types::Normal>(
                     pos,
                     Score::new(scores::NEG_INF),
                     Score::new(scores::POS_INF),
@@ -126,7 +126,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 )
                 .into(),
             colors::BLACK_C => QSearcher::new(&mut tt)
-                .go::<perspectives::Black>(
+                .go::<perspectives::Black, node_types::Normal>(
                     pos,
                     Score::new(scores::NEG_INF),
                     Score::new(scores::POS_INF),
