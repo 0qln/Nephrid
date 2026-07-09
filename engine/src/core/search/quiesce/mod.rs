@@ -9,11 +9,12 @@ use crate::core::{
     piece::{PromoPieceType, piece_type},
     position::{CheckState, Position},
     search::{
-        data::{ReplacementStrategy, TTKey, TTMove, TTStaticEval, TranspositionTable},
-        id::RbSet,
+        data::{ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+        id::{Bound, RbSet},
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::{AnyScore, Score, scores},
     },
+    zobrist,
 };
 
 pub const trait QSearchParams {
@@ -31,7 +32,7 @@ impl<'a, E, R> QSearcher<'a, E, R> {
     pub fn new(tt: &'a mut TT<E, R>) -> Self { Self { tt } }
 }
 
-impl<'a, E: TTKey + TTMove + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>> QSearcher<'a, E, R> {
+impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>> QSearcher<'a, E, R> {
     /// # Q-Search
     ///
     /// Make the position quiet.
@@ -46,7 +47,7 @@ impl<'a, E: TTKey + TTMove + TTStaticEval + Clone, R: ReplacementStrategy<Data =
         eval: &mut impl StaticEvaluator,
         depth: Depth,
     ) -> Score<P> {
-        let mut best_value = Score::new(scores::NEG_INF);
+        let mut best_score = Score::new(scores::NEG_INF);
 
         let in_check = pos.get_check_state() != CheckState::None;
         let piece_info = pos.piece_info();
@@ -88,17 +89,28 @@ impl<'a, E: TTKey + TTMove + TTStaticEval + Clone, R: ReplacementStrategy<Data =
         }
 
         let tt_entry = self.tt.raw_mut(key);
-        let tt_move = tt_entry.map(|entry| entry.mov()).unwrap_or(Move::null());
+        let tt_move = tt_entry.as_ref().map(|e| e.mov()).unwrap_or(Move::null());
+
+        // tt cutoff
+        {
+            if let Some(entry) = tt_entry
+                && ((entry.bound() == Bound::Exact)
+                    || (entry.bound() == Bound::Lower && entry.score() >= beta.0)
+                    || (entry.bound() == Bound::Upper && entry.score() <= alpha.0))
+            {
+                return Score::new(entry.score());
+            }
+        }
 
         // stand pad if not in check
         if !in_check {
-            best_value = lazy_static_eval(self, pos);
+            best_score = lazy_static_eval(self, pos);
 
-            if best_value >= beta {
-                return best_value;
+            if best_score >= beta {
+                return best_score;
             }
-            if best_value > alpha {
-                alpha = best_value;
+            if best_score > alpha {
+                alpha = best_score;
             }
         }
 
@@ -145,7 +157,7 @@ impl<'a, E: TTKey + TTMove + TTStaticEval + Clone, R: ReplacementStrategy<Data =
                 let futility_margin = params.futility_margin();
                 let futility_score = captured_value + value_bonus + futility_margin;
 
-                if best_value + Score::new(futility_score) < alpha {
+                if best_score + Score::new(futility_score) < alpha {
                     continue;
                 }
             }
@@ -156,19 +168,58 @@ impl<'a, E: TTKey + TTMove + TTStaticEval + Clone, R: ReplacementStrategy<Data =
 
             pos.unmake_move_for::<P>(m, eval.observe());
 
-            if score >= beta {
-                return score;
-            }
-            if score > best_value {
-                best_value = score;
+            if score > best_score {
+                best_score = score;
             }
             if score > alpha {
                 alpha = score;
+
+                if score >= beta {
+                    // fail high
+                    break;
+                }
             }
         }
 
-        best_value
+        self.tt.try_insert(TTEntry {
+            key,
+            depth: Depth::NONE,
+            score: best_score.0,
+            static_eval: static_eval.0,
+            bound: Bound::from_scores(beta - 1, beta, best_score),
+        });
+
+        best_score
     }
+}
+
+pub struct TTEntry {
+    key: zobrist::Hash,
+    depth: Depth,
+    score: AnyScore,
+    static_eval: AnyScore,
+    bound: Bound,
+}
+
+impl const TTKey for TTEntry {
+    fn key(&self) -> zobrist::Hash { self.key }
+}
+
+impl const TTDepth for TTEntry {
+    fn depth(&self) -> Depth { self.depth }
+}
+
+impl const TTStaticEval for TTEntry {
+    fn static_eval(&self) -> AnyScore { self.static_eval }
+    fn static_eval_mut(&mut self) -> &mut AnyScore { &mut self.static_eval }
+}
+
+impl const TTBound for TTEntry {
+    fn bound(&self) -> Bound { self.bound }
+}
+
+impl const TTScore for TTEntry {
+    fn score(&self) -> AnyScore { self.score }
 }
 
 struct MoveScorer {

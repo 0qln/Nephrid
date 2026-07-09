@@ -32,12 +32,12 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, TranspositionTable},
+            data::{self, TTBound, TTDepth, TTKey, TTScore, TTStaticEval, TranspositionTable},
             id::node_types::*,
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
-            quiesce::{QSearchParams, QSearcher},
+            quiesce::{self, QSearchParams, QSearcher},
             score::{AnyScore, Cp, Score, scores},
             strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth},
         },
@@ -764,12 +764,39 @@ pub struct TTEntry {
     mov: Move,
 }
 
+impl From<quiesce::TTEntry> for TTEntry {
+    fn from(e: quiesce::TTEntry) -> Self {
+        Self {
+            key: e.key(),
+            depth: e.depth(),
+            score: e.score(),
+            static_eval: e.static_eval(),
+            #[cfg(feature = "id-fhr")]
+            threat: scores::NULL,
+            bound: e.bound(),
+            mov: Move::null()
+        }
+    }
+}
+
 impl const data::TTKey for TTEntry {
     fn key(&self) -> zobrist::Hash { self.key }
 }
 
+impl const data::TTScore for TTEntry {
+    fn score(&self) -> AnyScore { self.score }
+}
+
 impl const data::TTMove for TTEntry {
     fn mov(&self) -> Move { self.mov }
+}
+
+impl const data::TTDepth for TTEntry {
+    fn depth(&self) -> Depth { self.depth }
+}
+
+impl const data::TTBound for TTEntry {
+    fn bound(&self) -> Bound { self.bound }
 }
 
 impl const data::TTStaticEval for TTEntry {

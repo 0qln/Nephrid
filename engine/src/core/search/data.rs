@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use uom::si::{information::byte, u64::Information};
 
-use crate::core::{r#move::Move, search::score::AnyScore, zobrist};
+use crate::core::{depth::Depth, r#move::Move, search::{id, score::AnyScore}, zobrist};
 
 // pub const trait TTIsValid {
 //     fn is_valid(&self) -> bool;
@@ -18,6 +18,18 @@ pub const trait TTKey {
 
 pub const trait TTMove {
     fn mov(&self) -> Move;
+}
+
+pub const trait TTDepth {
+    fn depth(&self) -> Depth;
+}
+
+pub const trait TTBound {
+    fn bound(&self) -> id::Bound;
+}
+
+pub const trait TTScore {
+    fn score(&self) -> AnyScore;
 }
 
 pub const trait TTStaticEval {
@@ -111,7 +123,9 @@ impl<Data: TTKey, S> TranspositionTable<Data, S> {
 }
 
 impl<Data: TTKey, Strat: ReplacementStrategy<Data = Data>> TranspositionTable<Data, Strat> {
-    pub fn try_insert(&mut self, data: Data) {
+    pub fn try_insert<T: Into<Data>>(&mut self, t: T) {
+        let data = t.into();
+
         let key = data.key();
         let idx = key.index(self.size());
         let old_data = &self.entries[idx];

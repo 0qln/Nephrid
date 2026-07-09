@@ -321,7 +321,7 @@ impl IConfigBuilder for C_IdNnueParams {
 
 impl const ChronoParams for C_IdNnueParams {
     fn entropy_target(&self) -> NormalizedEntropy { NormalizedEntropy::new_c(0.55) }
-    fn movestreak_target(&self) -> u32 { 6 }
+    fn movestreak_target(&self) -> u32 { 60 }
 }
 
 impl const QSearchParams for C_IdNnueParams {
