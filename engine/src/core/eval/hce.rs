@@ -4,8 +4,8 @@ use crate::{
         color::{Color, Perspective, colors},
         coordinates::{EpTargetSquare, File, Rank, Square, files, pawn_utils::single_step, squares},
         move_iter::{bishop::Bishop, king, knight, pawn, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks},
-        piece::{PieceType, piece_type},
-        position::PieceInfo,
+        piece::{Piece, PieceType, piece_type},
+        position::{PieceInfo, PieceInfoObserver},
         search::score::{AnyScore, Penalty, Score, scores},
         turn::Turn,
     },
@@ -220,6 +220,7 @@ impl_variants! {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct PiecePhase {
     v: TPiecePhase,
 }
@@ -248,6 +249,8 @@ const PIECE_PHASES: [PiecePhase; piece_type::N_VARIANTS] = {
     use piece_phases::*;
     [NONE, PAWN, KNIGHT, BISHOP, ROOK, QUEEN, NONE]
 };
+
+const fn piece_phase(piece: PieceType) -> PiecePhase { PIECE_PHASES[piece.v() as usize] }
 
 /// Tapered Evaluation Phase value.
 /// Where:
@@ -281,6 +284,31 @@ impl TaperValue {
     pub const fn v(&self) -> u32 { self.0 }
 
     pub const fn div_floor(&self, rhs: u32) -> Self { Self(self.0.div_floor(rhs)) }
+}
+
+impl PieceInfoObserver for TaperValue {
+    fn on_init(&mut self, piece_info: &PieceInfo) { *self = Self::from_position(piece_info); }
+
+    fn on_piece_put(&mut self, _sq: Square, piece: Piece) {
+        let p_type = piece.piece_type();
+        let phase_delta = piece_phase(p_type);
+
+        // increases remaining material, which brings us closer to early-game (0)
+        self.0 = self.0.saturating_sub(phase_delta.v());
+    }
+
+    fn on_piece_removed(&mut self, _sq: Square, piece: Piece) {
+        let p_type = piece.piece_type();
+        let phase_delta = piece_phase(p_type);
+
+        // decreases remaining material, pushing us toward late-game (24)
+        self.0 += phase_delta.v();
+    }
+
+    fn on_piece_moved(&mut self, _from: Square, _to: Square, _piece: Piece) {
+        // quiet moves do not alter the piece count or types on the board,
+        // so the tapered phase value remains completely unchanged.
+    }
 }
 
 pub fn material<P: Perspective>(pos: &PieceInfo) -> Score<P> {
@@ -576,7 +604,11 @@ pub fn bishop_pair<P: Perspective>(pos: &PieceInfo) -> Score<P> {
 pub fn psqt<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
     fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> AnyScore {
         (piece_type::PAWN..=piece_type::KING)
-            .map(|piece| pos.get_bitboard(piece, color).map(|sq| psqt_score(phase, piece, sq, color)).sum::<AnyScore>())
+            .map(|piece| {
+                pos.get_bitboard(piece, color)
+                    .map(|sq| psqt_score(phase, piece, sq, color))
+                    .sum::<AnyScore>()
+            })
             .sum()
     }
 
