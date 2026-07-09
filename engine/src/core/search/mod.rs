@@ -1,8 +1,9 @@
 use crate::core::{
+    chrono::ChronoParams,
     eval::StaticEvaluator,
-    params::{IParams, IdHceParams, IdHceParamsRef},
+    params::IParams,
     position::PieceInfoObserver,
-    search::{mcts::search::MctsParams, score::Cp, tt::TranspositionTable},
+    search::{id::IdParams, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp, tt::TranspositionTable},
 };
 use thiserror::Error;
 
@@ -76,15 +77,18 @@ pub trait SearchWorker {
 }
 
 /// Iterative deepening worker.
-pub struct IdWorker<E: StaticEvaluator> {
+pub struct IdWorker<E: StaticEvaluator, X: IParams> {
     // todo: don't store the construction information here but the tt and timeman itself
     tt: TranspositionTable<id::TTEntry>,
-    params: IdHceParamsRef,
+    params: X::Ref,
     eval: E,
 }
 
-impl<E: StaticEvaluator + Default> SearchWorker for IdWorker<E> {
-    type X = IdHceParams;
+impl<E: StaticEvaluator + Default, X: IParams + Default> SearchWorker for IdWorker<E, X>
+where
+    X::Ref: IdParams + ChronoParams + QSearchParams,
+{
+    type X = X;
 
     fn new() -> Self {
         Self {
@@ -133,7 +137,7 @@ impl<E: StaticEvaluator + Default> SearchWorker for IdWorker<E> {
                 let cfg = || config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")));
 
                 self.tt = TranspositionTable::new_of_size(cfg()?.hash());
-                self.params = IdHceParams::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
+                self.params = Self::X::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
                 self.eval = E::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
 
                 Ok(())
