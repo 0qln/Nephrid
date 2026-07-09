@@ -47,7 +47,6 @@ impl Depth {
     pub const ROOT: Depth = Depth { v: 0 };
     pub const MAX: Depth = Depth { v: 250 };
     pub const NONE: Depth = Depth { v: 255 };
-    pub const QS: Depth = Depth { v: 254 };
 
     pub const fn v(&self) -> u8 { self.v }
 
