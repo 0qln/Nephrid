@@ -100,10 +100,10 @@ impl const ops::Neg for AnyScore {
     fn neg(self) -> Self::Output { Self::new(-self.v) }
 }
 
-impl const ops::Add for AnyScore {
+impl<Rhs: const Into<AnyScore>> const ops::Add<Rhs> for AnyScore {
     type Output = Self;
     #[inline(always)]
-    fn add(self, rhs: Self) -> Self::Output { Self::new(self.v + rhs.v) }
+    fn add(self, rhs: Rhs) -> Self::Output { Self::new(self.v + rhs.into().v) }
 }
 
 impl const ops::Sub for AnyScore {

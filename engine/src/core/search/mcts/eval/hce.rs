@@ -25,7 +25,8 @@ use crate::{
             },
             ordering::{self},
             quiesce::QSearcher,
-            score::{AnyScore, Cp, Score, scores}, tree::node_types,
+            score::{AnyScore, Cp, Score, scores},
+            tree::node_types,
         },
         turn::Turn,
     },
@@ -167,11 +168,10 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             let from = mov.get_from();
             let to = mov.get_to();
             let piece = pos.get_piece(from).piece_type();
-            let psqt: AnyScore = ordering::psqt(phase, piece, from, to, mov.get_flag(), color).into();
-            let see: AnyScore = ordering::see(pos, mov, color).into();
-            let check: AnyScore = PolicyInput::check_bonus(phase, pos, color, mov);
-            let meta: AnyScore = PolicyInput::meta(pos, mov, state).into();
-            let score = psqt + see + check + meta;
+            let score = AnyScore::from(ordering::psqt(phase, piece, from, to, mov.get_flag(), color))
+                + ordering::see(pos, mov, color)
+                + PolicyInput::check_bonus(phase, pos, color, mov)
+                + PolicyInput::meta(pos, mov, state);
 
             logits.push(score.v() as f32);
         }
