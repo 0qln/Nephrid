@@ -26,6 +26,7 @@ impl fmt::Display for AnyScore {
 impl_variants! {
     RawScore as AnyScore in scores {
         DRAW = 0,
+        ZERO = 0,
         POS_INF = 30_000,
         NEG_INF = -30_000,
         NULL = 0xC0FFEE,
@@ -166,6 +167,7 @@ impl<P: Perspective> Score<P> {
     pub const NEG_INF: Self = unsafe { scores::NEG_INF.interpret_as() };
     pub const POS_INF: Self = unsafe { scores::POS_INF.interpret_as() };
     pub const DRAW: Self = unsafe { scores::DRAW.interpret_as() };
+    pub const ZERO: Self = unsafe { scores::ZERO.interpret_as() };
     pub const NULL: Self = unsafe { scores::NULL.interpret_as() };
 }
 

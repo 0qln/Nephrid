@@ -31,7 +31,7 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
     let to = mov.get_to();
     let from = mov.get_from();
 
-    let mut gain = [scores::DRAW; 32];
+    let mut gain = [scores::ZERO; 32];
     let mut depth = Depth::ROOT;
 
     let mut occupancy = pos.get_occupancy();
@@ -40,7 +40,7 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
 
     // initial gain
     gain[0] = {
-        let mut initial_gain = scores::DRAW;
+        let mut initial_gain = scores::ZERO;
 
         // en passant
         if let Some(sq) = mov.get_capture_sq() {
@@ -55,7 +55,7 @@ pub fn see(pos: &PieceInfo, mov: Move, mut us: Color) -> MoveScore {
         }
 
         // return early on quiet moves
-        if initial_gain == scores::DRAW && mov.get_capture_sq().is_none() {
+        if initial_gain == scores::ZERO && mov.get_capture_sq().is_none() {
             return 0;
         }
 

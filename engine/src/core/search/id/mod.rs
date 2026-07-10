@@ -152,7 +152,7 @@ impl HceThreatener {
         const QUEEN_SCORE: AnyScore = hce::piece_score(piece_type::QUEEN);
         const ROOK_SCORE: AnyScore = hce::piece_score(piece_type::ROOK);
 
-        let mut max_threat = Score::<P::Opponent>::DRAW;
+        let mut max_threat = Score::<P::Opponent>::ZERO;
 
         // todo: only generate captures, promos, and checks.
         let moves = pos.collect_legals_for::<P::Opponent, _>(MoveList::new());

@@ -384,7 +384,7 @@ pub fn pawn_shield<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Squ
     let score = p1_score * 10 + p2_score_strong * 5 + p2_score_weak * 4;
 
     // we don't want the pawns from trying to promote in the endgame
-    let score = phase.weighted_eval(score.into(), scores::DRAW);
+    let score = phase.weighted_eval(score.into(), scores::ZERO);
 
     unsafe { score.interpret_as() }
 }
@@ -518,7 +518,7 @@ pub fn open_king_file_penalty<P: Perspective>(pos: &PieceInfo, phase: TaperValue
         }
     }
 
-    let penalty = phase.weighted_eval(penalty.into(), scores::DRAW);
+    let penalty = phase.weighted_eval(penalty.into(), scores::ZERO);
     let score = -penalty;
 
     unsafe { score.interpret_as() }
@@ -530,7 +530,7 @@ pub fn king_safety<P: Perspective>(pos: &PieceInfo, _ep_sq: EpTargetSquare, _tur
         // + pawn_storm_penalty::<P>(pos, ep_sq, turn, king)
     }
     else {
-        Score::DRAW
+        Score::ZERO
     }
 }
 
@@ -674,11 +674,11 @@ pub fn hygge_king<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P
         // rook distance is not that important for mating in the eg
 
         let score = knight_bonuses + queen_bonuses + king_bonus;
-        let score = phase.weighted_eval(scores::DRAW, score.into());
+        let score = phase.weighted_eval(scores::ZERO, score.into());
 
         unsafe { score.interpret_as() }
     }
     else {
-        Score::DRAW
+        Score::ZERO
     }
 }

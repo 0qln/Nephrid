@@ -82,12 +82,12 @@ pub fn qsearch<P: Perspective>(
             let value_bonus = PromoPieceType::try_from(m.get_flag())
                 .ok()
                 .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
-                .unwrap_or(scores::DRAW);
+                .unwrap_or(scores::ZERO);
 
             let captured_value = m
                 .get_capture_sq()
                 .map(|capt_sq| piece_score(pos.get_piece(capt_sq).piece_type()))
-                .unwrap_or(scores::DRAW);
+                .unwrap_or(scores::ZERO);
 
             let futility_margin = params.futility_margin();
             let futility_score = captured_value + value_bonus + futility_margin;

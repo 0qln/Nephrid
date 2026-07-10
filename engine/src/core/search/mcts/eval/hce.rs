@@ -82,7 +82,7 @@ impl PolicyInput {
             CheckState::Single => AnyScore::new(50),
             CheckState::Double => AnyScore::new(100),
         };
-        phase.weighted_eval(scores::DRAW, score)
+        phase.weighted_eval(scores::ZERO, score)
     }
 }
 
