@@ -6,7 +6,8 @@ use crate::{
         search::{
             id::IdParams,
             mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
-            quiesce::QSearchParams, score::AnyScore,
+            quiesce::QSearchParams,
+            score::AnyScore,
         },
     },
     math::{self, NormalizedEntropy},
@@ -500,6 +501,7 @@ impl Configuration {
             #[cfg(feature = "tunable")] "mcts-tt-best-move" => self.mcts_tt_best_move.set(value),
             #[cfg(feature = "tunable")] "select-cpuct" => self.select_cpuct.set(value),
             #[cfg(feature = "tunable")] "timeman-entropy-target" => self.timeman_entropy_target.set(value),
+            #[cfg(feature = "tunable")] "timeman-movestreak-target" => self.timeman_movestreak_target.set(value),
             #[cfg(feature = "tunable")] "id-nmp-reduction" => self.id_nmp_reduction.set(value),
             #[cfg(feature = "tunable")] "id-nmp-phase-threshold" => self.id_nmp_phase_threshold.set(value),
             #[cfg(feature = "tunable")] "id-nmp-depth-factor" => self.id_nmp_depth_factor.set(value),
