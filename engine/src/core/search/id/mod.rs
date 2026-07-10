@@ -437,9 +437,8 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         // features... find a clean way to solve this or make sure the compiler
         // can understand when they will already be computed...
 
-        // this node's static eval.
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
-        let mut static_eval = Score::<P>::new(scores::NULL);
+        let mut static_eval = Score::new(scores::NULL);
 
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
         let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
@@ -448,61 +447,37 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                 return static_eval;
             }
 
-            let mut compute = || this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase);
+            let tt_entry = this.tt.get(key);
 
-            // check the tt
-            if let Some(tt_entry) = this.tt.get_mut(key) {
-                use crate::core::search::data::TTStaticEval;
-                let tt_score = tt_entry.static_eval_mut();
-                // if the tt contains a valid static_eval, return it.
-                if tt_score.is_valid() {
-                    static_eval = unsafe { tt_score.interpret_as() };
-                }
-                // else compute it
-                else {
-                    static_eval = compute();
-                    *tt_score = static_eval.0;
-                }
-            }
-            // if theres a foreign tt entry blocking our current key, just compute and don't store.
-            else {
-                static_eval = compute();
-            }
+            let eval = tt_entry
+                .map(|e| Score::<P>::new(e.static_eval))
+                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase));
 
-            static_eval
+            static_eval = eval;
+
+            eval
         };
 
         #[cfg(feature = "id-fhr")]
-        let mut threat = Score::<P::Opponent>::new(scores::NULL);
+        let mut threat = None;
 
         #[cfg(feature = "id-fhr")]
-        let mut lazy_threat_score = |this: &mut Self, pos: &Position| {
+        let mut lazy_threat_score = |this: &Self, pos: &Position| {
             // is it already computed? if so, return it.
-            if threat.0.is_valid() {
-                return threat;
+            if let Some(score) = threat {
+                return score;
             }
 
-            let compute = || threatener.threat::<P>(pos);
+            let tt_entry = this.tt.get(key);
 
-            // check the tt
-            if let Some(tt_entry) = this.tt.raw_mut(key) {
-                let tt_threat = &mut tt_entry.threat;
-                // if the tt contains a valid static_eval, return it.
-                if tt_threat.is_valid() {
-                    threat = unsafe { tt_threat.interpret_as() };
-                }
-                // else compute it
-                else {
-                    threat = compute();
-                    *tt_threat = threat.0;
-                }
-            }
-            // if theres a foreign tt entry blocking our current key, just compute and don't store.
-            else {
-                threat = compute();
-            }
+            let score = tt_entry
+                .and_then(|e| e.threat)
+                .map(Score::<P::Opponent>::new)
+                .unwrap_or_else(|| threatener.threat::<P>(pos));
 
-            threat
+            threat = Some(score);
+
+            score
         };
 
         // null move pruning
