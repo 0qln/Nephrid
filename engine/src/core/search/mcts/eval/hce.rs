@@ -24,7 +24,7 @@ use crate::{
             },
             ordering::{self},
             quiesce::qsearch,
-            score::{Cp, Score},
+            score::{AnyScore, Cp, Score, scores},
         },
         turn::Turn,
     },
@@ -75,14 +75,14 @@ impl PolicyInput {
         0
     }
 
-    pub fn check_bonus(_phase: TaperValue, pos: &PieceInfo, turn: Turn, mov: Move) -> i32 {
+    pub fn check_bonus(phase: TaperValue, pos: &PieceInfo, turn: Turn, mov: Move) -> AnyScore {
         let check = pos.does_check(turn, mov);
         let score = match check {
-            CheckState::None => 0,
-            CheckState::Single => 50,
-            CheckState::Double => 100,
+            CheckState::None => AnyScore::new(0),
+            CheckState::Single => AnyScore::new(50),
+            CheckState::Double => AnyScore::new(100),
         };
-        _phase.weighted_eval(0, score)
+        phase.weighted_eval(scores::DRAW, score)
     }
 }
 
@@ -116,8 +116,8 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             colors::WHITE_C => qsearch::<perspectives::White>(
                 pos,
                 phase,
-                Score::NEG_INF,
-                Score::POS_INF,
+                Score::new(scores::NEG_INF),
+                Score::new(scores::POS_INF),
                 MctsHceParamsRef::clone(&params),
                 &mut StaticEvaluator,
                 Depth::new(30),
@@ -126,8 +126,8 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             colors::BLACK_C => qsearch::<perspectives::Black>(
                 pos,
                 phase,
-                Score::NEG_INF,
-                Score::POS_INF,
+                Score::new(scores::NEG_INF),
+                Score::new(scores::POS_INF),
                 MctsHceParamsRef::clone(&params),
                 &mut StaticEvaluator,
                 Depth::new(30),
@@ -165,12 +165,12 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             let from = mov.get_from();
             let to = mov.get_to();
             let piece = pos.get_piece(from).piece_type();
-            let score = ordering::psqt(phase, piece, from, to, mov.get_flag(), color) as i32
-                + ordering::see(pos, mov, color) as i32
+            let score = AnyScore::from(ordering::psqt(phase, piece, from, to, mov.get_flag(), color))
+                + ordering::see(pos, mov, color)
                 + PolicyInput::check_bonus(phase, pos, color, mov)
                 + PolicyInput::meta(pos, mov, state);
 
-            logits.push(score as f32);
+            logits.push(score.v() as f32);
         }
 
         Policy::from_logits(Logits(logits), self.params.policy_temperature(), buf)

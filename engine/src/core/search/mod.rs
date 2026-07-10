@@ -2,7 +2,7 @@ use crate::core::{
     chrono::{ChronoParams, TimeMan},
     eval::StaticEvaluator,
     params::IParams,
-    search::{id::IdParams, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp, tt::TranspositionTable},
+    search::{id::IdParams, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp},
 };
 use thiserror::Error;
 
@@ -44,6 +44,7 @@ use crate::{
     misc::DebugMode,
 };
 
+pub mod data;
 pub mod id;
 pub mod limit;
 pub mod mcts;
@@ -53,7 +54,7 @@ pub mod perft;
 pub mod quiesce;
 pub mod score;
 pub mod strat;
-pub mod tt;
+pub mod tree;
 
 pub struct SearchThread {
     pub tx: Sender<Command>,
@@ -82,7 +83,7 @@ pub trait SearchWorker {
 
 /// Iterative deepening worker.
 pub struct IdWorker<E: StaticEvaluator, X: IParams> {
-    tt: TranspositionTable<id::TTEntry>,
+    tt: id::TT,
     timeman: TimeMan,
     params: X::Ref,
     eval: E,
@@ -96,7 +97,7 @@ where
 
     fn new() -> Self {
         Self {
-            tt: TranspositionTable::new(0),
+            tt: id::TT::new(0),
             timeman: TimeMan::default(),
             params: <Self::X as Default>::default().shared(),
             eval: E::default(),
@@ -152,7 +153,7 @@ where
             Command::Configure(config) => {
                 let cfg = || config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")));
 
-                self.tt = TranspositionTable::new_of_size(cfg()?.hash());
+                self.tt = id::TT::new_of_size(cfg()?.hash());
                 self.params = Self::X::try_from_config(cfg()?).map_err(ExecError::bad_config)?;
                 self.eval = E::try_from_config(cfg()?).map_err(ExecError::bad_config)?;
                 self.timeman.enable_soft_targets(true); // todo: config option for enabling soft targets
