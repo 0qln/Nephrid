@@ -3,12 +3,7 @@ use std::time::Duration;
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use engine::{
     core::{
-        depth::Depth,
-        move_iter::sliding_piece::magics,
-        params::C_IdHceParams,
-        position::Position,
-        search::{id::{self, HceEvaluator, TTEntry}, limit::UciLimit, tt::TranspositionTable},
-        zobrist,
+        chrono::TimeMan, depth::Depth, move_iter::sliding_piece::magics, params::C_IdHceParams, position::Position, search::{id::{self, HceEvaluator, TTEntry}, limit::UciLimit, tt::TranspositionTable}, zobrist
     },
     misc::{CancellationToken, DebugMode},
 };
@@ -35,8 +30,9 @@ fn search_with_node_target(pos: &mut Position) {
     let ct = CancellationToken::new();
     let hash_size = Information::new::<mebibyte>(16);
     let mut tt = TranspositionTable::<TTEntry>::new_of_size(hash_size);
+    let mut timeman = TimeMan::new(&limit, pos);
 
-    id::go(pos, limit, &debug, ct, &mut tt, &mut HceEvaluator, C_IdHceParams);
+    id::go(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut HceEvaluator, C_IdHceParams);
 }
 
 pub fn id_nps(c: &mut Criterion) {

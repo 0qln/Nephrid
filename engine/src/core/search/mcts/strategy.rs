@@ -181,7 +181,7 @@ impl MctsStrategy for MctsUci {
         self.terminal_nodes_begin = tree.terminal_nodes() as u64;
         self.iterations = 0;
 
-        self.time_man = Some(TimeMan::init(&self.limit, pos));
+        self.time_man = Some(TimeMan::new(&self.limit, pos));
         self.is_not_pondering = self.pt.is_none();
     }
 
@@ -212,8 +212,8 @@ impl MctsStrategy for MctsUci {
             && !ponder_tok.should_ponder()
         {
             // transition to normal search and set time limits.
-            if let Some(time_man) = &mut self.time_man {
-                time_man.reinit_limit();
+            if let Some(_time_man) = &mut self.time_man {
+                // todo: time_man.init_limits();
             }
             self.is_not_pondering = true;
         }

@@ -15,7 +15,8 @@ fn run_search(fen: &str, depth: u8) {
     let ct = CancellationToken::new();
     let hash_size = Information::new::<mebibyte>(16);
     let mut tt = TranspositionTable::<TTEntry>::new_of_size(hash_size);
-    go(&mut pos, limit, &debug, ct, &mut tt, &mut HceEvaluator, C_IdHceParams);
+    let mut timeman = TimeMan::new(&limit, &pos);
+    go(&mut pos, limit, &mut timeman, &debug, ct, &mut tt, &mut HceEvaluator, C_IdHceParams);
 }
 
 #[test]
