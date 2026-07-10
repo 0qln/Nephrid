@@ -783,9 +783,12 @@ impl Bound {
     }
 }
 
-#[derive(Default)]
 pub struct SearchStack<T> {
     entries: Vec<T>,
+}
+
+impl<T: Clone + Default> Default for SearchStack<T> {
+    fn default() -> Self { Self::new() }
 }
 
 impl<T: Clone + Default> SearchStack<T> {
