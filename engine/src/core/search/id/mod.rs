@@ -22,7 +22,7 @@ use crate::{
         eval::{
             GameResult, StaticEvaluator,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
-            nnue::{self, AccumulatorStack},
+            nnue::{self},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
@@ -43,7 +43,7 @@ use crate::{
         zobrist,
     },
     math::{self, NormalizedEntropy},
-    misc::{CancellationToken, DebugMode, List},
+    misc::{CancellationToken, CheckHealth, DebugMode, List},
 };
 
 #[cfg(test)] pub mod test;
@@ -177,6 +177,9 @@ pub struct SearchStats {
 
     /// Entropy of the last completed iteration.
     pub root_entropy: NormalizedEntropy,
+
+    /// Number of times the best move has been the best move in a row.
+    pub root_movestreak: u32,
 }
 
 impl Default for SearchStats {
@@ -187,6 +190,7 @@ impl Default for SearchStats {
             iter_time: Duration::ZERO,
             // Max uncertainty until a policy is computed
             root_entropy: NormalizedEntropy::one(),
+            root_movestreak: 0,
         }
     }
 }
@@ -213,6 +217,7 @@ pub fn go(
     let mut searcher = Searcher::new(pos, limit, ct, tt, eval);
     let mut stats = SearchStats::default();
     let mut best_move = None;
+    let mut last_best_move;
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
         let best_score = searcher.search_root(params.clone(), pos, &mut stats, depth);
@@ -222,6 +227,8 @@ pub fn go(
         if searcher.aborted {
             break;
         }
+
+        last_best_move = searcher.root_best_move();
 
         searcher.sort_root();
 
@@ -238,10 +245,16 @@ pub fn go(
             let root_policy = math::softmax(root_logits, ROOT_ENTROPY_TEMP, &mut List::new());
             math::normalized_entropy(&root_policy)
         };
+        stats.root_movestreak = if best_move == last_best_move {
+            stats.root_movestreak + 1
+        }
+        else {
+            0
+        };
 
         searcher.time_man.hint_time_target(searcher.time_man.time_limit() - stats.iter_time);
-        searcher.time_man.hint_entropy_target(params.entropy_target());
-        searcher.time_man.set_curr_entropy(stats.root_entropy);
+        searcher.time_man.hint_movestreak_target(params.movestreak_target());
+        searcher.time_man.set_curr_movestreak(stats.root_movestreak);
 
         if searcher.should_stop(&stats) || searcher.time_man.reached_target() {
             break;
@@ -251,6 +264,7 @@ pub fn go(
     best_move
 }
 
+#[derive(Debug)]
 struct RootStats {
     mov: ScoredMove,
 }
@@ -282,6 +296,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator> {
     ss: SearchStack<SearchEntry>,
     tt: &'a mut TranspositionTable<TTEntry>,
     eval: &'b mut E,
+    phase: TaperValue,
 }
 
 impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
@@ -304,6 +319,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             ss: SearchStack::new(),
             tt,
             eval,
+            phase: TaperValue::from_position(pos.piece_info()),
         }
     }
 
@@ -389,10 +405,9 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return qsearch(pos, alpha, beta, params, self.eval, Depth::new(100));
+            return qsearch(pos, self.phase, alpha, beta, params, self.eval, Depth::new(100));
         }
 
-        let phase = TaperValue::from_position(pos.piece_info());
         let kind = T::KIND;
         let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
@@ -433,7 +448,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             let eval = tt_entry
                 .and_then(|e| e.static_eval)
                 .map(Score::<P>::new)
-                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
+                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase));
 
             static_eval = Some(eval);
 
@@ -480,7 +495,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                 // don't allow nmp when node is in check
                 && !is_in_check
                 // don't do nmp in endgames, where zugzwang is more likely
-                && phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
+                && self.phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
                 // don't bother attempting to improve beta with a tempo down when our static eval is not
                 // even better than beta
                 && lazy_static_eval(self, pos) >= beta - Score::new(params.nmp_margin()) - Score::new((depth.v() * 15) as i32)
@@ -521,7 +536,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             tt_move,
             killers,
             color: P::COLOR,
-            phase,
+            phase: self.phase,
         };
 
         // fail-high reductions
@@ -555,8 +570,9 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             // }
 
             // make the move
+            let phase_before = self.phase;
             self.eval.forward();
-            pos.make_move_for::<P>(m, self.eval.observe_foward());
+            pos.make_move_for::<P>(m, &mut (&mut self.phase, self.eval.observe_forward()));
 
             // depth
             let (mut depth_ext, mut depth_reduct) = (0, 0);
@@ -640,6 +656,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             // unmake the move
             pos.unmake_move_for::<P>(m, self.eval.observe_backward());
             self.eval.backward();
+            self.phase = phase_before;
 
             // check for cancellation
             if self.aborted {

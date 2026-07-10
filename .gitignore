@@ -32,4 +32,11 @@ flamegraph.svg
 # ccbench
 ccbench/out
 ccbench/in/builds
-/checkpoints
+
+# nnue nets
+checkpoints/**/raw.bin
+checkpoints/**/optimiser_state
+**/log.txt
+
+# nix
+result

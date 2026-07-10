@@ -27,6 +27,7 @@ pub const trait QSearchParams {
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
 pub fn qsearch<P: Perspective>(
     pos: &mut Position,
+    phase: TaperValue,
     mut alpha: Score<P>,
     beta: Score<P>,
     params: impl QSearchParams + Clone,
@@ -39,7 +40,6 @@ pub fn qsearch<P: Perspective>(
 
     let stm = P::COLOR;
     let piece_info = pos.piece_info();
-    let phase = TaperValue::from_position(piece_info);
     let mut static_eval = || eval.eval(piece_info, stm, pos.get_ep_target_square(), phase);
 
     if depth == Depth::new(0) {
@@ -98,9 +98,10 @@ pub fn qsearch<P: Perspective>(
         }
 
         eval.forward();
-        pos.make_move_for::<P>(m, eval.observe_forward());
+        let mut new_phase = phase;
+        pos.make_move_for::<P>(m, &mut (&mut new_phase, eval.observe_forward()));
 
-        let score = !qsearch(pos, !beta, !alpha, params.clone(), eval, depth - 1);
+        let score = !qsearch(pos, new_phase, !beta, !alpha, params.clone(), eval, depth - 1);
 
         pos.unmake_move_for::<P>(m, eval.observe_backward());
         eval.backward();

@@ -38,3 +38,10 @@ HCE version:
 ```
 cargo build --release --bin nephrid --features "id-hce" --no-default-features
 ```
+
+#### NNUE (Efficiently Updated NN)
+
+NNUE version:
+```
+cargo build --release --bin nephrid --features "id-nnue" --no-default-features
+```
