@@ -393,7 +393,7 @@ impl ConfigBuilder {
     #[rustfmt::skip]
     pub fn qsearch(mut self, params: &impl QSearchParams) -> Self {
         let cfg = &mut self.config;
-        cfg.eval_futility_margin.seed(params.futility_margin().into());
+        cfg.eval_futility_margin.seed(params.futility_margin().v());
         cfg.eval_delta_pruning_threshold.seed(params.delta_pruning_threshold().v());
         self
     }
@@ -442,7 +442,7 @@ impl ConfigBuilder {
         cfg.id_nmp_phase_threshold.seed(params.nmp_phase_threshold().v());
         cfg.id_nmp_depth_factor.seed(params.nmp_depth_factor() as i32);
         cfg.id_nmp_phase_factor.seed(params.nmp_phase_factor() as i32);
-        cfg.id_nmp_margin.seed(params.nmp_margin().into());
+        cfg.id_nmp_margin.seed(params.nmp_margin().v());
         self
     }
 

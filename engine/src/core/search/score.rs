@@ -13,8 +13,8 @@ use crate::{
 
 pub type RawScore = i32;
 
-#[derive(Debug, Copy, Clone)]
-#[derive_const(PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy)]
+#[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AnyScore {
     v: RawScore,
 }
@@ -61,39 +61,23 @@ impl AnyScore {
     pub const unsafe fn interpret_as<P: Perspective>(self) -> Score<P> { Score::<P>::new(self) }
 }
 
-impl const From<u8> for AnyScore {
+impl<T: const Into<RawScore>> const From<T> for AnyScore {
     #[inline(always)]
-    fn from(val: u8) -> Self { Self::new(RawScore::from(val)) }
+    fn from(val: T) -> Self { Self::new(val.into()) }
 }
 
-impl const From<i16> for AnyScore {
-    #[inline(always)]
-    fn from(val: i16) -> Self { Self::new(RawScore::from(val)) }
-}
-
-impl<T: const Into<RawScore>> const ops::AddAssign<T> for AnyScore {
+impl<T: const Into<AnyScore>> const ops::AddAssign<T> for AnyScore {
     #[inline(always)]
     fn add_assign(&mut self, rhs: T) {
-        #[cfg(debug_assertions)]
-        {
-            if *self == scores::NULL {
-                panic!("Cannot add to a NULL score");
-            }
-        }
-        self.v += rhs.into();
+        debug_assert!(*self != scores::NULL, "Cannot add to a NULL score");
+        self.v += rhs.into().v();
     }
 }
 
 impl SaturatingCast for AnyScore {}
-
 impl SaturatingElement<MoveScore> for AnyScore {
     fn as_element(self) -> MoveScore {
-        #[cfg(debug_assertions)]
-        {
-            if self == scores::NULL {
-                panic!("Cannot convert a NULL score to a MoveScore");
-            }
-        }
+        debug_assert_ne!(self, scores::NULL, "Cannot convert a NULL score to a MoveScore");
         (self.v().clamp(MoveScore::MIN.into(), MoveScore::MAX.into())) as MoveScore
     }
 }
@@ -132,39 +116,9 @@ impl iter::Sum for AnyScore {
     fn sum<I: Iterator<Item = Self>>(iter: I) -> Self { iter.fold(Self { v: 0 }, |acc, x| acc + x) }
 }
 
-impl const From<AnyScore> for RawScore {
-    #[inline(always)]
-    fn from(val: AnyScore) -> Self { val.v }
-}
-
-impl const From<RawScore> for AnyScore {
-    #[inline(always)]
-    fn from(val: RawScore) -> Self { Self::new(val) }
-}
-
-/// A penalty for `P`
-pub struct Penalty<P: Perspective>(pub AnyScore, PhantomData<P>);
-
-impl<P: Perspective> fmt::Display for Penalty<P> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Penalty<{}>({})", P::COLOR, self.0) }
-}
-
-impl<P: Perspective> const From<Penalty<P>> for Score<P> {
-    #[inline(always)]
-    fn from(val: Penalty<P>) -> Self { Score::new(-val.0) }
-}
-
 /// A bonus for `P`
 #[derive(Debug, Copy, Clone)]
 pub struct Score<P: Perspective>(pub AnyScore, PhantomData<P>);
-
-impl<P: Perspective, T> const From<T> for Score<P>
-where
-    AnyScore: const From<T>,
-{
-    #[inline(always)]
-    fn from(val: T) -> Self { unsafe { AnyScore::from(val).interpret_as() } }
-}
 
 impl<P: Perspective> fmt::Display for Score<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Score<{}>({})", P::COLOR, self.0) }
@@ -174,6 +128,11 @@ impl<P: Perspective, Rhs: const Into<Score<P>>> const ops::Add<Rhs> for Score<P>
     type Output = Self;
     #[inline(always)]
     fn add(self, rhs: Rhs) -> Self::Output { Self::new(self.0 + rhs.into().0) }
+}
+impl<P: Perspective> const ops::Add<i32> for Score<P> {
+    type Output = Self;
+    #[inline(always)]
+    fn add(self, rhs: i32) -> Self::Output { Self::new(self.0 + rhs) }
 }
 
 impl<P: Perspective, Rhs: const Into<Score<P>>> const ops::Sub<Rhs> for Score<P> {
@@ -188,31 +147,30 @@ impl<P: Perspective> const ops::Div<AnyScore> for Score<P> {
     fn div(self, rhs: AnyScore) -> Self::Output { Self::new(self.0 / rhs) }
 }
 
-impl<P: Perspective> Eq for Score<P> {}
-
-impl<P: Perspective> Ord for Score<P> {
+impl<P: Perspective> const Ord for Score<P> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.0.cmp(&other.0) }
 }
 
-impl<P: Perspective> PartialOrd for Score<P> {
+impl<P: Perspective> const PartialOrd for Score<P> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
 }
 
-impl<P: Perspective> PartialEq for Score<P> {
+impl<P: Perspective> const Eq for Score<P> {}
+impl<P: Perspective> const PartialEq for Score<P> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
 }
 
 impl<P: Perspective> Score<P> {
     #[inline(always)]
-    pub const fn new(val: AnyScore) -> Self { Self(val, PhantomData) }
-}
+    const fn new(val: AnyScore) -> Self { Self(val, PhantomData) }
 
-impl<P: Perspective> Penalty<P> {
-    #[inline(always)]
-    pub const fn new(val: AnyScore) -> Self { Self(val, PhantomData) }
+    pub const NEG_INF: Self = unsafe { scores::NEG_INF.interpret_as() };
+    pub const POS_INF: Self = unsafe { scores::POS_INF.interpret_as() };
+    pub const DRAW: Self = unsafe { scores::DRAW.interpret_as() };
+    pub const NULL: Self = unsafe { scores::NULL.interpret_as() };
 }
 
 // not using the `-` operator because this is not really just arithmetic
@@ -222,7 +180,7 @@ impl<P: Perspective> ops::Not for Score<P> {
 
     /// Negate the score and flip the perspective to the opponent.
     #[inline(always)]
-    fn not(self) -> Self::Output { Score::new(-self.0) }
+    fn not(self) -> Self::Output { Score(-self.0, PhantomData) }
 }
 
 /// Centi pawns

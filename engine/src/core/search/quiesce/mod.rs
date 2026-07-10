@@ -36,7 +36,7 @@ pub fn qsearch<P: Perspective>(
 ) -> Score<P> {
     let in_check = pos.get_check_state() != CheckState::None;
 
-    let mut best_value = Score::new(scores::NEG_INF);
+    let mut best_value = Score::NEG_INF;
 
     let stm = P::COLOR;
     let piece_info = pos.piece_info();
@@ -91,8 +91,10 @@ pub fn qsearch<P: Perspective>(
 
             let futility_margin = params.futility_margin();
             let futility_score = captured_value + value_bonus + futility_margin;
+            // Safety: the score was constructed relative to `P`
+            let futility_score = unsafe { futility_score.interpret_as() };
 
-            if best_value + Score::new(futility_score) < alpha {
+            if best_value + futility_score < alpha {
                 continue;
             }
         }

@@ -18,12 +18,9 @@ use super::{
 /// Note: the default hash is equivalent to the hash of the default (empty)
 /// position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive_const(Default)]
 pub struct Hash {
     v: u64,
-}
-
-impl const Default for Hash {
-    fn default() -> Self { Self { v: 0 } }
 }
 
 impl fmt::Display for Hash {

@@ -109,7 +109,8 @@ impl StaticEvaluator for NnueEvaluator {
         let accs = self.accs.get_accs_mut(self.curr);
         let (stm_acc, nstm_acc) = accs.get_mut_for::<P>();
         let nnue_eval = nnue.forward(stm_acc, nstm_acc);
-        Score::new(nnue_eval)
+        // Safety: We picked `P` as side-to-move above.
+        unsafe { nnue_eval.interpret_as() }
     }
 
     fn forward(&mut self) {
@@ -148,20 +149,24 @@ impl HceThreatener {
     /// `P::Opponent`.
     #[allow(dead_code)]
     fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
-        let mut max_threat = Score::<P::Opponent>::new(scores::DRAW);
+        const QUEEN_SCORE: AnyScore = hce::piece_score(piece_type::QUEEN);
+        const ROOK_SCORE: AnyScore = hce::piece_score(piece_type::ROOK);
+
+        let mut max_threat = Score::<P::Opponent>::DRAW;
 
         // todo: only generate captures, promos, and checks.
         let moves = pos.collect_legals_for::<P::Opponent, _>(MoveList::new());
         for &mov in moves.iter() {
             match pos.does_check(mov) {
                 CheckState::None => {}
-                CheckState::Single => return Score::new(hce::piece_score(piece_type::QUEEN)),
-                CheckState::Double => return Score::new(hce::piece_score(piece_type::QUEEN) + hce::piece_score(piece_type::ROOK)),
+                CheckState::Single => return unsafe { QUEEN_SCORE.interpret_as() },
+                CheckState::Double => return unsafe { (QUEEN_SCORE + ROOK_SCORE).interpret_as() },
             }
 
             if mov.get_flag().is_capture() {
-                let see = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR);
-                max_threat = max(max_threat, Score::from(see));
+                let see: AnyScore = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR).into();
+                let see_threat = unsafe { see.interpret_as::<P::Opponent>() };
+                max_threat = max(max_threat, see_threat);
             }
         }
 
@@ -364,8 +369,8 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
     /// returns the score relative to the current player
     fn search_root(&mut self, params: impl QSearchParams + IdParams + Clone, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> AnyScore {
-        fn alpha<P: Perspective>() -> Score<P> { Score::new(scores::NEG_INF) }
-        fn beta<P: Perspective>() -> Score<P> { Score::new(scores::POS_INF) }
+        fn alpha<P: Perspective>() -> Score<P> { Score::NEG_INF }
+        fn beta<P: Perspective>() -> Score<P> { Score::POS_INF }
         match pos.get_turn() {
             colors::WHITE => self.search::<perspectives::White, Root>(params, pos, stats, depth, alpha(), beta()).0,
             colors::BLACK => self.search::<perspectives::Black, Root>(params, pos, stats, depth, alpha(), beta()).0,
@@ -394,14 +399,14 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         // check if stop is requested or we have reached a limit
         if stats.nodes.is_multiple_of(4096) && self.should_stop(stats) {
             self.aborted = true;
-            return scores::NEG_INF.into();
+            return Score::NEG_INF;
         }
 
         // check if game is over
         if let Some(result) = pos.game_result() {
             return match result {
-                GameResult::Win { .. } => scores::NEG_INF.into(),
-                GameResult::Draw => scores::DRAW.into(),
+                GameResult::Win { .. } => Score::NEG_INF,
+                GameResult::Draw => Score::DRAW,
             };
         }
 
@@ -428,7 +433,9 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                     || (entry.bound == Bound::Lower && entry.score >= beta.0)
                     || (entry.bound == Bound::Upper && entry.score <= alpha.0))
             {
-                return Score::new(entry.score);
+                // Safety: unless we've had a hash collision, this score is for the same
+                // position and thus for the same player.
+                return unsafe { entry.score.interpret_as() };
             }
         }
 
@@ -438,7 +445,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         // can understand when they will already be computed...
 
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
-        let mut static_eval = Score::new(scores::NULL);
+        let mut static_eval = Score::NULL;
 
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
         let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
@@ -450,7 +457,8 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             let tt_entry = this.tt.get(key);
 
             let eval = tt_entry
-                .map(|e| Score::<P>::new(e.static_eval))
+                // Safety: unless we've had a hash collision, this score is for the same position
+                .map(|e| unsafe { e.static_eval.interpret_as() })
                 .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase));
 
             static_eval = eval;
@@ -459,23 +467,23 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         };
 
         #[cfg(feature = "id-fhr")]
-        let mut threat = None;
+        let mut threat = Score::<P::Opponent>::NULL;
 
         #[cfg(feature = "id-fhr")]
         let mut lazy_threat_score = |this: &Self, pos: &Position| {
             // is it already computed? if so, return it.
-            if let Some(score) = threat {
-                return score;
+            if threat.0.is_valid() {
+                return threat;
             }
 
             let tt_entry = this.tt.get(key);
 
             let score = tt_entry
-                .and_then(|e| e.threat)
-                .map(Score::<P::Opponent>::new)
+                // Safety: unless we've had a hash collision, this score is for the same position
+                .map(|e| unsafe { e.threat.interpret_as() })
                 .unwrap_or_else(|| threatener.threat::<P>(pos));
 
-            threat = Some(score);
+            threat = score;
 
             score
         };
@@ -483,6 +491,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         // null move pruning
         #[cfg(feature = "id-nmp")]
         {
+            let nmp_margin = unsafe { params.nmp_margin().interpret_as() };
             let nmp_r: Depth = params.nmp_reduction()
                 // scale the reduction up based on depth
                 + depth.div_floor(params.nmp_depth_factor());
@@ -501,7 +510,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                 && self.phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
                 // don't bother attempting to improve beta with a tempo down when our static eval is not
                 // even better than beta
-                && lazy_static_eval(self, pos) >= beta - Score::new(params.nmp_margin()) - Score::from(depth.v() * 15)
+                && lazy_static_eval(self, pos) >= beta - nmp_margin - unsafe { AnyScore::from(depth.v() * 15).interpret_as() }
             {
                 pos.make_null_move();
 
@@ -562,7 +571,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             _ => 0
         };
 
-        let mut best_score = Score::new(scores::NEG_INF);
+        let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
         let mut curr = 0;
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
@@ -663,7 +672,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
             // check for cancellation
             if self.aborted {
-                return Score::new(scores::DRAW);
+                return Score::DRAW;
             }
 
             // update root moves
