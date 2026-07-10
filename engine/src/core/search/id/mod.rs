@@ -22,7 +22,7 @@ use crate::{
         eval::{
             GameResult, StaticEvaluator,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
-            nnue::{self, AccumulatorStack},
+            nnue::{self, AccumulatorStack, EagerAccUpdates},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
@@ -84,7 +84,7 @@ impl StaticEvaluator for HceEvaluator {
 }
 
 pub struct NnueEvaluator {
-    accs: AccumulatorStack,
+    accs: AccumulatorStack<EagerAccUpdates>,
     curr: Depth,
 }
 
@@ -105,7 +105,7 @@ impl StaticEvaluator for NnueEvaluator {
     fn eval<P: Perspective>(&mut self, _: &PieceInfo, _: Turn, _: EpTargetSquare, _: TaperValue) -> Score<P> {
         let nnue = nnue::get_nnue();
         let accs = self.accs.get_accs_mut(self.curr);
-        let (stm_acc, nstm_acc) = accs.get_mut_for::<P>(nnue);
+        let (stm_acc, nstm_acc) = accs.get_mut_for::<P>();
         let nnue_eval = nnue.forward(stm_acc, nstm_acc);
         Score::new(nnue_eval)
     }
@@ -212,6 +212,8 @@ pub fn go(
     params: impl ChronoParams + QSearchParams + IdParams + Clone,
 ) -> Option<Move> {
     let depth_lim = min(Depth::MAX, limit.depth);
+
+    eval.observe_forward().on_init(pos.piece_info());
 
     let mut searcher = Searcher::new(pos, limit, ct, tt, eval);
     let mut stats = SearchStats::default();
@@ -812,6 +814,8 @@ impl<T> SearchStack<T> {
 
     pub fn get_mut(&mut self, ply: Depth) -> &mut T {
         let idx = ply.v() as usize;
+
+        // todo: qsearch might exceed depth max ??
 
         // Safety: entries is atleast Depth::MAX + 1
         unsafe { self.entries.get_unchecked_mut(idx) }
