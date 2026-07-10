@@ -112,7 +112,7 @@ where
             Command::Normal(mut pos, limit, ct, debug) => {
                 // todo: initiating the nnue before every search works for now, but we can
                 // probably just do it on the fly in AdvanceState...
-                self.eval.observe().on_init(pos.piece_info());
+                self.eval.observe_forward().on_init(pos.piece_info());
 
                 let best_move = id::go(&mut pos, limit, &debug, ct, &mut self.tt, &mut self.eval, self.params.clone());
 

@@ -22,7 +22,7 @@ use crate::{
         eval::{
             GameResult, StaticEvaluator,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
-            nnue::{self},
+            nnue::{self, AccumulatorStack},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
@@ -43,7 +43,7 @@ use crate::{
         zobrist,
     },
     math::{self, NormalizedEntropy},
-    misc::{CancellationToken, CheckHealth, DebugMode, List},
+    misc::{CancellationToken, DebugMode, List},
 };
 
 #[cfg(test)] pub mod test;
@@ -85,16 +85,11 @@ impl StaticEvaluator for HceEvaluator {
 
 pub struct NnueEvaluator {
     accs: AccumulatorStack,
+    curr: Depth,
 }
 
 impl NnueEvaluator {
     fn new() -> Self {
-        // if cfg!(debug_assertions)
-        //     && let Err(e) = nnue.check_health()
-        // {
-        //     eprintln!("NNUE health check failed: {}", e);
-        // }
-
         Self {
             accs: AccumulatorStack::default(),
             curr: Depth::ROOT,
@@ -108,21 +103,25 @@ impl Default for NnueEvaluator {
 
 impl StaticEvaluator for NnueEvaluator {
     fn eval<P: Perspective>(&mut self, _: &PieceInfo, _: Turn, _: EpTargetSquare, _: TaperValue) -> Score<P> {
-        let accs = self.accs.current_mut();
-        let (stm_acc, nstm_acc) = accs.accs.get_mut_for::<P>(self.nnue);
-        let nnue_eval = self.nnue.forward(stm_acc, nstm_acc);
+        let nnue = nnue::get_nnue();
+        let accs = self.accs.get_accs_mut(self.curr);
+        let (stm_acc, nstm_acc) = accs.get_mut_for::<P>(nnue);
+        let nnue_eval = nnue.forward(stm_acc, nstm_acc);
         Score::new(nnue_eval)
     }
 
     fn forward(&mut self) {
         let old = self.curr;
-        self.curr = old + 1;
-        *self.accs.entry_mut(self.curr) = self.accs.entry_mut(old).clone();
+        let new = old + 1;
+        self.curr = new;
+
+        self.accs.propagate(old, new);
     }
 
     fn backward(&mut self) { self.curr -= 1; }
 
-    fn observe_foward(&mut self) -> &mut impl PieceInfoObserver { self.accs.current_mut() }
+    fn observe_forward(&mut self) -> &mut impl PieceInfoObserver { self.accs.get_accs_mut(self.curr) }
+    // observer backward does nothing, since we just pop to the latest state.
 
     fn try_from_config<C: Deref<Target = Configuration>>(cfg: C) -> Result<Self, impl fmt::Display> {
         let nnue_str = cfg.nnue_path();
@@ -798,6 +797,16 @@ impl<T: Clone + Default> SearchStack<T> {
 }
 
 impl<T> SearchStack<T> {
+    #[inline(always)]
+    pub fn propagate(&mut self, old: Depth, new: Depth, mut f: impl FnMut(&T, &mut T)) {
+        let old_idx = old.v() as usize;
+        let new_idx = new.v() as usize;
+        unsafe {
+            let [parent, child] = self.entries.get_disjoint_unchecked_mut([old_idx, new_idx]);
+            f(parent, child);
+        }
+    }
+
     pub fn get_mut(&mut self, ply: Depth) -> &mut T {
         let idx = ply.v() as usize;
 

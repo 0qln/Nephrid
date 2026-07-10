@@ -18,7 +18,7 @@ mod search {
             search::IdWorker<search::id::HceEvaluator, Params>
         },
         feature = "id-nnue" => {
-            search::IdWorker<search::id::NnueEvaluator<'static>, Params>
+            search::IdWorker<search::id::NnueEvaluator, Params>
         },
     };
 

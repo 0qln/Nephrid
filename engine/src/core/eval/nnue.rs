@@ -358,8 +358,9 @@ struct IndexInfo {
     c: Color,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct AccumulatorPair {
+    updates: AccUpdates,
     white: Accumulator,
     black: Accumulator,
 }
@@ -371,9 +372,21 @@ impl Default for AccumulatorPair {
 impl AccumulatorPair {
     pub fn new(net: &Network) -> Self {
         Self {
+            updates: AccUpdates::new(),
             white: Accumulator::init(net),
             black: Accumulator::init(net),
         }
+    }
+
+    pub fn inherit_from(&mut self, parent: &Self) {
+        self.white = parent.white;
+        self.black = parent.black;
+
+        self.updates.reset = parent.updates.reset;
+        self.updates.updates = parent.updates.updates;
+
+        self.updates.updated.clear();
+        self.updates.updated.extend_from_slice(&parent.updates.updated);
     }
 
     pub fn sync(&mut self, net: &Network) { self.updates.apply(&mut self.white, &mut self.black, net); }
@@ -415,13 +428,17 @@ impl PieceInfoObserver for AccumulatorPair {
 
 #[derive(Default)]
 pub struct AccumulatorStack {
-    updates: AccUpdates,
     accs: SearchStack<AccumulatorPair>,
-    curr: Depth,
 }
 
 impl AccumulatorStack {
-    pub fn current_mut(&mut self) -> &mut AccumulatorPair { self.accs.get_mut(self.curr) }
+    pub fn get_accs_mut(&mut self, idx: Depth) -> &mut AccumulatorPair { self.accs.get_mut(idx) }
+
+    pub fn propagate(&mut self, old: Depth, new: Depth) {
+        self.accs.propagate(old, new, |parent, child| {
+            child.inherit_from(parent);
+        })
+    }
 }
 
 #[inline(always)]
