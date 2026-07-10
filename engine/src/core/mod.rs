@@ -561,6 +561,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
                 None => return Err(UciError::MissingArgument("value").into()),
             };
             engine.debug.set(debug);
+            println!("info string Debug mode is now {}", if debug { "on" } else { "off" });
             Ok(())
         }
         Some("isready") => {

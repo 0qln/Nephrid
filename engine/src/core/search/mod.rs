@@ -90,7 +90,7 @@ pub struct IdWorker<E: StaticEvaluator, X: IParams> {
 
 impl<E: StaticEvaluator + Default, X: IParams + Default> SearchWorker for IdWorker<E, X>
 where
-    X::Ref: IdParams + ChronoParams + QSearchParams,
+    X::Ref: IdParams + ChronoParams + QSearchParams + fmt::Debug,
 {
     type X = X;
 
