@@ -22,7 +22,7 @@ use crate::{
         eval::{
             GameResult, StaticEvaluator,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
-            nnue::{self},
+            nnue::{self, AccumulatorStack, EagerAccUpdates},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
@@ -43,7 +43,7 @@ use crate::{
         zobrist,
     },
     math::{self, NormalizedEntropy},
-    misc::{CancellationToken, CheckHealth, DebugMode, List},
+    misc::{CancellationToken, DebugMode, List},
 };
 
 #[cfg(test)] pub mod test;
@@ -83,36 +83,45 @@ impl StaticEvaluator for HceEvaluator {
     fn try_from_config<C: Deref<Target = Configuration>>(_cfg: C) -> Result<Self, Infallible> { Ok(Self) }
 }
 
-pub struct NnueEvaluator<'a> {
-    nnue: &'a nnue::Network,
-    accs: nnue::AccumulatorPair,
+pub struct NnueEvaluator {
+    accs: AccumulatorStack<EagerAccUpdates>,
+    curr: Depth,
 }
 
-impl<'a> NnueEvaluator<'a> {
-    fn new(nnue: &'a nnue::Network) -> Self {
-        if cfg!(debug_assertions)
-            && let Err(e) = nnue.check_health()
-        {
-            eprintln!("NNUE health check failed: {}", e);
+impl NnueEvaluator {
+    fn new() -> Self {
+        Self {
+            accs: AccumulatorStack::default(),
+            curr: Depth::ROOT,
         }
-
-        let accs = nnue::AccumulatorPair::new(nnue);
-        Self { accs, nnue }
     }
 }
 
-impl Default for NnueEvaluator<'static> {
-    fn default() -> Self { Self::new(nnue::get_nnue()) }
+impl Default for NnueEvaluator {
+    fn default() -> Self { Self::new() }
 }
 
-impl<'a> StaticEvaluator for NnueEvaluator<'a> {
+impl StaticEvaluator for NnueEvaluator {
     fn eval<P: Perspective>(&mut self, _: &PieceInfo, _: Turn, _: EpTargetSquare, _: TaperValue) -> Score<P> {
-        let (stm_acc, nstm_acc) = self.accs.get_mut_for::<P>(self.nnue);
-        let nnue_eval = self.nnue.forward(stm_acc, nstm_acc);
+        let nnue = nnue::get_nnue();
+        let accs = self.accs.get_accs_mut(self.curr);
+        let (stm_acc, nstm_acc) = accs.get_mut_for::<P>();
+        let nnue_eval = nnue.forward(stm_acc, nstm_acc);
         Score::new(nnue_eval)
     }
 
-    fn observe(&mut self) -> &mut impl PieceInfoObserver { &mut self.accs }
+    fn forward(&mut self) {
+        let old = self.curr;
+        let new = old + 1;
+        self.curr = new;
+
+        self.accs.propagate(old, new);
+    }
+
+    fn backward(&mut self) { self.curr -= 1; }
+
+    fn observe_forward(&mut self) -> &mut impl PieceInfoObserver { self.accs.get_accs_mut(self.curr) }
+    // observer backward does nothing, since we just pop to the latest state.
 
     fn try_from_config<C: Deref<Target = Configuration>>(cfg: C) -> Result<Self, impl fmt::Display> {
         let nnue_str = cfg.nnue_path();
@@ -125,7 +134,7 @@ impl<'a> StaticEvaluator for NnueEvaluator<'a> {
         };
         nnue::set_nnue(nnue_bytes).map_err(|e| format!("Unhealthy nnue: {e}"))?;
 
-        Ok::<_, String>(Self::new(nnue::get_nnue()))
+        Ok::<_, String>(Self::new())
     }
 }
 
@@ -203,6 +212,8 @@ pub fn go(
     params: impl ChronoParams + QSearchParams + IdParams + Clone,
 ) -> Option<Move> {
     let depth_lim = min(Depth::MAX, limit.depth);
+
+    eval.observe_forward().on_init(pos.piece_info());
 
     let mut searcher = Searcher::new(pos, limit, ct, tt, eval);
     let mut stats = SearchStats::default();
@@ -283,7 +294,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator> {
     time_man: TimeMan,
     ct: CancellationToken,
     aborted: bool,
-    ss: SearchStack,
+    ss: SearchStack<SearchEntry>,
     tt: &'a mut TranspositionTable<TTEntry>,
     eval: &'b mut E,
     phase: TaperValue,
@@ -402,7 +413,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
         let orig_alpha = alpha;
-        let killers = self.ss.entry(rel_ply).killers.clone();
+        let killers = self.ss.get(rel_ply).killers.clone();
 
         // tt-cutoff
         {
@@ -561,7 +572,8 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
             // make the move
             let phase_before = self.phase;
-            pos.make_move_for::<P>(m, &mut (&mut self.phase, self.eval.observe()));
+            self.eval.forward();
+            pos.make_move_for::<P>(m, &mut (&mut self.phase, self.eval.observe_forward()));
 
             // depth
             let (mut depth_ext, mut depth_reduct) = (0, 0);
@@ -643,13 +655,16 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             };
 
             // unmake the move
-            pos.unmake_move_for::<P>(m, self.eval.observe());
+            pos.unmake_move_for::<P>(m, self.eval.observe_backward());
+            self.eval.backward();
             self.phase = phase_before;
 
+            // check for cancellation
             if self.aborted {
                 return Score::new(0);
             }
 
+            // update root moves
             if is_root_node {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
@@ -672,7 +687,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
                     if !m.get_flag().is_capture() && m != tt_move {
-                        self.ss.entry_mut(rel_ply).killers._push(m);
+                        self.ss.get_mut(rel_ply).killers._push(m);
                     }
 
                     // fail high
@@ -770,26 +785,45 @@ impl Bound {
     }
 }
 
-#[derive(Default)]
-struct SearchStack {
-    entries: Vec<SearchEntry>,
+pub struct SearchStack<T> {
+    entries: Vec<T>,
 }
 
-impl SearchStack {
+impl<T: Clone + Default> Default for SearchStack<T> {
+    fn default() -> Self { Self::new() }
+}
+
+impl<T: Clone + Default> SearchStack<T> {
     pub fn new() -> Self {
         Self {
-            entries: vec![SearchEntry::default(); Depth::MAX.v() as usize + 1],
+            entries: vec![T::default(); Depth::MAX.v() as usize + 1],
+        }
+    }
+}
+
+impl<T> SearchStack<T> {
+    #[inline(always)]
+    pub fn propagate(&mut self, old: Depth, new: Depth, mut f: impl FnMut(&T, &mut T)) {
+        let old_idx = old.v() as usize;
+        let new_idx = new.v() as usize;
+        unsafe {
+            let [parent, child] = self.entries.get_disjoint_unchecked_mut([old_idx, new_idx]);
+            f(parent, child);
         }
     }
 
-    pub fn entry_mut(&mut self, ply: Depth) -> &mut SearchEntry {
+    pub fn get_mut(&mut self, ply: Depth) -> &mut T {
         let idx = ply.v() as usize;
+
+        // todo: qsearch might exceed depth max ??
+
         // Safety: entries is atleast Depth::MAX + 1
         unsafe { self.entries.get_unchecked_mut(idx) }
     }
 
-    pub fn entry(&self, ply: Depth) -> &SearchEntry {
+    pub fn get(&self, ply: Depth) -> &T {
         let idx = ply.v() as usize;
+
         // Safety: entries is atleast Depth::MAX + 1
         unsafe { self.entries.get_unchecked(idx) }
     }
