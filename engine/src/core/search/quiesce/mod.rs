@@ -51,14 +51,14 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         eval: &mut impl StaticEvaluator,
         depth: Depth,
     ) -> Score<P> {
-        let mut best_score = Score::new(scores::NEG_INF);
+        let mut best_score = Score::NEG_INF;
 
         let in_check = pos.get_check_state() != CheckState::None;
         let piece_info = pos.piece_info();
         let phase = TaperValue::from_position(piece_info);
         let key = pos.get_key();
 
-        let mut static_eval = Score::<P>::new(scores::NULL);
+        let mut static_eval = Score::<P>::NULL;
         let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
             // is it already computed? if so, return it.
             if static_eval.0.validated().is_some() {
@@ -68,7 +68,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             let mut compute = || eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase);
 
             // check the tt
-            if let Some(tt_entry) = this.tt.raw_mut(key) {
+            if let Some(tt_entry) = this.tt.get_mut(key) {
                 let tt_score = tt_entry.static_eval_mut();
                 // if the tt contains a valid static_eval, return it.
                 if tt_score.validated().is_some() {
@@ -77,7 +77,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 // else compute it
                 else {
                     static_eval = compute();
-                    // *tt_score = static_eval.0;
+                    *tt_score = static_eval.0;
                 }
             }
             // if theres a foreign tt entry blocking our current key, just compute and don't store.
@@ -92,7 +92,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             return lazy_static_eval(self, pos);
         }
 
-        let tt_entry = self.tt.raw_mut(key);
+        let tt_entry = self.tt.get_mut(key);
         let tt_move = tt_entry.as_ref().map(|e| e.mov()).unwrap_or(Move::null());
 
         // tt cutoff
@@ -166,8 +166,10 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
                 let futility_margin = params.futility_margin();
                 let futility_score = captured_value + value_bonus + futility_margin;
+                // Safety: the score was constructed relative to `P`
+                let futility_score = unsafe { futility_score.interpret_as() };
 
-                if best_score + Score::new(futility_score) < alpha {
+                if best_score + futility_score < alpha {
                     continue;
                 }
             }

@@ -84,7 +84,7 @@ impl PolicyInput {
             CheckState::Single => AnyScore::new(50),
             CheckState::Double => AnyScore::new(100),
         };
-        phase.weighted_eval(scores::DRAW, score)
+        phase.weighted_eval(scores::ZERO, score)
     }
 }
 
@@ -120,8 +120,8 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             colors::WHITE_C => QSearcher::new(&mut tt, phase)
                 .go::<perspectives::White, node_types::Normal>(
                     pos,
-                    Score::new(scores::NEG_INF),
-                    Score::new(scores::POS_INF),
+                    Score::NEG_INF,
+                    Score::POS_INF,
                     MctsHceParamsRef::clone(&params),
                     &mut StaticEvaluator,
                     Depth::new(30),
@@ -130,8 +130,8 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             colors::BLACK_C => QSearcher::new(&mut tt, phase)
                 .go::<perspectives::Black, node_types::Normal>(
                     pos,
-                    Score::new(scores::NEG_INF),
-                    Score::new(scores::POS_INF),
+                    Score::NEG_INF,
+                    Score::POS_INF,
                     MctsHceParamsRef::clone(&params),
                     &mut StaticEvaluator,
                     Depth::new(30),

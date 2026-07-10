@@ -9,19 +9,6 @@ use crate::core::{
     zobrist,
 };
 
-// todo: either use a TTIsValid struct with a bool field in the TTEntry
-// (currently that adds no size), and then use this to validate that an entry is
-// valid if the TTEntry struck contains fields that cannot be validated
-// themselfes (like Score::NULL), or use some kind of compile time validity
-// token?
-// pub const trait TTIsValid {
-//     fn is_valid(&self) -> bool;
-//     fn new_invalid() -> Self;
-
-//     fn as_validated(&self) -> Option<&Self> { if self.is_valid() { Some(self)
-// } else { None } }     fn as_validated_mut(&mut self) -> Option<&mut Self> {
-// if self.is_valid() { Some(self) } else { None } } }
-
 pub const trait TTKey {
     fn key(&self) -> zobrist::Hash;
 }
@@ -72,6 +59,8 @@ impl<Data: Clone + const Default, S> TranspositionTable<Data, S> {
         let num_entries = (bytes / entry_size).max(1);
         Self::new(num_entries)
     }
+
+    pub fn clear(&mut self) { self.entries.fill(Data::default()); }
 }
 
 impl<Data, S> TranspositionTable<Data, S> {
@@ -96,43 +85,6 @@ impl<Data: TTKey, S> TranspositionTable<Data, S> {
         let data = &mut self.entries[idx];
         if data.key() == key { Some(data) } else { None }
     }
-
-    // todo: this is the same as get_mut, but with a different name. maybe remove
-    // one of them. or do actual validation in get_mut as it was originally
-    // intended.
-    /// Get data for the given key.
-    #[inline]
-    pub fn raw_mut(&mut self, key: zobrist::Hash) -> Option<&mut Data> {
-        let idx = key.index(self.size());
-        let data = &mut self.entries[idx];
-        if data.key() == key { Some(data) } else { None }
-    }
-
-    /// Insert and overwrite in any case.
-    #[inline]
-    #[deprecated(note = "Use `try_insert` with an always-true-strategy instead.")]
-    pub fn insert(&mut self, data: Data) {
-        let key = data.key();
-        let idx = key.index(self.size());
-        self.entries[idx] = data;
-    }
-
-    // /// Remove the entry for the given key, if it exists.
-    // #[inline]
-    // pub fn remove(&mut self, key: zobrist::Hash) {
-    //     let idx = key.index(self.size());
-
-    //     // if there is no Some at the idx, there is no entry for this key anyhow.
-    //     if let Some(data) = &self.entries[idx].as_validated()
-    //         // if the key doesn't match, there wasn't an entry for this key
-    // anyhow.         && data.key() == key
-    //     {
-    //         self.entries[idx] = Data::new_invalid();
-    //     }
-    // }
-
-    // pub fn entries_mut(&mut self) -> impl Iterator<Item = &mut Data> {
-    // self.entries.iter_mut().flatten() }
 }
 
 impl<Data: TTKey, Strat: ReplacementStrategy<Data = Data>> TranspositionTable<Data, Strat> {

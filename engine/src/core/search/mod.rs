@@ -160,7 +160,11 @@ where
 
                 Ok(())
             }
-            Command::ResetState => Ok(()),
+            Command::ResetState => {
+                self.tt.clear();
+
+                Ok(())
+            }
             Command::Debug => todo!(),
             Command::IsReady => {
                 println!("readyok");
