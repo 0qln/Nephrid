@@ -195,9 +195,9 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         self.tt.try_insert(TTEntry {
             key,
             depth: Depth::NONE,
-            score: best_score.0,
+            score: scores::NULL, // best_score.0,
             static_eval: static_eval.0,
-            bound: Bound::from_scores(beta - 1, beta, best_score),
+            bound: Bound::None, // Bound::from_scores(beta - 1, beta, best_score),
             mov: best_move,
         });
 
