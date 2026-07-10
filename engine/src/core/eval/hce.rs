@@ -6,7 +6,7 @@ use crate::{
         move_iter::{bishop::Bishop, king, knight, pawn, queen::Queen, rook::Rook, sliding_piece::SlidingAttacks},
         piece::{Piece, PieceType, piece_type},
         position::{PieceInfo, PieceInfoObserver},
-        search::score::{Penalty, Score},
+        search::score::{AnyScore, Score, scores},
         turn::Turn,
     },
     impl_variants,
@@ -26,7 +26,7 @@ impl Psqt {
 
 const PIECE_SCORES: [i32; piece_type::N_VARIANTS] = [0, 100, 300, 300, 500, 800, 0];
 
-pub const fn piece_score(pt: PieceType) -> i32 { PIECE_SCORES[pt.v() as usize] }
+pub const fn piece_score(pt: PieceType) -> AnyScore { PIECE_SCORES[pt.v() as usize].into() }
 
 #[rustfmt::skip]
 const MG_PAWN_TABLE: Psqt = Psqt([
@@ -195,13 +195,13 @@ const PSQT_EG: [Psqt; piece_type::N_VARIANTS] = [
 const PSQT: [[Psqt; piece_type::N_VARIANTS]; game_phases::N_VARIANTS] = [PSQT_MG, PSQT_EG];
 
 #[inline]
-pub fn psqt_score(phase: GamePhase, piece: PieceType, sq: Square, color: Color) -> i32 {
+pub fn psqt_score(phase: GamePhase, piece: PieceType, sq: Square, color: Color) -> AnyScore {
     let sq = if color == colors::WHITE { sq.flip_v() } else { sq };
-    PSQT[phase.v() as usize][piece.v() as usize].get(sq)
+    PSQT[phase.v() as usize][piece.v() as usize].get(sq).into()
 }
 
 #[inline]
-pub fn tapered_psqt(phase: TaperValue, piece: PieceType, sq: Square, color: Color) -> i32 {
+pub fn tapered_psqt(phase: TaperValue, piece: PieceType, sq: Square, color: Color) -> AnyScore {
     let mg = psqt_score(game_phases::MG, piece, sq, color);
     let eg = psqt_score(game_phases::EG, piece, sq, color);
     phase.weighted_eval(mg, eg)
@@ -273,10 +273,12 @@ impl TaperValue {
         Self(piece_phases::TOTAL_C.saturating_sub(inv_phase))
     }
 
-    pub const fn weighted_eval(&self, mg_eval: i32, eg_eval: i32) -> i32 {
+    pub const fn weighted_eval(&self, mg_eval: AnyScore, eg_eval: AnyScore) -> AnyScore {
         let phase = self.v();
         let total = piece_phases::TOTAL_C;
-        ((mg_eval * (total - phase)) + (eg_eval * phase)) / total
+        let mg_eval = mg_eval.v();
+        let eg_eval = eg_eval.v();
+        AnyScore::new(((mg_eval * (total - phase)) + (eg_eval * phase)) / total)
     }
 
     pub const fn v(&self) -> i32 { self.0.clamp(0, piece_phases::TOTAL_C) }
@@ -311,31 +313,29 @@ impl PieceInfoObserver for TaperValue {
 
 pub fn material<P: Perspective>(pos: &PieceInfo) -> Score<P> {
     let score = (piece_type::PAWN..piece_type::KING)
-        .map(|p| pos.get_bitboard(p, P::COLOR).pop_cnt() as i32 * piece_score(p))
-        .sum();
+        .map(|p| pos.get_bitboard(p, P::COLOR).pop_cnt() as i32 * piece_score(p).v())
+        .map(AnyScore::new)
+        .sum::<AnyScore>();
 
-    Score::new(score)
+    unsafe { score.interpret_as::<P>() }
 }
 
 #[allow(clippy::identity_op)]
 pub fn mobility<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
-    let color = P::COLOR;
     let occ = pos.get_occupancy();
-    let score = (piece_type::KNIGHT..piece_type::KING)
+    let score: AnyScore = (piece_type::KNIGHT..piece_type::KING)
         .map(|pt| {
-            let pieces = pos.get_bitboard(pt, color);
-            let scores: i32 = pieces
+            let pieces = pos.get_bitboard(pt, P::COLOR);
+            let scores: AnyScore = pieces
                 .map(|sq| match pt {
                     piece_type::KNIGHT => {
                         let attacks = knight::lookup_attacks(sq);
-                        let score = attacks.pop_cnt() * 5;
-                        let score = score as i32;
+                        let score: AnyScore = (attacks.pop_cnt() as i32 * 5).into();
                         phase.weighted_eval(score, score)
                     }
                     piece_type::BISHOP => {
                         let attacks = <Bishop as SlidingAttacks>::lookup_attacks(sq, occ);
-                        let score = attacks.pop_cnt() * 5;
-                        let score = score as i32;
+                        let score: AnyScore = (attacks.pop_cnt() as i32 * 5).into();
                         phase.weighted_eval(score, score)
                     }
                     piece_type::ROOK => {
@@ -346,14 +346,14 @@ pub fn mobility<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> 
                         let hort_cnt = horizontal.pop_cnt();
                         phase.weighted_eval(
                             // vertical mobility is more valuable in the opening
-                            (vert_cnt * 3 + hort_cnt * 1) as i32,
-                            (vert_cnt * 5 + hort_cnt * 5) as i32,
+                            ((vert_cnt * 3 + hort_cnt * 1) as i32).into(),
+                            ((vert_cnt * 5 + hort_cnt * 5) as i32).into(),
                         )
                     }
                     piece_type::QUEEN => {
                         let attacks = <Queen as SlidingAttacks>::lookup_attacks(sq, occ);
-                        let score = attacks.pop_cnt() * 5;
-                        score as i32
+                        let score = attacks.pop_cnt() as i32 * 5;
+                        score.into()
                     }
                     _ => unreachable!(),
                 })
@@ -363,7 +363,7 @@ pub fn mobility<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> 
         })
         .sum();
 
-    Score::new(score)
+    unsafe { score.interpret_as() }
 }
 
 pub fn pawn_shield<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Square) -> Score<P> {
@@ -384,13 +384,13 @@ pub fn pawn_shield<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Squ
     let score = p1_score * 10 + p2_score_strong * 5 + p2_score_weak * 4;
 
     // we don't want the pawns from trying to promote in the endgame
-    let score = phase.weighted_eval(score, 0);
+    let score = phase.weighted_eval(score.into(), scores::ZERO);
 
-    Score::new(score)
+    unsafe { score.interpret_as() }
 }
 
 /// Evaluates the safety of our king's position by looking at enemy pawn storm.
-pub fn pawn_storm_penalty<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, turn: Turn, king: Square) -> Penalty<P> {
+pub fn pawn_storm_penalty<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, turn: Turn, king: Square) -> Score<P> {
     const DANGER_ZONES: [[Bitboard; squares::N_VARIANTS]; colors::N_VARIANTS] = {
         let step_b = 1;
         let step_w = -1;
@@ -471,10 +471,13 @@ pub fn pawn_storm_penalty<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare
 
     let storm_danger_penalty = unblocked_pawns.pop_cnt() * 10 + nomnom_pawns.pop_cnt() * 30;
 
-    Penalty::<P>::new(storm_danger_penalty as i32)
+    let storm_danger_score = -(storm_danger_penalty as i32);
+    let storm_danger_score = AnyScore::from(storm_danger_score);
+
+    unsafe { storm_danger_score.interpret_as() }
 }
 
-pub fn open_king_file_penalty<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Square) -> Penalty<P> {
+pub fn open_king_file_penalty<P: Perspective>(pos: &PieceInfo, phase: TaperValue, king: Square) -> Score<P> {
     // [[start, end], king_file]
     const DANGER_FILES: [[File; 2]; files::N_VARIANTS] = {
         let mut files = [[files::A; 2]; files::N_VARIANTS];
@@ -515,9 +518,10 @@ pub fn open_king_file_penalty<P: Perspective>(pos: &PieceInfo, phase: TaperValue
         }
     }
 
-    let score = phase.weighted_eval(penalty, 0);
+    let penalty = phase.weighted_eval(penalty.into(), scores::ZERO);
+    let score = -penalty;
 
-    Penalty::<P>::new(score)
+    unsafe { score.interpret_as() }
 }
 
 pub fn king_safety<P: Perspective>(pos: &PieceInfo, _ep_sq: EpTargetSquare, _turn: Turn, phase: TaperValue) -> Score<P> {
@@ -526,7 +530,7 @@ pub fn king_safety<P: Perspective>(pos: &PieceInfo, _ep_sq: EpTargetSquare, _tur
         // + pawn_storm_penalty::<P>(pos, ep_sq, turn, king)
     }
     else {
-        Score::new(0)
+        Score::ZERO
     }
 }
 
@@ -591,25 +595,31 @@ pub fn passed_pawns<P: Perspective>(pos: &PieceInfo, ep_sq: EpTargetSquare, turn
         + protective_rooks.pop_cnt() as i32 * 20
         - aggressor_rooks.pop_cnt() as i32 * 15;
 
-    Score::new(score as i32)
+    unsafe { AnyScore::from(score).interpret_as() }
 }
 
 pub fn bishop_pair<P: Perspective>(pos: &PieceInfo) -> Score<P> {
     let bishop_cnt = pos.get_bitboard(piece_type::BISHOP, P::COLOR).pop_cnt();
     let score = if bishop_cnt >= 2 { 75 } else { 0 };
-    Score::new(score)
+    unsafe { AnyScore::from(score).interpret_as() }
 }
 
 pub fn psqt<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
-    fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> i32 {
+    fn score(pos: &PieceInfo, color: Color, phase: GamePhase) -> AnyScore {
         (piece_type::PAWN..=piece_type::KING)
-            .map(|piece| pos.get_bitboard(piece, color).map(|sq| psqt_score(phase, piece, sq, color)).sum::<i32>())
+            .map(|piece| {
+                pos.get_bitboard(piece, color)
+                    .map(|sq| psqt_score(phase, piece, sq, color))
+                    .sum::<AnyScore>()
+            })
             .sum()
     }
 
     let mg = score(pos, P::COLOR, game_phases::MG);
     let eg = score(pos, P::COLOR, game_phases::EG);
-    Score::new(phase.weighted_eval(mg, eg))
+    let score = phase.weighted_eval(mg, eg);
+
+    unsafe { score.interpret_as() }
 }
 
 pub fn hygge_king<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P> {
@@ -664,10 +674,11 @@ pub fn hygge_king<P: Perspective>(pos: &PieceInfo, phase: TaperValue) -> Score<P
         // rook distance is not that important for mating in the eg
 
         let score = knight_bonuses + queen_bonuses + king_bonus;
+        let score = phase.weighted_eval(scores::ZERO, score.into());
 
-        Score::new(phase.weighted_eval(0, score))
+        unsafe { score.interpret_as() }
     }
     else {
-        Score::new(0)
+        Score::ZERO
     }
 }

@@ -9,6 +9,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use saturating_cast::SaturatingCast;
+
 use crate::{
     core::{
         chrono::{ChronoParams, TimeMan},
@@ -30,14 +32,14 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            id::node_types::*,
+            data::{self, TTBound, TTDepth, TTKey, TTMove, TTScore, TranspositionTable},
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
             quiesce::{QSearchParams, qsearch},
-            score::{Cp, Score},
+            score::{AnyScore, Cp, Score, scores},
             strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth},
-            tt::{self, TranspositionTable},
+            tree::{NodeKind, NodeType, node_types::*},
         },
         turn::Turn,
         zobrist,
@@ -107,7 +109,8 @@ impl StaticEvaluator for NnueEvaluator {
         let accs = self.accs.get_accs_mut(self.curr);
         let (stm_acc, nstm_acc) = accs.get_mut_for::<P>();
         let nnue_eval = nnue.forward(stm_acc, nstm_acc);
-        Score::new(nnue_eval)
+        // Safety: We picked `P` as side-to-move above.
+        unsafe { nnue_eval.interpret_as() }
     }
 
     fn forward(&mut self) {
@@ -146,20 +149,24 @@ impl HceThreatener {
     /// `P::Opponent`.
     #[allow(dead_code)]
     fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
-        let mut max_threat = Score::<P::Opponent>::new(0);
+        const QUEEN_SCORE: AnyScore = hce::piece_score(piece_type::QUEEN);
+        const ROOK_SCORE: AnyScore = hce::piece_score(piece_type::ROOK);
+
+        let mut max_threat = Score::<P::Opponent>::ZERO;
 
         // todo: only generate captures, promos, and checks.
         let moves = pos.collect_legals_for::<P::Opponent, _>(MoveList::new());
         for &mov in moves.iter() {
             match pos.does_check(mov) {
                 CheckState::None => {}
-                CheckState::Single => return Score::new(hce::piece_score(piece_type::QUEEN)),
-                CheckState::Double => return Score::new(hce::piece_score(piece_type::QUEEN) + hce::piece_score(piece_type::ROOK)),
+                CheckState::Single => return unsafe { QUEEN_SCORE.interpret_as() },
+                CheckState::Double => return unsafe { (QUEEN_SCORE + ROOK_SCORE).interpret_as() },
             }
 
             if mov.get_flag().is_capture() {
-                let see = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR);
-                max_threat = max(max_threat, Score::new(see as i32));
+                let see: AnyScore = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR).into();
+                let see_threat = unsafe { see.interpret_as::<P::Opponent>() };
+                max_threat = max(max_threat, see_threat);
             }
         }
 
@@ -199,7 +206,7 @@ pub const trait IdParams {
     fn nmp_phase_threshold(&self) -> TaperValue;
     fn nmp_depth_factor(&self) -> u8;
     fn nmp_phase_factor(&self) -> u32;
-    fn nmp_margin(&self) -> i32;
+    fn nmp_margin(&self) -> AnyScore;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -209,7 +216,7 @@ pub fn go(
     timeman: &mut TimeMan,
     debug: &DebugMode,
     ct: CancellationToken,
-    tt: &mut TranspositionTable<TTEntry>,
+    tt: &mut TT,
     eval: &mut impl StaticEvaluator,
     params: impl ChronoParams + QSearchParams + IdParams + Clone + fmt::Debug,
 ) -> Option<Move> {
@@ -242,7 +249,7 @@ pub fn go(
         best_move = searcher.root_best_move();
         if let Some(best_move) = best_move {
             let search_time = Instant::now() - searcher.timeman.time_start();
-            uci_info(depth, &stats, Cp { v: best_score as i16 }, best_move, search_time);
+            uci_info(depth, &stats, Cp::from(best_score), best_move, search_time);
         }
 
         // update stats
@@ -302,20 +309,13 @@ struct Searcher<'a, 'b, E: StaticEvaluator> {
     ct: CancellationToken,
     aborted: bool,
     ss: SearchStack<SearchEntry>,
-    tt: &'a mut TranspositionTable<TTEntry>,
+    tt: &'a mut TT,
     eval: &'b mut E,
     phase: TaperValue,
 }
 
 impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
-    fn new(
-        pos: &Position,
-        limit: UciLimit,
-        timeman: &'a mut TimeMan,
-        ct: CancellationToken,
-        tt: &'a mut TranspositionTable<TTEntry>,
-        eval: &'b mut E,
-    ) -> Self {
+    fn new(pos: &Position, limit: UciLimit, timeman: &'a mut TimeMan, ct: CancellationToken, tt: &'a mut TT, eval: &'b mut E) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_moves::<AllLegal, _, _, _>(pos, (), |_, m| {
             stats.push(RootStats::new(m, 0));
@@ -368,16 +368,12 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
     }
 
     /// returns the score relative to the current player
-    fn search_root(&mut self, params: impl QSearchParams + IdParams + Clone, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> i32 {
+    fn search_root(&mut self, params: impl QSearchParams + IdParams + Clone, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> AnyScore {
+        fn alpha<P: Perspective>() -> Score<P> { Score::NEG_INF }
+        fn beta<P: Perspective>() -> Score<P> { Score::POS_INF }
         match pos.get_turn() {
-            colors::WHITE => {
-                self.search::<perspectives::White, Root>(params, pos, stats, depth, Score::NEG_INF, Score::POS_INF)
-                    .0
-            }
-            colors::BLACK => {
-                self.search::<perspectives::Black, Root>(params, pos, stats, depth, Score::NEG_INF, Score::POS_INF)
-                    .0
-            }
+            colors::WHITE => self.search::<perspectives::White, Root>(params, pos, stats, depth, alpha(), beta()).0,
+            colors::BLACK => self.search::<perspectives::Black, Root>(params, pos, stats, depth, alpha(), beta()).0,
             _ => unreachable!(),
         }
     }
@@ -410,7 +406,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         if let Some(result) = pos.game_result() {
             return match result {
                 GameResult::Win { .. } => Score::NEG_INF,
-                GameResult::Draw => Score::new(0),
+                GameResult::Draw => Score::DRAW,
             };
         }
 
@@ -418,7 +414,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return qsearch(pos, self.phase, alpha, beta, params, self.eval, Depth::new(100));
+            return qsearch::<P>(pos, self.phase, alpha, beta, params, self.eval, Depth::new(100));
         }
 
         let kind = T::KIND;
@@ -437,7 +433,9 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                     || (entry.bound == Bound::Lower && entry.score >= beta.0)
                     || (entry.bound == Bound::Upper && entry.score <= alpha.0))
             {
-                return Score::new(entry.score);
+                // Safety: unless we've had a hash collision, this score is for the same
+                // position and thus for the same player.
+                return unsafe { entry.score.interpret_as() };
             }
         }
 
@@ -447,45 +445,45 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         // can understand when they will already be computed...
 
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
-        let mut static_eval = None;
+        let mut static_eval = Score::NULL;
 
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
         let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
             // is it already computed? if so, return it.
-            if let Some(eval) = static_eval {
-                return eval;
+            if static_eval.0.is_valid() {
+                return static_eval;
             }
 
             let tt_entry = this.tt.get(key);
 
             let eval = tt_entry
-                .and_then(|e| e.static_eval)
-                .map(Score::<P>::new)
+                // Safety: unless we've had a hash collision, this score is for the same position
+                .map(|e| unsafe { e.static_eval.interpret_as() })
                 .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase));
 
-            static_eval = Some(eval);
+            static_eval = eval;
 
             eval
         };
 
         #[cfg(feature = "id-fhr")]
-        let mut threat = None;
+        let mut threat = Score::<P::Opponent>::NULL;
 
         #[cfg(feature = "id-fhr")]
         let mut lazy_threat_score = |this: &Self, pos: &Position| {
             // is it already computed? if so, return it.
-            if let Some(score) = threat {
-                return score;
+            if threat.0.is_valid() {
+                return threat;
             }
 
             let tt_entry = this.tt.get(key);
 
             let score = tt_entry
-                .and_then(|e| e.threat)
-                .map(Score::<P::Opponent>::new)
+                // Safety: unless we've had a hash collision, this score is for the same position
+                .map(|e| unsafe { e.threat.interpret_as() })
                 .unwrap_or_else(|| threatener.threat::<P>(pos));
 
-            threat = Some(score);
+            threat = score;
 
             score
         };
@@ -493,6 +491,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         // null move pruning
         #[cfg(feature = "id-nmp")]
         {
+            let nmp_margin = unsafe { params.nmp_margin().interpret_as() };
             let nmp_r: Depth = params.nmp_reduction()
                 // scale the reduction up based on depth
                 + depth.div_floor(params.nmp_depth_factor());
@@ -511,7 +510,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                 && self.phase < params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
                 // don't bother attempting to improve beta with a tempo down when our static eval is not
                 // even better than beta
-                && lazy_static_eval(self, pos) >= beta - Score::new(params.nmp_margin()) - Score::new((depth.v() * 15) as i32)
+                && lazy_static_eval(self, pos) >= beta - nmp_margin - unsafe { AnyScore::from(depth.v() * 15).interpret_as() }
             {
                 pos.make_null_move();
 
@@ -521,7 +520,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                     stats,
                     // scout with a reduced depth
                     depth - nmp_r - 1,
-                    !(alpha + Score::new(1)),
+                    !(alpha + 1),
                     !alpha,
                 );
 
@@ -627,7 +626,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                         stats,
                         // scout with a reduced depth
                         reduced_depth,
-                        !(alpha + Score::new(1)),
+                        !(alpha + 1),
                         !alpha,
                     );
 
@@ -641,7 +640,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                             // research at full depth
                             full_depth,
                             // still zero-window.
-                            !(alpha + Score::new(1)),
+                            !(alpha + 1),
                             !alpha,
                         );
                     }
@@ -673,19 +672,15 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
             // check for cancellation
             if self.aborted {
-                return Score::new(0);
+                return Score::DRAW;
             }
 
             // update root moves
             if is_root_node {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
-                self.root_stats.as_mut_slice()[curr].set_score(
-                    score
-                        .0
-                        .try_into()
-                        .unwrap_or_else(|_| todo!("TODO: compress the eval scores into move scores")),
-                );
+                // todo: don't just clamp, mate values will get lost etc.
+                self.root_stats.as_mut_slice()[curr].set_score(score.0.v().saturating_cast());
             }
 
             if score > best_score {
@@ -713,14 +708,14 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             curr += 1;
         }
 
-        self.tt.insert(TTEntry {
+        self.tt.try_insert(TTEntry {
             key,
             depth,
             score: best_score.0,
             #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
-            static_eval: static_eval.map(|s| s.0),
+            static_eval: static_eval.0,
             #[cfg(feature = "id-fhr")]
-            threat: threat.map(|t| t.0),
+            threat: threat.0,
             bound: Bound::from_scores(orig_alpha, beta, best_score),
             mov: best_move,
         });
@@ -729,55 +724,75 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum NodeKind {
-    Root,
-    Normal,
-    Cut,
-}
-
-const trait NodeType {
-    const KIND: NodeKind;
-}
-
-mod node_types {
-    use super::{NodeKind, NodeType};
-
-    pub struct Root;
-    impl const NodeType for Root {
-        const KIND: NodeKind = NodeKind::Root;
-    }
-
-    pub struct Normal;
-    impl const NodeType for Normal {
-        const KIND: NodeKind = NodeKind::Normal;
-    }
-
-    pub struct Cut;
-    impl const NodeType for Cut {
-        const KIND: NodeKind = NodeKind::Cut;
-    }
-}
+pub type TT = TranspositionTable<TTEntry, TTReplace>;
 
 #[derive(Clone)]
 pub struct TTEntry {
     key: zobrist::Hash,
     depth: Depth,
-    score: i32,
+    score: AnyScore,
     #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
-    static_eval: Option<i32>,
+    static_eval: AnyScore,
     #[cfg(feature = "id-fhr")]
-    threat: Option<i32>,
+    threat: AnyScore,
     bound: Bound,
     mov: Move,
 }
 
-impl tt::ZKey for TTEntry {
+impl const TTKey for TTEntry {
     fn key(&self) -> zobrist::Hash { self.key }
+}
+
+impl const TTScore for TTEntry {
+    fn score(&self) -> AnyScore { self.score }
+}
+
+impl const TTMove for TTEntry {
+    fn mov(&self) -> Move { self.mov }
+}
+
+impl const TTDepth for TTEntry {
+    fn depth(&self) -> Depth { self.depth }
+}
+
+impl const TTBound for TTEntry {
+    fn bound(&self) -> Bound { self.bound }
+}
+
+#[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
+impl const data::TTStaticEval for TTEntry {
+    fn static_eval(&self) -> AnyScore { self.static_eval }
+    fn static_eval_mut(&mut self) -> &mut AnyScore { &mut self.static_eval }
+}
+
+impl const Default for TTEntry {
+    fn default() -> Self {
+        Self {
+            key: zobrist::Hash::default(),
+            depth: Depth::NONE,
+            score: scores::NULL,
+            #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
+            static_eval: scores::NULL,
+            #[cfg(feature = "id-fhr")]
+            threat: scores::NULL,
+            bound: Bound::None,
+            mov: Move::null(),
+        }
+    }
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct TTReplace;
+
+impl data::ReplacementStrategy for TTReplace {
+    type Data = TTEntry;
+
+    fn should_replace(_: &TTEntry, _: &TTEntry) -> bool { true }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Bound {
+    None,
     Exact,
     Lower,
     Upper,

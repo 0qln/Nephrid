@@ -17,7 +17,8 @@ use super::{
 
 /// Note: the default hash is equivalent to the hash of the default (empty)
 /// position.
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive_const(Default)]
 pub struct Hash {
     v: u64,
 }

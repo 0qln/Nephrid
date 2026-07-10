@@ -10,10 +10,9 @@ use engine::{
         params::{C_IdHceParams, C_IdNnueParams},
         position::Position,
         search::{
-            id::{self, HceEvaluator, IdParams, NnueEvaluator, TTEntry},
+            id::{self, HceEvaluator, IdParams, NnueEvaluator},
             limit::UciLimit,
             quiesce::QSearchParams,
-            tt::TranspositionTable,
         },
         zobrist,
     },
@@ -41,7 +40,7 @@ fn search_with_node_target<E: StaticEvaluator + Default>(pos: &mut Position, par
     let debug = DebugMode::off();
     let ct = CancellationToken::new();
     let hash_size = Information::new::<mebibyte>(16);
-    let mut tt = TranspositionTable::<TTEntry>::new_of_size(hash_size);
+    let mut tt = id::TT::new_of_size(hash_size);
     let mut eval = E::default();
     let mut timeman = TimeMan::new(&limit, pos);
 

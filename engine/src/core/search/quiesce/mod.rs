@@ -11,12 +11,12 @@ use crate::core::{
     search::{
         id::RbSet,
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
-        score::Score,
+        score::{AnyScore, Score, scores},
     },
 };
 
 pub const trait QSearchParams {
-    fn futility_margin(&self) -> i32;
+    fn futility_margin(&self) -> AnyScore;
     fn delta_pruning_threshold(&self) -> TaperValue;
 }
 
@@ -82,17 +82,19 @@ pub fn qsearch<P: Perspective>(
             let value_bonus = PromoPieceType::try_from(m.get_flag())
                 .ok()
                 .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
-                .unwrap_or(0);
+                .unwrap_or(scores::ZERO);
 
             let captured_value = m
                 .get_capture_sq()
                 .map(|capt_sq| piece_score(pos.get_piece(capt_sq).piece_type()))
-                .unwrap_or(0);
+                .unwrap_or(scores::ZERO);
 
             let futility_margin = params.futility_margin();
             let futility_score = captured_value + value_bonus + futility_margin;
+            // Safety: the score was constructed relative to `P`
+            let futility_score = unsafe { futility_score.interpret_as() };
 
-            if best_value + Score::new(futility_score) < alpha {
+            if best_value + futility_score < alpha {
                 continue;
             }
         }

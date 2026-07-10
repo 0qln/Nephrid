@@ -7,6 +7,7 @@ use crate::{
             id::IdParams,
             mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
             quiesce::QSearchParams,
+            score::AnyScore,
         },
     },
     math::{self, NormalizedEntropy},
@@ -392,7 +393,7 @@ impl ConfigBuilder {
     #[rustfmt::skip]
     pub fn qsearch(mut self, params: &impl QSearchParams) -> Self {
         let cfg = &mut self.config;
-        cfg.eval_futility_margin.seed(params.futility_margin());
+        cfg.eval_futility_margin.seed(params.futility_margin().v());
         cfg.eval_delta_pruning_threshold.seed(params.delta_pruning_threshold().v());
         self
     }
@@ -441,7 +442,7 @@ impl ConfigBuilder {
         cfg.id_nmp_phase_threshold.seed(params.nmp_phase_threshold().v());
         cfg.id_nmp_depth_factor.seed(params.nmp_depth_factor() as i32);
         cfg.id_nmp_phase_factor.seed(params.nmp_phase_factor() as i32);
-        cfg.id_nmp_margin.seed(params.nmp_margin());
+        cfg.id_nmp_margin.seed(params.nmp_margin().v());
         self
     }
 
@@ -452,7 +453,7 @@ impl ConfigBuilder {
 // #[cfg(feature = "tunable")]
 impl Configuration {
     pub fn eval_policy_temperature(&self) -> f32 { self.eval_policy_temperature.value.get::<ratio>() }
-    pub fn eval_futility_margin(&self) -> i32 { self.eval_futility_margin.value }
+    pub fn eval_futility_margin(&self) -> AnyScore { AnyScore::new(self.eval_futility_margin.value) }
     pub fn eval_delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(self.eval_delta_pruning_threshold.value) }
     pub fn select_cpuct(&self) -> f32 { self.select_cpuct.value.get::<ratio>() }
     pub fn mcts_proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(self.mcts_proven_loss_visit_threshold.value as u32) }
@@ -464,7 +465,7 @@ impl Configuration {
     pub fn id_nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(self.id_nmp_phase_threshold.value) }
     pub fn id_nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor.value as u8 }
     pub fn id_nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor.value as u32 }
-    pub fn id_nmp_margin(&self) -> i32 { self.id_nmp_margin.value }
+    pub fn id_nmp_margin(&self) -> AnyScore { AnyScore::new(self.id_nmp_margin.value) }
 }
 
 impl Configuration {
@@ -500,6 +501,7 @@ impl Configuration {
             #[cfg(feature = "tunable")] "mcts-tt-best-move" => self.mcts_tt_best_move.set(value),
             #[cfg(feature = "tunable")] "select-cpuct" => self.select_cpuct.set(value),
             #[cfg(feature = "tunable")] "timeman-entropy-target" => self.timeman_entropy_target.set(value),
+            #[cfg(feature = "tunable")] "timeman-movestreak-target" => self.timeman_movestreak_target.set(value),
             #[cfg(feature = "tunable")] "id-nmp-reduction" => self.id_nmp_reduction.set(value),
             #[cfg(feature = "tunable")] "id-nmp-phase-threshold" => self.id_nmp_phase_threshold.set(value),
             #[cfg(feature = "tunable")] "id-nmp-depth-factor" => self.id_nmp_depth_factor.set(value),
