@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use engine::{
@@ -30,7 +30,7 @@ const POSITIONS: &[(&str, &str)] = &[
     ("endgame", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"),
 ];
 
-fn search_with_node_target<E: StaticEvaluator + Default>(pos: &mut Position, params: impl IdParams + QSearchParams + ChronoParams + Clone) {
+fn search_with_node_target<E: StaticEvaluator + Default>(pos: &mut Position, params: impl IdParams + QSearchParams + ChronoParams + Clone + fmt::Debug) {
     let limit = UciLimit {
         is_active: true,
         nodes: NODE_TARGET,

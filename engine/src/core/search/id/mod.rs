@@ -207,15 +207,19 @@ pub fn go(
     pos: &mut Position,
     limit: UciLimit,
     timeman: &mut TimeMan,
-    _debug: &DebugMode,
+    debug: &DebugMode,
     ct: CancellationToken,
     tt: &mut TranspositionTable<TTEntry>,
     eval: &mut impl StaticEvaluator,
-    params: impl ChronoParams + QSearchParams + IdParams + Clone,
+    params: impl ChronoParams + QSearchParams + IdParams + Clone + fmt::Debug,
 ) -> Option<Move> {
     let depth_lim = min(Depth::MAX, limit.depth);
 
     eval.observe_forward().on_init(pos.piece_info());
+
+    if debug.get() {
+        println!("info string Starting ID Search with Params: {params:?}");
+    }
 
     let mut searcher = Searcher::new(pos, limit, timeman, ct, tt, eval);
     let mut stats = SearchStats::default();
@@ -255,9 +259,10 @@ pub fn go(
             0
         };
 
-        searcher.timeman.hint_time_target(searcher.timeman.time_limit().map(|x| x - stats.iter_time));
-        searcher.timeman.hint_movestreak_target(Some(params.movestreak_target()));
-        searcher.timeman.set_curr_movestreak(stats.root_movestreak);
+        let timeman = &mut searcher.timeman;
+        timeman.hint_time_target(timeman.time_limit().map(|x| x - stats.iter_time));
+        timeman.hint_movestreak_target(Some(params.movestreak_target()));
+        timeman.set_curr_movestreak(stats.root_movestreak);
 
         if searcher.should_stop(&stats) || searcher.timeman.reached_target() {
             break;
