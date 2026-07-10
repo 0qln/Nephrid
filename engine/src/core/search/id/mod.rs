@@ -451,7 +451,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             let mut compute = || this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase);
 
             // check the tt
-            if let Some(tt_entry) = this.tt.raw_mut(key) {
+            if let Some(tt_entry) = this.tt.get_mut(key) {
                 use crate::core::search::data::TTStaticEval;
                 let tt_score = tt_entry.static_eval_mut();
                 // if the tt contains a valid static_eval, return it.

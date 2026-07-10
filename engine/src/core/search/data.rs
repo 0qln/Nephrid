@@ -59,6 +59,8 @@ impl<Data: Clone + const Default, S> TranspositionTable<Data, S> {
         let num_entries = (bytes / entry_size).max(1);
         Self::new(num_entries)
     }
+
+    pub fn clear(&mut self) { self.entries.fill(Data::default()); }
 }
 
 impl<Data, S> TranspositionTable<Data, S> {
