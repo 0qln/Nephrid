@@ -1,15 +1,18 @@
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use engine::{
     core::{
+        chrono::{ChronoParams, TimeMan},
         depth::Depth,
+        eval::StaticEvaluator,
         move_iter::sliding_piece::magics,
-        params::C_IdHceParams,
+        params::{C_IdHceParams, C_IdNnueParams},
         position::Position,
         search::{
-            id::{self, HceEvaluator},
+            id::{self, HceEvaluator, IdParams, NnueEvaluator},
             limit::UciLimit,
+            quiesce::QSearchParams,
         },
         zobrist,
     },
@@ -26,7 +29,7 @@ const POSITIONS: &[(&str, &str)] = &[
     ("endgame", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"),
 ];
 
-fn search_with_node_target(pos: &mut Position) {
+fn search_with_node_target<E: StaticEvaluator + Default>(pos: &mut Position, params: impl IdParams + QSearchParams + ChronoParams + Clone + fmt::Debug) {
     let limit = UciLimit {
         is_active: true,
         nodes: NODE_TARGET,
@@ -38,15 +41,17 @@ fn search_with_node_target(pos: &mut Position) {
     let ct = CancellationToken::new();
     let hash_size = Information::new::<mebibyte>(16);
     let mut tt = id::TT::new_of_size(hash_size);
+    let mut eval = E::default();
+    let mut timeman = TimeMan::new(&limit, pos);
 
-    id::go(pos, limit, &debug, ct, &mut tt, &mut HceEvaluator, C_IdHceParams);
+    id::go(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut eval, params);
 }
 
-pub fn id_nps(c: &mut Criterion) {
+pub fn id_hce_nps(c: &mut Criterion) {
     magics::init();
     zobrist::init();
 
-    let mut group = c.benchmark_group("id");
+    let mut group = c.benchmark_group("id-hce");
     group
         .throughput(Throughput::Elements(NODE_TARGET))
         .measurement_time(Duration::from_secs(30))
@@ -55,12 +60,40 @@ pub fn id_nps(c: &mut Criterion) {
     for (name, fen) in POSITIONS {
         let pos = Position::from_fen(fen).unwrap();
         group.bench_with_input(BenchmarkId::new("search", name), &pos, |b, pos| {
-            b.iter_batched(|| pos.clone(), |mut pos| search_with_node_target(&mut pos), BatchSize::SmallInput)
+            b.iter_batched(
+                || pos.clone(),
+                |mut pos| search_with_node_target::<HceEvaluator>(&mut pos, C_IdHceParams),
+                BatchSize::SmallInput,
+            )
         });
     }
 
     group.finish();
 }
 
-criterion_group!(benches, id_nps);
+pub fn id_nnue_nps(c: &mut Criterion) {
+    magics::init();
+    zobrist::init();
+
+    let mut group = c.benchmark_group("id-nnue");
+    group
+        .throughput(Throughput::Elements(NODE_TARGET))
+        .measurement_time(Duration::from_secs(30))
+        .sample_size(10);
+
+    for (name, fen) in POSITIONS {
+        let pos = Position::from_fen(fen).unwrap();
+        group.bench_with_input(BenchmarkId::new("search", name), &pos, |b, pos| {
+            b.iter_batched(
+                || pos.clone(),
+                |mut pos| search_with_node_target::<NnueEvaluator>(&mut pos, C_IdNnueParams),
+                BatchSize::SmallInput,
+            )
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(benches, id_hce_nps, id_nnue_nps);
 criterion_main!(benches);

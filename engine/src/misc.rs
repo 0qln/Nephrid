@@ -420,6 +420,7 @@ impl<const N: usize, T> List<N, T> {
     }
 
     /// # Safety
+    ///
     /// The caller must ensure that `index` is less than `self.len`.
     #[inline]
     pub unsafe fn get_unchecked(&self, index: usize) -> &T {
@@ -430,6 +431,7 @@ impl<const N: usize, T> List<N, T> {
     }
 
     /// # Safety
+    ///
     /// The caller must ensure that `index` is less than `self.len`.
     #[inline]
     pub unsafe fn read_unchecked(&self, index: usize) -> T {

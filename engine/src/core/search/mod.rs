@@ -1,9 +1,8 @@
 use crate::core::{
-    chrono::ChronoParams,
+    chrono::{ChronoParams, TimeMan},
     eval::StaticEvaluator,
     params::IParams,
-    position::PieceInfoObserver,
-    search::{data::TranspositionTable, id::IdParams, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp},
+    search::{id::IdParams, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp},
 };
 use thiserror::Error;
 
@@ -28,6 +27,7 @@ use crate::{
     misc::CancellationToken,
 };
 use std::{
+    fmt,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -70,6 +70,10 @@ pub enum ExecError {
     RuntimeError(String),
 }
 
+impl ExecError {
+    pub fn bad_config(inner: impl fmt::Display) -> Self { ExecError::BadConfig(inner.to_string()) }
+}
+
 pub trait SearchWorker {
     type X: IParams;
 
@@ -79,21 +83,22 @@ pub trait SearchWorker {
 
 /// Iterative deepening worker.
 pub struct IdWorker<E: StaticEvaluator, X: IParams> {
-    // todo: don't store the construction information here but the tt and timeman itself
     tt: id::TT,
+    timeman: TimeMan,
     params: X::Ref,
     eval: E,
 }
 
 impl<E: StaticEvaluator + Default, X: IParams + Default> SearchWorker for IdWorker<E, X>
 where
-    X::Ref: IdParams + ChronoParams + QSearchParams,
+    X::Ref: IdParams + ChronoParams + QSearchParams + fmt::Debug,
 {
     type X = X;
 
     fn new() -> Self {
         Self {
-            tt: TranspositionTable::new(0),
+            tt: id::TT::new(0),
+            timeman: TimeMan::default(),
             params: <Self::X as Default>::default().shared(),
             eval: E::default(),
         }
@@ -113,9 +118,20 @@ where
             Command::Normal(mut pos, limit, ct, debug) => {
                 // todo: initiating the nnue before every search works for now, but we can
                 // probably just do it on the fly in AdvanceState...
-                self.eval.observe().on_init(pos.piece_info());
+                self.eval.init(pos.piece_info());
 
-                let best_move = id::go(&mut pos, limit, &debug, ct, &mut self.tt, &mut self.eval, self.params.clone());
+                self.timeman.init_limits(&limit, &pos);
+
+                let best_move = id::go(
+                    &mut pos,
+                    limit,
+                    &mut self.timeman,
+                    &debug,
+                    ct,
+                    &mut self.tt,
+                    &mut self.eval,
+                    self.params.clone(),
+                );
 
                 if let Some(mov) = best_move {
                     println!("bestmove {mov}");
@@ -137,9 +153,10 @@ where
             Command::Configure(config) => {
                 let cfg = || config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")));
 
-                self.tt = TranspositionTable::new_of_size(cfg()?.hash());
-                self.params = Self::X::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
-                self.eval = E::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
+                self.tt = id::TT::new_of_size(cfg()?.hash());
+                self.params = Self::X::try_from_config(cfg()?).map_err(ExecError::bad_config)?;
+                self.eval = E::try_from_config(cfg()?).map_err(ExecError::bad_config)?;
+                self.timeman.enable_soft_targets(true); // todo: config option for enabling soft targets
 
                 Ok(())
             }

@@ -1,4 +1,4 @@
-use std::{fmt, marker::PhantomData, ops::Deref};
+use std::{cmp::Ordering, fmt, marker::PhantomData, ops::Deref};
 
 use crate::misc::{CheckHealth, CheckHealthResult, List};
 
@@ -135,9 +135,13 @@ pub trait FloatBounds {
     const MAX: f32;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(transparent)]
 pub struct Bounded<T, B>(T, PhantomData<B>);
+
+impl<T: PartialOrd, B: PartialEq> PartialOrd for Bounded<T, B> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> { self.0.partial_cmp(&other.0) }
+}
 
 impl Default for Bounded<f32, Bounds0to1> {
     fn default() -> Self { Self(Bounds0to1::MIN, PhantomData) }

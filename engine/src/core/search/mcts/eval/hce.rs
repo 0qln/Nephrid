@@ -115,8 +115,9 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
     pub fn new(moves: Moves, pos: &mut Position, params: MctsHceParamsRef) -> Self {
         // todo: store tt somewhere
         let mut tt = id::TT::new(1);
+        let phase = TaperValue::from_position(pos.piece_info());
         let quality: Cp = match pos.get_turn().v() {
-            colors::WHITE_C => QSearcher::new(&mut tt)
+            colors::WHITE_C => QSearcher::new(&mut tt, phase)
                 .go::<perspectives::White, node_types::Normal>(
                     pos,
                     Score::new(scores::NEG_INF),
@@ -126,7 +127,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                     Depth::new(30),
                 )
                 .into(),
-            colors::BLACK_C => QSearcher::new(&mut tt)
+            colors::BLACK_C => QSearcher::new(&mut tt, phase)
                 .go::<perspectives::Black, node_types::Normal>(
                     pos,
                     Score::new(scores::NEG_INF),
@@ -142,7 +143,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             quality,
             pos: pos.piece_info().clone(),
             state: pos.state_info().clone(),
-            phase: TaperValue::from_position(pos.piece_info()),
+            phase,
             moves,
             turn: pos.get_turn(),
             params,

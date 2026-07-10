@@ -2,7 +2,13 @@ use core::fmt;
 use std::ops::Deref;
 
 use crate::core::{
-    color::{Color, Perspective}, config::Configuration, coordinates::EpTargetSquare, eval::hce::TaperValue, position::{PieceInfo, PieceInfoObserver}, search::score::Score, turn::Turn
+    color::{Color, Perspective},
+    config::Configuration,
+    coordinates::EpTargetSquare,
+    eval::hce::TaperValue,
+    position::{PieceInfo, PieceInfoObserver},
+    search::score::Score,
+    turn::Turn,
 };
 
 pub mod hce;
@@ -11,10 +17,21 @@ pub mod nnue;
 pub trait StaticEvaluator: Sized {
     fn eval<P: Perspective>(&mut self, pos: &PieceInfo, turn: Turn, ep_sq: EpTargetSquare, phase: TaperValue) -> Score<P>;
 
+    fn init(&mut self, _pos: &PieceInfo) {}
+
     fn try_from_config<C: Deref<Target = Configuration>>(config: C) -> Result<Self, impl fmt::Display>;
 
+    fn forward(&mut self) {}
+    fn backward(&mut self) {}
+
     #[allow(static_mut_refs)]
-    fn observe(&mut self) -> &mut impl PieceInfoObserver {
+    fn observe_forward(&mut self) -> &mut impl PieceInfoObserver {
+        static mut NULL_OBSERVER: () = ();
+        unsafe { &mut NULL_OBSERVER }
+    }
+
+    #[allow(static_mut_refs)]
+    fn observe_backward(&mut self) -> &mut impl PieceInfoObserver {
         static mut NULL_OBSERVER: () = ();
         unsafe { &mut NULL_OBSERVER }
     }

@@ -482,6 +482,36 @@ impl PieceInfoObserver for () {
     fn on_piece_moved(&mut self, _from: Square, _to: Square, _piece: Piece) {}
 }
 
+impl<T: PieceInfoObserver + ?Sized> PieceInfoObserver for &mut T {
+    #[inline(always)] fn on_init(&mut self, p: &PieceInfo) { (**self).on_init(p); }
+    #[inline(always)] fn on_piece_put(&mut self, s: Square, p: Piece) { (**self).on_piece_put(s, p); }
+    #[inline(always)] fn on_piece_removed(&mut self, s: Square, p: Piece) { (**self).on_piece_removed(s, p); }
+    #[inline(always)] fn on_piece_moved(&mut self, f: Square, t: Square, p: Piece) { (**self).on_piece_moved(f, t, p); }
+}
+
+impl<A: PieceInfoObserver, B: PieceInfoObserver> PieceInfoObserver for (A, B) {
+    #[inline(always)]
+    fn on_init(&mut self, p: &PieceInfo) {
+        self.0.on_init(p);
+        self.1.on_init(p);
+    }
+    #[inline(always)]
+    fn on_piece_put(&mut self, s: Square, p: Piece) {
+        self.0.on_piece_put(s, p);
+        self.1.on_piece_put(s, p);
+    }
+    #[inline(always)]
+    fn on_piece_removed(&mut self, s: Square, p: Piece) {
+        self.0.on_piece_removed(s, p);
+        self.1.on_piece_removed(s, p);
+    }
+    #[inline(always)]
+    fn on_piece_moved(&mut self, f: Square, t: Square, p: Piece) {
+        self.0.on_piece_moved(f, t, p);
+        self.1.on_piece_moved(f, t, p);
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Position {
     piece_info: PieceInfo,

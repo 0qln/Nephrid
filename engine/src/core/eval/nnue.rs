@@ -1,3 +1,4 @@
+use crate::core::{depth::Depth, id::SearchStack};
 use std::{
     fs::File,
     hint::unreachable_unchecked,
@@ -165,6 +166,7 @@ impl CheckHealth for Network {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Accumulator {
     values: [TValue; HIDDEN_SIZE],
 
@@ -267,7 +269,11 @@ impl FeatureUpdates {
     }
 }
 
-struct AccUpdates {
+#[derive(Clone, Default)]
+pub struct EagerAccUpdates;
+
+#[derive(Clone)]
+struct LazyAccUpdates {
     /// Before you apply anything, reset everything.
     reset: bool,
 
@@ -278,7 +284,11 @@ struct AccUpdates {
     updated: Vec<IndexInfo>,
 }
 
-impl AccUpdates {
+impl Default for LazyAccUpdates {
+    fn default() -> Self { Self::new() }
+}
+
+impl LazyAccUpdates {
     fn new() -> Self {
         Self {
             reset: false,
@@ -355,19 +365,37 @@ struct IndexInfo {
     c: Color,
 }
 
-pub struct AccumulatorPair {
+#[derive(Clone)]
+pub struct AccumulatorPair<AccUpdates> {
     updates: AccUpdates,
     white: Accumulator,
     black: Accumulator,
 }
 
-impl AccumulatorPair {
+impl<Updates: Default> Default for AccumulatorPair<Updates> {
+    fn default() -> Self { Self::new(get_nnue()) }
+}
+
+impl<Updates: Default> AccumulatorPair<Updates> {
     pub fn new(net: &Network) -> Self {
         Self {
-            updates: AccUpdates::new(),
+            updates: Updates::default(),
             white: Accumulator::init(net),
             black: Accumulator::init(net),
         }
+    }
+}
+
+impl AccumulatorPair<LazyAccUpdates> {
+    pub fn inherit_from(&mut self, parent: &Self) {
+        self.white = parent.white;
+        self.black = parent.black;
+
+        self.updates.reset = parent.updates.reset;
+        self.updates.updates = parent.updates.updates;
+
+        self.updates.updated.clear();
+        self.updates.updated.extend_from_slice(&parent.updates.updated);
     }
 
     pub fn sync(&mut self, net: &Network) { self.updates.apply(&mut self.white, &mut self.black, net); }
@@ -383,7 +411,22 @@ impl AccumulatorPair {
     }
 }
 
-impl PieceInfoObserver for AccumulatorPair {
+impl AccumulatorPair<EagerAccUpdates> {
+    pub fn inherit_from(&mut self, parent: &Self) {
+        self.white = parent.white;
+        self.black = parent.black;
+    }
+
+    pub fn get_mut_for<P: Perspective>(&mut self) -> (&mut Accumulator, &mut Accumulator) {
+        match P::COLOR {
+            colors::WHITE => (&mut self.white, &mut self.black),
+            colors::BLACK => (&mut self.black, &mut self.white),
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+}
+
+impl PieceInfoObserver for AccumulatorPair<LazyAccUpdates> {
     fn on_init(&mut self, pos: &PieceInfo) {
         // reset
         self.updates.reset();
@@ -404,6 +447,64 @@ impl PieceInfoObserver for AccumulatorPair {
     fn on_piece_moved(&mut self, from: Square, to: Square, p: Piece) {
         self.on_piece_removed(from, p);
         self.on_piece_put(to, p);
+    }
+}
+
+impl PieceInfoObserver for AccumulatorPair<EagerAccUpdates> {
+    fn on_init(&mut self, pos: &PieceInfo) {
+        // reset
+        self.white = Accumulator::init(get_nnue());
+        self.black = Accumulator::init(get_nnue());
+
+        // put pieces
+        for sq in squares::A1..=squares::H8 {
+            let p = pos.get_piece(sq);
+            if p.piece_type() != piece_type::NONE {
+                self.on_piece_put(sq, p);
+            }
+        }
+    }
+
+    fn on_piece_put(&mut self, sq: Square, p: Piece) {
+        let (c, pt) = p.unpack();
+        self.white.add_feature(input_index_for::<White>(sq, pt, c), get_nnue());
+        self.black.add_feature(input_index_for::<Black>(sq, pt, c), get_nnue());
+    }
+
+    fn on_piece_removed(&mut self, sq: Square, p: Piece) {
+        let (c, pt) = p.unpack();
+        self.white.remove_feature(input_index_for::<White>(sq, pt, c), get_nnue());
+        self.black.remove_feature(input_index_for::<Black>(sq, pt, c), get_nnue());
+    }
+
+    fn on_piece_moved(&mut self, from: Square, to: Square, p: Piece) {
+        self.on_piece_removed(from, p);
+        self.on_piece_put(to, p);
+    }
+}
+
+#[derive(Default)]
+pub struct AccumulatorStack<Updates: Clone> {
+    accs: SearchStack<AccumulatorPair<Updates>>,
+}
+
+impl AccumulatorStack<LazyAccUpdates> {
+    pub fn get_accs_mut(&mut self, idx: Depth) -> &mut AccumulatorPair<LazyAccUpdates> { self.accs.get_mut(idx) }
+
+    pub fn propagate(&mut self, old: Depth, new: Depth) {
+        self.accs.propagate(old, new, |parent, child| {
+            child.inherit_from(parent);
+        })
+    }
+}
+
+impl AccumulatorStack<EagerAccUpdates> {
+    pub fn get_accs_mut(&mut self, idx: Depth) -> &mut AccumulatorPair<EagerAccUpdates> { self.accs.get_mut(idx) }
+
+    pub fn propagate(&mut self, old: Depth, new: Depth) {
+        self.accs.propagate(old, new, |parent, child| {
+            child.inherit_from(parent);
+        })
     }
 }
 

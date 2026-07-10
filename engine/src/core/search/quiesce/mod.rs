@@ -13,7 +13,7 @@ use crate::core::{
         id::{Bound, RbSet},
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::{AnyScore, Score, scores},
-        tree::{NodeKind, NodeType},
+        tree::{NodeType},
     },
     zobrist,
 };
@@ -27,10 +27,11 @@ pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
 
 pub struct QSearcher<'a, Entry, Replace> {
     tt: &'a mut TT<Entry, Replace>,
+    phase: TaperValue,
 }
 
 impl<'a, E, R> QSearcher<'a, E, R> {
-    pub fn new(tt: &'a mut TT<E, R>) -> Self { Self { tt } }
+    pub fn new(tt: &'a mut TT<E, R>, phase: TaperValue) -> Self { Self { tt, phase } }
 }
 
 impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>>
@@ -91,7 +92,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             return lazy_static_eval(self, pos);
         }
 
-        let tt_entry = self.tt.raw_mut(key);
+        // let tt_entry = self.tt.raw_mut(key);
         // let tt_move = tt_entry.as_ref().map(|e| e.mov()).unwrap_or(Move::null());
 
         // tt cutoff
@@ -167,11 +168,15 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 }
             }
 
-            pos.make_move_for::<P>(m, eval.observe());
+        eval.forward();
+        let phase_before = self.phase;
+        pos.make_move_for::<P>(m, &mut (&mut self.phase, eval.observe_forward()));
 
             let score = !self.go::<P::Opponent, T>(pos, !beta, !alpha, params.clone(), eval, depth - 1);
 
-            pos.unmake_move_for::<P>(m, eval.observe());
+        pos.unmake_move_for::<P>(m, eval.observe_backward());
+        eval.backward();
+        self.phase = phase_before;
 
             if score > best_score {
                 best_score = score;

@@ -392,7 +392,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
             let phase = hce::TaperValue::from_position(pieces);
 
             let mut eval = id::NnueEvaluator::default();
-            eval.observe().on_init(pieces);
+            eval.observe_forward().on_init(pieces);
 
             let eval_w = eval.eval::<White>(pieces, turn, ep_sq, phase);
             let eval_b = eval.eval::<Black>(pieces, turn, ep_sq, phase);
@@ -561,6 +561,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
                 None => return Err(UciError::MissingArgument("value").into()),
             };
             engine.debug.set(debug);
+            println!("info string Debug mode is now {}", if debug { "on" } else { "off" });
             Ok(())
         }
         Some("isready") => {
