@@ -121,11 +121,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // move gen
         let tt_move_flag = tt_move.get_flag();
-        let scorer = MoveScorer {
-            color: P::COLOR,
-            phase,
-            tt_move: Move::null(),
-        };
+        let scorer = MoveScorer { color: P::COLOR, phase, tt_move };
         let mut move_picker = MovePicker::new_with_max_stage(
             // don't search tt_move if we don't search only captures.
             if in_check || !(tt_move_flag.is_capture() || tt_move_flag.is_promo()) {
