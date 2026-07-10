@@ -1,6 +1,7 @@
 use std::{fmt, iter, marker::PhantomData, ops};
 
 use saturating_cast::{SaturatingCast, SaturatingElement};
+use static_assertions::const_assert;
 
 use crate::{
     core::{
@@ -12,13 +13,10 @@ use crate::{
 
 pub type RawScore = i32;
 
-#[derive(Debug, Copy, Clone, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone)]
+#[derive_const(PartialEq, Eq, PartialOrd, Ord)]
 pub struct AnyScore {
     v: RawScore,
-}
-
-impl const PartialEq for AnyScore {
-    fn eq(&self, other: &Self) -> bool { self.v == other.v }
 }
 
 impl fmt::Display for AnyScore {
@@ -30,9 +28,11 @@ impl_variants! {
         DRAW = 0,
         POS_INF = 30_000,
         NEG_INF = -30_000,
-        NULL = 0x_C0FFEE,
+        NULL = 0xC0FFEE,
     }
 }
+
+const_assert!(scores::NULL > scores::POS_INF || scores::NULL < scores::NEG_INF);
 
 impl AnyScore {
     pub const fn new(val: i32) -> Self { Self { v: val } }

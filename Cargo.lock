@@ -2317,6 +2317,7 @@ dependencies = [
  "ringbuf",
  "rustc-hash 2.1.2",
  "saturating_cast",
+ "static_assertions",
  "thiserror 2.0.18",
  "uom",
  "wide",
