@@ -92,8 +92,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             return lazy_static_eval(self, pos);
         }
 
-        // let tt_entry = self.tt.raw_mut(key);
-        // let tt_move = tt_entry.as_ref().map(|e| e.mov()).unwrap_or(Move::null());
+        let tt_entry = self.tt.raw_mut(key);
+        let tt_move = tt_entry.as_ref().map(|e| e.mov()).unwrap_or(Move::null());
 
         // tt cutoff
         // {
@@ -120,16 +120,16 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         }
 
         // move gen
-        // let tt_move_flag = tt_move.get_flag();
+        let tt_move_flag = tt_move.get_flag();
         let scorer = MoveScorer { color: P::COLOR, phase, tt_move: Move::null() };
         let mut move_picker = MovePicker::new_with_max_stage(
             // don't search tt_move if we don't search only captures.
-            // if in_check || !(tt_move_flag.is_capture() || tt_move_flag.is_promo()) {
+            if in_check || !(tt_move_flag.is_capture() || tt_move_flag.is_promo()) {
                 Move::null(),
-            // }
-            // else {
-            //     tt_move
-            // },
+            }
+            else {
+                tt_move
+            },
             // todo: killers if were in check (looking at quiets)?
             RbSet::<Move, 2>::default(),
             // if in check, we only want to search captures and promos, otherwise we want to search all moves.
