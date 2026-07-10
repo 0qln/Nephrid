@@ -13,7 +13,7 @@ use crate::core::{
         id::{Bound, RbSet},
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::{AnyScore, Score, scores},
-        tree::{NodeType},
+        tree::NodeType,
     },
     zobrist,
 };
@@ -121,11 +121,15 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // move gen
         let tt_move_flag = tt_move.get_flag();
-        let scorer = MoveScorer { color: P::COLOR, phase, tt_move: Move::null() };
+        let scorer = MoveScorer {
+            color: P::COLOR,
+            phase,
+            tt_move: Move::null(),
+        };
         let mut move_picker = MovePicker::new_with_max_stage(
             // don't search tt_move if we don't search only captures.
             if in_check || !(tt_move_flag.is_capture() || tt_move_flag.is_promo()) {
-                Move::null(),
+                Move::null()
             }
             else {
                 tt_move
@@ -168,15 +172,15 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 }
             }
 
-        eval.forward();
-        let phase_before = self.phase;
-        pos.make_move_for::<P>(m, &mut (&mut self.phase, eval.observe_forward()));
+            eval.forward();
+            let phase_before = self.phase;
+            pos.make_move_for::<P>(m, &mut (&mut self.phase, eval.observe_forward()));
 
             let score = !self.go::<P::Opponent, T>(pos, !beta, !alpha, params.clone(), eval, depth - 1);
 
-        pos.unmake_move_for::<P>(m, eval.observe_backward());
-        eval.backward();
-        self.phase = phase_before;
+            pos.unmake_move_for::<P>(m, eval.observe_backward());
+            eval.backward();
+            self.phase = phase_before;
 
             if score > best_score {
                 best_score = score;
