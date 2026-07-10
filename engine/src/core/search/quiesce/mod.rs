@@ -97,12 +97,14 @@ pub fn qsearch<P: Perspective>(
             }
         }
 
+        eval.forward();
         let mut new_phase = phase;
-        pos.make_move_for::<P>(m, &mut (&mut new_phase, eval.observe()));
+        pos.make_move_for::<P>(m, &mut (&mut new_phase, eval.observe_forward()));
 
         let score = !qsearch(pos, new_phase, !beta, !alpha, params.clone(), eval, depth - 1);
 
-        pos.unmake_move_for::<P>(m, eval.observe());
+        pos.unmake_move_for::<P>(m, eval.observe_backward());
+        eval.backward();
 
         if score >= beta {
             return score;

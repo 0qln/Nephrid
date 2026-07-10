@@ -2,7 +2,6 @@ use crate::core::{
     chrono::{ChronoParams, TimeMan},
     eval::StaticEvaluator,
     params::IParams,
-    position::PieceInfoObserver,
     search::{id::IdParams, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp, tt::TranspositionTable},
 };
 use thiserror::Error;
@@ -118,7 +117,7 @@ where
             Command::Normal(mut pos, limit, ct, debug) => {
                 // todo: initiating the nnue before every search works for now, but we can
                 // probably just do it on the fly in AdvanceState...
-                self.eval.observe().on_init(pos.piece_info());
+                self.eval.init(pos.piece_info());
 
                 self.timeman.init_limits(&limit, &pos);
 
