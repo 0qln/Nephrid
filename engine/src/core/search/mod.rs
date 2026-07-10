@@ -1,5 +1,5 @@
 use crate::core::{
-    chrono::ChronoParams,
+    chrono::{ChronoParams, TimeMan},
     eval::StaticEvaluator,
     params::IParams,
     search::{id::IdParams, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp, tt::TranspositionTable},
@@ -27,6 +27,7 @@ use crate::{
     misc::CancellationToken,
 };
 use std::{
+    fmt,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
@@ -68,6 +69,10 @@ pub enum ExecError {
     RuntimeError(String),
 }
 
+impl ExecError {
+    pub fn bad_config(inner: impl fmt::Display) -> Self { ExecError::BadConfig(inner.to_string()) }
+}
+
 pub trait SearchWorker {
     type X: IParams;
 
@@ -77,8 +82,8 @@ pub trait SearchWorker {
 
 /// Iterative deepening worker.
 pub struct IdWorker<E: StaticEvaluator, X: IParams> {
-    // todo: don't store the construction information here but the tt and timeman itself
     tt: TranspositionTable<id::TTEntry>,
+    timeman: TimeMan,
     params: X::Ref,
     eval: E,
 }
@@ -92,6 +97,7 @@ where
     fn new() -> Self {
         Self {
             tt: TranspositionTable::new(0),
+            timeman: TimeMan::default(),
             params: <Self::X as Default>::default().shared(),
             eval: E::default(),
         }
@@ -113,7 +119,18 @@ where
                 // probably just do it on the fly in AdvanceState...
                 self.eval.init(pos.piece_info());
 
-                let best_move = id::go(&mut pos, limit, &debug, ct, &mut self.tt, &mut self.eval, self.params.clone());
+                self.timeman.init_limits(&limit, &pos);
+
+                let best_move = id::go(
+                    &mut pos,
+                    limit,
+                    &mut self.timeman,
+                    &debug,
+                    ct,
+                    &mut self.tt,
+                    &mut self.eval,
+                    self.params.clone(),
+                );
 
                 if let Some(mov) = best_move {
                     println!("bestmove {mov}");
@@ -136,8 +153,9 @@ where
                 let cfg = || config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")));
 
                 self.tt = TranspositionTable::new_of_size(cfg()?.hash());
-                self.params = Self::X::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
-                self.eval = E::try_from_config(cfg()?).map_err(|e| ExecError::BadConfig(format!("Bad configuration: {e}")))?;
+                self.params = Self::X::try_from_config(cfg()?).map_err(ExecError::bad_config)?;
+                self.eval = E::try_from_config(cfg()?).map_err(ExecError::bad_config)?;
+                self.timeman.enable_soft_targets(true); // todo: config option for enabling soft targets
 
                 Ok(())
             }

@@ -3,7 +3,7 @@ use std::time::Duration;
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use engine::{
     core::{
-        chrono::ChronoParams,
+        chrono::{ChronoParams, TimeMan},
         depth::Depth,
         eval::StaticEvaluator,
         move_iter::sliding_piece::magics,
@@ -43,8 +43,9 @@ fn search_with_node_target<E: StaticEvaluator + Default>(pos: &mut Position, par
     let hash_size = Information::new::<mebibyte>(16);
     let mut tt = TranspositionTable::<TTEntry>::new_of_size(hash_size);
     let mut eval = E::default();
+    let mut timeman = TimeMan::new(&limit, pos);
 
-    id::go(pos, limit, &debug, ct, &mut tt, &mut eval, params);
+    id::go(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut eval, params);
 }
 
 pub fn id_hce_nps(c: &mut Criterion) {
@@ -95,5 +96,5 @@ pub fn id_nnue_nps(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, id_hce_nps);
+criterion_group!(benches, id_hce_nps, id_nnue_nps);
 criterion_main!(benches);

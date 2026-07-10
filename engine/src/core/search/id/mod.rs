@@ -202,9 +202,11 @@ pub const trait IdParams {
     fn nmp_margin(&self) -> i32;
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn go(
     pos: &mut Position,
     limit: UciLimit,
+    timeman: &mut TimeMan,
     _debug: &DebugMode,
     ct: CancellationToken,
     tt: &mut TranspositionTable<TTEntry>,
@@ -215,7 +217,7 @@ pub fn go(
 
     eval.observe_forward().on_init(pos.piece_info());
 
-    let mut searcher = Searcher::new(pos, limit, ct, tt, eval);
+    let mut searcher = Searcher::new(pos, limit, timeman, ct, tt, eval);
     let mut stats = SearchStats::default();
     let mut best_move = None;
     let mut last_best_move;
@@ -235,7 +237,7 @@ pub fn go(
 
         best_move = searcher.root_best_move();
         if let Some(best_move) = best_move {
-            let search_time = Instant::now() - searcher.time_man.time_start();
+            let search_time = Instant::now() - searcher.timeman.time_start();
             uci_info(depth, &stats, Cp { v: best_score as i16 }, best_move, search_time);
         }
 
@@ -253,11 +255,11 @@ pub fn go(
             0
         };
 
-        searcher.time_man.hint_time_target(searcher.time_man.time_limit() - stats.iter_time);
-        searcher.time_man.hint_movestreak_target(params.movestreak_target());
-        searcher.time_man.set_curr_movestreak(stats.root_movestreak);
+        searcher.timeman.hint_time_target(searcher.timeman.time_limit().map(|x| x - stats.iter_time));
+        searcher.timeman.hint_movestreak_target(Some(params.movestreak_target()));
+        searcher.timeman.set_curr_movestreak(stats.root_movestreak);
 
-        if searcher.should_stop(&stats) || searcher.time_man.reached_target() {
+        if searcher.should_stop(&stats) || searcher.timeman.reached_target() {
             break;
         }
     }
@@ -291,7 +293,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator> {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
     root_ply: Ply,
     limit: UciLimit,
-    time_man: TimeMan,
+    timeman: &'a mut TimeMan,
     ct: CancellationToken,
     aborted: bool,
     ss: SearchStack<SearchEntry>,
@@ -301,20 +303,25 @@ struct Searcher<'a, 'b, E: StaticEvaluator> {
 }
 
 impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
-    fn new(pos: &Position, limit: UciLimit, ct: CancellationToken, tt: &'a mut TranspositionTable<TTEntry>, eval: &'b mut E) -> Self {
+    fn new(
+        pos: &Position,
+        limit: UciLimit,
+        timeman: &'a mut TimeMan,
+        ct: CancellationToken,
+        tt: &'a mut TranspositionTable<TTEntry>,
+        eval: &'b mut E,
+    ) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_moves::<AllLegal, _, _, _>(pos, (), |_, m| {
             stats.push(RootStats::new(m, 0));
             ControlFlow::Continue::<(), ()>(())
         });
 
-        let time_man = TimeMan::init(&limit, pos);
-
         Self {
             root_stats: stats,
             root_ply: pos.ply(),
             limit,
-            time_man,
+            timeman,
             ct,
             aborted: false,
             ss: SearchStack::new(),
@@ -347,7 +354,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         }
 
         // time manager says we should stop or limit has been reached
-        if self.limit.is_active() && (self.time_man.reached_limit() || self.limit.is_reached(nodes, iters)) {
+        if self.limit.is_active() && (self.timeman.reached_limit() || self.limit.is_reached(nodes, iters)) {
             return true;
         }
 
