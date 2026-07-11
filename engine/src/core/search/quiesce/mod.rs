@@ -85,6 +85,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         };
 
         if depth == Depth::new(0) {
+            // todo: return the tt score if it is valid for a more accurate eval than
+            // static?
             return lazy_static_eval(self, pos);
         }
 
@@ -102,6 +104,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // stand pad if not in check
         if !in_check {
+            // todo: return the tt score if it is valid for a more accurate eval than
+            // static?
             best_score = lazy_static_eval(self, pos);
 
             if best_score >= beta {
