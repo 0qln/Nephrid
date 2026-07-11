@@ -25,6 +25,11 @@ pub const trait QSearchParams {
 
 pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
 
+/// # Q-Search
+///
+/// Make the position quiet.
+///
+/// [q-search](https://www.chessprogramming.org/Quiescence_Search)
 pub struct QSearcher<'a, Entry, Replace> {
     tt: &'a mut TT<Entry, Replace>,
     phase: TaperValue,
@@ -37,11 +42,6 @@ impl<'a, E, R> QSearcher<'a, E, R> {
 impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>>
     QSearcher<'a, E, R>
 {
-    /// # Q-Search
-    ///
-    /// Make the position quiet.
-    ///
-    /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
     pub fn go<P: Perspective, T: NodeType>(
         &mut self,
         pos: &mut Position,
