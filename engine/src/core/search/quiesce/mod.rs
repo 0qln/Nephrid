@@ -54,8 +54,6 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         let mut best_score = Score::NEG_INF;
 
         let in_check = pos.get_check_state() != CheckState::None;
-        let piece_info = pos.piece_info();
-        let phase = TaperValue::from_position(piece_info);
         let key = pos.get_key();
 
         let mut static_eval = Score::<P>::NULL;
@@ -65,7 +63,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 return static_eval;
             }
 
-            let mut compute = || eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase);
+            let mut compute = || eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase);
 
             // check the tt
             if let Some(tt_entry) = this.tt.get_mut(key) {
@@ -121,7 +119,11 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // move gen
         let tt_move_flag = tt_move.get_flag();
-        let scorer = MoveScorer { color: P::COLOR, phase, tt_move };
+        let scorer = MoveScorer {
+            color: P::COLOR,
+            phase: self.phase,
+            tt_move,
+        };
         let mut move_picker = MovePicker::new_with_max_stage(
             // don't search tt_move if we don't search only captures.
             if in_check || !(tt_move_flag.is_capture() || tt_move_flag.is_promo()) {
@@ -149,7 +151,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             // }
 
             // delta pruning
-            if !in_check && phase < params.delta_pruning_threshold() {
+            if !in_check && self.phase < params.delta_pruning_threshold() {
                 let value_bonus = PromoPieceType::try_from(m.get_flag())
                     .ok()
                     .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
