@@ -522,8 +522,8 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                     stats,
                     // scout with a reduced depth
                     depth - nmp_r - 1,
-                    !(alpha + 1),
-                    !alpha,
+                    !beta,
+                    !beta + 1,
                 );
 
                 pos.unmake_null_move();
