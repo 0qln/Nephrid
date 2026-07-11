@@ -514,17 +514,11 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                 // even better than beta
                 && lazy_static_eval(self, pos) >= beta - nmp_margin - unsafe { AnyScore::from(depth.v() * 15).interpret_as() }
             {
+                let nmp_depth = depth - nmp_r - 1;
+
                 pos.make_null_move();
 
-                let nm_score = !self.search::<P::Opponent, Normal>(
-                    params.clone(),
-                    pos,
-                    stats,
-                    // scout with a reduced depth
-                    depth - nmp_r - 1,
-                    !beta,
-                    !beta + 1,
-                );
+                let nm_score = !self.search::<P::Opponent, Normal>(params.clone(), pos, stats, nmp_depth, !beta, !beta + 1);
 
                 pos.unmake_null_move();
 
