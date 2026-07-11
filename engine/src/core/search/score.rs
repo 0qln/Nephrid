@@ -103,10 +103,10 @@ impl const ops::Div<AnyScore> for AnyScore {
     fn div(self, rhs: AnyScore) -> Self::Output { Self::new(self.v / rhs.v) }
 }
 
-impl const ops::Mul<AnyScore> for AnyScore {
+impl<Rhs: const Into<AnyScore>> const ops::Mul<Rhs> for AnyScore {
     type Output = Self;
     #[inline(always)]
-    fn mul(self, rhs: AnyScore) -> Self::Output { Self::new(self.v * rhs.v) }
+    fn mul(self, rhs: Rhs) -> Self::Output { Self::new(self.v * rhs.into().v) }
 }
 
 impl iter::Sum for AnyScore {

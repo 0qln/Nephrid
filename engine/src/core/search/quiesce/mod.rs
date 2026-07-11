@@ -21,6 +21,7 @@ use crate::core::{
 pub const trait QSearchParams {
     fn futility_margin(&self) -> AnyScore;
     fn delta_pruning_threshold(&self) -> TaperValue;
+    fn movecount_pruning_factor(&self) -> AnyScore;
 }
 
 pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
@@ -145,6 +146,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // recurse
         let mut best_move = Move::null();
+        let mut curr = 0;
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
             // if !pos.is_legal_for::<P>(m) {
             //     continue;
@@ -163,8 +165,13 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                     .unwrap_or(scores::DRAW);
 
                 let futility_margin = params.futility_margin();
-                let futility_score = captured_value + value_bonus + futility_margin;
+
+                // should allow for more aggressive futility pruning at moves that were regarded
+                // less important by the move ordering
+                let move_count_margin = params.movecount_pruning_factor() * curr;
+
                 // Safety: the score was constructed relative to `P`
+                let futility_score = captured_value + value_bonus + futility_margin + move_count_margin;
                 let futility_score = unsafe { futility_score.interpret_as() };
 
                 if best_score + futility_score < alpha {
@@ -194,6 +201,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                     break;
                 }
             }
+
+            curr += 1;
         }
 
         self.tt.try_insert(TTEntry {
