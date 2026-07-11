@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::{impl_variants_with_assertion, misc::ValueOutOfSetError, uci::tokens::Tokenizer};
 
-#[derive(Eq, Copy, Clone, Default, PartialEq)]
+#[derive(PartialEq, Eq, Copy, Clone, Default)]
 pub struct Color {
     v: TColor,
 }
