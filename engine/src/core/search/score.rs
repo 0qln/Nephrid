@@ -29,7 +29,7 @@ impl_variants! {
         ZERO = 0,
         POS_INF = 30_000,
         NEG_INF = -30_000,
-        NULL = 0xC0FFEE,
+        NULL = 0x_C0FFEE,
     }
 }
 
@@ -103,10 +103,10 @@ impl const ops::Div<AnyScore> for AnyScore {
     fn div(self, rhs: AnyScore) -> Self::Output { Self::new(self.v / rhs.v) }
 }
 
-impl const ops::Mul<AnyScore> for AnyScore {
+impl<Rhs: const Into<AnyScore>> const ops::Mul<Rhs> for AnyScore {
     type Output = Self;
     #[inline(always)]
-    fn mul(self, rhs: AnyScore) -> Self::Output { Self::new(self.v * rhs.v) }
+    fn mul(self, rhs: Rhs) -> Self::Output { Self::new(self.v * rhs.into().v) }
 }
 
 impl iter::Sum for AnyScore {
@@ -178,7 +178,7 @@ impl<P: Perspective> ops::Not for Score<P> {
 
     /// Negate the score and flip the perspective to the opponent.
     #[inline(always)]
-    fn not(self) -> Self::Output { Score(-self.0, PhantomData) }
+    fn not(self) -> Self::Output { Score::new(-self.0) }
 }
 
 /// Centi pawns

@@ -32,11 +32,11 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, TTBound, TTDepth, TTKey, TTMove, TTScore, TranspositionTable},
+            data::{self, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
-            quiesce::{QSearchParams, qsearch},
+            quiesce::{self, QSearchParams, QSearcher},
             score::{AnyScore, Cp, Score, scores},
             strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth},
             tree::{NodeKind, NodeType, node_types::*},
@@ -414,7 +414,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return qsearch::<P>(pos, self.phase, alpha, beta, params, self.eval, Depth::new(100));
+            return QSearcher::new(self.tt, self.phase).go::<P, T>(pos, alpha, beta, params, self.eval, Depth::new(100));
         }
 
         let kind = T::KIND;
@@ -446,6 +446,8 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
         let mut static_eval = Score::NULL;
+        #[cfg(not(any(feature = "id-fhr", feature = "id-nmp")))]
+        let static_eval = Score::<P>::NULL;
 
         #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
         let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
@@ -712,7 +714,6 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             key,
             depth,
             score: best_score.0,
-            #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
             static_eval: static_eval.0,
             #[cfg(feature = "id-fhr")]
             threat: threat.0,
@@ -731,12 +732,29 @@ pub struct TTEntry {
     key: zobrist::Hash,
     depth: Depth,
     score: AnyScore,
-    #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
     static_eval: AnyScore,
     #[cfg(feature = "id-fhr")]
     threat: AnyScore,
     bound: Bound,
     mov: Move,
+}
+
+impl From<quiesce::TTEntry> for TTEntry {
+    fn from(e: quiesce::TTEntry) -> Self {
+        // todo: make sure there is no actual moving happening here and the compiler
+        // should just inline the construction in the qsearch function from the
+        // quiesce::TTEntry here.
+        Self {
+            key: e.key(),
+            depth: e.depth(),
+            score: e.score(),
+            static_eval: e.static_eval(),
+            #[cfg(feature = "id-fhr")]
+            threat: scores::NULL,
+            bound: e.bound(),
+            mov: e.mov(),
+        }
+    }
 }
 
 impl const TTKey for TTEntry {
@@ -759,7 +777,6 @@ impl const TTBound for TTEntry {
     fn bound(&self) -> Bound { self.bound }
 }
 
-#[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
 impl const data::TTStaticEval for TTEntry {
     fn static_eval(&self) -> AnyScore { self.static_eval }
     fn static_eval_mut(&mut self) -> &mut AnyScore { &mut self.static_eval }
@@ -771,7 +788,6 @@ impl const Default for TTEntry {
             key: zobrist::Hash::default(),
             depth: Depth::NONE,
             score: scores::NULL,
-            #[cfg(any(feature = "id-fhr", feature = "id-nmp"))]
             static_eval: scores::NULL,
             #[cfg(feature = "id-fhr")]
             threat: scores::NULL,
@@ -787,7 +803,29 @@ pub struct TTReplace;
 impl data::ReplacementStrategy for TTReplace {
     type Data = TTEntry;
 
-    fn should_replace(_: &TTEntry, _: &TTEntry) -> bool { true }
+    fn should_replace(old: &TTEntry, new: &TTEntry) -> bool {
+        if old.depth == Depth::NONE {
+            return true;
+        }
+
+        if new.depth == Depth::NONE {
+            return false;
+        }
+
+        if new.depth > old.depth {
+            return true;
+        }
+
+        if new.depth < old.depth {
+            return false;
+        }
+
+        if new.bound == Bound::Exact && old.bound != Bound::Exact {
+            return true;
+        }
+
+        false
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]

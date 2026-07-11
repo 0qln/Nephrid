@@ -82,6 +82,7 @@ pub struct TunableParams<Base> {
     hce_policy_temp: f32,
     hce_q_futility_margin: AnyScore,
     hce_q_delta_pruning_threshold: TaperValue,
+    hce_q_movecount_pruning_factor: AnyScore,
     select_cpuct: f32,
     mcts_proven_loss_visit_threshold: VisitCount,
     mcts_killer_exploitation: f32,
@@ -107,6 +108,7 @@ impl<B, X: Deref<Target = TunableParams<B>>> MctsParams for X {
 impl<B, X: Deref<Target = TunableParams<B>>> QSearchParams for X {
     fn futility_margin(&self) -> AnyScore { self.hce_q_futility_margin }
     fn delta_pruning_threshold(&self) -> TaperValue { self.hce_q_delta_pruning_threshold }
+    fn movecount_pruning_factor(&self) -> AnyScore { self.hce_q_movecount_pruning_factor }
 }
 
 impl<B, X: Deref<Target = TunableParams<B>>> PolicyParams for X {
@@ -134,6 +136,7 @@ impl<B> TunableParams<B> {
         let hce_policy_temp = config.eval_policy_temperature();
         let hce_q_futility_margin = config.eval_futility_margin();
         let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
+        let hce_q_movecount_pruning_factor = config.eval_movecount_pruning_factor();
         let select_cpuct = config.select_cpuct();
         let mcts_proven_loss_visit_threshold = config.mcts_proven_loss_visit_threshold();
         let mcts_killer_exploitation = config.mcts_killer_exploitation();
@@ -149,6 +152,7 @@ impl<B> TunableParams<B> {
             hce_policy_temp,
             hce_q_futility_margin,
             hce_q_delta_pruning_threshold,
+            hce_q_movecount_pruning_factor,
             select_cpuct,
             mcts_proven_loss_visit_threshold,
             mcts_killer_exploitation,
@@ -230,6 +234,7 @@ impl const MctsParams for C_MctsHceParams {
 impl const QSearchParams for C_MctsHceParams {
     #[inline(always)] fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     #[inline(always)] fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+    #[inline(always)] fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-20) }
 }
 
 #[rustfmt::skip]
@@ -298,6 +303,7 @@ impl const ChronoParams for C_IdHceParams {
 impl const QSearchParams for C_IdHceParams {
     fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+    fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-20) }
 }
 
 impl const IdParams for C_IdHceParams {
@@ -324,18 +330,19 @@ impl const ChronoParams for C_IdNnueParams {
     // todo: don't hardcode a number, but scale with the expected searchdepth or
     // smth like that... the issue is that e.g. depth 10 may not be a sufficient in
     // a game where bot sides have a lot of time
-    fn movestreak_target(&self) -> u32 { 6 }
+    fn movestreak_target(&self) -> u32 { 7 }
 }
 
 impl const QSearchParams for C_IdNnueParams {
-    fn futility_margin(&self) -> AnyScore { AnyScore::new(167) }
-    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(15) }
+    fn futility_margin(&self) -> AnyScore { AnyScore::new(175) }
+    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(10) }
+    fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-17) }
 }
 
 impl const IdParams for C_IdNnueParams {
     fn nmp_reduction(&self) -> Depth { Depth::new(1) }
-    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(9) }
+    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(10) }
     fn nmp_depth_factor(&self) -> u8 { 3 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
-    fn nmp_margin(&self) -> AnyScore { AnyScore::new(50) }
+    fn nmp_margin(&self) -> AnyScore { AnyScore::new(46) }
 }

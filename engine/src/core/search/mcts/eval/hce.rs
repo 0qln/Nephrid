@@ -14,6 +14,7 @@ use crate::{
         params::MctsHceParamsRef,
         position::{CheckState, Position},
         search::{
+            id,
             mcts::{
                 eval::{Evaluator, Guess, Logits, Policy, Quality},
                 node::{
@@ -23,8 +24,9 @@ use crate::{
                 search::{BatchItem, Selection},
             },
             ordering::{self},
-            quiesce::qsearch,
+            quiesce::QSearcher,
             score::{AnyScore, Cp, Score, scores},
+            tree::node_types,
         },
         turn::Turn,
     },
@@ -111,28 +113,30 @@ pub struct EvalInfo<Moves: AsRef<[Move]>> {
 
 impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
     pub fn new(moves: Moves, pos: &mut Position, params: MctsHceParamsRef) -> Self {
+        // todo: store tt somewhere
+        let mut tt = id::TT::new(1);
         let phase = TaperValue::from_position(pos.piece_info());
         let quality: Cp = match pos.get_turn().v() {
-            colors::WHITE_C => qsearch::<perspectives::White>(
-                pos,
-                phase,
-                Score::NEG_INF,
-                Score::POS_INF,
-                MctsHceParamsRef::clone(&params),
-                &mut StaticEvaluator,
-                Depth::new(30),
-            )
-            .into(),
-            colors::BLACK_C => qsearch::<perspectives::Black>(
-                pos,
-                phase,
-                Score::NEG_INF,
-                Score::POS_INF,
-                MctsHceParamsRef::clone(&params),
-                &mut StaticEvaluator,
-                Depth::new(30),
-            )
-            .into(),
+            colors::WHITE_C => QSearcher::new(&mut tt, phase)
+                .go::<perspectives::White, node_types::Normal>(
+                    pos,
+                    Score::NEG_INF,
+                    Score::POS_INF,
+                    MctsHceParamsRef::clone(&params),
+                    &mut StaticEvaluator,
+                    Depth::new(30),
+                )
+                .into(),
+            colors::BLACK_C => QSearcher::new(&mut tt, phase)
+                .go::<perspectives::Black, node_types::Normal>(
+                    pos,
+                    Score::NEG_INF,
+                    Score::POS_INF,
+                    MctsHceParamsRef::clone(&params),
+                    &mut StaticEvaluator,
+                    Depth::new(30),
+                )
+                .into(),
             _ => unreachable!(),
         };
         Self {
