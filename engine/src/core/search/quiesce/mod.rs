@@ -63,24 +63,29 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 return static_eval;
             }
 
-            let tt_entry = this.tt.get(key);
+            static_eval = if let Some(entry) = this.tt.get_mut(key) {
+                let score_ref = entry.static_eval_mut();
+                if let Some(score) = score_ref.validated_mut() {
+                    // Safety: unless we've had a hash collision, this score is for the same
+                    // position
+                    unsafe { score.interpret_as() }
+                }
+                else {
+                    let score = eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase);
+                    *score_ref = score.0;
+                    score
+                }
+            }
+            else {
+                eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase)
+            };
 
-            let eval = tt_entry
-                // Safety: unless we've had a hash collision, this score is for the same position
-                .map(|e| unsafe { e.static_eval().interpret_as() })
-                .unwrap_or_else(|| eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase));
-
-            static_eval = eval;
-
-            eval
+            static_eval
         };
 
         if depth == Depth::new(0) {
             return lazy_static_eval(self, pos);
         }
-
-        let tt_entry = self.tt.get_mut(key);
-        let tt_move = tt_entry.as_ref().map(|e| e.mov()).unwrap_or(Move::null());
 
         // tt cutoff
         // {
@@ -107,20 +112,26 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         }
 
         // move gen
-        let tt_move_flag = tt_move.get_flag();
+        let hash_move = if let Some(entry) = self.tt.get(key) {
+            let tt_move = entry.mov();
+            let tt_move_flag = tt_move.get_flag();
+            if in_check || tt_move_flag.is_capture() || tt_move_flag.is_promo() {
+                tt_move
+            }
+            else {
+                Move::null()
+            }
+        }
+        else {
+            Move::null()
+        };
         let scorer = MoveScorer {
             color: P::COLOR,
             phase: self.phase,
-            tt_move,
+            tt_move: hash_move,
         };
         let mut move_picker = MovePicker::new_with_max_stage(
-            // don't search tt_move if we don't search only captures.
-            if in_check || !(tt_move_flag.is_capture() || tt_move_flag.is_promo()) {
-                Move::null()
-            }
-            else {
-                tt_move
-            },
+            hash_move,
             // todo: killers if were in check (looking at quiets)?
             RbSet::<Move, 2>::default(),
             // if in check, we only want to search captures and promos, otherwise we want to search all moves.
@@ -188,7 +199,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         self.tt.try_insert(TTEntry {
             key,
             depth: Depth::NONE,
-            score: scores::NULL, // best_score.0,
+            score: best_score.0,
             static_eval: static_eval.0,
             bound: Bound::None, // Bound::from_scores(beta - 1, beta, best_score),
             mov: best_move,
