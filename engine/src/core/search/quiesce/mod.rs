@@ -59,31 +59,20 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         let mut static_eval = Score::<P>::NULL;
         let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
             // is it already computed? if so, return it.
-            if static_eval.0.validated().is_some() {
+            if static_eval.0.is_valid() {
                 return static_eval;
             }
 
-            let mut compute = || eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase);
+            let tt_entry = this.tt.get(key);
 
-            // check the tt
-            if let Some(tt_entry) = this.tt.get_mut(key) {
-                let tt_score = tt_entry.static_eval_mut();
-                // if the tt contains a valid static_eval, return it.
-                if tt_score.validated().is_some() {
-                    static_eval = unsafe { tt_score.interpret_as() };
-                }
-                // else compute it
-                else {
-                    static_eval = compute();
-                    *tt_score = static_eval.0;
-                }
-            }
-            // if theres a foreign tt entry blocking our current key, just compute and don't store.
-            else {
-                static_eval = compute();
-            }
+            let eval = tt_entry
+                // Safety: unless we've had a hash collision, this score is for the same position
+                .map(|e| unsafe { e.static_eval().interpret_as() })
+                .unwrap_or_else(|| eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase));
 
-            static_eval
+            static_eval = eval;
+
+            eval
         };
 
         if depth == Depth::new(0) {
