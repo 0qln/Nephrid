@@ -330,19 +330,19 @@ impl const ChronoParams for C_IdNnueParams {
     // todo: don't hardcode a number, but scale with the expected searchdepth or
     // smth like that... the issue is that e.g. depth 10 may not be a sufficient in
     // a game where bot sides have a lot of time
-    fn movestreak_target(&self) -> u32 { 6 }
+    fn movestreak_target(&self) -> u32 { 7 }
 }
 
 impl const QSearchParams for C_IdNnueParams {
-    fn futility_margin(&self) -> AnyScore { AnyScore::new(167) }
-    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(15) }
-    fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-20) }
+    fn futility_margin(&self) -> AnyScore { AnyScore::new(175) }
+    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(10) }
+    fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-17) }
 }
 
 impl const IdParams for C_IdNnueParams {
     fn nmp_reduction(&self) -> Depth { Depth::new(1) }
-    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(9) }
+    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(10) }
     fn nmp_depth_factor(&self) -> u8 { 3 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
-    fn nmp_margin(&self) -> AnyScore { AnyScore::new(50) }
+    fn nmp_margin(&self) -> AnyScore { AnyScore::new(46) }
 }
