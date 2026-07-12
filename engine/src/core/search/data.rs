@@ -1,11 +1,14 @@
-use std::marker::PhantomData;
+use std::{hint::unreachable_unchecked, marker::PhantomData};
 
 use uom::si::{information::byte, u64::Information};
 
 use crate::core::{
+    color::{Color, Perspective, colors, perspectives},
+    coordinates::{Square, squares},
     depth::Depth,
     r#move::Move,
-    search::{id, score::AnyScore},
+    piece::{PieceType, piece_type},
+    search::{id, ordering::MoveScore, score::AnyScore},
     zobrist,
 };
 
@@ -97,6 +100,73 @@ impl<Data: TTKey, Strat: ReplacementStrategy<Data = Data>> TranspositionTable<Da
 
         if Strat::should_replace(old_data, &data) {
             self.entries[idx] = data;
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct PieceHistory {
+    /// For each piece type to it's destination square.
+    scores: [[MoveScore; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
+}
+
+impl const Default for PieceHistory {
+    fn default() -> Self { Self::new() }
+}
+
+impl PieceHistory {
+    pub const fn new() -> Self {
+        Self {
+            scores: [[0; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
+        }
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct PieceHistories {
+    histories: [PieceHistory; colors::N_VARIANTS],
+}
+
+impl PieceHistories {
+    pub const fn new() -> Self {
+        Self {
+            histories: [PieceHistory::new(); colors::N_VARIANTS],
+        }
+    }
+
+    pub const fn get(&self, c: Color, pt: PieceType, sq: Square) -> MoveScore {
+        match c {
+            colors::WHITE => self.get_for::<perspectives::White>(pt, sq),
+            colors::BLACK => self.get_for::<perspectives::Black>(pt, sq),
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+
+    pub const fn get_for<P: Perspective>(&self, pt: PieceType, sq: Square) -> MoveScore {
+        debug_assert!(pt != piece_type::NONE, "Cannot get history for NONE piece type.");
+        let c = P::COLOR.v() as usize;
+        let pt = pt.v() as usize - 1;
+        let sq = sq.v() as usize;
+
+        unsafe { *self.histories.get_unchecked(c).scores.get_unchecked(pt).get_unchecked(sq) }
+    }
+
+    pub const fn update(&mut self, c: Color, pt: PieceType, sq: Square, val: MoveScore) {
+        match c {
+            colors::WHITE => self.update_for::<perspectives::White>(pt, sq, val),
+            colors::BLACK => self.update_for::<perspectives::Black>(pt, sq, val),
+            _ => unsafe { unreachable_unchecked() },
+        }
+    }
+
+    pub const fn update_for<P: Perspective>(&mut self, pt: PieceType, sq: Square, val: MoveScore) {
+        debug_assert!(pt != piece_type::NONE, "Cannot update history for NONE piece type.");
+        let c = P::COLOR.v() as usize;
+        let pt = pt.v() as usize - 1;
+        let sq = sq.v() as usize;
+
+        unsafe {
+            *self.histories.get_unchecked_mut(c).scores.get_unchecked_mut(pt).get_unchecked_mut(sq) += val;
         }
     }
 }
