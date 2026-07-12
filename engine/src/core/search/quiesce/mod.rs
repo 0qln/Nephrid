@@ -10,7 +10,7 @@ use crate::core::{
     position::{CheckState, Position},
     search::{
         data::{ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
-        id::{Bound, RbSet},
+        id::{self, Bound},
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::{AnyScore, Score, scores},
         tree::NodeType,
@@ -138,7 +138,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         let mut move_picker = MovePicker::new_with_max_stage(
             hash_move,
             // todo: killers if were in check (looking at quiets)?
-            RbSet::<Move, 2>::default(),
+            id::Killers::default(),
             // if in check, we only want to search captures and promos, otherwise we want to search all moves.
             if in_check {
                 RtStage::Done
