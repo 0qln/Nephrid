@@ -33,7 +33,7 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, PieceHistories, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+            data::{self, PieceHistories, SearchStack, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
@@ -313,7 +313,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     timeman: &'a mut TimeMan,
     ct: CancellationToken,
     aborted: bool,
-    ss: SearchStack<SearchEntry>,
+    ss: SS,
     tt: &'a mut TT,
     hh: &'a mut HH,
     eval: &'b mut E,
@@ -349,7 +349,7 @@ where
             timeman,
             ct,
             aborted: false,
-            ss: SearchStack::new(),
+            ss: SS::new(),
             tt,
             hh,
             eval,
@@ -920,50 +920,6 @@ impl Bound {
         else {
             Self::Exact
         }
-    }
-}
-
-pub struct SearchStack<T> {
-    entries: Vec<T>,
-}
-
-impl<T: Clone + Default> Default for SearchStack<T> {
-    fn default() -> Self { Self::new() }
-}
-
-impl<T: Clone + Default> SearchStack<T> {
-    pub fn new() -> Self {
-        Self {
-            entries: vec![T::default(); Depth::MAX.v() as usize + 1],
-        }
-    }
-}
-
-impl<T> SearchStack<T> {
-    #[inline(always)]
-    pub fn propagate(&mut self, old: Depth, new: Depth, mut f: impl FnMut(&T, &mut T)) {
-        let old_idx = old.v() as usize;
-        let new_idx = new.v() as usize;
-        unsafe {
-            let [parent, child] = self.entries.get_disjoint_unchecked_mut([old_idx, new_idx]);
-            f(parent, child);
-        }
-    }
-
-    pub fn get_mut(&mut self, ply: Depth) -> &mut T {
-        let idx = ply.v() as usize;
-
-        // todo: qsearch might exceed depth max ??
-
-        // Safety: entries is atleast Depth::MAX + 1
-        unsafe { self.entries.get_unchecked_mut(idx) }
-    }
-
-    pub fn get(&self, ply: Depth) -> &T {
-        let idx = ply.v() as usize;
-
-        // Safety: entries is atleast Depth::MAX + 1
-        unsafe { self.entries.get_unchecked(idx) }
     }
 }
 

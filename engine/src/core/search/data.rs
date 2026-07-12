@@ -104,6 +104,50 @@ impl<Data: TTKey, Strat: ReplacementStrategy<Data = Data>> TranspositionTable<Da
     }
 }
 
+pub struct SearchStack<T> {
+    entries: Vec<T>,
+}
+
+impl<T: Clone + Default> Default for SearchStack<T> {
+    fn default() -> Self { Self::new() }
+}
+
+impl<T: Clone + Default> SearchStack<T> {
+    pub fn new() -> Self {
+        Self {
+            entries: vec![T::default(); Depth::MAX.v() as usize + 1],
+        }
+    }
+}
+
+impl<T> SearchStack<T> {
+    #[inline(always)]
+    pub fn propagate(&mut self, old: Depth, new: Depth, mut f: impl FnMut(&T, &mut T)) {
+        let old_idx = old.v() as usize;
+        let new_idx = new.v() as usize;
+        unsafe {
+            let [parent, child] = self.entries.get_disjoint_unchecked_mut([old_idx, new_idx]);
+            f(parent, child);
+        }
+    }
+
+    pub fn get_mut(&mut self, ply: Depth) -> &mut T {
+        let idx = ply.v() as usize;
+
+        // todo: qsearch might exceed depth max ??
+
+        // Safety: entries is atleast Depth::MAX + 1
+        unsafe { self.entries.get_unchecked_mut(idx) }
+    }
+
+    pub fn get(&self, ply: Depth) -> &T {
+        let idx = ply.v() as usize;
+
+        // Safety: entries is atleast Depth::MAX + 1
+        unsafe { self.entries.get_unchecked(idx) }
+    }
+}
+
 const MAX_HISTORY: MoveScore = 30_000;
 
 #[derive(Clone, Copy)]

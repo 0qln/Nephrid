@@ -1,4 +1,4 @@
-use crate::core::{depth::Depth, id::SearchStack};
+use crate::core::{depth::Depth, search::data::SearchStack};
 use std::{
     fs::File,
     hint::unreachable_unchecked,
