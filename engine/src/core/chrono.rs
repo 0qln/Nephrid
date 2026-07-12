@@ -5,16 +5,13 @@ use std::{
 };
 
 use crate::{
-    core::{color::colors, position::Position, search::limit::UciLimit, turn::Turn},
+    core::{color::colors, depth::Depth, position::Position, search::limit::UciLimit, turn::Turn},
     math::NormalizedEntropy,
 };
 
 pub const trait ChronoParams {
     /// Fraction of the maximum possible root entropy below which the engine is
     /// considered confident enough to stop searching early.
-    #[deprecated(
-        note = "Elo improves but sometimes the engine blunders when a move on depth 1 looks like the only promising one. Not using this for now."
-    )]
     fn entropy_target(&self) -> NormalizedEntropy;
 
     fn movestreak_target(&self) -> u32;
@@ -123,7 +120,7 @@ impl TimeMan {
         Duration::from_millis(result)
     }
 
-    pub fn update_soft_targets(&mut self, movestreak: u32, last_iter_time: Duration) {
+    pub fn update_soft_targets(&mut self, depth: Depth, movestreak: u32, last_iter_time: Duration, entropy: NormalizedEntropy) {
         // don't start another iteration if we expect to run completely out of hard time
         // during it.
         let predict_target = self.limits.time.map(|x| x - last_iter_time);
@@ -134,7 +131,21 @@ impl TimeMan {
         // scale down allowed thinking time linearly as the move streak stabilizes.
         // capped at a minimum of 35% of our baseline soft time budget.
         let stability_factor = (1.0 - (movestreak as f32 * 0.08)).max(0.35);
-        let scaled_soft_duration = base_soft_duration.mul_f32(stability_factor);
+
+        let entropy_factor = if depth.v() < 5 {
+            // At shallow depths, tactical mirages are common.
+            1.0
+        }
+        else {
+            // Map normalized entropy (0.0 = certain, 1.0 = highly uncertain)
+            // to a time multiplier range of 0.5x to 1.5x.
+            // Low entropy saves time; high entropy invests extra time.
+            0.5 + (entropy.v() as f32 * 1.0)
+        };
+
+        let combined_factor = (stability_factor * entropy_factor).clamp(0.2, 1.5);
+
+        let scaled_soft_duration = base_soft_duration.mul_f32(combined_factor);
         let stability_target = self.time_start + scaled_soft_duration;
 
         let final_soft_time = match predict_target {
@@ -144,6 +155,7 @@ impl TimeMan {
 
         self.targets.time = Some(final_soft_time);
         self.curr_movestreak = Some(movestreak);
+        self.curr_entropy = Some(entropy);
         self.enable_soft_targets = true;
     }
 

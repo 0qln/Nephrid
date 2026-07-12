@@ -272,7 +272,7 @@ where
         };
 
         let timeman = &mut searcher.timeman;
-        timeman.update_soft_targets(stats.root_movestreak, stats.iter_time);
+        timeman.update_soft_targets(depth, stats.root_movestreak, stats.iter_time, stats.root_entropy);
 
         if searcher.should_stop(&stats) || searcher.timeman.reached_target() {
             break;
