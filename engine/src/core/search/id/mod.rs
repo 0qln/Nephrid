@@ -594,7 +594,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         // todo: make sure creating the scorer struct for each next_for does not tank
         // nps
         while let Some(m) = move_picker.next_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers.clone())) {
-            let (from, to, _flag) = m.into();
+            let (from, to, flag) = m.into();
             let moving_piece = pos.get_piece(from);
             let moving_pt = moving_piece.piece_type();
 
@@ -716,15 +716,27 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
-                    if !m.get_flag().is_capture() {
+                    if !flag.is_capture() && !flag.is_promo() {
                         // update killers
                         if m != tt_move {
                             self.ss.get_mut(rel_ply).killers._push(m);
                         }
 
-                        // update history heuristic
-                        let hh_bonus = MoveScore::from(depth.v());
-                        self.hh.update_for::<P>(moving_pt, to, hh_bonus);
+                        if let Some(searched_quiets) = move_picker.yielded_quiets() {
+                            let hh_bonus = MoveScore::from(depth.v()).pow(2);
+
+                            // penalty history heuristic that were expected but
+                            // failed to cause a cutoff
+                            let bad_searched_quiets = &searched_quiets[..searched_quiets.len() - 1];
+                            for searched_quiet in bad_searched_quiets {
+                                let (from, to, _) = searched_quiet.mov().into();
+                                let moving_pt = pos.get_piece(from).piece_type();
+                                self.hh.update_for::<P::Opponent>(moving_pt, to, -hh_bonus);
+                            }
+
+                            // reward history heuristic
+                            self.hh.update_for::<P>(moving_pt, to, hh_bonus);
+                        }
                     }
 
                     // fail high
