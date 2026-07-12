@@ -29,7 +29,10 @@ const POSITIONS: &[(&str, &str)] = &[
     ("endgame", "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"),
 ];
 
-fn search_with_node_target<E: StaticEvaluator + Default>(pos: &mut Position, params: impl IdParams + QSearchParams + ChronoParams + Clone + fmt::Debug) {
+fn search_with_node_target<E: StaticEvaluator + Default>(
+    pos: &mut Position,
+    params: impl IdParams + QSearchParams + ChronoParams + Clone + fmt::Debug,
+) {
     let limit = UciLimit {
         is_active: true,
         nodes: NODE_TARGET,
@@ -41,10 +44,11 @@ fn search_with_node_target<E: StaticEvaluator + Default>(pos: &mut Position, par
     let ct = CancellationToken::new();
     let hash_size = Information::new::<mebibyte>(16);
     let mut tt = id::TT::new_of_size(hash_size);
+    let mut hh = id::HH::new();
     let mut eval = E::default();
     let mut timeman = TimeMan::new(&limit, pos);
 
-    id::go(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut eval, params);
+    id::go(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut hh, &mut eval, params);
 }
 
 pub fn id_hce_nps(c: &mut Criterion) {

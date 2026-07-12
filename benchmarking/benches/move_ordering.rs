@@ -8,7 +8,7 @@ use engine::core::{
     move_iter::sliding_piece::magics,
     position::Position,
     search::{
-        id::{RbSet, Scorer},
+        id::{self, RbSet, Scorer},
         ordering::{MoveGenerator, MoveScorer, RtStage},
     },
     zobrist,
@@ -60,11 +60,14 @@ fn bench_positions(c: &mut Criterion, group_name: &str, target: RtStage) {
             panic!("Invalid CSV line: {}", line);
         };
         let fen = fen_str.trim();
-
         let pos = Position::from_fen(fen).unwrap();
+
+        let mut hh = id::HH::new();
+
         let scorer = Scorer {
             tt_move: Move::null(),
             killers: RbSet::default(),
+            hh: &mut hh,
             color: pos.get_turn(),
             phase: TaperValue::from_position(pos.piece_info()),
         };

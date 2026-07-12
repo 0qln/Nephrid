@@ -716,11 +716,14 @@ pub mod test {
             killers.push(get_killer());
             killers.push(get_killer());
 
+            let mut hh = id::HH::new();
+
             let mut picker = MovePicker::new(hash_move, killers.clone());
 
             let scorer = id::Scorer {
                 tt_move: hash_move,
                 killers,
+                hh: &mut hh,
                 color: pos.get_turn(),
                 phase: TaperValue::from_position(pos.piece_info()),
             };
