@@ -1,0 +1,28 @@
+Score of ccbench/in/builds/nephrid-d79ceaf vs ccbench/in/builds/nephrid-472424f: 68 - 66 - 409  [0.502] 543
+...      ccbench/in/builds/nephrid-d79ceaf playing White: 38 - 28 - 206  [0.518] 272
+...      ccbench/in/builds/nephrid-d79ceaf playing Black: 30 - 38 - 203  [0.485] 271
+...      White vs Black: 76 - 58 - 409  [0.517] 543
+Elo difference: 1.3 +/- 14.5, LOS: 56.9 %, DrawRatio: 75.3 %
+SPRT: llr 0.01 (0.3%), lbound -2.94, ubound 2.94
+
+Player: ccbench/in/builds/nephrid-d79ceaf
+   "Draw by 3-fold repetition": 400
+   "Draw by fifty moves rule": 1
+   "Draw by insufficient mating material": 8
+   "Loss: Black mates": 28
+   "Loss: White mates": 38
+   "No result": 5
+   "Win: Black disconnects": 1
+   "Win: Black mates": 30
+   "Win: White mates": 37
+Player: ccbench/in/builds/nephrid-472424f
+   "Draw by 3-fold repetition": 400
+   "Draw by fifty moves rule": 1
+   "Draw by insufficient mating material": 8
+   "Loss: Black disconnects": 1
+   "Loss: Black mates": 30
+   "Loss: White mates": 37
+   "No result": 5
+   "Win: Black mates": 28
+   "Win: White mates": 38
+Finished match
