@@ -2,7 +2,7 @@ use crate::core::{
     chrono::{ChronoParams, TimeMan},
     eval::StaticEvaluator,
     params::IParams,
-    search::{id::IdParams, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp},
+    search::{id::{IdParams, ScorerParams}, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp},
 };
 use thiserror::Error;
 
@@ -92,7 +92,7 @@ pub struct IdWorker<E: StaticEvaluator, X: IParams> {
 
 impl<E: StaticEvaluator + Default, X: IParams + Default> SearchWorker for IdWorker<E, X>
 where
-    X::Ref: IdParams + ChronoParams + QSearchParams + fmt::Debug,
+    X::Ref: IdParams + ChronoParams + QSearchParams + ScorerParams + fmt::Debug,
 {
     type X = X;
 
@@ -124,7 +124,7 @@ where
 
                 self.timeman.init_limits(&limit, &pos);
 
-                let best_move = id::go(
+                let best_move = id::go::<X>(
                     &mut pos,
                     limit,
                     &mut self.timeman,
