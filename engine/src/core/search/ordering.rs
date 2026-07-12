@@ -223,6 +223,21 @@ impl MovePicker {
 
         Some(m)
     }
+
+    /// If the movegen has passed or is currently in the yield-quiets-stage,
+    /// this return an iterator over the quiet moves that have already been
+    /// yielded.
+    #[inline(always)]
+    pub fn yielded_quiets(&self) -> Option<&[ScoredMove]> {
+        if self.move_gen.stage >= RtStage::YieldQuiets {
+            let start = self.move_gen.start_quiets;
+            let slice = self.move_gen.buf.as_subslice(start..self.curr);
+            Some(slice)
+        }
+        else {
+            None
+        }
+    }
 }
 
 /// Brings the highest score to the front of the slice
@@ -357,6 +372,7 @@ pub struct MoveGenerator {
     start_good_capt_and_promos: usize,
     num_good_capt_and_promos: usize,
     num_capt_and_promos: usize,
+    start_quiets: usize,
 }
 
 pub struct MoveGenExhausted;
@@ -371,6 +387,7 @@ impl MoveGenerator {
             start_good_capt_and_promos: 0,
             num_good_capt_and_promos: 0,
             num_capt_and_promos: 0,
+            start_quiets: 0,
         }
     }
 
@@ -383,6 +400,7 @@ impl MoveGenerator {
             start_good_capt_and_promos: 0,
             num_good_capt_and_promos: 0,
             num_capt_and_promos: 0,
+            start_quiets: 0,
         }
     }
 
@@ -520,6 +538,7 @@ impl MoveGenerator {
                     *score = s;
                 }
 
+                self.start_quiets = start;
                 self.stage.next();
                 Ok(start..end)
             }
