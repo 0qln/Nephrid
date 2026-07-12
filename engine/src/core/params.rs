@@ -334,15 +334,15 @@ impl const ChronoParams for C_IdNnueParams {
 }
 
 impl const QSearchParams for C_IdNnueParams {
-    fn futility_margin(&self) -> AnyScore { AnyScore::new(176) }
-    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(9) }
-    fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-18) }
+    fn futility_margin(&self) -> AnyScore { AnyScore::new(177) }
+    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
+    fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-22) }
 }
 
 impl const IdParams for C_IdNnueParams {
     fn nmp_reduction(&self) -> Depth { Depth::new(1) }
-    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(10) }
+    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(9) }
     fn nmp_depth_factor(&self) -> u8 { 3 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
-    fn nmp_margin(&self) -> AnyScore { AnyScore::new(46) }
+    fn nmp_margin(&self) -> AnyScore { AnyScore::new(44) }
 }
