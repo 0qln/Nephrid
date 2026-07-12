@@ -10,7 +10,6 @@ use crate::{
             score::AnyScore,
         },
     },
-    math::{self, NormalizedEntropy},
     misc::{InvalidValueError, ValueOutOfRangeError},
 };
 use std::{
@@ -317,11 +316,15 @@ pub struct Configuration {
     /// Bonus for tt best move in mcts.
     mcts_tt_best_move: ConfigOption<Spin<UciPercent>>,
 
-    /// Target entropy for time management.
-    timeman_entropy_target: ConfigOption<Spin<UciPercent>>,
-
-    /// Target move streak for time management.
-    timeman_movestreak_target: ConfigOption<Spin<UciInteger>>,
+    // Chrono params.
+    timeman_base_soft_mult: ConfigOption<Spin<UciPercent>>,
+    timeman_clamp_lower: ConfigOption<Spin<UciPercent>>,
+    timeman_clamp_upper: ConfigOption<Spin<UciPercent>>,
+    timeman_stability_base: ConfigOption<Spin<UciPercent>>,
+    timeman_stability_slope: ConfigOption<Spin<UciPercent>>,
+    timeman_stability_floor: ConfigOption<Spin<UciPercent>>,
+    timeman_entropy_base: ConfigOption<Spin<UciPercent>>,
+    timeman_entropy_weight: ConfigOption<Spin<UciPercent>>,
 
     /// [Iterative Deepening] Null Move Pruning reduction (R).
     id_nmp_reduction: ConfigOption<Spin<UciInteger>>,
@@ -378,8 +381,14 @@ impl Configuration {
                 mcts_proven_loss_visit_threshold: ConfigOption::new("mcts-proven-loss-visit-threshold", Spin::new(5, 1, 100)),
                 mcts_killer_exploitation: ConfigOption::new("mcts-killer-exploitation", Spin::<UciPercent>::new(_ratio(0.27), _ratio(0.), _ratio(10.))),
                 mcts_tt_best_move: ConfigOption::new("mcts-tt-best-move", Spin::<UciPercent>::new(_ratio(1.50), _ratio(0.), _ratio(10.))),
-                timeman_entropy_target: ConfigOption::new("timeman-entropy-target", Spin::<UciPercent>::new(_ratio(0.60), _ratio(0.), _ratio(1.))),
-                timeman_movestreak_target: ConfigOption::new("timeman-movestreak-target", Spin::new(5, 0, 20)),
+                timeman_base_soft_mult: ConfigOption::new("timeman-base-soft-mult", Spin::<UciPercent>::new(_ratio(0.50), _ratio(0.01), _ratio(2.))),
+                timeman_clamp_lower: ConfigOption::new("timeman-clamp-lower", Spin::<UciPercent>::new(_ratio(0.30), _ratio(0.), _ratio(1.))),
+                timeman_clamp_upper: ConfigOption::new("timeman-clamp-upper", Spin::<UciPercent>::new(_ratio(1.50), _ratio(0.10), _ratio(3.))),
+                timeman_stability_base: ConfigOption::new("timeman-stability-base", Spin::<UciPercent>::new(_ratio(1.00), _ratio(0.), _ratio(2.))),
+                timeman_stability_slope: ConfigOption::new("timeman-stability-slope", Spin::<UciPercent>::new(_ratio(0.08), _ratio(0.), _ratio(0.50))),
+                timeman_stability_floor: ConfigOption::new("timeman-stability-floor", Spin::<UciPercent>::new(_ratio(0.40), _ratio(0.), _ratio(1.))),
+                timeman_entropy_base: ConfigOption::new("timeman-entropy-base", Spin::<UciPercent>::new(_ratio(0.50), _ratio(0.), _ratio(2.))),
+                timeman_entropy_weight: ConfigOption::new("timeman-entropy-weight", Spin::<UciPercent>::new(_ratio(1.00), _ratio(0.), _ratio(2.))),
                 id_nmp_reduction: ConfigOption::new("id-nmp-reduction", Spin::new(2, 0, 10)),
                 id_nmp_phase_threshold: ConfigOption::new("id-nmp-phase-threshold", Spin::new(8, 0, 24)),
                 id_nmp_depth_factor: ConfigOption::new("id-nmp-depth-factor", Spin::new(3, 1, 20)),
@@ -437,9 +446,14 @@ impl ConfigBuilder {
     #[rustfmt::skip]
     pub fn chrono(mut self, params: &impl ChronoParams) -> Self {
         let cfg = &mut self.config;
-        #[allow(deprecated)]
-        cfg.timeman_entropy_target.seed(Ratio::new::<ratio>(params.entropy_target().v()));
-        cfg.timeman_movestreak_target.seed(params.movestreak_target() as i32);
+        cfg.timeman_base_soft_mult.seed(Ratio::new::<ratio>(params.base_soft_mult()));
+        cfg.timeman_clamp_lower.seed(Ratio::new::<ratio>(params.clamp_lower()));
+        cfg.timeman_clamp_upper.seed(Ratio::new::<ratio>(params.clamp_upper()));
+        cfg.timeman_stability_base.seed(Ratio::new::<ratio>(params.movestreak_base()));
+        cfg.timeman_stability_slope.seed(Ratio::new::<ratio>(params.movestreak_slope()));
+        cfg.timeman_stability_floor.seed(Ratio::new::<ratio>(params.movestreak_floor()));
+        cfg.timeman_entropy_base.seed(Ratio::new::<ratio>(params.entropy_base()));
+        cfg.timeman_entropy_weight.seed(Ratio::new::<ratio>(params.entropy_weight()));
         self
     }
 
@@ -477,8 +491,14 @@ impl Configuration {
     pub fn mcts_proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(self.mcts_proven_loss_visit_threshold.value as u32) }
     pub fn mcts_killer_exploitation(&self) -> f32 { self.mcts_killer_exploitation.value.get::<ratio>() }
     pub fn mcts_tt_best_move(&self) -> f32 { self.mcts_tt_best_move.value.get::<ratio>() }
-    pub fn timeman_entropy_target(&self) -> math::NormalizedEntropy { NormalizedEntropy::new(self.timeman_entropy_target.value.get::<ratio>()) }
-    pub fn timeman_movestreak_target(&self) -> u32 { self.timeman_movestreak_target.value as u32 }
+    pub fn timeman_base_soft_mult(&self) -> f32 { self.timeman_base_soft_mult.value.get::<ratio>() }
+    pub fn timeman_clamp_lower(&self) -> f32 { self.timeman_clamp_lower.value.get::<ratio>() }
+    pub fn timeman_clamp_upper(&self) -> f32 { self.timeman_clamp_upper.value.get::<ratio>() }
+    pub fn timeman_stability_base(&self) -> f32 { self.timeman_stability_base.value.get::<ratio>() }
+    pub fn timeman_stability_slope(&self) -> f32 { self.timeman_stability_slope.value.get::<ratio>() }
+    pub fn timeman_stability_floor(&self) -> f32 { self.timeman_stability_floor.value.get::<ratio>() }
+    pub fn timeman_entropy_base(&self) -> f32 { self.timeman_entropy_base.value.get::<ratio>() }
+    pub fn timeman_entropy_weight(&self) -> f32 { self.timeman_entropy_weight.value.get::<ratio>() }
     pub fn id_nmp_reduction(&self) -> Depth { Depth::new(self.id_nmp_reduction.value as u8) }
     pub fn id_nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(self.id_nmp_phase_threshold.value) }
     pub fn id_nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor.value as u8 }
@@ -520,8 +540,14 @@ impl Configuration {
             #[cfg(feature = "tunable")] "mcts-proven-loss-visit-threshold" => self.mcts_proven_loss_visit_threshold.set(value),
             #[cfg(feature = "tunable")] "mcts-tt-best-move" => self.mcts_tt_best_move.set(value),
             #[cfg(feature = "tunable")] "select-cpuct" => self.select_cpuct.set(value),
-            #[cfg(feature = "tunable")] "timeman-entropy-target" => self.timeman_entropy_target.set(value),
-            #[cfg(feature = "tunable")] "timeman-movestreak-target" => self.timeman_movestreak_target.set(value),
+            #[cfg(feature = "tunable")] "timeman-base-soft-mult" => self.timeman_base_soft_mult.set(value),
+            #[cfg(feature = "tunable")] "timeman-clamp-lower" => self.timeman_clamp_lower.set(value),
+            #[cfg(feature = "tunable")] "timeman-clamp-upper" => self.timeman_clamp_upper.set(value),
+            #[cfg(feature = "tunable")] "timeman-stability-base" => self.timeman_stability_base.set(value),
+            #[cfg(feature = "tunable")] "timeman-stability-slope" => self.timeman_stability_slope.set(value),
+            #[cfg(feature = "tunable")] "timeman-stability-floor" => self.timeman_stability_floor.set(value),
+            #[cfg(feature = "tunable")] "timeman-entropy-base" => self.timeman_entropy_base.set(value),
+            #[cfg(feature = "tunable")] "timeman-entropy-weight" => self.timeman_entropy_weight.set(value),
             #[cfg(feature = "tunable")] "id-nmp-reduction" => self.id_nmp_reduction.set(value),
             #[cfg(feature = "tunable")] "id-nmp-phase-threshold" => self.id_nmp_phase_threshold.set(value),
             #[cfg(feature = "tunable")] "id-nmp-depth-factor" => self.id_nmp_depth_factor.set(value),
@@ -552,8 +578,14 @@ impl Configuration {
             println!("{}", self.mcts_proven_loss_visit_threshold);
             println!("{}", self.mcts_tt_best_move);
             println!("{}", self.select_cpuct);
-            println!("{}", self.timeman_entropy_target);
-            println!("{}", self.timeman_movestreak_target);
+            println!("{}", self.timeman_base_soft_mult);
+            println!("{}", self.timeman_clamp_lower);
+            println!("{}", self.timeman_clamp_upper);
+            println!("{}", self.timeman_stability_base);
+            println!("{}", self.timeman_stability_slope);
+            println!("{}", self.timeman_stability_floor);
+            println!("{}", self.timeman_entropy_base);
+            println!("{}", self.timeman_entropy_weight);
             println!("{}", self.id_nmp_reduction);
             println!("{}", self.id_nmp_phase_threshold);
             println!("{}", self.id_nmp_depth_factor);
