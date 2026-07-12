@@ -272,9 +272,7 @@ where
         };
 
         let timeman = &mut searcher.timeman;
-        timeman.hint_time_target(timeman.time_limit().map(|x| x - stats.iter_time));
-        timeman.hint_movestreak_target(Some(params.movestreak_target()));
-        timeman.set_curr_movestreak(stats.root_movestreak);
+        timeman.update_soft_targets(stats.root_movestreak, stats.iter_time);
 
         if searcher.should_stop(&stats) || searcher.timeman.reached_target() {
             break;

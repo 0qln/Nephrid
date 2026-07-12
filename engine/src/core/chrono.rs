@@ -123,6 +123,30 @@ impl TimeMan {
         Duration::from_millis(result)
     }
 
+    pub fn update_soft_targets(&mut self, movestreak: u32, last_iter_time: Duration) {
+        // don't start another iteration if we expect to run completely out of hard time
+        // during it.
+        let predict_target = self.limits.time.map(|x| x - last_iter_time);
+
+        // set our baseline soft time target to 50% of the total allocated move time.
+        let base_soft_duration = self.time_per_move.mul_f32(0.5);
+
+        // scale down allowed thinking time linearly as the move streak stabilizes.
+        // capped at a minimum of 35% of our baseline soft time budget.
+        let stability_factor = (1.0 - (movestreak as f32 * 0.08)).max(0.35);
+        let scaled_soft_duration = base_soft_duration.mul_f32(stability_factor);
+        let stability_target = self.time_start + scaled_soft_duration;
+
+        let final_soft_time = match predict_target {
+            Some(predict_instant) => min(predict_instant, stability_target),
+            None => stability_target,
+        };
+
+        self.targets.time = Some(final_soft_time);
+        self.curr_movestreak = Some(movestreak);
+        self.enable_soft_targets = true;
+    }
+
     #[allow(clippy::needless_return)]
     pub fn reached_limit(&self) -> bool {
         if self.limits.reached_time() {
