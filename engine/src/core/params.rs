@@ -359,5 +359,5 @@ impl const IdParams for C_IdNnueParams {
 }
 
 impl const ScorerParams for C_IdNnueParams {
-    fn hh_weight(&self) -> i32 { 64 }
+    fn hh_weight(&self) -> i32 { 100 }
 }
