@@ -279,7 +279,7 @@ impl TaperValue {
         let total = piece_phases::TOTAL_C;
         let mg_eval = mg_eval.v();
         let eg_eval = eg_eval.v();
-        let interpolated = interpolate_i32(mg_eval as i32, eg_eval as i32, phase as i32, total as i32);
+        let interpolated = interpolate_i32(mg_eval, eg_eval, phase, total);
         AnyScore::new(interpolated)
     }
 

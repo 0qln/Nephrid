@@ -565,13 +565,7 @@ pub mod test {
     };
 
     use crate::core::{
-        color::colors,
-        coordinates::squares,
-        r#move::{MoveList, move_flags},
-        move_iter::sliding_piece::magics,
-        position::Position,
-        search::{id, ordering},
-        zobrist,
+        color::colors, coordinates::squares, r#move::{MoveList, move_flags}, move_iter::sliding_piece::magics, params::C_IdNnueParams, position::Position, search::{id, ordering}, zobrist
     };
 
     use super::*;
@@ -720,12 +714,13 @@ pub mod test {
 
             let mut picker = MovePicker::new(hash_move, killers.clone());
 
-            let scorer = id::Scorer {
+            let scorer = id::Scorer::<C_IdNnueParams> {
                 tt_move: hash_move,
                 killers,
                 hh: &mut hh,
                 color: pos.get_turn(),
                 phase: TaperValue::from_position(pos.piece_info()),
+                params: C_IdNnueParams,
             };
 
             let mut cnt = 0;

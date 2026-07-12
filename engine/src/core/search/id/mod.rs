@@ -325,6 +325,7 @@ impl<'a, 'b, E: StaticEvaluator, X: IParams> Searcher<'a, 'b, E, X>
 where
     X::Ref: QSearchParams + IdParams + ScorerParams + Clone,
 {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         pos: &Position,
         limit: UciLimit,
