@@ -10,11 +10,31 @@ use crate::{
 };
 
 pub const trait ChronoParams {
-    /// Fraction of the maximum possible root entropy below which the engine is
-    /// considered confident enough to stop searching early.
-    fn entropy_target(&self) -> NormalizedEntropy;
+    /// Percentage of the total move time allocated for the baseline soft target
+    fn base_soft_mult(&self) -> f32;
 
-    fn movestreak_target(&self) -> u32;
+    /// The lowest multiplier allowed for the combined soft time scaling factor
+    fn clamp_lower(&self) -> f32;
+
+    /// The highest multiplier allowed for the combined soft time scaling factor
+    fn clamp_upper(&self) -> f32;
+
+    /// Starting stability factor multiplier before any movestreak reduction is
+    /// applied.
+    fn movestreak_base(&self) -> f32;
+
+    /// Percentage deducted from thinking time per consecutive iteration the
+    /// move stays best.
+    fn movestreak_slope(&self) -> f32;
+
+    /// The absolute minimum floor the stability factor can drop to.
+    fn movestreak_floor(&self) -> f32;
+
+    /// Base entropy factor added to the calculation.
+    fn entropy_base(&self) -> f32;
+
+    /// Multiplier weight applied to the raw root entropy value.
+    fn entropy_weight(&self) -> f32;
 }
 
 /// Soft bounds.
@@ -29,7 +49,7 @@ struct SoftTargets {
 }
 
 impl SoftTargets {
-    fn combined_soft_factor(&self) -> f32 {
+    fn combined_soft_factor(&self, params: &impl ChronoParams) -> f32 {
         let mut factor = 1.0;
 
         if let Some(movestreak_factor) = self.movestreak_factor {
@@ -40,7 +60,7 @@ impl SoftTargets {
             factor *= entropy_factor;
         }
 
-        factor.clamp(0.2, 1.5)
+        factor.clamp(params.clamp_lower(), params.clamp_upper())
     }
 }
 
@@ -68,14 +88,14 @@ pub struct TimeMan<X: IParams> {
     enable_soft_targets: bool,
 
     /// Params
-    params: X::Ref,
+    x: X::Ref,
 }
 
 impl<X: IParams> TimeMan<X>
 where
     X::Ref: ChronoParams,
 {
-    pub fn new(params: X::Ref) -> Self {
+    pub fn new(x: X::Ref) -> Self {
         TimeMan {
             time_start: None,
             limits: Default::default(),
@@ -83,7 +103,7 @@ where
             enable_soft_targets: false,
             targets: Default::default(),
 
-            params,
+            x,
         }
     }
 
@@ -140,14 +160,11 @@ where
             return true;
         }
 
-        if let Some(hard_duration) = self.duration_limit()
-            && let Some(start) = self.time_start()
-        {
-            let factor = self.targets.combined_soft_factor();
-            let soft_duration = hard_duration.mul_f32(0.5).mul_f32(factor);
-            let soft_target = start + soft_duration;
+        if let Some(hard_duration) = self.duration_limit() {
+            let factor = self.targets.combined_soft_factor(&self.x);
+            let soft_duration = hard_duration.mul_f32(self.x.base_soft_mult()).mul_f32(factor);
 
-            if now >= soft_target {
+            if self.elapsed_search_time().is_some_and(|t| t >= soft_duration) {
                 return true;
             }
         }
@@ -156,17 +173,22 @@ where
     }
 
     pub fn hint_entropy_target(&mut self, entropy: NormalizedEntropy) {
-        // Map normalized entropy (0.0 = certain, 1.0 = highly uncertain)
-        // to a time multiplier range of 0.5x to 1.5x.
         // Low entropy saves time; high entropy invests extra time.
-        let factor = 0.5 + (entropy.v() * 1.0);
+        let base = self.x.entropy_base();
+        let weight = self.x.entropy_weight();
+
+        let factor = base + (entropy.v() * weight);
         self.targets.entropy_factor = Some(factor);
     }
 
     pub fn hint_movestreak_target(&mut self, movestreak: u32) {
         // scale down allowed thinking time linearly as the move streak stabilizes.
-        // capped at a minimum of 35% of our baseline soft time budget.
-        let factor = (1.0 - (movestreak as f32 * 0.08)).max(0.35);
+        // capped at a minimum of x% of our baseline soft time budget.
+        let base = self.x.movestreak_base();
+        let slope = self.x.movestreak_slope();
+        let floor = self.x.movestreak_floor();
+
+        let factor = (base - (movestreak as f32 * slope)).max(floor);
         self.targets.movestreak_factor = Some(factor);
     }
 
