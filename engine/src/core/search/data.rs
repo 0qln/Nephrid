@@ -177,9 +177,10 @@ impl PieceHistories {
         // is that this formula also clamps history values from -MAX_HISTORY to
         // MAX_HISTORY, which prevents oversaturated values.
         // ref: https://www.chessprogramming.org/History_Heuristic
-        let clamped_val = val.clamp(-MAX_HISTORY, MAX_HISTORY);
-        let current_val = *curr_score;
-        *curr_score += clamped_val - current_val.overflowing_mul(clamped_val.abs() / MAX_HISTORY).0;
-        // todo: find a way to make overflow impossible
+        let max = MAX_HISTORY as i32;
+        let clamped_val = i32::from(val.clamp(-MAX_HISTORY, MAX_HISTORY));
+        let current_val = i32::from(*curr_score);
+        let bonus = clamped_val - current_val * clamped_val.abs() / max;
+        *curr_score += bonus.clamp(-max, max) as MoveScore;
     }
 }
