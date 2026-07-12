@@ -1091,7 +1091,9 @@ impl MoveScorer for Scorer<'_> {
                 let piece = pieces.get_piece(from);
                 let piece_type = piece.piece_type();
 
-                self.hh.get(self.color, piece_type, to)
+                let hh_score = self.hh.get(self.color, piece_type, to);
+                let psqt_score = ordering::psqt(self.phase, piece_type, from, to, mov.get_flag(), self.color);
+                hh_score + psqt_score
             }
 
             RtStage::Done => 0,
