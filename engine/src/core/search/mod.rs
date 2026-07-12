@@ -2,7 +2,7 @@ use crate::core::{
     chrono::{ChronoParams, TimeMan},
     eval::StaticEvaluator,
     params::IParams,
-    search::{id::IdParams, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp},
+    search::{id::{IdParams, ScorerParams}, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp},
 };
 use thiserror::Error;
 
@@ -84,6 +84,7 @@ pub trait SearchWorker {
 /// Iterative deepening worker.
 pub struct IdWorker<E: StaticEvaluator, X: IParams> {
     tt: id::TT,
+    hh: id::HH,
     timeman: TimeMan,
     params: X::Ref,
     eval: E,
@@ -91,13 +92,14 @@ pub struct IdWorker<E: StaticEvaluator, X: IParams> {
 
 impl<E: StaticEvaluator + Default, X: IParams + Default> SearchWorker for IdWorker<E, X>
 where
-    X::Ref: IdParams + ChronoParams + QSearchParams + fmt::Debug,
+    X::Ref: IdParams + ChronoParams + QSearchParams + ScorerParams + fmt::Debug,
 {
     type X = X;
 
     fn new() -> Self {
         Self {
             tt: id::TT::new(0),
+            hh: id::HH::new(),
             timeman: TimeMan::default(),
             params: <Self::X as Default>::default().shared(),
             eval: E::default(),
@@ -122,13 +124,14 @@ where
 
                 self.timeman.init_limits(&limit, &pos);
 
-                let best_move = id::go(
+                let best_move = id::go::<X>(
                     &mut pos,
                     limit,
                     &mut self.timeman,
                     &debug,
                     ct,
                     &mut self.tt,
+                    &mut self.hh,
                     &mut self.eval,
                     self.params.clone(),
                 );
@@ -162,6 +165,7 @@ where
             }
             Command::ResetState => {
                 self.tt.clear();
+                self.hh.clear();
 
                 Ok(())
             }

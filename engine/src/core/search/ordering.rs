@@ -223,6 +223,21 @@ impl MovePicker {
 
         Some(m)
     }
+
+    /// If the movegen has passed or is currently in the yield-quiets-stage,
+    /// this return an iterator over the quiet moves that have already been
+    /// yielded.
+    #[inline(always)]
+    pub fn yielded_quiets(&self) -> Option<&[ScoredMove]> {
+        if self.move_gen.stage >= RtStage::YieldQuiets {
+            let start = self.move_gen.start_quiets;
+            let slice = self.move_gen.buf.as_subslice(start..self.curr);
+            Some(slice)
+        }
+        else {
+            None
+        }
+    }
 }
 
 /// Brings the highest score to the front of the slice
@@ -357,6 +372,7 @@ pub struct MoveGenerator {
     start_good_capt_and_promos: usize,
     num_good_capt_and_promos: usize,
     num_capt_and_promos: usize,
+    start_quiets: usize,
 }
 
 pub struct MoveGenExhausted;
@@ -371,6 +387,7 @@ impl MoveGenerator {
             start_good_capt_and_promos: 0,
             num_good_capt_and_promos: 0,
             num_capt_and_promos: 0,
+            start_quiets: 0,
         }
     }
 
@@ -383,6 +400,7 @@ impl MoveGenerator {
             start_good_capt_and_promos: 0,
             num_good_capt_and_promos: 0,
             num_capt_and_promos: 0,
+            start_quiets: 0,
         }
     }
 
@@ -520,6 +538,7 @@ impl MoveGenerator {
                     *score = s;
                 }
 
+                self.start_quiets = start;
                 self.stage.next();
                 Ok(start..end)
             }
@@ -546,13 +565,7 @@ pub mod test {
     };
 
     use crate::core::{
-        color::colors,
-        coordinates::squares,
-        r#move::{MoveList, move_flags},
-        move_iter::sliding_piece::magics,
-        position::Position,
-        search::{id, ordering},
-        zobrist,
+        color::colors, coordinates::squares, r#move::{MoveList, move_flags}, move_iter::sliding_piece::magics, params::C_IdNnueParams, position::Position, search::{id, ordering}, zobrist
     };
 
     use super::*;
@@ -697,13 +710,17 @@ pub mod test {
             killers.push(get_killer());
             killers.push(get_killer());
 
+            let mut hh = id::HH::new();
+
             let mut picker = MovePicker::new(hash_move, killers.clone());
 
-            let scorer = id::Scorer {
+            let scorer = id::Scorer::<C_IdNnueParams> {
                 tt_move: hash_move,
                 killers,
+                hh: &mut hh,
                 color: pos.get_turn(),
                 phase: TaperValue::from_position(pos.piece_info()),
+                params: C_IdNnueParams,
             };
 
             let mut cnt = 0;

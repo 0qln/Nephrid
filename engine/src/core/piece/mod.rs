@@ -23,7 +23,8 @@ pub trait IPieceType {
 
 pub type TPieceType = u8;
 
-#[derive(Copy, Clone, Default, PartialEq, PartialOrd)]
+#[derive(Copy)]
+#[derive_const(Clone, Default, PartialEq, PartialOrd)]
 pub struct PieceType {
     v: TPieceType,
 }

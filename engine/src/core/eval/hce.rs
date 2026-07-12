@@ -10,6 +10,7 @@ use crate::{
         turn::Turn,
     },
     impl_variants,
+    math::interpolate_i32,
 };
 use const_for::const_for;
 
@@ -278,7 +279,8 @@ impl TaperValue {
         let total = piece_phases::TOTAL_C;
         let mg_eval = mg_eval.v();
         let eg_eval = eg_eval.v();
-        AnyScore::new(((mg_eval * (total - phase)) + (eg_eval * phase)) / total)
+        let interpolated = interpolate_i32(mg_eval, eg_eval, phase, total);
+        AnyScore::new(interpolated)
     }
 
     pub const fn v(&self) -> i32 { self.0.clamp(0, piece_phases::TOTAL_C) }

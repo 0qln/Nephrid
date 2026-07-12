@@ -4,7 +4,7 @@ use crate::{
         depth::Depth,
         eval::hce::TaperValue,
         search::{
-            id::IdParams,
+            id::{IdParams, ScorerParams},
             mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
             quiesce::QSearchParams,
             score::AnyScore,
@@ -337,6 +337,9 @@ pub struct Configuration {
 
     /// [Iterative Deepening] Null Move Pruning margin.
     id_nmp_margin: ConfigOption<Spin<UciInteger>>,
+
+    /// [Iterative Deepening] Scorer hyper-heuristic weight.
+    id_scorer_hh_weight: ConfigOption<Spin<UciInteger>>,
 }
 
 impl Configuration {
@@ -381,7 +384,8 @@ impl Configuration {
                 id_nmp_phase_threshold: ConfigOption::new("id-nmp-phase-threshold", Spin::new(8, 0, 24)),
                 id_nmp_depth_factor: ConfigOption::new("id-nmp-depth-factor", Spin::new(3, 1, 20)),
                 id_nmp_phase_factor: ConfigOption::new("id-nmp-phase-factor", Spin::new(7, 1, 50)),
-                id_nmp_margin: ConfigOption::new("id-nmp-margin", Spin::new(50, -350, 350))
+                id_nmp_margin: ConfigOption::new("id-nmp-margin", Spin::new(50, -350, 350)),
+                id_scorer_hh_weight: ConfigOption::new("id-scorer-hh-weight", Spin::new(64, 0, 128))
             },
         }
     }
@@ -451,6 +455,14 @@ impl ConfigBuilder {
         self
     }
 
+    /// Seed the iterative-deepening scorer options from [`ScorerParams`].
+    #[rustfmt::skip]
+    pub fn scorer(mut self, params: &impl ScorerParams) -> Self {
+        let cfg = &mut self.config;
+        cfg.id_scorer_hh_weight.seed(params.hh_weight());
+        self
+    }
+
     /// Finish building the [`Configuration`].
     pub fn build(self) -> Configuration { self.config }
 }
@@ -472,6 +484,7 @@ impl Configuration {
     pub fn id_nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor.value as u8 }
     pub fn id_nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor.value as u32 }
     pub fn id_nmp_margin(&self) -> AnyScore { AnyScore::new(self.id_nmp_margin.value) }
+    pub fn id_scorer_hh_weight(&self) -> i32 { self.id_scorer_hh_weight.value }
 }
 
 impl Configuration {
@@ -514,6 +527,7 @@ impl Configuration {
             #[cfg(feature = "tunable")] "id-nmp-depth-factor" => self.id_nmp_depth_factor.set(value),
             #[cfg(feature = "tunable")] "id-nmp-phase-factor" => self.id_nmp_phase_factor.set(value),
             #[cfg(feature = "tunable")] "id-nmp-margin" => self.id_nmp_margin.set(value),
+            #[cfg(feature = "tunable")] "id-scorer-hh-weight" => self.id_scorer_hh_weight.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -545,6 +559,7 @@ impl Configuration {
             println!("{}", self.id_nmp_depth_factor);
             println!("{}", self.id_nmp_phase_factor);
             println!("{}", self.id_nmp_margin);
+            println!("{}", self.id_scorer_hh_weight);
         }
     }
 }

@@ -6,9 +6,10 @@ use engine::core::{
     eval::hce::TaperValue,
     r#move::Move,
     move_iter::sliding_piece::magics,
+    params::C_IdNnueParams,
     position::Position,
     search::{
-        id::{RbSet, Scorer},
+        id::{self, RbSet, Scorer},
         ordering::{MoveGenerator, MoveScorer, RtStage},
     },
     zobrist,
@@ -28,7 +29,14 @@ fn primed_generator<P: Perspective>(pos: &Position, scorer: &impl MoveScorer, ta
     move_gen
 }
 
-fn bench_stage<P: Perspective>(group: &mut BenchmarkGroup<'_, WallTime>, name: &str, fen: &str, pos: &Position, scorer: &Scorer, target: RtStage) {
+fn bench_stage<P: Perspective>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    name: &str,
+    fen: &str,
+    pos: &Position,
+    scorer: &impl MoveScorer,
+    target: RtStage,
+) {
     group.bench_with_input(BenchmarkId::new(name, fen), pos, |b, pos| {
         b.iter_batched(
             || primed_generator::<P>(pos, scorer, target),
@@ -60,13 +68,17 @@ fn bench_positions(c: &mut Criterion, group_name: &str, target: RtStage) {
             panic!("Invalid CSV line: {}", line);
         };
         let fen = fen_str.trim();
-
         let pos = Position::from_fen(fen).unwrap();
-        let scorer = Scorer {
+
+        let mut hh = id::HH::new();
+
+        let scorer = Scorer::<C_IdNnueParams> {
             tt_move: Move::null(),
             killers: RbSet::default(),
+            hh: &mut hh,
             color: pos.get_turn(),
             phase: TaperValue::from_position(pos.piece_info()),
+            params: C_IdNnueParams,
         };
 
         let name = format!("{group_name}_{i}");
