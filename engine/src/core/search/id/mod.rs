@@ -731,6 +731,15 @@ where
                         // heurstic, because they happen to be yielded in another stage of the move
                         // gen. should those be included? test this.
                         if let Some(searched_quiets) = move_picker.yielded_quiets() {
+                            #[cfg(debug_assertions)]
+                            {
+                                assert_eq!(
+                                    searched_quiets.len() - 1,
+                                    hh_searched_quiets.len() as usize,
+                                    "the quiet moves that were yielded in the movegen stage should be the same as the ones that were searched"
+                                );
+                            }
+
                             let hh_bonus = MoveScore::from(depth.v()).pow(2);
 
                             // penalty history heuristic that were expected but
@@ -762,7 +771,7 @@ where
                 // only push the moves from the yield-quiets movegen stage, because those are
                 // the ones that we neeed to give a penalty. the other ones are not scored by
                 // the history heuristic.
-                if !flag.is_capture() && !flag.is_promo() && m != tt_move && !self.ss.get(rel_ply).killers.position(&m).is_none() {
+                if !flag.is_capture() && !flag.is_promo() && m != tt_move && self.ss.get(rel_ply).killers.position(&m).is_none() {
                     hh_searched_quiets.push(m);
                 }
             }
