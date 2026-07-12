@@ -104,7 +104,7 @@ impl<Data: TTKey, Strat: ReplacementStrategy<Data = Data>> TranspositionTable<Da
     }
 }
 
-const MAX_HISTORY: MoveScore = MoveScore::MAX;
+const MAX_HISTORY: MoveScore = 30_000;
 
 #[derive(Clone, Copy)]
 pub struct PieceHistory {
