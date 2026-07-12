@@ -1093,7 +1093,7 @@ impl MoveScorer for Scorer<'_> {
 
                 match self.hh.get(self.color, piece_type, to) {
                     // fallback to psqt if the history heuristic has no data for this move
-                    0 => ordering::psqt(self.phase, piece_type, from, to, mov.get_flag(), self.color),
+                    // 0 => ordering::psqt(self.phase, piece_type, from, to, mov.get_flag(), self.color),
                     hh_score => hh_score,
                 }
             }
