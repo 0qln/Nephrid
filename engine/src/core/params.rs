@@ -330,7 +330,7 @@ impl const ChronoParams for C_IdNnueParams {
     // todo: don't hardcode a number, but scale with the expected searchdepth or
     // smth like that... the issue is that e.g. depth 10 may not be a sufficient in
     // a game where bot sides have a lot of time
-    fn movestreak_target(&self) -> u32 { 7 }
+    fn movestreak_target(&self) -> u32 { 10 }
 }
 
 impl const QSearchParams for C_IdNnueParams {
