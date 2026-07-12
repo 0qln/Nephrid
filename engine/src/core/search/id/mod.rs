@@ -591,8 +591,6 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         let mut best_move = Move::null();
         let mut curr = 0;
         // todo: take killers by ref
-        // todo: make sure creating the scorer struct for each next_for does not tank
-        // nps
         while let Some(m) = move_picker.next_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers.clone())) {
             let (from, to, flag) = m.into();
             let moving_piece = pos.get_piece(from);
