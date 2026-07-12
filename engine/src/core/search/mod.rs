@@ -2,7 +2,12 @@ use crate::core::{
     chrono::{ChronoParams, TimeMan},
     eval::StaticEvaluator,
     params::IParams,
-    search::{id::{IdParams, ScorerParams}, mcts::search::MctsParams, quiesce::QSearchParams, score::Cp},
+    search::{
+        id::{IdParams, ScorerParams},
+        mcts::search::MctsParams,
+        quiesce::QSearchParams,
+        score::Cp,
+    },
 };
 use thiserror::Error;
 
@@ -85,7 +90,7 @@ pub trait SearchWorker {
 pub struct IdWorker<E: StaticEvaluator, X: IParams> {
     tt: id::TT,
     hh: id::HH,
-    timeman: TimeMan,
+    timeman: TimeMan<X>,
     params: X::Ref,
     eval: E,
 }
@@ -97,11 +102,12 @@ where
     type X = X;
 
     fn new() -> Self {
+        let params = <Self::X as Default>::default().shared();
         Self {
             tt: id::TT::new(0),
             hh: id::HH::new(),
-            timeman: TimeMan::default(),
-            params: <Self::X as Default>::default().shared(),
+            timeman: TimeMan::new(params.clone()),
+            params,
             eval: E::default(),
         }
     }
@@ -189,8 +195,8 @@ pub struct MctsWorker<const MPV: usize, C: MctsConfig, X: IParams> {
 
 impl<const MPV: usize, C, X: IParams + Default> SearchWorker for MctsWorker<MPV, C, X>
 where
-    C: MctsConfig<Strat = MctsUci>,
-    X::Ref: MctsParams,
+    C: MctsConfig<Strat = MctsUci<X>>,
+    X::Ref: MctsParams + ChronoParams,
 {
     type X = X;
 
@@ -232,10 +238,9 @@ where
             Command::Normal(mut pos, limit, ct, debug) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
-                let strat = &mut C::Strat::new(limit, debug, ct, None);
-                let params = self.params.clone();
+                let strat = &mut C::Strat::new(limit, debug, ct, None, self.params.clone());
 
-                let result = mcts::<MPV, C, _, X>(&mut pos, parts, state, strat, params);
+                let result = mcts::<MPV, C, _, X>(&mut pos, parts, state, strat, self.params.clone());
 
                 if result.is_none() {
                     todo!("Log error or something: got no result from mcts search.")
@@ -246,7 +251,7 @@ where
             Command::Ponder(mut pos, limit, ct, debug, pt) => {
                 let parts = self.mcts_parts.as_ref().ok_or(ExecError::UninitState())?;
                 let state = &mut self.mcts_state;
-                let strat = &mut C::Strat::new(limit, debug, ct, Some(pt));
+                let strat = &mut C::Strat::new(limit, debug, ct, Some(pt), self.params.clone());
 
                 let result = mcts::<MPV, C, _, X>(&mut pos, parts, state, strat, self.params.clone());
 

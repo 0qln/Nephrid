@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    core::{color::colors, depth::Depth, position::Position, search::limit::UciLimit, turn::Turn},
+    core::{color::colors, params::IParams, position::Position, search::limit::UciLimit, turn::Turn},
     math::NormalizedEntropy,
 };
 
@@ -21,19 +21,27 @@ pub const trait ChronoParams {
 #[derive(Debug, Default)]
 struct SoftTargets {
     /// Time
-    time: Option<Instant>,
+    prediction_time: Option<Instant>,
 
-    /// stop once the current root entropy drops to/below this.
-    entropy: Option<NormalizedEntropy>,
-
-    /// stop once the one move has been the best for x times in a row.
-    movestreak: Option<u32>,
+    /// Factors
+    entropy_factor: Option<f32>,
+    movestreak_factor: Option<f32>,
 }
 
 impl SoftTargets {
-    pub fn reached_time(&self) -> bool { self.time.is_some_and(|x| Instant::now() >= x) }
-    pub fn reached_entropy(&self, curr: NormalizedEntropy) -> bool { self.entropy.is_some_and(|x| curr <= x) }
-    pub fn reached_movestreak(&self, curr: u32) -> bool { self.movestreak.is_some_and(|x| curr >= x) }
+    fn combined_soft_factor(&self) -> f32 {
+        let mut factor = 1.0;
+
+        if let Some(movestreak_factor) = self.movestreak_factor {
+            factor *= movestreak_factor;
+        }
+
+        if let Some(entropy_factor) = self.entropy_factor {
+            factor *= entropy_factor;
+        }
+
+        factor.clamp(0.2, 1.5)
+    }
 }
 
 #[derive(Debug, Default)]
@@ -46,9 +54,9 @@ impl HardLimits {
 }
 
 #[derive(Debug)]
-pub struct TimeMan {
+pub struct TimeMan<X: IParams> {
     /// Begin of search
-    time_start: Instant,
+    time_start: Option<Instant>,
 
     /// Hard limits
     limits: HardLimits,
@@ -59,33 +67,28 @@ pub struct TimeMan {
     /// Whether to enable soft targets or not.
     enable_soft_targets: bool,
 
-    /// Time allocated per move
-    time_per_move: Duration,
-
-    // Current Stats
-    curr_entropy: Option<NormalizedEntropy>,
-    curr_movestreak: Option<u32>,
+    /// Params
+    params: X::Ref,
 }
 
-impl Default for TimeMan {
-    fn default() -> Self {
+impl<X: IParams> TimeMan<X>
+where
+    X::Ref: ChronoParams,
+{
+    pub fn new(params: X::Ref) -> Self {
         TimeMan {
-            time_start: Instant::now(),
+            time_start: None,
             limits: Default::default(),
 
             enable_soft_targets: false,
             targets: Default::default(),
 
-            time_per_move: Duration::MAX,
-            curr_entropy: None,
-            curr_movestreak: None,
+            params,
         }
     }
-}
 
-impl TimeMan {
-    pub fn new(limit: &UciLimit, pos: &Position) -> Self {
-        let mut new = Self::default();
+    pub fn new_with_limits(limit: &UciLimit, pos: &Position, params: X::Ref) -> Self {
+        let mut new = Self::new(params);
         new.init_limits(limit, pos);
         new
     }
@@ -95,11 +98,8 @@ impl TimeMan {
         let time_start = Instant::now();
         let time_limit = time_start + time_per_move;
 
-        let limits = HardLimits { time: Some(time_limit) };
-
-        self.time_start = time_start;
-        self.limits = limits;
-        self.time_per_move = time_per_move;
+        self.time_start = Some(time_start);
+        self.limits = HardLimits { time: Some(time_limit) };
 
         // soft targets remain unchanged
     }
@@ -120,45 +120,6 @@ impl TimeMan {
         Duration::from_millis(result)
     }
 
-    pub fn update_soft_targets(&mut self, depth: Depth, movestreak: u32, last_iter_time: Duration, entropy: NormalizedEntropy) {
-        // don't start another iteration if we expect to run completely out of hard time
-        // during it.
-        let predict_target = self.limits.time.map(|x| x - last_iter_time);
-
-        // set our baseline soft time target to 50% of the total allocated move time.
-        let base_soft_duration = self.time_per_move.mul_f32(0.5);
-
-        // scale down allowed thinking time linearly as the move streak stabilizes.
-        // capped at a minimum of 35% of our baseline soft time budget.
-        let stability_factor = (1.0 - (movestreak as f32 * 0.08)).max(0.35);
-
-        let entropy_factor = if depth.v() < 5 {
-            // At shallow depths, tactical mirages are common.
-            1.0
-        }
-        else {
-            // Map normalized entropy (0.0 = certain, 1.0 = highly uncertain)
-            // to a time multiplier range of 0.5x to 1.5x.
-            // Low entropy saves time; high entropy invests extra time.
-            0.5 + (entropy.v() as f32 * 1.0)
-        };
-
-        let combined_factor = (stability_factor * entropy_factor).clamp(0.2, 1.5);
-
-        let scaled_soft_duration = base_soft_duration.mul_f32(combined_factor);
-        let stability_target = self.time_start + scaled_soft_duration;
-
-        let final_soft_time = match predict_target {
-            Some(predict_instant) => min(predict_instant, stability_target),
-            None => stability_target,
-        };
-
-        self.targets.time = Some(final_soft_time);
-        self.curr_movestreak = Some(movestreak);
-        self.curr_entropy = Some(entropy);
-        self.enable_soft_targets = true;
-    }
-
     #[allow(clippy::needless_return)]
     pub fn reached_limit(&self) -> bool {
         if self.limits.reached_time() {
@@ -173,31 +134,52 @@ impl TimeMan {
             return false;
         }
 
-        if self.targets.reached_time() {
+        let now = Instant::now();
+
+        if self.targets.prediction_time.is_some_and(|x| now >= x) {
             return true;
         }
 
-        if self.curr_movestreak.is_some_and(|curr| self.targets.reached_movestreak(curr)) {
-            return true;
-        }
+        if let Some(hard_duration) = self.duration_limit()
+            && let Some(start) = self.time_start()
+        {
+            let factor = self.targets.combined_soft_factor();
+            let soft_duration = hard_duration.mul_f32(0.5).mul_f32(factor);
+            let soft_target = start + soft_duration;
 
-        if self.curr_entropy.is_some_and(|curr| self.targets.reached_entropy(curr)) {
-            return true;
+            if now >= soft_target {
+                return true;
+            }
         }
 
         false
     }
 
-    pub fn set_curr_entropy(&mut self, entropy: NormalizedEntropy) { self.curr_entropy = Some(entropy); }
-    pub fn set_curr_movestreak(&mut self, movestreak: u32) { self.curr_movestreak = Some(movestreak); }
+    pub fn hint_entropy_target(&mut self, entropy: NormalizedEntropy) {
+        // Map normalized entropy (0.0 = certain, 1.0 = highly uncertain)
+        // to a time multiplier range of 0.5x to 1.5x.
+        // Low entropy saves time; high entropy invests extra time.
+        let factor = 0.5 + (entropy.v() * 1.0);
+        self.targets.entropy_factor = Some(factor);
+    }
 
-    pub fn hint_entropy_target(&mut self, entropy: Option<NormalizedEntropy>) { self.targets.entropy = entropy; }
-    pub fn hint_movestreak_target(&mut self, movestreak: Option<u32>) { self.targets.movestreak = movestreak; }
-    pub fn hint_time_target(&mut self, time: Option<Instant>) { self.targets.time = time; }
+    pub fn hint_movestreak_target(&mut self, movestreak: u32) {
+        // scale down allowed thinking time linearly as the move streak stabilizes.
+        // capped at a minimum of 35% of our baseline soft time budget.
+        let factor = (1.0 - (movestreak as f32 * 0.08)).max(0.35);
+        self.targets.movestreak_factor = Some(factor);
+    }
 
-    pub fn time_start(&self) -> Instant { self.time_start }
+    pub fn hint_time_target(&mut self, last_iter_time: Duration) {
+        // don't start another iteration if we expect to run completely out of hard time
+        // during it.
+        self.targets.prediction_time = self.time_limit().map(|limit| limit - last_iter_time);
+    }
+
+    pub fn time_start(&self) -> Option<Instant> { self.time_start }
     pub fn time_limit(&self) -> Option<Instant> { self.limits.time }
-    pub fn search_time(&self) -> Duration { Instant::now() - self.time_start }
+    pub fn duration_limit(&self) -> Option<Duration> { self.limits.time.and_then(|end| self.time_start.map(|start| end - start)) }
+    pub fn elapsed_search_time(&self) -> Option<Duration> { self.time_start.map(|start| Instant::now() - start) }
 
     pub fn is_soft_targets_enabled(&self) -> bool { self.enable_soft_targets }
     pub fn enable_soft_targets(&mut self, enable: bool) { self.enable_soft_targets = enable }

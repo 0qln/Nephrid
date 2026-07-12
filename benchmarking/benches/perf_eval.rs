@@ -138,14 +138,14 @@ impl PerfRunner for MctsHceRunner {
         struct Config;
         impl MctsConfig for Config {
             type Parts = mcts::HceParts;
-            type Strat = MctsUci;
+            type Strat = MctsUci<C_MctsHceParams>;
         }
 
         let ct = CancellationToken::new();
 
         let state = &mut mcts::SearchState::default();
         let parts = HceParts::default();
-        let strat = &mut MctsUci::new(limit, DebugMode::off(), ct, None);
+        let strat = &mut MctsUci::new(limit, DebugMode::off(), ct, None, C_MctsHceParams);
         let result = mcts::<1, Config, _, C_MctsHceParams>(&mut pos, &parts, state, strat, C_MctsHceParams)
             .expect("mcts should've completed in the given time");
 

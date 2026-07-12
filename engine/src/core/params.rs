@@ -22,7 +22,7 @@ pub const trait IConfigBuilder {
 
 /// Something that wraps parameters used by some part of the engine.
 pub const trait IParams: IConfigBuilder {
-    type Ref: ?Sized + Clone;
+    type Ref: ?Sized + Clone + fmt::Debug;
 
     /// Get a shared reference to the params.
     fn shared(self) -> Self::Ref;
@@ -174,8 +174,8 @@ impl<B> TunableParams<B> {
     }
 }
 
-impl<B> IParams for TunableParams<B> {
-    type Ref = TunableParamsRef<B>;
+impl<Base: fmt::Debug> IParams for TunableParams<Base> {
+    type Ref = TunableParamsRef<Base>;
 
     fn shared(self) -> Self::Ref { std::rc::Rc::new(self) }
 
@@ -249,6 +249,12 @@ impl const PolicyParams for C_MctsHceParams {
     #[inline(always)] fn policy_temperature(&self) -> f32 { 24.58 }
 }
 
+#[rustfmt::skip]
+impl const ChronoParams for C_MctsHceParams {
+    #[inline(always)] fn entropy_target(&self) -> NormalizedEntropy { todo!() }
+    #[inline(always)] fn movestreak_target(&self) -> u32 { todo!() }
+}
+
 // mcts nn
 
 const_params!(MctsNn);
@@ -274,6 +280,11 @@ impl const PolicyParams for C_MctsNnParams {
     fn policy_temperature(&self) -> f32 { 24.58 }
 }
 
+impl const ChronoParams for C_MctsNnParams {
+    fn entropy_target(&self) -> NormalizedEntropy { todo!() }
+    fn movestreak_target(&self) -> u32 { todo!() }
+}
+
 // mcts pure
 
 const_params!(MctsPure);
@@ -289,6 +300,11 @@ impl const MctsParams for C_MctsPureParams {
     fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
     fn killer_exploitation(&self) -> f32 { 0.27 }
     fn tt_best_move(&self) -> f32 { 1.65 }
+}
+
+impl const ChronoParams for C_MctsPureParams {
+    fn entropy_target(&self) -> NormalizedEntropy { todo!() }
+    fn movestreak_target(&self) -> u32 { todo!() }
 }
 
 // id hce
