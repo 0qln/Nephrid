@@ -178,6 +178,8 @@ impl PieceHistories {
         // MAX_HISTORY, which prevents oversaturated values.
         // ref: https://www.chessprogramming.org/History_Heuristic
         let clamped_val = val.clamp(-MAX_HISTORY, MAX_HISTORY);
-        *curr_score += clamped_val - *curr_score * clamped_val.abs() / MAX_HISTORY;
+        let current_val = *curr_score;
+        *curr_score += clamped_val - current_val.overflowing_mul(clamped_val.abs() / MAX_HISTORY).0;
+        // todo: find a way to make overflow impossible
     }
 }
