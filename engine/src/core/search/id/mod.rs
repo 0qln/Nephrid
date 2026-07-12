@@ -590,6 +590,10 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
         let mut curr = 0;
+
+        #[cfg(debug_assertions)]
+        let mut hh_searched_quiets = MoveList::new();
+
         // todo: take killers by ref
         while let Some(m) = move_picker.next_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers.clone())) {
             let (from, to, flag) = m.into();
@@ -720,6 +724,9 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                             self.ss.get_mut(rel_ply).killers._push(m);
                         }
 
+                        // todo: the killers and hashmove are currently not scored in the history
+                        // heurstic, because they happen to be yielded in another stage of the move
+                        // gen. should those be included? test this.
                         if let Some(searched_quiets) = move_picker.yielded_quiets() {
                             let hh_bonus = MoveScore::from(depth.v()).pow(2);
 
@@ -746,6 +753,16 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             }
 
             curr += 1;
+
+            #[cfg(debug_assertions)]
+            {
+                // only push the moves from the yield-quiets movegen stage, because those are
+                // the ones that we neeed to give a penalty. the other ones are not scored by
+                // the history heuristic.
+                if !flag.is_capture() && !flag.is_promo() && m != tt_move && !self.ss.get(rel_ply).killers.position(&m).is_none() {
+                    hh_searched_quiets.push(m);
+                }
+            }
         }
 
         self.tt.try_insert(TTEntry {
