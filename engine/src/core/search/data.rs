@@ -134,6 +134,8 @@ impl PieceHistories {
         }
     }
 
+    pub const fn clear(&mut self) { self.histories = [PieceHistory::new(); colors::N_VARIANTS]; }
+
     pub const fn get(&self, c: Color, pt: PieceType, sq: Square) -> MoveScore {
         match c {
             colors::WHITE => self.get_for::<perspectives::White>(pt, sq),

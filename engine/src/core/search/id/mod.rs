@@ -32,7 +32,7 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+            data::{self, PieceHistories, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
@@ -217,6 +217,7 @@ pub fn go(
     debug: &DebugMode,
     ct: CancellationToken,
     tt: &mut TT,
+    hh: &mut HH,
     eval: &mut impl StaticEvaluator,
     params: impl ChronoParams + QSearchParams + IdParams + Clone + fmt::Debug,
 ) -> Option<Move> {
@@ -228,7 +229,7 @@ pub fn go(
         println!("info string Starting ID Search with Params: {params:?}");
     }
 
-    let mut searcher = Searcher::new(pos, limit, timeman, ct, tt, eval);
+    let mut searcher = Searcher::new(pos, limit, timeman, ct, tt, hh, eval);
     let mut stats = SearchStats::default();
     let mut best_move = None;
     let mut last_best_move;
@@ -310,12 +311,21 @@ struct Searcher<'a, 'b, E: StaticEvaluator> {
     aborted: bool,
     ss: SearchStack<SearchEntry>,
     tt: &'a mut TT,
+    hh: &'a mut HH,
     eval: &'b mut E,
     phase: TaperValue,
 }
 
 impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
-    fn new(pos: &Position, limit: UciLimit, timeman: &'a mut TimeMan, ct: CancellationToken, tt: &'a mut TT, eval: &'b mut E) -> Self {
+    fn new(
+        pos: &Position,
+        limit: UciLimit,
+        timeman: &'a mut TimeMan,
+        ct: CancellationToken,
+        tt: &'a mut TT,
+        hh: &'a mut HH,
+        eval: &'b mut E,
+    ) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_moves::<AllLegal, _, _, _>(pos, (), |_, m| {
             stats.push(RootStats::new(m, 0));
@@ -331,6 +341,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             aborted: false,
             ss: SearchStack::new(),
             tt,
+            hh,
             eval,
             phase: TaperValue::from_position(pos.piece_info()),
         }
@@ -375,6 +386,16 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             colors::WHITE => self.search::<perspectives::White, Root>(params, pos, stats, depth, alpha(), beta()).0,
             colors::BLACK => self.search::<perspectives::Black, Root>(params, pos, stats, depth, alpha(), beta()).0,
             _ => unreachable!(),
+        }
+    }
+
+    fn scorer_for<P: Perspective>(&mut self, tt_move: Move, killers: Killers) -> Scorer<'_> {
+        Scorer {
+            tt_move,
+            killers,
+            hh: self.hh,
+            color: P::COLOR,
+            phase: self.phase,
         }
     }
 
@@ -546,13 +567,6 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             MovePicker::new(tt_move, killers.clone())
         };
 
-        let scorer = Scorer {
-            tt_move,
-            killers,
-            color: P::COLOR,
-            phase: self.phase,
-        };
-
         // fail-high reductions
         let fhr_reduct = cfg_select! {
             feature = "id-fhr" => {{
@@ -576,7 +590,14 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
         let mut curr = 0;
-        while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
+        // todo: take killers by ref
+        // todo: make sure creating the scorer struct for each next_for does not tank
+        // nps
+        while let Some(m) = move_picker.next_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers.clone())) {
+            let (from, to, _flag) = m.into();
+            let moving_piece = pos.get_piece(from);
+            let moving_pt = moving_piece.piece_type();
+
             // generating plegals and then filtering hasn't show to be faster, maybe
             // optimize this more and then try again.
             // if !pos.is_legal_for::<P>(m) {
@@ -695,8 +716,14 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
-                    if !m.get_flag().is_capture() && m != tt_move {
-                        self.ss.get_mut(rel_ply).killers._push(m);
+                    if !m.get_flag().is_capture() {
+                        // update killers
+                        if m != tt_move {
+                            self.ss.get_mut(rel_ply).killers._push(m);
+                        }
+
+                        // update history heuristic
+                        self.hh.update_for::<P>(moving_pt, to, depth.v().pow(2).into());
                     }
 
                     // fail high
@@ -725,7 +752,13 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
     }
 }
 
+pub type HH = PieceHistories;
+
 pub type TT = TranspositionTable<TTEntry, TTReplace>;
+
+pub type SS = SearchStack<SearchEntry>;
+
+pub type Killers = RbSet<Move, 2>;
 
 #[derive(Clone)]
 pub struct TTEntry {
@@ -1002,14 +1035,15 @@ impl<T: Default + Copy + Eq> RbSet<T, 2> {
     pub fn _is_empty(&self) -> bool { self.items[0] == T::default() && self.items[1] == T::default() }
 }
 
-pub struct Scorer {
+pub struct Scorer<'a> {
     pub tt_move: Move,
-    pub killers: RbSet<Move, 2>,
+    pub killers: Killers,
+    pub hh: &'a PieceHistories,
     pub color: Color,
     pub phase: TaperValue,
 }
 
-impl MoveScorer for Scorer {
+impl MoveScorer for Scorer<'_> {
     #[inline(always)]
     fn score<S: Stage>(&self, pos: &Position, mov: Move) -> MoveScore {
         match S::stage() {
@@ -1044,7 +1078,7 @@ impl MoveScorer for Scorer {
                 let piece = pieces.get_piece(from);
                 let piece_type = piece.piece_type();
 
-                ordering::psqt(self.phase, piece_type, from, to, mov.get_flag(), self.color)
+                self.hh.get(self.color, piece_type, to)
             }
 
             RtStage::Done => 0,

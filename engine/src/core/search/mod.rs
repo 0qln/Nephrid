@@ -84,6 +84,7 @@ pub trait SearchWorker {
 /// Iterative deepening worker.
 pub struct IdWorker<E: StaticEvaluator, X: IParams> {
     tt: id::TT,
+    hh: id::HH,
     timeman: TimeMan,
     params: X::Ref,
     eval: E,
@@ -98,6 +99,7 @@ where
     fn new() -> Self {
         Self {
             tt: id::TT::new(0),
+            hh: id::HH::new(),
             timeman: TimeMan::default(),
             params: <Self::X as Default>::default().shared(),
             eval: E::default(),
@@ -129,6 +131,7 @@ where
                     &debug,
                     ct,
                     &mut self.tt,
+                    &mut self.hh,
                     &mut self.eval,
                     self.params.clone(),
                 );
@@ -162,6 +165,7 @@ where
             }
             Command::ResetState => {
                 self.tt.clear();
+                self.hh.clear();
 
                 Ok(())
             }
