@@ -104,6 +104,8 @@ impl<Data: TTKey, Strat: ReplacementStrategy<Data = Data>> TranspositionTable<Da
     }
 }
 
+const MAX_HISTORY: MoveScore = MoveScore::MAX;
+
 #[derive(Clone, Copy)]
 pub struct PieceHistory {
     /// For each piece type to it's destination square.
@@ -163,12 +165,19 @@ impl PieceHistories {
 
     pub const fn update_for<P: Perspective>(&mut self, pt: PieceType, sq: Square, val: MoveScore) {
         debug_assert!(pt != piece_type::NONE, "Cannot update history for NONE piece type.");
+
         let c = P::COLOR.v() as usize;
         let pt = pt.v() as usize - 1;
         let sq = sq.v() as usize;
 
-        unsafe {
-            *self.histories.get_unchecked_mut(c).scores.get_unchecked_mut(pt).get_unchecked_mut(sq) += val;
-        }
+        let curr_score = unsafe { self.histories.get_unchecked_mut(c).scores.get_unchecked_mut(pt).get_unchecked_mut(sq) };
+
+        // This scales up history updates when a beta cutoff is unexpected, and scales
+        // down history updates when a beta cutoff is expected. A beneficial side effect
+        // is that this formula also clamps history values from -MAX_HISTORY to
+        // MAX_HISTORY, which prevents oversaturated values.
+        // ref: https://www.chessprogramming.org/History_Heuristic
+        let clamped_val = val.clamp(-MAX_HISTORY, MAX_HISTORY);
+        *curr_score += clamped_val - *curr_score * clamped_val.abs() / MAX_HISTORY;
     }
 }
