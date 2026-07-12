@@ -723,7 +723,8 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
                         }
 
                         // update history heuristic
-                        self.hh.update_for::<P>(moving_pt, to, depth.v().pow(2).into());
+                        let hh_bonus = MoveScore::from(depth.v()).pow(2);
+                        self.hh.update_for::<P>(moving_pt, to, hh_bonus);
                     }
 
                     // fail high
