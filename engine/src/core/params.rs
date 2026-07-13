@@ -398,9 +398,9 @@ impl IConfigBuilder for C_IdNnueParams {
 }
 
 impl const ChronoParams for C_IdNnueParams {
-    fn base_soft_mult(&self) -> f32 { 0.50 }
-    fn clamp_lower(&self) -> f32 { 0.30 }
-    fn clamp_upper(&self) -> f32 { 1.50 }
+    fn base_soft_mult(&self) -> f32 { 0.48 }
+    fn clamp_lower(&self) -> f32 { 0.34 }
+    fn clamp_upper(&self) -> f32 { 1.51 }
     fn movestreak_base(&self) -> f32 { 1.00 }
     fn movestreak_slope(&self) -> f32 { 0.08 }
     fn movestreak_floor(&self) -> f32 { 0.40 }
