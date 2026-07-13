@@ -419,10 +419,10 @@ impl const ChronoParams for C_IdNnueParams {
 }
 
 impl const QSearchParams for C_IdNnueParams {
-    fn futility_margin(&self) -> AnyScore { AnyScore::new(207) }
+    fn futility_margin(&self) -> AnyScore { AnyScore::new(200) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
     fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-22) }
-    fn phase_pruning_factor(&self) -> AnyScore { AnyScore::new(62) }
+    fn phase_pruning_factor(&self) -> AnyScore { AnyScore::new(70) }
 }
 
 impl const IdParams for C_IdNnueParams {
