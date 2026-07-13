@@ -83,6 +83,7 @@ pub struct TunableParams<Base> {
     hce_q_futility_margin: AnyScore,
     hce_q_delta_pruning_threshold: TaperValue,
     hce_q_movecount_pruning_factor: AnyScore,
+    hce_q_phase_pruning_factor: AnyScore,
     select_cpuct: f32,
     mcts_proven_loss_visit_threshold: VisitCount,
     mcts_killer_exploitation: f32,
@@ -110,6 +111,7 @@ impl<B, X: Deref<Target = TunableParams<B>>> QSearchParams for X {
     fn futility_margin(&self) -> AnyScore { self.hce_q_futility_margin }
     fn delta_pruning_threshold(&self) -> TaperValue { self.hce_q_delta_pruning_threshold }
     fn movecount_pruning_factor(&self) -> AnyScore { self.hce_q_movecount_pruning_factor }
+    fn phase_pruning_factor(&self) -> AnyScore { self.hce_q_phase_pruning_factor }
 }
 
 impl<B, X: Deref<Target = TunableParams<B>>> PolicyParams for X {
@@ -142,6 +144,7 @@ impl<B> TunableParams<B> {
         let hce_q_futility_margin = config.eval_futility_margin();
         let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
         let hce_q_movecount_pruning_factor = config.eval_movecount_pruning_factor();
+        let hce_q_phase_pruning_factor = config.eval_phase_pruning_factor();
         let select_cpuct = config.select_cpuct();
         let mcts_proven_loss_visit_threshold = config.mcts_proven_loss_visit_threshold();
         let mcts_killer_exploitation = config.mcts_killer_exploitation();
@@ -159,6 +162,7 @@ impl<B> TunableParams<B> {
             hce_q_futility_margin,
             hce_q_delta_pruning_threshold,
             hce_q_movecount_pruning_factor,
+            hce_q_phase_pruning_factor,
             select_cpuct,
             mcts_proven_loss_visit_threshold,
             mcts_killer_exploitation,
@@ -242,6 +246,10 @@ impl const QSearchParams for C_MctsHceParams {
     #[inline(always)] fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     #[inline(always)] fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
     #[inline(always)] fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-20) }
+
+    fn phase_pruning_factor(&self) -> AnyScore {
+        todo!()
+    }
 }
 
 #[rustfmt::skip]
@@ -311,6 +319,10 @@ impl const QSearchParams for C_IdHceParams {
     fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
     fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-20) }
+
+    fn phase_pruning_factor(&self) -> AnyScore {
+        todo!()
+    }
 }
 
 impl const IdParams for C_IdHceParams {
@@ -348,6 +360,7 @@ impl const QSearchParams for C_IdNnueParams {
     fn futility_margin(&self) -> AnyScore { AnyScore::new(177) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(8) }
     fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-50) }
+    fn phase_pruning_factor(&self) -> AnyScore { AnyScore::new(10) }
 }
 
 impl const IdParams for C_IdNnueParams {

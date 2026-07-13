@@ -23,6 +23,7 @@ pub const trait QSearchParams {
     fn futility_margin(&self) -> AnyScore;
     fn delta_pruning_threshold(&self) -> TaperValue;
     fn movecount_pruning_factor(&self) -> AnyScore;
+    fn phase_pruning_factor(&self) -> AnyScore;
 }
 
 pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
@@ -178,7 +179,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 // less important by the move ordering
                 let move_count_margin = AnyScore::new((params.movecount_pruning_factor().v() as f32 * ((curr + 1) as f32).ln()) as i32);
 
-                let phase_margin = AnyScore::new(phase.v() * 10);
+                // the endgame contains
+                let phase_margin = AnyScore::new(params.phase_pruning_factor().v() * phase.v());
 
                 // Safety: the score was constructed relative to `P`
                 let futility_score = captured_value + value_bonus + futility_margin + move_count_margin + phase_margin;
