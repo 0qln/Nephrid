@@ -178,8 +178,10 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 // less important by the move ordering
                 let move_count_margin = AnyScore::new((params.movecount_pruning_factor().v() as f32 * ((curr + 1) as f32).ln()) as i32);
 
+                let phase_margin = AnyScore::new(phase.v() * 10);
+
                 // Safety: the score was constructed relative to `P`
-                let futility_score = captured_value + value_bonus + futility_margin + move_count_margin;
+                let futility_score = captured_value + value_bonus + futility_margin + move_count_margin + phase_margin;
                 let futility_score = unsafe { futility_score.interpret_as() };
 
                 if best_score + futility_score < alpha {
