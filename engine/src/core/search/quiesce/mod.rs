@@ -164,7 +164,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             // }
 
             // delta pruning
-            if !in_check && phase < params.delta_pruning_threshold() {
+            if !in_check {
                 let value_bonus = PromoPieceType::try_from(flag)
                     .ok()
                     .map(|promo| {
