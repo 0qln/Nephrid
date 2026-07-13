@@ -1,19 +1,16 @@
 use std::{fmt, marker::PhantomData, ops::Deref};
 
-use crate::{
-    core::{
-        chrono::ChronoParams,
-        config::{ConfigBuilder, Configuration},
-        depth::Depth,
-        eval::hce::TaperValue,
-        search::{
-            id::{IdParams, ScorerParams},
-            mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
-            quiesce::QSearchParams,
-            score::AnyScore,
-        },
+use crate::core::{
+    chrono::ChronoParams,
+    config::{ConfigBuilder, Configuration},
+    depth::Depth,
+    eval::hce::TaperValue,
+    search::{
+        id::{IdParams, ScorerParams},
+        mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
+        quiesce::QSearchParams,
+        score::AnyScore,
     },
-    math::NormalizedEntropy,
 };
 
 pub const trait IConfigBuilder {
@@ -22,7 +19,7 @@ pub const trait IConfigBuilder {
 
 /// Something that wraps parameters used by some part of the engine.
 pub const trait IParams: IConfigBuilder {
-    type Ref: ?Sized + Clone;
+    type Ref: ?Sized + Clone + fmt::Debug;
 
     /// Get a shared reference to the params.
     fn shared(self) -> Self::Ref;
@@ -77,8 +74,14 @@ pub type TunableParamsRef<B> = std::rc::Rc<TunableParams<B>>;
 
 #[derive(Debug, Clone)]
 pub struct TunableParams<Base> {
-    timeman_entropy_target: NormalizedEntropy,
-    timeman_movestreak_target: u32,
+    timeman_base_soft_mult: f32,
+    timeman_clamp_lower: f32,
+    timeman_clamp_upper: f32,
+    timeman_stability_base: f32,
+    timeman_stability_slope: f32,
+    timeman_stability_floor: f32,
+    timeman_entropy_base: f32,
+    timeman_entropy_weight: f32,
     hce_policy_temp: f32,
     hce_q_futility_margin: AnyScore,
     hce_q_delta_pruning_threshold: TaperValue,
@@ -117,8 +120,14 @@ impl<B, X: Deref<Target = TunableParams<B>>> PolicyParams for X {
 }
 
 impl<B, X: Deref<Target = TunableParams<B>>> ChronoParams for X {
-    fn entropy_target(&self) -> NormalizedEntropy { self.timeman_entropy_target }
-    fn movestreak_target(&self) -> u32 { self.timeman_movestreak_target }
+    fn base_soft_mult(&self) -> f32 { self.timeman_base_soft_mult }
+    fn clamp_lower(&self) -> f32 { self.timeman_clamp_lower }
+    fn clamp_upper(&self) -> f32 { self.timeman_clamp_upper }
+    fn movestreak_base(&self) -> f32 { self.timeman_stability_base }
+    fn movestreak_slope(&self) -> f32 { self.timeman_stability_slope }
+    fn movestreak_floor(&self) -> f32 { self.timeman_stability_floor }
+    fn entropy_base(&self) -> f32 { self.timeman_entropy_base }
+    fn entropy_weight(&self) -> f32 { self.timeman_entropy_weight }
 }
 
 impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
@@ -136,8 +145,14 @@ impl<B, X: Deref<Target = TunableParams<B>>> ScorerParams for X {
 impl<B> TunableParams<B> {
     fn from_config<C: Deref<Target = Configuration>>(config: C) -> Self {
         let config = config.deref();
-        let timeman_entropy_target = config.timeman_entropy_target();
-        let timeman_movestreak_target = config.timeman_movestreak_target();
+        let timeman_base_soft_mult = config.timeman_base_soft_mult();
+        let timeman_clamp_lower = config.timeman_clamp_lower();
+        let timeman_clamp_upper = config.timeman_clamp_upper();
+        let timeman_stability_base = config.timeman_stability_base();
+        let timeman_stability_slope = config.timeman_stability_slope();
+        let timeman_stability_floor = config.timeman_stability_floor();
+        let timeman_entropy_base = config.timeman_entropy_base();
+        let timeman_entropy_weight = config.timeman_entropy_weight();
         let hce_policy_temp = config.eval_policy_temperature();
         let hce_q_futility_margin = config.eval_futility_margin();
         let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
@@ -153,8 +168,14 @@ impl<B> TunableParams<B> {
         let id_nmp_margin = config.id_nmp_margin();
         let id_scorer_hh_weight = config.id_scorer_hh_weight();
         Self {
-            timeman_entropy_target,
-            timeman_movestreak_target,
+            timeman_base_soft_mult,
+            timeman_clamp_lower,
+            timeman_clamp_upper,
+            timeman_stability_base,
+            timeman_stability_slope,
+            timeman_stability_floor,
+            timeman_entropy_base,
+            timeman_entropy_weight,
             hce_policy_temp,
             hce_q_futility_margin,
             hce_q_delta_pruning_threshold,
@@ -174,8 +195,8 @@ impl<B> TunableParams<B> {
     }
 }
 
-impl<B> IParams for TunableParams<B> {
-    type Ref = TunableParamsRef<B>;
+impl<Base: fmt::Debug> IParams for TunableParams<Base> {
+    type Ref = TunableParamsRef<Base>;
 
     fn shared(self) -> Self::Ref { std::rc::Rc::new(self) }
 
@@ -249,6 +270,18 @@ impl const PolicyParams for C_MctsHceParams {
     #[inline(always)] fn policy_temperature(&self) -> f32 { 24.58 }
 }
 
+#[rustfmt::skip]
+impl const ChronoParams for C_MctsHceParams {
+    #[inline(always)] fn base_soft_mult(&self) -> f32 { 0.50 }
+    #[inline(always)] fn clamp_lower(&self) -> f32 { 0.30 }
+    #[inline(always)] fn clamp_upper(&self) -> f32 { 1.50 }
+    #[inline(always)] fn movestreak_base(&self) -> f32 { 1.00 }
+    #[inline(always)] fn movestreak_slope(&self) -> f32 { 0.08 }
+    #[inline(always)] fn movestreak_floor(&self) -> f32 { 0.40 }
+    #[inline(always)] fn entropy_base(&self) -> f32 { 0.50 }
+    #[inline(always)] fn entropy_weight(&self) -> f32 { 1.00 }
+}
+
 // mcts nn
 
 const_params!(MctsNn);
@@ -274,6 +307,17 @@ impl const PolicyParams for C_MctsNnParams {
     fn policy_temperature(&self) -> f32 { 24.58 }
 }
 
+impl const ChronoParams for C_MctsNnParams {
+    fn base_soft_mult(&self) -> f32 { 0.50 }
+    fn clamp_lower(&self) -> f32 { 0.30 }
+    fn clamp_upper(&self) -> f32 { 1.50 }
+    fn movestreak_base(&self) -> f32 { 1.00 }
+    fn movestreak_slope(&self) -> f32 { 0.08 }
+    fn movestreak_floor(&self) -> f32 { 0.40 }
+    fn entropy_base(&self) -> f32 { 0.50 }
+    fn entropy_weight(&self) -> f32 { 1.00 }
+}
+
 // mcts pure
 
 const_params!(MctsPure);
@@ -291,6 +335,17 @@ impl const MctsParams for C_MctsPureParams {
     fn tt_best_move(&self) -> f32 { 1.65 }
 }
 
+impl const ChronoParams for C_MctsPureParams {
+    fn base_soft_mult(&self) -> f32 { 0.50 }
+    fn clamp_lower(&self) -> f32 { 0.30 }
+    fn clamp_upper(&self) -> f32 { 1.50 }
+    fn movestreak_base(&self) -> f32 { 1.00 }
+    fn movestreak_slope(&self) -> f32 { 0.08 }
+    fn movestreak_floor(&self) -> f32 { 0.40 }
+    fn entropy_base(&self) -> f32 { 0.50 }
+    fn entropy_weight(&self) -> f32 { 1.00 }
+}
+
 // id hce
 
 const_params!(IdHce);
@@ -303,8 +358,14 @@ impl IConfigBuilder for C_IdHceParams {
 }
 
 impl const ChronoParams for C_IdHceParams {
-    fn entropy_target(&self) -> NormalizedEntropy { NormalizedEntropy::new_c(0.55) }
-    fn movestreak_target(&self) -> u32 { 6 }
+    fn base_soft_mult(&self) -> f32 { 0.50 }
+    fn clamp_lower(&self) -> f32 { 0.30 }
+    fn clamp_upper(&self) -> f32 { 1.50 }
+    fn movestreak_base(&self) -> f32 { 1.00 }
+    fn movestreak_slope(&self) -> f32 { 0.08 }
+    fn movestreak_floor(&self) -> f32 { 0.40 }
+    fn entropy_base(&self) -> f32 { 0.50 }
+    fn entropy_weight(&self) -> f32 { 1.00 }
 }
 
 impl const QSearchParams for C_IdHceParams {
@@ -337,11 +398,14 @@ impl IConfigBuilder for C_IdNnueParams {
 }
 
 impl const ChronoParams for C_IdNnueParams {
-    fn entropy_target(&self) -> NormalizedEntropy { NormalizedEntropy::new_c(0.55) }
-    // todo: don't hardcode a number, but scale with the expected searchdepth or
-    // smth like that... the issue is that e.g. depth 10 may not be a sufficient in
-    // a game where bot sides have a lot of time
-    fn movestreak_target(&self) -> u32 { 8 }
+    fn base_soft_mult(&self) -> f32 { 0.48 }
+    fn clamp_lower(&self) -> f32 { 0.34 }
+    fn clamp_upper(&self) -> f32 { 1.51 }
+    fn movestreak_base(&self) -> f32 { 1.00 }
+    fn movestreak_slope(&self) -> f32 { 0.08 }
+    fn movestreak_floor(&self) -> f32 { 0.40 }
+    fn entropy_base(&self) -> f32 { 0.50 }
+    fn entropy_weight(&self) -> f32 { 1.00 }
 }
 
 impl const QSearchParams for C_IdNnueParams {

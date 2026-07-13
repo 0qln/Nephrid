@@ -99,7 +99,7 @@ pub fn chooses_shortest_mate() {
 
     impl MctsConfig for Config {
         type Parts = HceParts;
-        type Strat = MctsUci;
+        type Strat = MctsUci<C_MctsHceParams>;
     }
 
     // this position was reached during training with the following moves
@@ -118,6 +118,7 @@ pub fn chooses_shortest_mate() {
         DebugMode::off(),
         CancellationToken::new(),
         None,
+        C_MctsHceParams,
     );
     let parts = HceParts::default();
 

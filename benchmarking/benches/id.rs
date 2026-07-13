@@ -33,6 +33,7 @@ fn search_with_node_target<E: StaticEvaluator + Default, X: IParams>(pos: &mut P
 where
     X::Ref: IdParams + QSearchParams + ChronoParams + ScorerParams + Clone + fmt::Debug,
 {
+    let params = params.shared();
     let limit = UciLimit {
         is_active: true,
         nodes: NODE_TARGET,
@@ -46,9 +47,9 @@ where
     let mut tt = id::TT::new_of_size(hash_size);
     let mut hh = id::HH::new();
     let mut eval = E::default();
-    let mut timeman = TimeMan::new(&limit, pos);
+    let mut timeman = TimeMan::<X>::new_with_limits(&limit, pos, params.clone());
 
-    id::go::<X>(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut hh, &mut eval, params.shared());
+    id::go::<X>(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut hh, &mut eval, params);
 }
 
 pub fn id_hce_nps(c: &mut Criterion) {
