@@ -415,7 +415,7 @@ impl const QSearchParams for C_IdNnueParams {
 }
 
 impl const IdParams for C_IdNnueParams {
-    fn nmp_reduction(&self) -> Depth { Depth::new(1) }
+    fn nmp_reduction(&self) -> Depth { Depth::new(3) }
     fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(9) }
     fn nmp_depth_factor(&self) -> u8 { 3 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
