@@ -7,10 +7,11 @@ use crate::core::{
     },
     r#move::Move,
     piece::{PromoPieceType, piece_type},
+    ply::Ply,
     position::{CheckState, Position},
     search::{
         data::{ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
-        id::{Bound, RbSet},
+        id::{self, Bound},
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::{AnyScore, Score, scores},
         tree::NodeType,
@@ -33,11 +34,12 @@ pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
 /// [q-search](https://www.chessprogramming.org/Quiescence_Search)
 pub struct QSearcher<'a, Entry, Replace> {
     tt: &'a mut TT<Entry, Replace>,
-    phase: TaperValue,
+    ss: &'a mut id::SS,
+    root_ply: Ply,
 }
 
 impl<'a, E, R> QSearcher<'a, E, R> {
-    pub fn new(tt: &'a mut TT<E, R>, phase: TaperValue) -> Self { Self { tt, phase } }
+    pub fn new(tt: &'a mut TT<E, R>, ss: &'a mut id::SS, root_ply: Ply) -> Self { Self { tt, ss, root_ply } }
 }
 
 impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>>
@@ -56,6 +58,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         let in_check = pos.get_check_state() != CheckState::None;
         let key = pos.get_key();
+        let rel_ply: Depth = (pos.ply() - self.root_ply).into();
+        let &id::SearchEntry { phase, .. } = self.ss.get(rel_ply);
 
         let mut static_eval = Score::<P>::NULL;
         let mut lazy_static_eval = |this: &mut Self, pos: &Position| {
@@ -72,13 +76,13 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                     unsafe { score.interpret_as() }
                 }
                 else {
-                    let score = eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase);
+                    let score = eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase);
                     *score_ref = score.0;
                     score
                 }
             }
             else {
-                eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase)
+                eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase)
             };
 
             static_eval
@@ -132,13 +136,13 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         };
         let scorer = MoveScorer {
             color: P::COLOR,
-            phase: self.phase,
+            phase,
             tt_move: hash_move,
         };
         let mut move_picker = MovePicker::new_with_max_stage(
             hash_move,
             // todo: killers if were in check (looking at quiets)?
-            RbSet::<Move, 2>::default(),
+            id::Killers::default(),
             // if in check, we only want to search captures and promos, otherwise we want to search all moves.
             if in_check {
                 RtStage::Done
@@ -157,16 +161,16 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             // }
 
             // delta pruning
-            if !in_check && self.phase < params.delta_pruning_threshold() {
+            if !in_check && phase < params.delta_pruning_threshold() {
                 let value_bonus = PromoPieceType::try_from(m.get_flag())
                     .ok()
                     .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
-                    .unwrap_or(scores::DRAW);
+                    .unwrap_or(scores::ZERO);
 
                 let captured_value = m
                     .get_capture_sq()
                     .map(|capt_sq| piece_score(pos.get_piece(capt_sq).piece_type()))
-                    .unwrap_or(scores::DRAW);
+                    .unwrap_or(scores::ZERO);
 
                 let futility_margin = params.futility_margin();
 
@@ -183,15 +187,14 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 }
             }
 
+            self.ss.propagate_forward(rel_ply, |s, next_s| next_s.phase = s.phase);
             eval.forward();
-            let phase_before = self.phase;
-            pos.make_move_for::<P>(m, &mut (&mut self.phase, eval.observe_forward()));
+            pos.make_move_for::<P>(m, &mut (self.ss.get_mut(rel_ply + 1).phase, eval.observe_forward()));
 
             let score = !self.go::<P::Opponent, T>(pos, !beta, !alpha, params.clone(), eval, depth - 1);
 
             pos.unmake_move_for::<P>(m, eval.observe_backward());
             eval.backward();
-            self.phase = phase_before;
 
             if score > best_score {
                 best_score = score;

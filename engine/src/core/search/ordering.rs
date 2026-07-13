@@ -4,6 +4,7 @@ use std::ops::ControlFlow;
 
 use saturating_cast::SaturatingCast;
 
+use crate::core::search::id;
 use crate::{
     core::{
         bitboard::Bitboard,
@@ -18,7 +19,6 @@ use crate::{
         piece::{PieceType, PromoPieceType, piece_type},
         position::{PieceInfo, Position},
         search::{
-            id::RbSet,
             ordering::stages::{GenerateCapturesAndPromos, GenerateQuiets},
             score::scores,
         },
@@ -167,7 +167,7 @@ impl MovePicker {
         }
     }
 
-    pub fn new(hash_move: Move, killers: RbSet<Move, 2>) -> Self {
+    pub fn new(hash_move: Move, killers: id::Killers) -> Self {
         Self {
             move_gen: MoveGenerator::new(hash_move, killers),
             slice: Range::default(),
@@ -176,7 +176,7 @@ impl MovePicker {
         }
     }
 
-    pub fn new_with_max_stage(hash_move: Move, killers: RbSet<Move, 2>, max_stage: RtStage) -> Self {
+    pub fn new_with_max_stage(hash_move: Move, killers: id::Killers, max_stage: RtStage) -> Self {
         Self {
             move_gen: MoveGenerator::new(hash_move, killers),
             slice: Range::default(),
@@ -222,6 +222,21 @@ impl MovePicker {
         self.curr += 1;
 
         Some(m)
+    }
+
+    /// If the movegen has passed or is currently in the yield-quiets-stage,
+    /// this return an iterator over the quiet moves that have already been
+    /// yielded.
+    #[inline(always)]
+    pub fn yielded_quiets(&self) -> Option<&[ScoredMove]> {
+        if self.move_gen.stage >= RtStage::YieldQuiets {
+            let start = self.move_gen.start_quiets;
+            let slice = self.move_gen.buf.as_subslice(start..self.curr);
+            Some(slice)
+        }
+        else {
+            None
+        }
     }
 }
 
@@ -352,17 +367,18 @@ pub mod stages {
 pub struct MoveGenerator {
     stage: RtStage,
     hash_move: Move,
-    killers: RbSet<Move, 2>,
+    killers: id::Killers,
     buf: List<{ MAX_LEGAL_MOVES }, ScoredMove>,
     start_good_capt_and_promos: usize,
     num_good_capt_and_promos: usize,
     num_capt_and_promos: usize,
+    start_quiets: usize,
 }
 
 pub struct MoveGenExhausted;
 
 impl MoveGenerator {
-    pub fn new(hash_move: Move, killers: RbSet<Move, 2>) -> Self {
+    pub fn new(hash_move: Move, killers: id::Killers) -> Self {
         Self {
             buf: List::new(),
             stage: RtStage::YieldHashMove,
@@ -371,6 +387,7 @@ impl MoveGenerator {
             start_good_capt_and_promos: 0,
             num_good_capt_and_promos: 0,
             num_capt_and_promos: 0,
+            start_quiets: 0,
         }
     }
 
@@ -379,10 +396,11 @@ impl MoveGenerator {
             buf,
             stage,
             hash_move: Move::null(),
-            killers: RbSet::default(),
+            killers: id::Killers::default(),
             start_good_capt_and_promos: 0,
             num_good_capt_and_promos: 0,
             num_capt_and_promos: 0,
+            start_quiets: 0,
         }
     }
 
@@ -520,6 +538,7 @@ impl MoveGenerator {
                     *score = s;
                 }
 
+                self.start_quiets = start;
                 self.stage.next();
                 Ok(start..end)
             }
@@ -546,13 +565,7 @@ pub mod test {
     };
 
     use crate::core::{
-        color::colors,
-        coordinates::squares,
-        r#move::{MoveList, move_flags},
-        move_iter::sliding_piece::magics,
-        position::Position,
-        search::{id, ordering},
-        zobrist,
+        color::colors, coordinates::squares, r#move::{MoveList, move_flags}, move_iter::sliding_piece::magics, params::C_IdNnueParams, position::Position, search::{id::{self, Killers}, ordering}, zobrist
     };
 
     use super::*;
@@ -686,7 +699,7 @@ pub mod test {
 
             let hash_move = *all_moves.as_slice().choose(rng).unwrap_or(&Move::null());
 
-            let mut killers = RbSet::new();
+            let mut killers = Killers::new();
             let mut get_killer = || {
                 *all_moves
                     .iter()
@@ -697,13 +710,17 @@ pub mod test {
             killers.push(get_killer());
             killers.push(get_killer());
 
+            let mut hh = id::HH::new();
+
             let mut picker = MovePicker::new(hash_move, killers.clone());
 
-            let scorer = id::Scorer {
+            let scorer = id::Scorer::<C_IdNnueParams> {
                 tt_move: hash_move,
                 killers,
+                hh: &mut hh,
                 color: pos.get_turn(),
                 phase: TaperValue::from_position(pos.piece_info()),
+                params: C_IdNnueParams,
             };
 
             let mut cnt = 0;

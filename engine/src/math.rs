@@ -2,6 +2,9 @@ use std::{cmp::Ordering, fmt, marker::PhantomData, ops::Deref};
 
 use crate::misc::{CheckHealth, CheckHealthResult, List};
 
+#[inline(always)]
+pub const fn interpolate_i32(start: i32, end: i32, progress: i32, total: i32) -> i32 { ((start * (total - progress)) + (end * progress)) / total }
+
 pub fn entropy(xs: impl Iterator<Item = Probability>) -> f32 { -xs.filter(|x| x.v() > 0.).map(|x| x.v() * x.log2()).sum::<f32>() }
 
 /// The Shannon [`entropy`] of a distribution normalized to its maximum possible

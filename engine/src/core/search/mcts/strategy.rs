@@ -3,7 +3,8 @@ use std::time::{Duration, Instant};
 use crate::{
     core::{
         Move,
-        chrono::TimeMan,
+        chrono::{ChronoParams, TimeMan},
+        params::IParams,
         ply::Ply,
         position::Position,
         search::{
@@ -57,8 +58,8 @@ impl MctsStrategy for MctsFindBest {
     fn should_stop(&mut self, _tree: &Tree) -> bool { false }
 }
 
-#[derive(Default, Debug)]
-pub struct MctsUci {
+#[derive(Debug)]
+pub struct MctsUci<X: IParams> {
     find_best: MctsFindBest,
     last_uci_out: Option<Instant>,
 
@@ -68,7 +69,7 @@ pub struct MctsUci {
     debug: DebugMode,
 
     // runtime tracking
-    time_man: Option<TimeMan>,
+    time_man: TimeMan<X>,
     nodes_begin: u64,
     terminal_nodes_begin: u64,
     iterations: u64,
@@ -78,18 +79,27 @@ pub struct MctsUci {
     limit: UciLimit,
 }
 
-impl MctsUci {
-    pub fn new(limit: UciLimit, debug: DebugMode, ct: CancellationToken, pt: Option<PonderToken>) -> Self {
+impl<X: IParams> MctsUci<X>
+where
+    X::Ref: ChronoParams,
+{
+    pub fn new(limit: UciLimit, debug: DebugMode, ct: CancellationToken, pt: Option<PonderToken>, params: X::Ref) -> Self {
         Self {
             limit,
             debug,
             ct,
             pt,
-            ..Default::default()
+            time_man: TimeMan::new(params),
+            find_best: Default::default(),
+            last_uci_out: None,
+            nodes_begin: 0,
+            terminal_nodes_begin: 0,
+            iterations: 0,
+            is_not_pondering: false,
         }
     }
 
-    pub fn search_time(&self) -> Option<UciSearchtime> { Some(UciSearchtime(self.time_man.as_ref().map(|t| t.search_time())?)) }
+    pub fn search_time(&self) -> Option<UciSearchtime> { Some(UciSearchtime(self.time_man.elapsed_search_time()?)) }
 
     /// Number of nodes per second since start of the search, given the current
     /// number of nodes in the search tree.
@@ -168,11 +178,12 @@ impl MctsUci {
     }
 
     pub fn limit(&self) -> &UciLimit { &self.limit }
-
-    pub fn time_man(&self) -> Option<&TimeMan> { self.time_man.as_ref() }
 }
 
-impl MctsStrategy for MctsUci {
+impl<X: IParams> MctsStrategy for MctsUci<X>
+where
+    X::Ref: ChronoParams,
+{
     type Result = <MctsFindBest as MctsStrategy>::Result;
     type Step = <MctsFindBest as MctsStrategy>::Step;
 
@@ -181,7 +192,7 @@ impl MctsStrategy for MctsUci {
         self.terminal_nodes_begin = tree.terminal_nodes() as u64;
         self.iterations = 0;
 
-        self.time_man = Some(TimeMan::new(&self.limit, pos));
+        self.time_man.init_limits(&self.limit, pos);
         self.is_not_pondering = self.pt.is_none();
     }
 
@@ -212,9 +223,8 @@ impl MctsStrategy for MctsUci {
             && !ponder_tok.should_ponder()
         {
             // transition to normal search and set time limits.
-            if let Some(_time_man) = &mut self.time_man {
-                // todo: time_man.init_limits();
-            }
+            #[allow(unreachable_code)] // todo: implement this
+            self.time_man.init_limits(&self.limit, todo!());
             self.is_not_pondering = true;
         }
 
@@ -234,9 +244,7 @@ impl MctsStrategy for MctsUci {
         }
 
         // 5. Standard time/node limits
-        if self.limit.is_active()
-            && (self.limit.is_reached(tree.size() as u64 - self.nodes_begin, self.iterations)
-                || matches!(self.time_man().map(|t| t.reached_limit()), Some(true)))
+        if self.limit.is_active() && (self.limit.is_reached(tree.size() as u64 - self.nodes_begin, self.iterations) || self.time_man.reached_limit())
         {
             return true;
         }
