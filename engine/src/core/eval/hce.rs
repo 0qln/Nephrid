@@ -202,9 +202,9 @@ pub fn psqt_score(phase: GamePhase, piece: PieceType, sq: Square, color: Color) 
 }
 
 #[inline]
-pub fn tapered_psqt(phase: TaperValue, piece: PieceType, sq: Square, color: Color) -> AnyScore {
-    let mg = psqt_score(game_phases::MG, piece, sq, color);
-    let eg = psqt_score(game_phases::EG, piece, sq, color);
+pub fn tapered_psqt(phase: TaperValue, pt: PieceType, sq: Square, color: Color) -> AnyScore {
+    let mg = psqt_score(game_phases::MG, pt, sq, color);
+    let eg = psqt_score(game_phases::EG, pt, sq, color);
     phase.weighted_eval(mg, eg)
 }
 

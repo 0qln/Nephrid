@@ -3,7 +3,7 @@ use crate::core::{
     depth::Depth,
     eval::{
         StaticEvaluator,
-        hce::{TaperValue, piece_score},
+        hce::{TaperValue, piece_score, tapered_psqt},
     },
     r#move::Move,
     piece::{PromoPieceType, piece_type},
@@ -157,20 +157,30 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         let mut best_move = Move::null();
         let mut curr = 0;
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
+            let (from, to, flag) = m.into();
+
             // if !pos.is_legal_for::<P>(m) {
             //     continue;
             // }
 
             // delta pruning
             if !in_check && phase < params.delta_pruning_threshold() {
-                let value_bonus = PromoPieceType::try_from(m.get_flag())
+                let value_bonus = PromoPieceType::try_from(flag)
                     .ok()
-                    .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
+                    .map(|promo| {
+                        let promo_pt = promo.into();
+                        let lost = piece_score(piece_type::PAWN) + tapered_psqt(phase, piece_type::PAWN, from, P::COLOR);
+                        let gained = piece_score(promo_pt) + tapered_psqt(phase, promo_pt, to, P::COLOR);
+                        gained - lost
+                    })
                     .unwrap_or(scores::ZERO);
 
                 let captured_value = m
                     .get_capture_sq()
-                    .map(|capt_sq| piece_score(pos.get_piece(capt_sq).piece_type()))
+                    .map(|capt_sq| {
+                        let pt = pos.get_piece(capt_sq).piece_type();
+                        piece_score(pt) + tapered_psqt(phase, pt, capt_sq, P::Opponent::COLOR)
+                    })
                     .unwrap_or(scores::ZERO);
 
                 let futility_margin = params.futility_margin();
