@@ -1,5 +1,6 @@
 use std::{
     hint::{assert_unchecked, unreachable_unchecked},
+    iter,
     marker::PhantomData,
 };
 
@@ -117,17 +118,22 @@ impl<T: Clone + Default> Default for SearchStack<T> {
 }
 
 impl<T: Clone + Default> SearchStack<T> {
+    pub const CAPACITY: usize = Depth::MAX.v() as usize + 2;
+
     #[inline(always)]
     pub fn new() -> Self {
         Self {
-            entries: vec![T::default(); Depth::MAX.v() as usize + 1],
+            entries: vec![T::default(); Self::CAPACITY],
         }
     }
 }
 
-impl<T> From<Vec<T>> for SearchStack<T> {
+impl<T: Clone + Default> From<Vec<T>> for SearchStack<T> {
     #[inline(always)]
-    fn from(value: Vec<T>) -> Self { Self { entries: value } }
+    fn from(mut vec: Vec<T>) -> Self {
+        vec.extend(iter::repeat_n(T::default(), Self::CAPACITY - vec.len()));
+        Self { entries: vec }
+    }
 }
 
 impl<T> SearchStack<T> {
@@ -141,19 +147,26 @@ impl<T> SearchStack<T> {
         }
     }
 
+    #[inline(always)]
+    pub fn propagate_forward(&mut self, old: Depth, f: impl FnMut(&T, &mut T)) {
+        debug_assert!(old < Depth::MAX, "Cannot propagate forward from the last ply.");
+
+        let old_idx = old.v() as usize;
+        let new_idx = old_idx + 1;
+        self.propagate(old, Depth::new(new_idx as u8), f);
+    }
+
     pub fn get_mut(&mut self, ply: Depth) -> &mut T {
         let idx = ply.v() as usize;
 
-        // todo: qsearch might exceed depth max ??
-
-        // Safety: entries is atleast Depth::MAX + 1
+        // Safety: entries is atleast Self::CAPACITY, which is gt Depth::MAX
         unsafe { self.entries.get_unchecked_mut(idx) }
     }
 
     pub fn get(&self, ply: Depth) -> &T {
         let idx = ply.v() as usize;
 
-        // Safety: entries is atleast Depth::MAX + 1
+        // Safety: entries is atleast Self::CAPACITY, which is gt Depth::MAX
         unsafe { self.entries.get_unchecked(idx) }
     }
 }

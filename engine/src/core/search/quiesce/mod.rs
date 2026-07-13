@@ -187,7 +187,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 }
             }
 
-            self.ss.get_mut(rel_ply + 1).phase = phase;
+            self.ss.propagate_forward(rel_ply, |s, next_s| next_s.phase = s.phase);
             eval.forward();
             pos.make_move_for::<P>(m, &mut (self.ss.get_mut(rel_ply + 1).phase, eval.observe_forward()));
 

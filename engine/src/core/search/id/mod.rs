@@ -447,7 +447,14 @@ where
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return QSearcher::new(self.tt, &mut self.ss, self.root_ply).go::<P, T>(pos, alpha, beta, self.params.clone(), self.eval, Depth::new(100));
+            return QSearcher::new(self.tt, &mut self.ss, self.root_ply).go::<P, T>(
+                pos,
+                alpha,
+                beta,
+                self.params.clone(),
+                self.eval,
+                Depth::new(100),
+            );
         }
 
         let kind = T::KIND;
@@ -617,9 +624,9 @@ where
             // }
 
             // make the move
-            self.ss.get_mut(rel_ply + 1).phase = phase;
+            self.ss.propagate_forward(rel_ply, |s, next_s| next_s.phase = s.phase);
             self.eval.forward();
-            pos.make_move_for::<P>(m, &mut (self.ss.get_mut(rel_ply + 1).phase, self.eval.observe_forward()));
+            pos.make_move_for::<P>(m, &mut (&mut self.ss.get_mut(rel_ply + 1).phase, self.eval.observe_forward()));
 
             // depth
             let (mut depth_ext, mut depth_reduct) = (0, 0);
