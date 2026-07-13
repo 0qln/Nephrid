@@ -56,10 +56,10 @@ mod search {
             all(feature = "mcts-nn", feature = "nn-backend-ndarray") => { search::mcts::NNParts<burn::backend::NdArray> },
         };
         type Strat = cfg_select! {
-            feature = "mcts-hce"  => { search::mcts::strategy::MctsUci },
-            feature = "mcts-pure" => { search::mcts::strategy::MctsUci },
-            all(feature = "mcts-nn", feature = "nn-backend-cuda") => { search::mcts::strategy::MctsUci },
-            all(feature = "mcts-nn", feature = "nn-backend-ndarray") => { search::mcts::strategy::MctsUci },
+            feature = "mcts-hce"  => { search::mcts::strategy::MctsUci::<Params> },
+            feature = "mcts-pure" => { search::mcts::strategy::MctsUci::<Params> },
+            all(feature = "mcts-nn", feature = "nn-backend-cuda") => { search::mcts::strategy::MctsUci::<Params> },
+            all(feature = "mcts-nn", feature = "nn-backend-ndarray") => { search::mcts::strategy::MctsUci::<Params> },
         };
     }
 }

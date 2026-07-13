@@ -16,7 +16,7 @@ fn run_search(fen: &str, depth: u8) {
     let hash_size = Information::new::<mebibyte>(16);
     let mut tt = TT::new_of_size(hash_size);
     let mut hh = HH::new();
-    let mut timeman = TimeMan::new(&limit, &pos);
+    let mut timeman = TimeMan::new(C_IdHceParams);
     go::<C_IdHceParams>(&mut pos, limit, &mut timeman, &debug, ct, &mut tt, &mut hh, &mut HceEvaluator, C_IdHceParams);
 }
 

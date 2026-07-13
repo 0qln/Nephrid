@@ -214,7 +214,7 @@ pub const trait IdParams {
 pub fn go<X: IParams>(
     pos: &mut Position,
     limit: UciLimit,
-    timeman: &mut TimeMan,
+    timeman: &mut TimeMan<X>,
     debug: &DebugMode,
     ct: CancellationToken,
     tt: &mut TT,
@@ -240,6 +240,7 @@ where
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
         let best_score = searcher.search_root(pos, &mut stats, depth);
+        let iter_start = Instant::now();
 
         // make sure to break before messing up the order of the previous iteration with
         // the incomplete results from this iteration.
@@ -252,12 +253,15 @@ where
         searcher.sort_root();
 
         best_move = searcher.root_best_move();
-        if let Some(best_move) = best_move {
-            let search_time = Instant::now() - searcher.timeman.time_start();
+        if let Some(best_move) = best_move
+            && let Some(search_time) = searcher.timeman.elapsed_search_time()
+        {
             uci_info(depth, &stats, Cp::from(best_score), best_move, search_time);
         }
 
         // update stats
+        let iter_end = Instant::now();
+        stats.iter_time = iter_end - iter_start;
         stats.iterations += 1;
         stats.root_entropy = {
             let root_logits = searcher.root_logits();
@@ -272,9 +276,9 @@ where
         };
 
         let timeman = &mut searcher.timeman;
-        timeman.hint_time_target(timeman.time_limit().map(|x| x - stats.iter_time));
-        timeman.hint_movestreak_target(Some(params.movestreak_target()));
-        timeman.set_curr_movestreak(stats.root_movestreak);
+
+        timeman.hint_time_target(stats.iter_time);
+        timeman.hint_movestreak_target(stats.root_movestreak);
 
         if searcher.should_stop(&stats) || searcher.timeman.reached_target() {
             break;
@@ -310,7 +314,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
     root_ply: Ply,
     limit: UciLimit,
-    timeman: &'a mut TimeMan,
+    timeman: &'a mut TimeMan<X>,
     ct: CancellationToken,
     aborted: bool,
     ss: SS,
@@ -322,13 +326,13 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
 
 impl<'a, 'b, E: StaticEvaluator, X: IParams> Searcher<'a, 'b, E, X>
 where
-    X::Ref: QSearchParams + IdParams + ScorerParams + Clone,
+    X::Ref: QSearchParams + IdParams + ScorerParams + ChronoParams + Clone,
 {
     #[allow(clippy::too_many_arguments)]
     fn new(
         pos: &Position,
         limit: UciLimit,
-        timeman: &'a mut TimeMan,
+        timeman: &'a mut TimeMan<X>,
         ct: CancellationToken,
         tt: &'a mut TT,
         hh: &'a mut HH,
