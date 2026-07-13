@@ -112,15 +112,22 @@ pub struct SearchStack<T> {
 }
 
 impl<T: Clone + Default> Default for SearchStack<T> {
+    #[inline(always)]
     fn default() -> Self { Self::new() }
 }
 
 impl<T: Clone + Default> SearchStack<T> {
+    #[inline(always)]
     pub fn new() -> Self {
         Self {
             entries: vec![T::default(); Depth::MAX.v() as usize + 1],
         }
     }
+}
+
+impl<T> From<Vec<T>> for SearchStack<T> {
+    #[inline(always)]
+    fn from(value: Vec<T>) -> Self { Self { entries: value } }
 }
 
 impl<T> SearchStack<T> {

@@ -316,7 +316,6 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     tt: &'a mut TT,
     hh: &'a mut HH,
     eval: &'b mut E,
-    phase: TaperValue,
     params: X::Ref,
 }
 
@@ -348,11 +347,13 @@ where
             timeman,
             ct,
             aborted: false,
-            ss: SS::new(),
+            ss: SS::from(vec![SearchEntry {
+                phase: TaperValue::from_position(pos.piece_info()),
+                ..Default::default()
+            }]),
             tt,
             hh,
             eval,
-            phase: TaperValue::from_position(pos.piece_info()),
             params,
         }
     }
@@ -399,13 +400,13 @@ where
         }
     }
 
-    fn scorer_for<P: Perspective>(&mut self, tt_move: Move, killers: Killers) -> Scorer<'_, X> {
+    fn scorer_for<P: Perspective>(&mut self, tt_move: Move, killers: Killers, phase: TaperValue) -> Scorer<'_, X> {
         Scorer {
             tt_move,
             killers,
             hh: self.hh,
             color: P::COLOR,
-            phase: self.phase,
+            phase,
             params: self.params.clone(),
         }
     }
@@ -442,17 +443,17 @@ where
         }
 
         let rel_ply: Depth = (pos.ply() - self.root_ply).into();
+        let &SearchEntry { phase, killers } = self.ss.get(rel_ply);
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return QSearcher::new(self.tt, self.phase).go::<P, T>(pos, alpha, beta, self.params.clone(), self.eval, Depth::new(100));
+            return QSearcher::new(self.tt, phase).go::<P, T>(pos, alpha, beta, self.params.clone(), self.eval, Depth::new(100));
         }
 
         let kind = T::KIND;
         let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
         let orig_alpha = alpha;
-        let killers = self.ss.get(rel_ply).killers.clone();
 
         // tt-cutoff
         {
@@ -492,7 +493,7 @@ where
             let eval = tt_entry
                 // Safety: unless we've had a hash collision, this score is for the same position
                 .map(|e| unsafe { e.static_eval.interpret_as() })
-                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase));
+                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
 
             static_eval = eval;
 
@@ -540,7 +541,7 @@ where
                 // don't allow nmp when node is in check
                 && !is_in_check
                 // don't do nmp in endgames, where zugzwang is more likely
-                && self.phase < self.params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
+                && phase < self.params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
                 // don't bother attempting to improve beta with a tempo down when our static eval is not
                 // even better than beta
                 && lazy_static_eval(self, pos) >= beta - nmp_margin - unsafe { AnyScore::from(depth.v() * 15).interpret_as() }
@@ -573,7 +574,7 @@ where
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
         else {
-            MovePicker::new(tt_move, killers.clone())
+            MovePicker::new(tt_move, killers)
         };
 
         // fail-high reductions
@@ -604,7 +605,7 @@ where
         let mut hh_searched_quiets = MoveList::new();
 
         // todo: take killers by ref
-        while let Some(m) = move_picker.next_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers.clone())) {
+        while let Some(m) = move_picker.next_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers, phase)) {
             let (from, to, flag) = m.into();
             let moving_piece = pos.get_piece(from);
             let moving_pt = moving_piece.piece_type();
@@ -616,9 +617,9 @@ where
             // }
 
             // make the move
-            let phase_before = self.phase;
+            self.ss.get_mut(rel_ply + 1).phase = phase;
             self.eval.forward();
-            pos.make_move_for::<P>(m, &mut (&mut self.phase, self.eval.observe_forward()));
+            pos.make_move_for::<P>(m, &mut (self.ss.get_mut(rel_ply + 1).phase, self.eval.observe_forward()));
 
             // depth
             let (mut depth_ext, mut depth_reduct) = (0, 0);
@@ -695,7 +696,6 @@ where
             // unmake the move
             pos.unmake_move_for::<P>(m, self.eval.observe_backward());
             self.eval.backward();
-            self.phase = phase_before;
 
             // check for cancellation
             if self.aborted {
@@ -798,6 +798,7 @@ pub type TT = TranspositionTable<TTEntry, TTReplace>;
 pub type SS = SearchStack<SearchEntry>;
 
 pub type Killers = RbSet<Move, 2>;
+impl Copy for Killers {}
 
 #[derive(Clone)]
 pub struct TTEntry {
@@ -925,6 +926,7 @@ impl Bound {
 #[derive(Default, Clone, Debug)]
 pub struct SearchEntry {
     killers: Killers,
+    phase: TaperValue,
 }
 
 pub const trait ScorerParams {
