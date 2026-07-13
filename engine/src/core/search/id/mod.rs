@@ -563,14 +563,14 @@ where
 
                 pos.make_null_move();
 
-                let nm_score = !self.search::<P::Opponent, Normal>(params.clone(), pos, stats, nmp_depth, !beta, !beta + 1);
+                let nm_score = !self.search::<P::Opponent, Normal>(pos, stats, nmp_depth, !beta, !beta + 1);
 
                 pos.unmake_null_move();
 
                 if nm_score >= beta {
                     // verification search
                     self.in_nmp_verify = true;
-                    let verification_score = self.search::<P, Normal>(params.clone(), pos, stats, nmp_depth, beta - 1, beta);
+                    let verification_score = self.search::<P, Normal>(pos, stats, nmp_depth, beta - 1, beta);
                     self.in_nmp_verify = false;
 
                     if verification_score >= beta {
@@ -581,7 +581,7 @@ where
         }
 
         // move gen
-        let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
+        let tt_move = tt_entry.as_ref().map(|e| e.mov).unwrap_or(Move::null());
         let mut move_picker = if is_root_node {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
