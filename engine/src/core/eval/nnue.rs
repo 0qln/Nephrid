@@ -17,7 +17,8 @@ use crate::{
         },
         coordinates::{Square, squares},
         piece::{Piece, PieceType, piece_type},
-        position::{PieceInfo, PieceInfoObserver}, search::score::AnyScore,
+        position::{PieceInfo, PieceInfoObserver},
+        search::score::AnyScore,
     },
     misc::{CheckHealth, CheckHealthResult},
 };
