@@ -187,10 +187,10 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
                 // should allow for more aggressive futility pruning at moves that were regarded
                 // less important by the move ordering
-                let move_count_margin = AnyScore::new((params.movecount_pruning_factor().v() as f32 * ((curr + 1) as f32).ln()) as i32);
+                let move_count_margin = AnyScore::new(0);
 
                 // the endgame contains
-                let phase_margin = AnyScore::new(0);
+                let phase_margin = AnyScore::new(params.phase_pruning_factor().v() * phase.v());
 
                 // Safety: the score was constructed relative to `P`
                 let futility_score = captured_value + value_bonus + futility_margin + move_count_margin + phase_margin;
