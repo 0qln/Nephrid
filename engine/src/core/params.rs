@@ -320,9 +320,7 @@ impl const QSearchParams for C_IdHceParams {
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
     fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-20) }
 
-    fn phase_pruning_factor(&self) -> AnyScore {
-        todo!()
-    }
+    fn phase_pruning_factor(&self) -> AnyScore { todo!() }
 }
 
 impl const IdParams for C_IdHceParams {
@@ -358,9 +356,9 @@ impl const ChronoParams for C_IdNnueParams {
 
 impl const QSearchParams for C_IdNnueParams {
     fn futility_margin(&self) -> AnyScore { AnyScore::new(177) }
-    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(8) }
-    fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-50) }
-    fn phase_pruning_factor(&self) -> AnyScore { AnyScore::new(10) }
+    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
+    fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-30) }
+    fn phase_pruning_factor(&self) -> AnyScore { AnyScore::new(22) }
 }
 
 impl const IdParams for C_IdNnueParams {
