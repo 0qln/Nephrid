@@ -9,7 +9,7 @@ use engine::core::{
     params::C_IdNnueParams,
     position::Position,
     search::{
-        id::{self, RbSet, Scorer},
+        id::{self, Killers, Scorer},
         ordering::{MoveGenerator, MoveScorer, RtStage},
     },
     zobrist,
@@ -22,7 +22,7 @@ use engine::core::{
 /// requires `target as u8` calls starting from the initial `YieldHashMove`
 /// stage.
 fn primed_generator<P: Perspective>(pos: &Position, scorer: &impl MoveScorer, target: RtStage) -> MoveGenerator {
-    let mut move_gen = MoveGenerator::new(Move::null(), RbSet::default());
+    let mut move_gen = MoveGenerator::new(Move::null(), Killers::default());
     while move_gen.stage() != target {
         let _ = move_gen.next_for::<P>(pos, scorer);
     }
@@ -74,7 +74,7 @@ fn bench_positions(c: &mut Criterion, group_name: &str, target: RtStage) {
 
         let scorer = Scorer::<C_IdNnueParams> {
             tt_move: Move::null(),
-            killers: RbSet::default(),
+            killers: Killers::default(),
             hh: &mut hh,
             color: pos.get_turn(),
             phase: TaperValue::from_position(pos.piece_info()),

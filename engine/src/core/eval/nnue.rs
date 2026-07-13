@@ -1,4 +1,4 @@
-use crate::core::{depth::Depth, id::SearchStack};
+use crate::core::{depth::Depth, search::data::SearchStack};
 use std::{
     fs::File,
     hint::unreachable_unchecked,
@@ -17,7 +17,8 @@ use crate::{
         },
         coordinates::{Square, squares},
         piece::{Piece, PieceType, piece_type},
-        position::{PieceInfo, PieceInfoObserver}, search::score::AnyScore,
+        position::{PieceInfo, PieceInfoObserver},
+        search::score::AnyScore,
     },
     misc::{CheckHealth, CheckHealthResult},
 };
