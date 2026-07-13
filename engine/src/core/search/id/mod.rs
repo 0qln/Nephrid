@@ -155,6 +155,7 @@ impl HceThreatener {
         let mut max_threat = Score::<P::Opponent>::ZERO;
 
         // todo: only generate captures, promos, and checks.
+        // todo: or just track this in the make_move unmake_move functions.
         let moves = pos.collect_legals_for::<P::Opponent, _>(MoveList::new());
         for &mov in moves.iter() {
             match pos.does_check(mov) {
