@@ -463,20 +463,19 @@ where
         let key = pos.get_key();
         let orig_alpha = alpha;
 
+        let tt_entry = self.tt.get(key).cloned();
+
         // tt-cutoff
+        if !is_root_node
+            && let Some(ref entry) = tt_entry
+            && entry.depth >= depth
+            && ((entry.bound == Bound::Exact)
+                || (entry.bound == Bound::Lower && entry.score >= beta.0)
+                || (entry.bound == Bound::Upper && entry.score <= alpha.0))
         {
-            let tt_entry = self.tt.get(key);
-            if !is_root_node
-                && let Some(entry) = tt_entry
-                && entry.depth >= depth
-                && ((entry.bound == Bound::Exact)
-                    || (entry.bound == Bound::Lower && entry.score >= beta.0)
-                    || (entry.bound == Bound::Upper && entry.score <= alpha.0))
-            {
-                // Safety: unless we've had a hash collision, this score is for the same
-                // position and thus for the same player.
-                return unsafe { entry.score.interpret_as() };
-            }
+            // Safety: unless we've had a hash collision, this score is for the same
+            // position and thus for the same player.
+            return unsafe { entry.score.interpret_as() };
         }
 
         // todo: these 'is it already computed? if so, return it.' are not required.
@@ -496,9 +495,8 @@ where
                 return static_eval;
             }
 
-            let tt_entry = this.tt.get(key);
-
             let eval = tt_entry
+                .as_ref()
                 // Safety: unless we've had a hash collision, this score is for the same position
                 .map(|e| unsafe { e.static_eval.interpret_as() })
                 .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
@@ -518,9 +516,8 @@ where
                 return threat;
             }
 
-            let tt_entry = this.tt.get(key);
-
             let score = tt_entry
+                .as_ref()
                 // Safety: unless we've had a hash collision, this score is for the same position
                 .map(|e| unsafe { e.threat.interpret_as() })
                 .unwrap_or_else(|| threatener.threat::<P>(pos));
@@ -576,7 +573,6 @@ where
         }
 
         // move gen
-        let tt_entry = self.tt.get(key);
         let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
         let mut move_picker = if is_root_node {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
