@@ -91,10 +91,10 @@ impl<Rhs: const Into<AnyScore>> const ops::Add<Rhs> for AnyScore {
     fn add(self, rhs: Rhs) -> Self::Output { Self::new(self.v + rhs.into().v) }
 }
 
-impl const ops::Sub for AnyScore {
+impl<Rhs: const Into<AnyScore>> const ops::Sub<Rhs> for AnyScore {
     type Output = Self;
     #[inline(always)]
-    fn sub(self, rhs: Self) -> Self::Output { Self::new(self.v - rhs.v) }
+    fn sub(self, rhs: Rhs) -> Self::Output { Self::new(self.v - rhs.into().v) }
 }
 
 impl const ops::Div<AnyScore> for AnyScore {
@@ -136,6 +136,11 @@ impl<P: Perspective, Rhs: const Into<Score<P>>> const ops::Sub<Rhs> for Score<P>
     type Output = Self;
     #[inline(always)]
     fn sub(self, rhs: Rhs) -> Self::Output { Self::new(self.0 - rhs.into().0) }
+}
+impl<P: Perspective> const ops::Sub<i32> for Score<P> {
+    type Output = Self;
+    #[inline(always)]
+    fn sub(self, rhs: i32) -> Self::Output { Self::new(self.0 - rhs) }
 }
 
 impl<P: Perspective> const ops::Div<AnyScore> for Score<P> {

@@ -312,6 +312,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator> {
     tt: &'a mut TT,
     eval: &'b mut E,
     phase: TaperValue,
+    in_nmp_verify: bool,
 }
 
 impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
@@ -333,6 +334,7 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             tt,
             eval,
             phase: TaperValue::from_position(pos.piece_info()),
+            in_nmp_verify: false,
         }
     }
 
@@ -504,6 +506,8 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
             //   honestly phase could just be a u8
             let is_in_check = pos.get_check_state() != CheckState::None;
             if kind == NodeKind::Cut
+                // are we in verification search?
+                && !self.in_nmp_verify
                 // don't underflow depth
                 && depth > nmp_r
                 // don't allow nmp when node is in check
@@ -522,10 +526,15 @@ impl<'a, 'b, E: StaticEvaluator> Searcher<'a, 'b, E> {
 
                 pos.unmake_null_move();
 
-                // todo: verification search?
-
                 if nm_score >= beta {
-                    return nm_score;
+                    // verification search
+                    self.in_nmp_verify = true;
+                    let verification_score = self.search::<P, Normal>(params.clone(), pos, stats, nmp_depth, beta - 1, beta);
+                    self.in_nmp_verify = false;
+
+                    if verification_score >= beta {
+                        return verification_score;
+                    }
                 }
             }
         }
