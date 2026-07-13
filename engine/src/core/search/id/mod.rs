@@ -2,7 +2,6 @@ use core::fmt;
 use std::{
     cmp::{Reverse, max, min},
     convert::Infallible,
-    hint::assert_unchecked,
     ops::{ControlFlow, Deref},
     path::PathBuf,
     str::FromStr,
@@ -33,7 +32,7 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, PieceHistories, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+            data::{self, PieceHistories, RbSet, SearchStack, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
@@ -156,6 +155,7 @@ impl HceThreatener {
         let mut max_threat = Score::<P::Opponent>::ZERO;
 
         // todo: only generate captures, promos, and checks.
+        // todo: or just track this in the make_move unmake_move functions.
         let moves = pos.collect_legals_for::<P::Opponent, _>(MoveList::new());
         for &mov in moves.iter() {
             match pos.does_check(mov) {
@@ -317,11 +317,10 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     timeman: &'a mut TimeMan<X>,
     ct: CancellationToken,
     aborted: bool,
-    ss: SearchStack<SearchEntry>,
+    ss: SS,
     tt: &'a mut TT,
     hh: &'a mut HH,
     eval: &'b mut E,
-    phase: TaperValue,
     params: X::Ref,
 }
 
@@ -353,11 +352,13 @@ where
             timeman,
             ct,
             aborted: false,
-            ss: SearchStack::new(),
+            ss: SS::from(vec![SearchEntry {
+                phase: TaperValue::from_position(pos.piece_info()),
+                ..Default::default()
+            }]),
             tt,
             hh,
             eval,
-            phase: TaperValue::from_position(pos.piece_info()),
             params,
         }
     }
@@ -404,13 +405,13 @@ where
         }
     }
 
-    fn scorer_for<P: Perspective>(&mut self, tt_move: Move, killers: Killers) -> Scorer<'_, X> {
+    fn scorer_for<P: Perspective>(&mut self, tt_move: Move, killers: Killers, phase: TaperValue) -> Scorer<'_, X> {
         Scorer {
             tt_move,
             killers,
             hh: self.hh,
             color: P::COLOR,
-            phase: self.phase,
+            phase,
             params: self.params.clone(),
         }
     }
@@ -447,32 +448,38 @@ where
         }
 
         let rel_ply: Depth = (pos.ply() - self.root_ply).into();
+        let &SearchEntry { phase, killers } = self.ss.get(rel_ply);
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return QSearcher::new(self.tt, self.phase).go::<P, T>(pos, alpha, beta, self.params.clone(), self.eval, Depth::new(100));
+            return QSearcher::new(self.tt, &mut self.ss, self.root_ply).go::<P, T>(
+                pos,
+                alpha,
+                beta,
+                self.params.clone(),
+                self.eval,
+                Depth::new(100),
+            );
         }
 
         let kind = T::KIND;
         let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
         let orig_alpha = alpha;
-        let killers = self.ss.get(rel_ply).killers.clone();
+
+        let tt_entry = self.tt.get(key).cloned();
 
         // tt-cutoff
+        if !is_root_node
+            && let Some(ref entry) = tt_entry
+            && entry.depth >= depth
+            && ((entry.bound == Bound::Exact)
+                || (entry.bound == Bound::Lower && entry.score >= beta.0)
+                || (entry.bound == Bound::Upper && entry.score <= alpha.0))
         {
-            let tt_entry = self.tt.get(key);
-            if !is_root_node
-                && let Some(entry) = tt_entry
-                && entry.depth >= depth
-                && ((entry.bound == Bound::Exact)
-                    || (entry.bound == Bound::Lower && entry.score >= beta.0)
-                    || (entry.bound == Bound::Upper && entry.score <= alpha.0))
-            {
-                // Safety: unless we've had a hash collision, this score is for the same
-                // position and thus for the same player.
-                return unsafe { entry.score.interpret_as() };
-            }
+            // Safety: unless we've had a hash collision, this score is for the same
+            // position and thus for the same player.
+            return unsafe { entry.score.interpret_as() };
         }
 
         // todo: these 'is it already computed? if so, return it.' are not required.
@@ -492,12 +499,11 @@ where
                 return static_eval;
             }
 
-            let tt_entry = this.tt.get(key);
-
             let eval = tt_entry
+                .as_ref()
                 // Safety: unless we've had a hash collision, this score is for the same position
                 .map(|e| unsafe { e.static_eval.interpret_as() })
-                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), this.phase));
+                .unwrap_or_else(|| this.eval.eval(pos.piece_info(), P::COLOR, pos.get_ep_target_square(), phase));
 
             static_eval = eval;
 
@@ -514,9 +520,8 @@ where
                 return threat;
             }
 
-            let tt_entry = this.tt.get(key);
-
             let score = tt_entry
+                .as_ref()
                 // Safety: unless we've had a hash collision, this score is for the same position
                 .map(|e| unsafe { e.threat.interpret_as() })
                 .unwrap_or_else(|| threatener.threat::<P>(pos));
@@ -545,7 +550,7 @@ where
                 // don't allow nmp when node is in check
                 && !is_in_check
                 // don't do nmp in endgames, where zugzwang is more likely
-                && self.phase < self.params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
+                && phase < self.params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
                 // don't bother attempting to improve beta with a tempo down when our static eval is not
                 // even better than beta
                 && lazy_static_eval(self, pos) >= beta - nmp_margin - unsafe { AnyScore::from(depth.v() * 15).interpret_as() }
@@ -572,13 +577,12 @@ where
         }
 
         // move gen
-        let tt_entry = self.tt.get(key);
         let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
         let mut move_picker = if is_root_node {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
         else {
-            MovePicker::new(tt_move, killers.clone())
+            MovePicker::new(tt_move, killers)
         };
 
         // fail-high reductions
@@ -609,7 +613,7 @@ where
         let mut hh_searched_quiets = MoveList::new();
 
         // todo: take killers by ref
-        while let Some(m) = move_picker.next_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers.clone())) {
+        while let Some(m) = move_picker.next_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers, phase)) {
             let (from, to, flag) = m.into();
             let moving_piece = pos.get_piece(from);
             let moving_pt = moving_piece.piece_type();
@@ -621,9 +625,9 @@ where
             // }
 
             // make the move
-            let phase_before = self.phase;
+            self.ss.propagate_forward(rel_ply, |s, next_s| next_s.phase = s.phase);
             self.eval.forward();
-            pos.make_move_for::<P>(m, &mut (&mut self.phase, self.eval.observe_forward()));
+            pos.make_move_for::<P>(m, &mut (&mut self.ss.get_mut(rel_ply + 1).phase, self.eval.observe_forward()));
 
             // depth
             let (mut depth_ext, mut depth_reduct) = (0, 0);
@@ -700,7 +704,6 @@ where
             // unmake the move
             pos.unmake_move_for::<P>(m, self.eval.observe_backward());
             self.eval.backward();
-            self.phase = phase_before;
 
             // check for cancellation
             if self.aborted {
@@ -803,6 +806,7 @@ pub type TT = TranspositionTable<TTEntry, TTReplace>;
 pub type SS = SearchStack<SearchEntry>;
 
 pub type Killers = RbSet<Move, 2>;
+impl Copy for Killers {}
 
 #[derive(Clone)]
 pub struct TTEntry {
@@ -927,156 +931,10 @@ impl Bound {
     }
 }
 
-pub struct SearchStack<T> {
-    entries: Vec<T>,
-}
-
-impl<T: Clone + Default> Default for SearchStack<T> {
-    fn default() -> Self { Self::new() }
-}
-
-impl<T: Clone + Default> SearchStack<T> {
-    pub fn new() -> Self {
-        Self {
-            entries: vec![T::default(); Depth::MAX.v() as usize + 1],
-        }
-    }
-}
-
-impl<T> SearchStack<T> {
-    #[inline(always)]
-    pub fn propagate(&mut self, old: Depth, new: Depth, mut f: impl FnMut(&T, &mut T)) {
-        let old_idx = old.v() as usize;
-        let new_idx = new.v() as usize;
-        unsafe {
-            let [parent, child] = self.entries.get_disjoint_unchecked_mut([old_idx, new_idx]);
-            f(parent, child);
-        }
-    }
-
-    pub fn get_mut(&mut self, ply: Depth) -> &mut T {
-        let idx = ply.v() as usize;
-
-        // todo: qsearch might exceed depth max ??
-
-        // Safety: entries is atleast Depth::MAX + 1
-        unsafe { self.entries.get_unchecked_mut(idx) }
-    }
-
-    pub fn get(&self, ply: Depth) -> &T {
-        let idx = ply.v() as usize;
-
-        // Safety: entries is atleast Depth::MAX + 1
-        unsafe { self.entries.get_unchecked(idx) }
-    }
-}
-
 #[derive(Default, Clone, Debug)]
 pub struct SearchEntry {
-    killers: RbSet<Move, 2>,
-}
-
-/// A Ring Buffer Set of size `N`.
-///
-/// Maintains up to `N` unique elements. When an element is pushed:
-/// - If it already exists, it is promoted to the front (index 0), and the
-///   elements before its old position are shifted down.
-/// - If it is new, all elements are shifted down, evicting the oldest.
-///
-/// # Examples
-///
-/// ```
-/// # use engine::core::search::id::RbSet;
-///
-/// let mut killers = RbSet::<i32, 3>::new();
-///
-/// killers.push(10);
-/// killers.push(20);
-/// killers.push(30);
-/// assert_eq!(killers, RbSet::from([30, 20, 10]));
-///
-/// // Pushing an existing element moves it to the front (Promotes it)
-/// killers.push(20);
-/// assert_eq!(killers, RbSet::from([20, 30, 10]));
-///
-/// // Pushing a new element evicts the oldest (10 drops off)
-/// killers.push(40);
-/// assert_eq!(killers, RbSet::from([40, 20, 30]));
-/// ```
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RbSet<T, const N: usize> {
-    items: [T; N],
-}
-
-impl<T: const Default, const N: usize> const Default for RbSet<T, N> {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            items: [const { T::default() }; N],
-        }
-    }
-}
-
-impl<T: const Default + Copy + Eq, const N: usize> const From<[T; N]> for RbSet<T, N> {
-    fn from(items: [T; N]) -> Self { Self { items } }
-}
-
-impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
-    #[inline(always)]
-    pub const fn new() -> Self { Self { items: [T::default(); N] } }
-
-    // todo: make sure this is unrolled for our N=2/3
-    // todo: this is O(n) but i don't  think this matters for our n=2 lmao
-    #[inline(always)]
-    pub fn push(&mut self, item: T) {
-        let pos = self.position(&item).unwrap_or(N - 1);
-
-        // Safety: pos is either the index of the item in the set, or the last index if
-        // the item is not
-        unsafe {
-            assert_unchecked(pos < N);
-        }
-
-        for i in (1..=pos).rev() {
-            self.items[i] = self.items[i - 1];
-        }
-
-        self.items[0] = item;
-    }
-
-    #[inline(always)]
-    pub fn position(&self, item: &T) -> Option<usize> { self.items.iter().position(|x| x == item) }
-
-    #[inline(always)]
-    pub fn as_slice(&self) -> &[T] { &self.items }
-}
-
-// todo: benchmark that this is actually faster...
-/// spezialized version of the const generic impls.
-impl<T: Default + Copy + Eq> RbSet<T, 2> {
-    #[inline(always)]
-    pub fn _push(&mut self, item: T) {
-        if self.items[0] != item {
-            self.items[1] = self.items[0];
-            self.items[0] = item;
-        }
-    }
-
-    #[inline(always)]
-    pub fn _position(&self, item: &T) -> Option<usize> {
-        if self.items[0] == *item {
-            Some(0)
-        }
-        else if self.items[1] == *item {
-            Some(1)
-        }
-        else {
-            None
-        }
-    }
-
-    #[inline(always)]
-    pub fn _is_empty(&self) -> bool { self.items[0] == T::default() && self.items[1] == T::default() }
+    pub killers: Killers,
+    pub phase: TaperValue,
 }
 
 pub const trait ScorerParams {
