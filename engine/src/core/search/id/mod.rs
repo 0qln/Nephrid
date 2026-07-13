@@ -447,7 +447,7 @@ where
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return QSearcher::new(self.tt, phase).go::<P, T>(pos, alpha, beta, self.params.clone(), self.eval, Depth::new(100));
+            return QSearcher::new(self.tt, &mut self.ss, self.root_ply).go::<P, T>(pos, alpha, beta, self.params.clone(), self.eval, Depth::new(100));
         }
 
         let kind = T::KIND;
@@ -925,8 +925,8 @@ impl Bound {
 
 #[derive(Default, Clone, Debug)]
 pub struct SearchEntry {
-    killers: Killers,
-    phase: TaperValue,
+    pub killers: Killers,
+    pub phase: TaperValue,
 }
 
 pub const trait ScorerParams {
