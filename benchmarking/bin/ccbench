@@ -17,7 +17,7 @@ cutechess-cli \
     -rounds 2000 -games 2 \
     -openings file="$openings" format=epd order=random -repeat \
     -recover \
-    -concurrency 6 \
+    -concurrency 14 \
     -sprt elo0=0 elo1=2.0 alpha=0.05 beta=0.05 \
     -ratinginterval 50 \
     -outcomeinterval 50 \
