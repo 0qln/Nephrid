@@ -181,7 +181,7 @@ impl<T> SearchStack<T> {
 /// # Examples
 ///
 /// ```
-/// # use engine::core::search::id::RbSet;
+/// # use engine::core::search::data::RbSet;
 ///
 /// let mut killers = RbSet::<i32, 3>::new();
 ///

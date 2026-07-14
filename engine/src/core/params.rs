@@ -271,8 +271,8 @@ impl const QSearchParams for C_MctsHceParams {
     #[inline(always)] fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     #[inline(always)] fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
     #[inline(always)] fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-20) }
-    fn phase_pruning_factor(&self) -> AnyScore { todo!() }
-    fn ply_pruning_factor(&self) -> AnyScore { todo!() }
+    #[inline(always)] fn phase_pruning_factor(&self) -> AnyScore { todo!() }
+    #[inline(always)] fn ply_pruning_factor(&self) -> AnyScore { todo!() }
 }
 
 #[rustfmt::skip]

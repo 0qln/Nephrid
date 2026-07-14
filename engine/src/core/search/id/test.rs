@@ -4,8 +4,10 @@ use super::*;
 use crate::core::{move_iter::sliding_piece::magics, params::C_IdHceParams, search::limit::UciLimit};
 
 fn run_search(fen: &str, depth: u8) {
+    math::init();
     magics::init();
     zobrist::init();
+
     let mut pos = Position::from_fen(fen).unwrap();
     let limit = UciLimit {
         depth: Depth::new(depth),
