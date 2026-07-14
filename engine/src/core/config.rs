@@ -684,6 +684,24 @@ impl Configuration {
     }
 
     pub fn print_uci(&self) {
+        // uci options
+        println!("{}", self.uci_analyse_mode);
+        println!("{}", self.uci_elo);
+        println!("{}", self.uci_engine_about);
+        println!("{}", self.uci_hash);
+        println!("{}", self.uci_limit_strength);
+        println!("{}", self.uci_multipv);
+        println!("{}", self.uci_nalimov_cache);
+        println!("{}", self.uci_nalimov_path);
+        println!("{}", self.uci_opponent);
+        println!("{}", self.uci_ownbook);
+        println!("{}", self.uci_ponder);
+        println!("{}", self.uci_set_position_value);
+        println!("{}", self.uci_show_currline);
+        println!("{}", self.uci_show_refutations);
+        println!("{}", self.uci_shredder_bases_path);
+
+        // custom options
         println!("{}", self.clear_hash);
         println!("{}", self.dirichlet_alpha);
         println!("{}", self.dirichlet_epsilon);
@@ -692,22 +710,9 @@ impl Configuration {
         println!("{}", self.nnue_path);
         println!("{}", self.ponder);
         println!("{}", self.threads);
-        println!("{}", self.uci_hash);
-        println!("{}", self.uci_nalimov_path);
-        println!("{}", self.uci_nalimov_cache);
-        println!("{}", self.uci_ponder);
-        println!("{}", self.uci_ownbook);
-        println!("{}", self.uci_multipv);
-        println!("{}", self.uci_show_currline);
-        println!("{}", self.uci_show_refutations);
-        println!("{}", self.uci_limit_strength);
-        println!("{}", self.uci_elo);
-        println!("{}", self.uci_analyse_mode);
-        println!("{}", self.uci_opponent);
-        println!("{}", self.uci_engine_about);
-        println!("{}", self.uci_shredder_bases_path);
-        println!("{}", self.uci_set_position_value);
         println!("{}", self.weights_path);
+
+        // tunable params
         if cfg!(feature = "tunable") {
             println!("{}", self.eval_delta_pruning_threshold);
             println!("{}", self.eval_futility_margin);
