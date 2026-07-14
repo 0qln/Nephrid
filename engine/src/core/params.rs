@@ -271,8 +271,8 @@ impl const QSearchParams for C_MctsHceParams {
     #[inline(always)] fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     #[inline(always)] fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
     #[inline(always)] fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-20) }
-    #[inline(always)] fn phase_pruning_factor(&self) -> AnyScore { todo!() }
-    #[inline(always)] fn ply_pruning_factor(&self) -> AnyScore { todo!() }
+    #[inline(always)] fn phase_pruning_factor(&self) -> AnyScore { AnyScore::new(85) }
+    #[inline(always)] fn ply_pruning_factor(&self) -> AnyScore { AnyScore::new(32) }
 }
 
 #[rustfmt::skip]
@@ -382,8 +382,8 @@ impl const QSearchParams for C_IdHceParams {
     fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
     fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-20) }
-    fn phase_pruning_factor(&self) -> AnyScore { todo!() }
-    fn ply_pruning_factor(&self) -> AnyScore { todo!() }
+    fn phase_pruning_factor(&self) -> AnyScore { AnyScore::new(85) }
+    fn ply_pruning_factor(&self) -> AnyScore { AnyScore::new(32) }
 }
 
 impl const IdParams for C_IdHceParams {
