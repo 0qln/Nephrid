@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
 cargo test --workspace --all-targets "$@"
-cargo test --workspace --all-targets --doc "$@"
+cargo test --workspace --doc "$@"
