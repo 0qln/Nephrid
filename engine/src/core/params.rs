@@ -423,9 +423,9 @@ impl const ChronoParams for C_IdNnueParams {
 impl const QSearchParams for C_IdNnueParams {
     fn futility_margin(&self) -> AnyScore { AnyScore::new(204) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
-    fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-7) }
+    fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-12) }
     fn phase_pruning_factor(&self) -> AnyScore { AnyScore::new(85) }
-    fn ply_pruning_factor(&self) -> AnyScore { AnyScore::new(52) }
+    fn ply_pruning_factor(&self) -> AnyScore { AnyScore::new(42) }
 }
 
 impl const IdParams for C_IdNnueParams {

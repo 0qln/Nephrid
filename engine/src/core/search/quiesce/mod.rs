@@ -213,7 +213,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                     let ply_from_start = Depth::from(pos.ply() - self.start_ply);
                     let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * ln_i32(ply_from_start.v() + 1));
 
-                    unsafe { (futility_margin + (move_count_margin * ply_margin) + phase_margin).interpret_as() }
+                    unsafe { (futility_margin + move_count_margin + ply_margin + phase_margin).interpret_as() }
                 };
 
                 if best_score + move_gain + margin < alpha {
