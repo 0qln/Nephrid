@@ -306,7 +306,9 @@ pub const trait Stage {
 
 #[rustfmt::skip]
 pub mod stages {
-    use super::*;
+    use crate::core::piece::promo_piece_type;
+
+use super::*;
 
     pub struct YieldHashMove;
     impl Stage for YieldHashMove {
@@ -322,6 +324,7 @@ pub mod stages {
         fn gen_quiets() -> bool { false }
         fn gen_captures() -> bool { true }
         fn gen_promos() -> bool { true }
+        fn promo_types() -> &'static [PromoPieceType] { &[ promo_piece_type::QUEEN, promo_piece_type::KNIGHT ]}
         fn legal() -> bool { LEGAL }
     }
 
@@ -354,6 +357,7 @@ pub mod stages {
         fn gen_quiets() -> bool { true }
         fn gen_captures() -> bool { false }
         fn gen_promos() -> bool { false }
+        fn promo_types() -> &'static [PromoPieceType] { &[ promo_piece_type::QUEEN, promo_piece_type::KNIGHT ]}
         fn legal() -> bool { LEGAL }
     }
 

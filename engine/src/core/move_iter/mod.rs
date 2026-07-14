@@ -13,7 +13,7 @@ use crate::core::{
         perspectives::{Black, White},
     },
     r#move::move_flags,
-    piece::IPieceType,
+    piece::{IPieceType, PromoPieceType, promo_piece_type},
     position,
 };
 
@@ -64,6 +64,14 @@ pub const trait Options {
     fn gen_quiets() -> bool;
     fn gen_captures() -> bool;
     fn gen_promos() -> bool;
+    fn promo_types() -> &'static [PromoPieceType] {
+        &[
+            promo_piece_type::QUEEN,
+            promo_piece_type::ROOK,
+            promo_piece_type::BISHOP,
+            promo_piece_type::KNIGHT,
+        ]
+    }
 
     /// Whether to generated moves have to be legal. If false, also generates
     /// pseudo legal moves, which's check-rules are not checked.

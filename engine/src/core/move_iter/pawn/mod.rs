@@ -18,6 +18,8 @@ pub struct Pawn;
 mod variants {
     use std::marker::PhantomData;
 
+    use crate::core::piece::PromoPieceType;
+
     use super::*;
 
     pub trait Variant {
@@ -40,7 +42,7 @@ mod variants {
     impl Promo for PromoPinned<'_> {}
     impl<'a> Variant for PromoPinned<'a> {
         type Promo = Self;
-        type Data = &'a Position;
+        type Data = (&'a Position, &'static [PromoPieceType], bool);
     }
 
     pub struct Unpinned;
@@ -53,7 +55,7 @@ mod variants {
     impl Promo for PromoUnpinned {}
     impl Variant for PromoUnpinned {
         type Promo = Self;
-        type Data = ();
+        type Data = (&'static [PromoPieceType], bool);
     }
 }
 
@@ -239,10 +241,9 @@ impl PawnMoves<variants::PromoUnpinned> {
         let mut acc = init;
         while let Some(to) = self.to.pop_lsb() {
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
-            let flag_base = self.flag;
-            for flag_offset in 0..4 {
-                let flag = flag_base.v() + flag_offset;
-                let flag = unsafe { MoveFlag::try_from(flag).unwrap_unchecked() };
+            let (promos, is_capture) = self.v_data;
+            for &promo in promos {
+                let flag = MoveFlag::from((promo, is_capture));
                 acc = f(acc, Move::new(from, to, flag))?;
             }
         }
@@ -262,10 +263,10 @@ impl PawnMoves<variants::PromoPinned<'_>> {
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
 
             // verify the pin mask for pinned promotions
-            let blockers = self.v_data.get_blockers();
-            let pin_mask = self
-                .v_data
-                .get_bitboard(piece_type::KING, self.v_data.get_turn())
+            let (pos, promos, is_capture) = self.v_data;
+            let blockers = pos.get_blockers();
+            let pin_mask = pos
+                .get_bitboard(piece_type::KING, pos.get_turn())
                 .lsb()
                 .map(|our_king| pin_mask(from, blockers, our_king))
                 .unwrap_or_default();
@@ -273,10 +274,8 @@ impl PawnMoves<variants::PromoPinned<'_>> {
                 continue;
             }
 
-            let flag_base = self.flag;
-            for flag_offset in 0..4 {
-                let flag = flag_base.v() + flag_offset;
-                let flag = unsafe { MoveFlag::try_from(flag).unwrap_unchecked() };
+            for &promo in promos {
+                let flag = MoveFlag::from((promo, is_capture));
                 acc = f(acc, Move::new(from, to, flag))?;
             }
         }
@@ -314,6 +313,16 @@ where
     if !safe_pawns.is_empty() {
         type M = PawnMoves<variants::Unpinned>;
 
+        if O::gen_captures() || O::gen_promos() {
+            acc = apply!(
+                acc,
+                safe_pawns,
+                (O::promo_types(), true),
+                M::promo_capture::<P, { compass_rose::WEST_C }, T>,
+                M::promo_capture::<P, { compass_rose::EAST_C }, T>
+            );
+        }
+
         if O::gen_captures() {
             acc = apply!(
                 acc,
@@ -322,14 +331,12 @@ where
                 M::capture::<P, { compass_rose::WEST_C }, T>,
                 M::capture::<P, { compass_rose::EAST_C }, T>,
                 M::ep::<P, { compass_rose::WEST_C }>,
-                M::ep::<P, { compass_rose::EAST_C }>,
-                M::promo_capture::<P, { compass_rose::WEST_C }, T>,
-                M::promo_capture::<P, { compass_rose::EAST_C }, T>
+                M::ep::<P, { compass_rose::EAST_C }>
             );
         }
 
         if O::gen_promos() {
-            acc = apply!(acc, safe_pawns, (), M::promo::<P, T>);
+            acc = apply!(acc, safe_pawns, (O::promo_types(), false), M::promo::<P, T>);
         }
 
         if O::gen_quiets() {
@@ -340,6 +347,17 @@ where
     if !pinned_pawns.is_empty() {
         type M<'a> = PawnMoves<variants::Pinned<'a>>;
 
+        if O::gen_captures() || O::gen_promos() {
+            // todo: do we even need to generate this?
+            acc = apply!(
+                acc,
+                pinned_pawns,
+                (pos, O::promo_types(), true),
+                M::promo_capture::<P, { compass_rose::WEST_C }, T>,
+                M::promo_capture::<P, { compass_rose::EAST_C }, T>
+            );
+        }
+
         if O::gen_captures() {
             acc = apply!(
                 acc,
@@ -348,9 +366,7 @@ where
                 M::capture::<P, { compass_rose::WEST_C }, T>,
                 M::capture::<P, { compass_rose::EAST_C }, T>,
                 M::ep::<P, { compass_rose::WEST_C }>,
-                M::ep::<P, { compass_rose::EAST_C }>,
-                M::promo_capture::<P, { compass_rose::WEST_C }, T>,
-                M::promo_capture::<P, { compass_rose::EAST_C }, T>
+                M::ep::<P, { compass_rose::EAST_C }>
             );
         }
 

@@ -119,7 +119,7 @@ impl MoveFlag {
     pub const fn is_promo(&self) -> bool { self.v >= f::PROMOTION_KNIGHT.v && self.v <= f::CAPTURE_PROMOTION_QUEEN.v }
 }
 
-impl From<(PromoPieceType, bool)> for MoveFlag {
+impl const From<(PromoPieceType, bool)> for MoveFlag {
     fn from((piece_type, captures): (PromoPieceType, bool)) -> Self {
         let mut v = piece_type.v().v();
         if captures {
