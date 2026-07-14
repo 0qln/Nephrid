@@ -259,8 +259,92 @@ impl fmt::Debug for Button {
 /// Engine configuration.
 #[derive(Debug, Clone)]
 pub struct Configuration {
-    /// Hash size.
-    hash: ConfigOption<Spin<UciMebibyte>>,
+    /// # [UCI] Hash size.
+    /// the value in MB for memory for hash tables can be changed, this should
+    /// be answered with the first "setoptions" command at program boot if the
+    /// engine has sent the appropriate "option name Hash" command, which should
+    /// be supported by all engines! So the engine should use a very small hash
+    /// first as default.
+    uci_hash: ConfigOption<Spin<UciMebibyte>>,
+
+    /// # [UCI] Path to Nalimov tablebases.
+    /// this is the path on the hard disk to the Nalimov compressed format.
+    /// Multiple directories can be concatenated with ";"
+    uci_nalimov_path: ConfigOption<StringOption>,
+
+    /// # [UCI] Size of Nalimov tablebase cache.
+    ///	this is the size in MB for the cache for the nalimov table bases
+    ///	These last two options should also be present in the initial options
+    /// exchange dialog when the engine is booted if the engine supports it
+    uci_nalimov_cache: ConfigOption<Spin<UciMebibyte>>,
+
+    /// # [UCI] Ponder Indication
+    /// this means that the engine is able to ponder.
+    /// The GUI will send this whenever pondering is possible or not.
+    /// Note: The engine should not start pondering on its own if this is
+    /// enabled, this option is only needed because the engine might change
+    /// its time management algorithm when pondering is allowed.
+    uci_ponder: ConfigOption<Check>,
+
+    /// # [UCI] Own Book Indication
+    /// this means that the engine has its own book which is accessed by the
+    /// engine itself. if this is set, the engine takes care of the opening
+    /// book and the GUI will never execute a move out of its book for the
+    /// engine. If this is set to false by the GUI, the engine should not
+    /// access its own book.
+    uci_ownbook: ConfigOption<Check>,
+
+    /// # [UCI] MultiPV
+    /// the engine supports multi best line or k-best mode. the default value is
+    /// 1
+    uci_multipv: ConfigOption<Spin<UciInteger>>,
+
+    /// # [UCI] Show current line
+    /// the engine can show the current line it is calculating. see "info
+    /// currline" above.
+    uci_show_currline: ConfigOption<Check>,
+
+    /// # [UCI] Show refutations
+    /// the engine can show a move and its refutation in a line. see "info
+    /// refutations" above.
+    uci_show_refutations: ConfigOption<Check>,
+
+    /// # [UCI] Limit strength
+    /// The engine is able to limit its strength to a specific Elo number.
+    /// Should always be implemented together with "UCI_Elo".
+    uci_limit_strength: ConfigOption<Check>,
+
+    /// # [UCI] Elo strength limit
+    /// The engine can limit its strength in Elo within this interval.
+    /// Only active when UCI_LimitStrength is true. Should always be
+    /// implemented together with "UCI_LimitStrength".
+    uci_elo: ConfigOption<Spin<UciInteger>>,
+
+    /// # [UCI] Analyse mode
+    /// The engine wants to behave differently when analysing or playing a game.
+    /// Set to false when playing a game, true when analysing.
+    uci_analyse_mode: ConfigOption<Check>,
+
+    /// # [UCI] Opponent info
+    /// The GUI can send the name, title, elo and if the engine is playing a
+    /// human or computer to the engine.
+    /// Format: [GM|IM|FM|WGM|WIM|none] [<elo>|none] [computer|human] <name>
+    uci_opponent: ConfigOption<StringOption>,
+
+    /// # [UCI] Engine about
+    /// The engine tells the GUI information about itself, e.g. a license text.
+    uci_engine_about: ConfigOption<StringOption>,
+
+    /// # [UCI] Shredder bases path
+    /// Path to the folder containing the Shredder endgame databases, or the
+    /// path and filename of one Shredder endgame database.
+    uci_shredder_bases_path: ConfigOption<StringOption>,
+
+    /// # [UCI] Set position value
+    /// The GUI can send this to tell the engine to use a certain value in
+    /// centipawns from white's point of view for a specific position.
+    /// Formats: <value> + <fen> | clear + <fen> | clearall
+    uci_set_position_value: ConfigOption<StringOption>,
 
     /// Num threads.
     threads: ConfigOption<Spin<UciInteger>>,
@@ -363,7 +447,21 @@ impl Configuration {
 
         ConfigBuilder {
             config: Self {
-                hash: ConfigOption::new("hash", Spin::<UciMebibyte>::new(_mebibyte(16), _mebibyte(1), _mebibyte(64 * 1024 * 1024))),
+                uci_hash: ConfigOption::new("Hash", Spin::<UciMebibyte>::new(_mebibyte(16), _mebibyte(1), _mebibyte(64 * 1024 * 1024))),
+                uci_nalimov_path: ConfigOption::new("NalimovPath", StringOption::new("")),
+                uci_nalimov_cache : ConfigOption::new("NalimovCache", Spin::<UciMebibyte>::new(_mebibyte(16), _mebibyte(1), _mebibyte(64 * 1024 * 1024))),
+                uci_ponder: ConfigOption::new("Ponder", Check::new(false)),
+                uci_ownbook: ConfigOption::new("OwnBook", Check::new(false)),
+                uci_multipv: ConfigOption::new("MultiPV", Spin::<UciInteger>::new(1, 1, 500)),
+                uci_show_currline: ConfigOption::new("UCI_ShowCurrLine", Check::new(false)),
+                uci_show_refutations: ConfigOption::new("UCI_ShowRefutations", Check::new(false)),
+                uci_limit_strength: ConfigOption::new("UCI_LimitStrength", Check::new(false)),
+                uci_elo: ConfigOption::new("UCI_Elo", Spin::<UciInteger>::new(1320, 1320, 3190)),
+                uci_analyse_mode: ConfigOption::new("UCI_AnalyseMode", Check::new(false)),
+                uci_opponent: ConfigOption::new("UCI_Opponent", StringOption::new("")),
+                uci_engine_about: ConfigOption::new("UCI_EngineAbout", StringOption::new("")),
+                uci_shredder_bases_path: ConfigOption::new("UCI_ShredderbasesPath", StringOption::new("")),
+                uci_set_position_value: ConfigOption::new("UCI_SetPositionValue", StringOption::new("")),
                 threads: ConfigOption::new("threads", Spin::new(1, 1, 1)),
                 clear_hash: ConfigOption::new("clearhash", Button::new(clear_hash_impl)),
                 dirichlet_alpha: ConfigOption::new("dirichlet-alpha", Spin::<UciPercent>::new(_ratio(0.3), _ratio(0.), _ratio(10.))),
@@ -508,7 +606,21 @@ impl Configuration {
 }
 
 impl Configuration {
-    pub fn hash(&self) -> Information { self.hash.value }
+    pub fn uci_hash(&self) -> Information { self.uci_hash.value }
+    pub fn uci_nalimov_path(&self) -> &str { &self.uci_nalimov_path.value }
+    pub fn uci_nalimov_cache(&self) -> Information { self.uci_nalimov_cache.value }
+    pub fn uci_ponder(&self) -> bool { self.uci_ponder.value }
+    pub fn uci_ownbook(&self) -> bool { self.uci_ownbook.value }
+    pub fn uci_multipv(&self) -> i32 { self.uci_multipv.value }
+    pub fn uci_show_currline(&self) -> bool { self.uci_show_currline.value }
+    pub fn uci_show_refutations(&self) -> bool { self.uci_show_refutations.value }
+    pub fn uci_limit_strength(&self) -> bool { self.uci_limit_strength.value }
+    pub fn uci_elo(&self) -> i32 { self.uci_elo.value }
+    pub fn uci_analyse_mode(&self) -> bool { self.uci_analyse_mode.value }
+    pub fn uci_opponent(&self) -> &str { &self.uci_opponent.value }
+    pub fn uci_engine_about(&self) -> &str { &self.uci_engine_about.value }
+    pub fn uci_shredder_bases_path(&self) -> &str { &self.uci_shredder_bases_path.value }
+    pub fn uci_set_position_value(&self) -> &str { &self.uci_set_position_value.value }
     pub fn threads(&self) -> i32 { self.threads.value }
     pub fn dirichlet_alpha(&self) -> f32 { self.dirichlet_alpha.value.get::<ratio>() }
     pub fn dirichlet_epsilon(&self) -> f32 { self.dirichlet_epsilon.value.get::<ratio>() }
@@ -527,7 +639,20 @@ impl Configuration {
             "dirichlet-epsilon" => self.dirichlet_epsilon.set(value),
             "game-tree-caching" => self.game_tree_caching.set(value),
             "gui-lag" => self.gui_lag.set(value),
-            "hash" => self.hash.set(value),
+            "hash" => self.uci_hash.set(value),
+            "nalimovpath" => Ok(self.uci_nalimov_path.set(value)),
+            "nalimovcache" => self.uci_nalimov_cache.set(value),
+            "ownbook" => self.uci_ownbook.set(value),
+            "multipv" => self.uci_multipv.set(value),
+            "uci_showcurrline" => self.uci_show_currline.set(value),
+            "uci_showrefutations" => self.uci_show_refutations.set(value),
+            "uci_limitstrength" => self.uci_limit_strength.set(value),
+            "uci_elo" => self.uci_elo.set(value),
+            "uci_analysemode" => self.uci_analyse_mode.set(value),
+            "uci_opponent" => Ok(self.uci_opponent.set(value)),
+            "uci_engineabout" => Ok(self.uci_engine_about.set(value)),
+            "uci_shredderbasespath" => Ok(self.uci_shredder_bases_path.set(value)),
+            "uci_setpositionvalue" => Ok(self.uci_set_position_value.set(value)),
             "ponder" => self.ponder.set(value),
             "threads" => self.threads.set(value),
             "weights-path" => Ok(self.weights_path.set(value)),
@@ -564,11 +689,25 @@ impl Configuration {
         println!("{}", self.dirichlet_epsilon);
         println!("{}", self.game_tree_caching);
         println!("{}", self.gui_lag);
-        println!("{}", self.hash);
+        println!("{}", self.nnue_path);
         println!("{}", self.ponder);
         println!("{}", self.threads);
+        println!("{}", self.uci_hash);
+        println!("{}", self.uci_nalimov_path);
+        println!("{}", self.uci_nalimov_cache);
+        println!("{}", self.uci_ponder);
+        println!("{}", self.uci_ownbook);
+        println!("{}", self.uci_multipv);
+        println!("{}", self.uci_show_currline);
+        println!("{}", self.uci_show_refutations);
+        println!("{}", self.uci_limit_strength);
+        println!("{}", self.uci_elo);
+        println!("{}", self.uci_analyse_mode);
+        println!("{}", self.uci_opponent);
+        println!("{}", self.uci_engine_about);
+        println!("{}", self.uci_shredder_bases_path);
+        println!("{}", self.uci_set_position_value);
         println!("{}", self.weights_path);
-        println!("{}", self.nnue_path);
         if cfg!(feature = "tunable") {
             println!("{}", self.eval_delta_pruning_threshold);
             println!("{}", self.eval_futility_margin);
