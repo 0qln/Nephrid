@@ -174,7 +174,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
             // delta pruning
             if !in_check && m != hash_move {
-                let value_bonus = PromoPieceType::try_from(flag)
+                let promo_bonus = PromoPieceType::try_from(flag)
                     .ok()
                     .map(|promo| {
                         let promo_pt = promo.into();
@@ -184,7 +184,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                     })
                     .unwrap_or(scores::ZERO);
 
-                let captured_value = m
+                let capture_bonus = m
                     .get_capture_sq()
                     .map(|capt_sq| {
                         let pt = pos.get_piece(capt_sq).piece_type();
@@ -206,7 +206,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * ((ply_from_start.v() + 1) as f32).ln() as i32);
 
                 // Safety: the score was constructed relative to `P`
-                let futility_score = captured_value + value_bonus + futility_margin + move_count_margin + phase_margin + ply_margin;
+                let futility_score = capture_bonus + promo_bonus + futility_margin + move_count_margin + phase_margin + ply_margin;
                 let futility_score = unsafe { futility_score.interpret_as() };
 
                 if best_score + futility_score < alpha {
@@ -303,6 +303,8 @@ impl ordering::MoveScorer for MoveScorer {
                 let pieces = pos.piece_info();
                 let piece = pieces.get_piece(from);
                 let pt = piece.piece_type(); // todo: what if the pt is a pawn that would promote if he captures?
+                // todo: we are capturing a piece which also had a psqt in the position. see
+                // doesn't do psqt so we should probably add that as a bonus here aswell.
 
                 ordering::see(pieces, mov, self.color) + ordering::psqt(self.phase, pt, from, to, flag, self.color)
             }
