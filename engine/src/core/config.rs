@@ -349,9 +349,6 @@ pub struct Configuration {
     /// Num threads.
     threads: ConfigOption<Spin<UciInteger>>,
 
-    /// Clear hash tables.
-    clear_hash: ConfigOption<Button>,
-
     /// Dirichlet noise - alpha parameter.
     dirichlet_alpha: ConfigOption<Spin<UciPercent>>,
 
@@ -463,7 +460,6 @@ impl Configuration {
                 uci_shredder_bases_path: ConfigOption::new("UCI_ShredderbasesPath", StringOption::new("")),
                 uci_set_position_value: ConfigOption::new("UCI_SetPositionValue", StringOption::new("")),
                 threads: ConfigOption::new("threads", Spin::new(1, 1, 1)),
-                clear_hash: ConfigOption::new("clearhash", Button::new(clear_hash_impl)),
                 dirichlet_alpha: ConfigOption::new("dirichlet-alpha", Spin::<UciPercent>::new(_ratio(0.3), _ratio(0.), _ratio(10.))),
                 dirichlet_epsilon: ConfigOption::new("dirichlet-epsilon", Spin::<UciPercent>::new(_ratio(0.25), _ratio(0.), _ratio(1.))),
                 weights_path: ConfigOption::new("weights-path", StringOption::new("./weights")),
@@ -634,7 +630,6 @@ impl Configuration {
     #[allow(clippy::unit_arg)]
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn Error>> {
         match name.to_lowercase().as_str() {
-            "clearhash" => Ok(self.clear_hash.trigger()),
             "dirichlet-alpha" => self.dirichlet_alpha.set(value),
             "dirichlet-epsilon" => self.dirichlet_epsilon.set(value),
             "game-tree-caching" => self.game_tree_caching.set(value),
@@ -702,7 +697,6 @@ impl Configuration {
         println!("{}", self.uci_shredder_bases_path);
 
         // custom options
-        println!("{}", self.clear_hash);
         println!("{}", self.dirichlet_alpha);
         println!("{}", self.dirichlet_epsilon);
         println!("{}", self.game_tree_caching);
@@ -738,8 +732,4 @@ impl Configuration {
             println!("{}", self.id_scorer_hh_weight);
         }
     }
-}
-
-pub fn clear_hash_impl() {
-    todo!("clear hashing tables (e.g. transposition table)");
 }
