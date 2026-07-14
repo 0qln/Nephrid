@@ -97,6 +97,7 @@ pub struct TunableParams<Base> {
     id_nmp_depth_factor: u8,
     id_nmp_phase_factor: u32,
     id_nmp_margin: AnyScore,
+    id_nmp_depth_margin: i32,
     id_scorer_hh_weight: i32,
     _base: PhantomData<Base>,
 }
@@ -140,6 +141,7 @@ impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
     fn nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor }
     fn nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor }
     fn nmp_margin(&self) -> AnyScore { self.id_nmp_margin }
+    fn nmp_depth_margin(&self) -> i32 { self.id_nmp_depth_margin }
 }
 
 impl<B, X: Deref<Target = TunableParams<B>>> ScorerParams for X {
@@ -173,6 +175,7 @@ impl<B> TunableParams<B> {
         let id_nmp_phase_factor = config.id_nmp_phase_factor();
         let id_nmp_margin = config.id_nmp_margin();
         let id_scorer_hh_weight = config.id_scorer_hh_weight();
+        let id_nmp_depth_margin = config.id_nmp_depth_margin();
         Self {
             timeman_base_soft_mult,
             timeman_clamp_lower,
@@ -197,6 +200,7 @@ impl<B> TunableParams<B> {
             id_nmp_depth_factor,
             id_nmp_phase_factor,
             id_nmp_margin,
+            id_nmp_depth_margin,
             id_scorer_hh_weight,
             _base: PhantomData,
         }
@@ -392,6 +396,7 @@ impl const IdParams for C_IdHceParams {
     fn nmp_depth_factor(&self) -> u8 { 3 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
     fn nmp_margin(&self) -> AnyScore { AnyScore::new(48) }
+    fn nmp_depth_margin(&self) -> i32 { 15 }
 }
 
 impl const ScorerParams for C_IdHceParams {
@@ -429,11 +434,12 @@ impl const QSearchParams for C_IdNnueParams {
 }
 
 impl const IdParams for C_IdNnueParams {
-    fn nmp_reduction(&self) -> Depth { Depth::new(1) }
-    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(9) }
-    fn nmp_depth_factor(&self) -> u8 { 3 }
+    fn nmp_reduction(&self) -> Depth { Depth::new(2) }
+    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(11) }
+    fn nmp_depth_factor(&self) -> u8 { 4 }
     fn nmp_phase_factor(&self) -> u32 { 7 }
-    fn nmp_margin(&self) -> AnyScore { AnyScore::new(44) }
+    fn nmp_margin(&self) -> AnyScore { AnyScore::new(50) }
+    fn nmp_depth_margin(&self) -> i32 { 12 }
 }
 
 impl const ScorerParams for C_IdNnueParams {

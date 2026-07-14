@@ -1,8 +1,10 @@
+/// ref: https://www.chessprogramming.org/Node_Types
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum NodeKind {
     Root,
-    Normal,
+    Pv,
     Cut,
+    All,
 }
 
 pub const trait NodeType {
@@ -17,13 +19,18 @@ pub mod node_types {
         const KIND: NodeKind = NodeKind::Root;
     }
 
-    pub struct Normal;
-    impl const NodeType for Normal {
-        const KIND: NodeKind = NodeKind::Normal;
+    pub struct Pv;
+    impl const NodeType for Pv {
+        const KIND: NodeKind = NodeKind::Pv;
     }
 
     pub struct Cut;
     impl const NodeType for Cut {
         const KIND: NodeKind = NodeKind::Cut;
+    }
+
+    pub struct All;
+    impl const NodeType for All {
+        const KIND: NodeKind = NodeKind::All;
     }
 }

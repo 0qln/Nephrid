@@ -208,6 +208,7 @@ pub const trait IdParams {
     fn nmp_depth_factor(&self) -> u8;
     fn nmp_phase_factor(&self) -> u32;
     fn nmp_margin(&self) -> AnyScore;
+    fn nmp_depth_margin(&self) -> i32;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -322,6 +323,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     hh: &'a mut HH,
     eval: &'b mut E,
     params: X::Ref,
+    in_nmp_verify: bool,
 }
 
 impl<'a, 'b, E: StaticEvaluator, X: IParams> Searcher<'a, 'b, E, X>
@@ -360,6 +362,7 @@ where
             hh,
             eval,
             params,
+            in_nmp_verify: false,
         }
     }
 
@@ -417,6 +420,7 @@ where
     }
 
     /// returns the score relative to `P`
+    /// `T`: The expected [NodeType] of this node.
     fn search<P: Perspective, T: NodeType>(
         &mut self,
         pos: &mut Position,
@@ -463,14 +467,13 @@ where
         }
 
         let kind = T::KIND;
-        let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
         let orig_alpha = alpha;
 
         let tt_entry = self.tt.get(key).cloned();
 
         // tt-cutoff
-        if !is_root_node
+        if kind != NodeKind::Root
             && let Some(ref entry) = tt_entry
             && entry.depth >= depth
             && ((entry.bound == Bound::Exact)
@@ -535,6 +538,9 @@ where
         #[cfg(feature = "id-nmp")]
         {
             let nmp_margin = unsafe { self.params.nmp_margin().interpret_as() };
+
+            let nmp_depth_margin = unsafe { AnyScore::from(depth.v() as i32 * self.params.nmp_depth_margin()).interpret_as() };
+
             let nmp_r: Depth = self.params.nmp_reduction()
                 // scale the reduction up based on depth
                 + depth.div_floor(self.params.nmp_depth_factor());
@@ -543,8 +549,12 @@ where
             // endgame)
             // - Depth::new(phase.v().div_floor(params.nmp_phase_factor()) as u8); // todo:
             //   honestly phase could just be a u8
+
             let is_in_check = pos.get_check_state() != CheckState::None;
+
             if kind == NodeKind::Cut
+                // are we in verification search?
+                && !self.in_nmp_verify
                 // don't underflow depth
                 && depth > nmp_r
                 // don't allow nmp when node is in check
@@ -553,32 +563,32 @@ where
                 && phase < self.params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
                 // don't bother attempting to improve beta with a tempo down when our static eval is not
                 // even better than beta
-                && lazy_static_eval(self, pos) >= beta - nmp_margin - unsafe { AnyScore::from(depth.v() * 15).interpret_as() }
+                && lazy_static_eval(self, pos) >= beta - nmp_margin - nmp_depth_margin
             {
+                let nmp_depth = depth - nmp_r - 1;
+
                 pos.make_null_move();
 
-                let nm_score = !self.search::<P::Opponent, Normal>(
-                    pos,
-                    stats,
-                    // scout with a reduced depth
-                    depth - nmp_r - 1,
-                    !(alpha + 1),
-                    !alpha,
-                );
+                let nm_score = !self.search::<P::Opponent, All>(pos, stats, nmp_depth, !beta, !beta + 1);
 
                 pos.unmake_null_move();
 
-                // todo: verification search?
-
                 if nm_score >= beta {
-                    return nm_score;
+                    // verification search
+                    self.in_nmp_verify = true;
+                    let verification_score = self.search::<P, All>(pos, stats, nmp_depth, beta - 1, beta);
+                    self.in_nmp_verify = false;
+
+                    if verification_score >= beta {
+                        return verification_score;
+                    }
                 }
             }
         }
 
         // move gen
-        let tt_move = tt_entry.map(|e| e.mov).unwrap_or(Move::null());
-        let mut move_picker = if is_root_node {
+        let tt_move = tt_entry.as_ref().map(|e| e.mov).unwrap_or(Move::null());
+        let mut move_picker = if kind == NodeKind::Root {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
         else {
@@ -656,7 +666,7 @@ where
 
                 if curr == 0 {
                     // search with a full window to get an exact score.
-                    !self.search::<P::Opponent, Normal>(pos, stats, full_depth, !beta, !alpha)
+                    !self.search::<P::Opponent, Pv>(pos, stats, full_depth, !beta, !alpha)
                 }
                 else {
                     // assume that our move ordering is good the first move will be the best one.
@@ -678,7 +688,6 @@ where
                         zws_score = !self.search::<P::Opponent, Cut>(
                             pos,
                             stats,
-                            // research at full depth
                             full_depth,
                             // still zero-window.
                             !(alpha + 1),
@@ -691,9 +700,12 @@ where
                         // don't bother researching if this move will cause a fail-high anyway
                         && zws_score < beta
                     {
-                        !self.search::<P::Opponent, Normal>(
-                            pos, stats, full_depth, !beta, !zws_score, // new lower_bound, since it was able to beat alpha
-                        )
+                        // new lower_bound, since it was able to beat alpha
+                        let (alpha, beta) = (!beta, !zws_score);
+                        match kind {
+                            NodeKind::Cut => !self.search::<P::Opponent, All>(pos, stats, full_depth, alpha, beta),
+                            _ => !self.search::<P::Opponent, Cut>(pos, stats, full_depth, alpha, beta),
+                        }
                     }
                     else {
                         zws_score
@@ -711,7 +723,7 @@ where
             }
 
             // update root moves
-            if is_root_node {
+            if kind == NodeKind::Root {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
                 // todo: don't just clamp, mate values will get lost etc.

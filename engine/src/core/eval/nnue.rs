@@ -41,7 +41,7 @@ pub const QB: TValue = 64;
 
 pub type NetworkBytes = [u8; size_of::<Network>()];
 
-pub static DEFAULT_NNUE: NetworkBytes = *include_bytes!("../../../../checkpoints/nnue-1783259751942-768-256_400*255*64-40/quantised.bin");
+pub static DEFAULT_NNUE: NetworkBytes = *include_bytes!("../../../../checkpoints/nnue-1783259751942-768-256_400_255-64-40/quantised.bin");
 
 static mut NNUE: Network = unsafe { mem::transmute::<NetworkBytes, Network>(DEFAULT_NNUE) };
 
