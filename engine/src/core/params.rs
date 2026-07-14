@@ -424,8 +424,8 @@ impl const QSearchParams for C_IdNnueParams {
     fn futility_margin(&self) -> AnyScore { AnyScore::new(204) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
     fn movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(-12) }
-    fn phase_pruning_factor(&self) -> AnyScore { AnyScore::new(65) }
-    fn ply_pruning_factor(&self) -> AnyScore { AnyScore::new(62) }
+    fn phase_pruning_factor(&self) -> AnyScore { AnyScore::new(85) }
+    fn ply_pruning_factor(&self) -> AnyScore { AnyScore::new(42) }
 }
 
 impl const IdParams for C_IdNnueParams {
