@@ -3,7 +3,7 @@ use crate::core::{
     depth::Depth,
     eval::{
         StaticEvaluator,
-        hce::{TaperValue, piece_score},
+        hce::{self, TaperValue, piece_score},
     },
     r#move::Move,
     piece::{PromoPieceType, piece_type},
@@ -272,12 +272,31 @@ impl ordering::MoveScorer for MoveScorer {
                 0
             }
             ordering::RtStage::GenerateCapturesAndPromos | ordering::RtStage::YieldGoodCapturesAndPromos | ordering::RtStage::YieldBadCaptures => {
+                let (from, to, flag) = mov.into();
+
                 let pieces = pos.piece_info();
 
-                let (from, to, _) = mov.into();
-                let piece = pieces.get_piece(from);
+                // what if the pt is a pawn that would promote if he captures?
+                let pt = PromoPieceType::try_from(flag)
+                    .ok()
+                    .map(|promo| promo.v())
+                    .unwrap_or_else(|| pieces.get_piece(from).piece_type());
 
-                ordering::see(pieces, mov, self.color) + ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
+                // material diff of the capture
+                let material_diff = ordering::see(pieces, mov, self.color);
+
+                // psqt diff of the moving piece
+                let psqt_move_diff = ordering::psqt(self.phase, pt, from, to, flag, self.color);
+
+                // we are capturing a piece which also had a psqt in the position. see
+                // doesn't do psqt so we should probably add that as a bonus here aswell.
+                let psqt_capture_gain = mov
+                    .get_capture_sq()
+                    .map(|sq| hce::tapered_psqt(self.phase, pos.get_piece(sq).piece_type(), sq, !self.color))
+                    .unwrap_or(scores::ZERO)
+                    .v() as MoveScore;
+
+                material_diff + psqt_move_diff + psqt_capture_gain
             }
             ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
             ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {
@@ -285,10 +304,15 @@ impl ordering::MoveScorer for MoveScorer {
                     pos.get_check_state() != CheckState::None,
                     "we should never be generating quiets in qsearch if we're not in check"
                 );
+
+                let (from, to, flag) = mov.into();
                 let pieces = pos.piece_info();
-                let (from, to, _) = mov.into();
                 let piece = pieces.get_piece(from);
-                ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
+                let pt = piece.piece_type(); // todo: what if the pt is a pawn that would promote?
+
+                // todo: history heuristic
+
+                ordering::psqt(self.phase, pt, from, to, flag, self.color)
             }
             ordering::RtStage::Done => todo!("why are we scoring Done??"),
         }
