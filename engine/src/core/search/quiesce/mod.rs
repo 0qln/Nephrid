@@ -38,10 +38,18 @@ pub struct QSearcher<'a, Entry, Replace> {
     tt: &'a mut TT<Entry, Replace>,
     ss: &'a mut id::SS,
     root_ply: Ply,
+    start_ply: Ply,
 }
 
 impl<'a, E, R> QSearcher<'a, E, R> {
-    pub fn new(tt: &'a mut TT<E, R>, ss: &'a mut id::SS, root_ply: Ply) -> Self { Self { tt, ss, root_ply } }
+    pub fn new(pos: &Position, tt: &'a mut TT<E, R>, ss: &'a mut id::SS, root_ply: Ply) -> Self {
+        Self {
+            tt,
+            ss,
+            root_ply,
+            start_ply: pos.ply(),
+        }
+    }
 }
 
 impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>>
@@ -194,7 +202,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 let phase_margin = AnyScore::new(params.phase_pruning_factor().v() * phase.v());
 
                 // as ply increases, decrease the prunings.
-                let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * rel_ply.v() as i32);
+                let ply_from_start = Depth::from(pos.ply() - self.start_ply);
+                let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * ply_from_start.v() as i32);
 
                 // Safety: the score was constructed relative to `P`
                 let futility_score = captured_value + value_bonus + futility_margin + move_count_margin + phase_margin + ply_margin;

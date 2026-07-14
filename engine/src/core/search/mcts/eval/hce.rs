@@ -120,7 +120,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
 
         let mut ss = id::SS::from(vec![id::SearchEntry { phase, ..Default::default() }]);
 
-        let mut qsearcher = QSearcher::new(&mut tt, &mut ss, pos.ply());
+        let mut qsearcher = QSearcher::new(pos, &mut tt, &mut ss, pos.ply());
 
         let quality: Cp = match pos.get_turn().v() {
             colors::WHITE_C => qsearcher
