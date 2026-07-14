@@ -12,8 +12,7 @@ use engine::{
         position::Position,
         search::{limit::UciLimit, perft::perft_inner_collect},
         zobrist,
-    },
-    misc::{CancellationToken, DebugMode},
+    }, math, misc::{CancellationToken, DebugMode}
 };
 
 fn bench_perft<Opt: Options>(mut pos: Position, depth: Depth) {
@@ -50,6 +49,7 @@ fn perft_rook(c: &mut Criterion) { perft_benches::<opt::AllLegal>(c, "perft_rook
 fn perft_captures(c: &mut Criterion) { perft_benches::<opt::Captures>(c, "perft_captures", include_str!("../resources/capture_positions.csv")) }
 
 pub fn perft_benches<Opt: Options>(c: &mut Criterion, name: &str, csv_data: &str) {
+    math::init();
     magics::init();
     zobrist::init();
 

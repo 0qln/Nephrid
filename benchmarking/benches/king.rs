@@ -3,7 +3,7 @@
 use std::{hint::black_box, ops::ControlFlow};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use engine::core::{
+use engine::{core::{
     coordinates::squares,
     r#move::Move,
     move_iter::{
@@ -14,7 +14,7 @@ use engine::core::{
     },
     position::Position,
     zobrist,
-};
+}, math};
 
 pub fn king_attacks(c: &mut Criterion) {
     let king = squares::E4;
@@ -27,6 +27,7 @@ pub fn king_attacks(c: &mut Criterion) {
 }
 
 pub fn king_move_iter_check_none(c: &mut Criterion) {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -45,6 +46,7 @@ pub fn king_move_iter_check_none(c: &mut Criterion) {
 }
 
 pub fn king_move_iter_check_some(c: &mut Criterion) {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -63,6 +65,7 @@ pub fn king_move_iter_check_some(c: &mut Criterion) {
 }
 
 pub fn king_move_iter_castling(c: &mut Criterion) {
+    math::init();
     magics::init();
     zobrist::init();
 

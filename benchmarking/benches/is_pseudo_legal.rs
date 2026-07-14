@@ -1,9 +1,10 @@
 use std::{hint::black_box, time::Duration};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use engine::core::{move_iter::sliding_piece::magics, position::Position, zobrist};
+use engine::{core::{move_iter::sliding_piece::magics, position::Position, zobrist}, math};
 
 pub fn is_pseudo_legal(c: &mut Criterion) {
+    math::init();
     magics::init();
     zobrist::init();
 

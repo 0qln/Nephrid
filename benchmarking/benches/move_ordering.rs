@@ -1,7 +1,7 @@
 use std::{hint::black_box, time::Duration};
 
 use criterion::{BatchSize, BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main, measurement::WallTime};
-use engine::core::{
+use engine::{core::{
     color::{Perspective, colors, perspectives},
     eval::hce::TaperValue,
     r#move::Move,
@@ -13,7 +13,7 @@ use engine::core::{
         ordering::{MoveGenerator, MoveScorer, RtStage},
     },
     zobrist,
-};
+}, math};
 
 /// Builds a `MoveGenerator` already advanced up to (but not including)
 /// `target`, so that the next `next_for` call enters the `target` stage.
@@ -49,6 +49,7 @@ fn bench_stage<P: Perspective>(
 /// Benchmarks a single `MoveGenerator::next_for` stage across the positions in
 /// `capture_positions.csv`.
 fn bench_positions(c: &mut Criterion, group_name: &str, target: RtStage) {
+    math::init();
     magics::init();
     zobrist::init();
 

@@ -17,7 +17,7 @@ use engine::{
         },
         zobrist,
     },
-    math::entropy,
+    math::{self, entropy},
     misc::{CancellationToken, DebugMode},
     uci::tokens::Tokenizer,
 };
@@ -212,6 +212,7 @@ fn run_perf_eval<Runner: PerfRunner>(test: Test, runner: Runner) -> TestResult<R
 }
 
 fn main() {
+    math::init();
     magics::init();
     zobrist::init();
 
