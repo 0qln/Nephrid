@@ -397,10 +397,10 @@ impl<'a> fmt::Display for SAN<'a> {
 
         // 8.2.3.5: Check and checkmate indication characters
         {
-            // todo: find a more efficient way to check this instead of cloning
-            let mut pos = self.context.clone();
-            pos.make_move(self.mov, &mut ());
-            if pos.get_check_state() != CheckState::None {
+            if self.context.does_check(self.mov) != CheckState::None {
+                let mut pos = self.context.clone();
+                pos.make_move(self.mov, &mut ());
+
                 // If the move is a checking move, the plus sign "+" is appended as a suffix to
                 // the basic SAN move notation; if the move is a checkmating move, the
                 // octothorpe sign "#" is appended instead.
