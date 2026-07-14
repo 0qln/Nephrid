@@ -208,6 +208,7 @@ pub const trait IdParams {
     fn nmp_depth_factor(&self) -> u8;
     fn nmp_phase_factor(&self) -> u32;
     fn nmp_margin(&self) -> AnyScore;
+    fn nmp_depth_margin(&self) -> i32 { 15 }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -537,6 +538,9 @@ where
         #[cfg(feature = "id-nmp")]
         {
             let nmp_margin = unsafe { self.params.nmp_margin().interpret_as() };
+
+            let nmp_depth_margin = unsafe { AnyScore::from(depth.v() as i32 * self.params.nmp_depth_margin()).interpret_as() };
+
             let nmp_r: Depth = self.params.nmp_reduction()
                 // scale the reduction up based on depth
                 + depth.div_floor(self.params.nmp_depth_factor());
@@ -545,7 +549,9 @@ where
             // endgame)
             // - Depth::new(phase.v().div_floor(params.nmp_phase_factor()) as u8); // todo:
             //   honestly phase could just be a u8
+
             let is_in_check = pos.get_check_state() != CheckState::None;
+
             if kind == NodeKind::Cut
                 // are we in verification search?
                 && !self.in_nmp_verify
@@ -557,7 +563,7 @@ where
                 && phase < self.params.nmp_phase_threshold() && pos.has_non_pawn_material::<P>()
                 // don't bother attempting to improve beta with a tempo down when our static eval is not
                 // even better than beta
-                && lazy_static_eval(self, pos) >= beta - nmp_margin - unsafe { AnyScore::from(depth.v() * 15).interpret_as() }
+                && lazy_static_eval(self, pos) >= beta - nmp_margin - nmp_depth_margin
             {
                 let nmp_depth = depth - nmp_r - 1;
 
