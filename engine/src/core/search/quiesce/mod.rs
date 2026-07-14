@@ -24,7 +24,7 @@ pub const trait QSearchParams {
     fn delta_pruning_threshold(&self) -> TaperValue;
     fn movecount_pruning_factor(&self) -> AnyScore;
     fn phase_pruning_factor(&self) -> AnyScore;
-    fn ply_pruning_factor(&self) -> AnyScore { AnyScore::new(5) }
+    fn ply_pruning_factor(&self) -> AnyScore { AnyScore::new(30) }
 }
 
 pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
