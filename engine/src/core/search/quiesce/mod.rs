@@ -173,8 +173,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             // }
 
             // delta pruning
-            if !in_check {
-                let value_bonus = PromoPieceType::try_from(flag)
+            if !in_check && m != hash_move {
+                let promo_bonus = PromoPieceType::try_from(flag)
                     .ok()
                     .map(|promo| {
                         let promo_pt = promo.into();
@@ -184,7 +184,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                     })
                     .unwrap_or(scores::ZERO);
 
-                let captured_value = m
+                let capture_bonus = m
                     .get_capture_sq()
                     .map(|capt_sq| {
                         let pt = pos.get_piece(capt_sq).piece_type();
@@ -206,7 +206,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * ((ply_from_start.v() + 1) as f32).ln() as i32);
 
                 // Safety: the score was constructed relative to `P`
-                let futility_score = captured_value + value_bonus + futility_margin + move_count_margin + phase_margin + ply_margin;
+                let futility_score = capture_bonus + promo_bonus + futility_margin + move_count_margin + phase_margin + ply_margin;
                 let futility_score = unsafe { futility_score.interpret_as() };
 
                 if best_score + futility_score < alpha {
@@ -299,12 +299,14 @@ impl ordering::MoveScorer for MoveScorer {
                 0
             }
             ordering::RtStage::GenerateCapturesAndPromos | ordering::RtStage::YieldGoodCapturesAndPromos | ordering::RtStage::YieldBadCaptures => {
+                let (from, to, flag) = mov.into();
                 let pieces = pos.piece_info();
-
-                let (from, to, _) = mov.into();
                 let piece = pieces.get_piece(from);
+                let pt = piece.piece_type(); // todo: what if the pt is a pawn that would promote if he captures?
+                // todo: we are capturing a piece which also had a psqt in the position. see
+                // doesn't do psqt so we should probably add that as a bonus here aswell.
 
-                ordering::see(pieces, mov, self.color) + ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
+                ordering::see(pieces, mov, self.color) + ordering::psqt(self.phase, pt, from, to, flag, self.color)
             }
             ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
             ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {
@@ -312,10 +314,15 @@ impl ordering::MoveScorer for MoveScorer {
                     pos.get_check_state() != CheckState::None,
                     "we should never be generating quiets in qsearch if we're not in check"
                 );
+
+                let (from, to, flag) = mov.into();
                 let pieces = pos.piece_info();
-                let (from, to, _) = mov.into();
                 let piece = pieces.get_piece(from);
-                ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
+                let pt = piece.piece_type(); // todo: what if the pt is a pawn that would promote?
+
+                // todo: history heuristic
+
+                ordering::psqt(self.phase, pt, from, to, flag, self.color)
             }
             ordering::RtStage::Done => todo!("why are we scoring Done??"),
         }
