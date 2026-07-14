@@ -197,7 +197,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * rel_ply.v() as i32);
 
                 // Safety: the score was constructed relative to `P`
-                let futility_score = captured_value + value_bonus + futility_margin + move_count_margin + phase_margin;
+                let futility_score = captured_value + value_bonus + futility_margin + move_count_margin + phase_margin + ply_margin;
                 let futility_score = unsafe { futility_score.interpret_as() };
 
                 if best_score + futility_score < alpha {
