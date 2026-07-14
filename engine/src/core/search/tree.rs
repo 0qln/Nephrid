@@ -1,3 +1,4 @@
+/// ref: https://www.chessprogramming.org/Node_Types
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum NodeKind {
     Root,

@@ -419,6 +419,7 @@ where
     }
 
     /// returns the score relative to `P`
+    /// `T`: The expected [NodeType] of this node.
     fn search<P: Perspective, T: NodeType>(
         &mut self,
         pos: &mut Position,
