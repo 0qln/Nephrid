@@ -162,7 +162,7 @@ where
             Command::Configure(config) => {
                 let cfg = || config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")));
 
-                self.tt = id::TT::new_of_size(cfg()?.hash());
+                self.tt = id::TT::new_of_size(cfg()?.uci_hash());
                 self.params = Self::X::try_from_config(cfg()?).map_err(ExecError::bad_config)?;
                 self.eval = E::try_from_config(cfg()?).map_err(ExecError::bad_config)?;
                 self.timeman.enable_soft_targets(true); // todo: config option for enabling soft targets
