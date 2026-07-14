@@ -158,7 +158,6 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             id::Killers::default(),
             // if in check, we only want to search captures and promos, otherwise we want to search all moves.
             if in_check {
-                // todo: if in check, just generate check evasions instead of all legal moves.
                 RtStage::Done
             }
             else {
