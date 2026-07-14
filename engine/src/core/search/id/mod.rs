@@ -465,14 +465,13 @@ where
         }
 
         let kind = T::KIND;
-        let is_root_node = kind == NodeKind::Root;
         let key = pos.get_key();
         let orig_alpha = alpha;
 
         let tt_entry = self.tt.get(key).cloned();
 
         // tt-cutoff
-        if !is_root_node
+        if kind != NodeKind::Root
             && let Some(ref entry) = tt_entry
             && entry.depth >= depth
             && ((entry.bound == Bound::Exact)
@@ -563,14 +562,14 @@ where
 
                 pos.make_null_move();
 
-                let nm_score = !self.search::<P::Opponent, Normal>(pos, stats, nmp_depth, !beta, !beta + 1);
+                let nm_score = !self.search::<P::Opponent, All>(pos, stats, nmp_depth, !beta, !beta + 1);
 
                 pos.unmake_null_move();
 
                 if nm_score >= beta {
                     // verification search
                     self.in_nmp_verify = true;
-                    let verification_score = self.search::<P, Normal>(pos, stats, nmp_depth, beta - 1, beta);
+                    let verification_score = self.search::<P, All>(pos, stats, nmp_depth, beta - 1, beta);
                     self.in_nmp_verify = false;
 
                     if verification_score >= beta {
@@ -582,7 +581,7 @@ where
 
         // move gen
         let tt_move = tt_entry.as_ref().map(|e| e.mov).unwrap_or(Move::null());
-        let mut move_picker = if is_root_node {
+        let mut move_picker = if kind == NodeKind::Root {
             MovePicker::from_scored(self.root_stats.iter().map(|m| m.scored_move()).cloned())
         }
         else {
@@ -660,7 +659,7 @@ where
 
                 if curr == 0 {
                     // search with a full window to get an exact score.
-                    !self.search::<P::Opponent, Normal>(pos, stats, full_depth, !beta, !alpha)
+                    !self.search::<P::Opponent, Pv>(pos, stats, full_depth, !beta, !alpha)
                 }
                 else {
                     // assume that our move ordering is good the first move will be the best one.
@@ -682,7 +681,6 @@ where
                         zws_score = !self.search::<P::Opponent, Cut>(
                             pos,
                             stats,
-                            // research at full depth
                             full_depth,
                             // still zero-window.
                             !(alpha + 1),
@@ -695,9 +693,12 @@ where
                         // don't bother researching if this move will cause a fail-high anyway
                         && zws_score < beta
                     {
-                        !self.search::<P::Opponent, Normal>(
-                            pos, stats, full_depth, !beta, !zws_score, // new lower_bound, since it was able to beat alpha
-                        )
+                        // new lower_bound, since it was able to beat alpha
+                        let (alpha, beta) = (!beta, !zws_score);
+                        match kind {
+                            NodeKind::Cut => !self.search::<P::Opponent, All>(pos, stats, full_depth, alpha, beta),
+                            _ => !self.search::<P::Opponent, Cut>(pos, stats, full_depth, alpha, beta),
+                        }
                     }
                     else {
                         zws_score
@@ -715,7 +716,7 @@ where
             }
 
             // update root moves
-            if is_root_node {
+            if kind == NodeKind::Root {
                 // store the score for the root moves, such that we can use it for sorting in
                 // the next iteration.
                 // todo: don't just clamp, mate values will get lost etc.
