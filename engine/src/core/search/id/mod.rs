@@ -208,7 +208,7 @@ pub const trait IdParams {
     fn nmp_depth_factor(&self) -> u8;
     fn nmp_phase_factor(&self) -> u32;
     fn nmp_margin(&self) -> AnyScore;
-    fn nmp_depth_margin(&self) -> i32 { 15 }
+    fn nmp_depth_margin(&self) -> i32;
 }
 
 #[allow(clippy::too_many_arguments)]
