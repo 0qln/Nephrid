@@ -173,7 +173,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             // }
 
             // delta pruning
-            if !in_check {
+            if !in_check && m != hash_move {
                 let value_bonus = PromoPieceType::try_from(flag)
                     .ok()
                     .map(|promo| {
