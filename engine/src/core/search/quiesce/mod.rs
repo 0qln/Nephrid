@@ -320,6 +320,8 @@ impl ordering::MoveScorer for MoveScorer {
                 let piece = pieces.get_piece(from);
                 let pt = piece.piece_type(); // todo: what if the pt is a pawn that would promote?
 
+                // todo: history heuristic
+
                 ordering::psqt(self.phase, pt, from, to, flag, self.color)
             }
             ordering::RtStage::Done => todo!("why are we scoring Done??"),
