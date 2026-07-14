@@ -49,7 +49,7 @@ fn main() {
     let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).expect("Time went backwards").as_millis();
 
     let schedule = TrainingSchedule {
-        net_id: format!("nnue-{timestamp}-{INPUT_SIZE}-{HIDDEN_SIZE}_{SCALE}*{QA}*{QB}"),
+        net_id: format!("nnue-{timestamp}-{INPUT_SIZE}-{HIDDEN_SIZE}_{SCALE}_{QA}-{QB}"),
         eval_scale: SCALE as f32,
         steps: TrainingSteps {
             batch_size: 16_384,
