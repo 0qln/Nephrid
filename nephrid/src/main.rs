@@ -1,5 +1,6 @@
 use engine::{
     core::{Engine, config::Configuration, execute_uci, move_iter::sliding_piece::magics, params::*, zobrist},
+    math,
     misc::CancellationToken,
 };
 use std::io::stdin;
@@ -81,6 +82,7 @@ fn config() -> Configuration {
 fn main() {
     use search::*;
 
+    math::init();
     magics::init();
     zobrist::init();
 

@@ -1,6 +1,40 @@
-use std::{cmp::Ordering, fmt, marker::PhantomData, ops::Deref};
-
 use crate::misc::{CheckHealth, CheckHealthResult, List};
+use std::{cmp::Ordering, fmt, marker::PhantomData, ops::Deref, sync::Once};
+
+static INIT: Once = Once::new();
+
+const U8_TABLE_N: usize = u8::MAX as usize + 1;
+static mut LN_TABLE: [i32; U8_TABLE_N] = [0; U8_TABLE_N];
+
+pub fn init() {
+    INIT.call_once(|| unsafe {
+        for i in 0..U8_TABLE_N {
+            LN_TABLE[i] = ln_i32_rt(i as u8);
+        }
+    });
+}
+
+#[inline(always)]
+pub fn ln_i32_rt(x: u8) -> i32 { (x as f32).ln() as i32 }
+
+/// Returns the same as ln_i32_rt, just faster.
+///
+/// Examples
+/// ```
+/// use engine::math;
+///
+/// math::init();
+///
+/// assert_eq!(math::ln_i32(1), math::ln_i32_rt(1));
+/// assert_eq!(math::ln_i32(2), math::ln_i32_rt(2));
+/// assert_eq!(math::ln_i32(67), math::ln_i32_rt(67));
+/// ```
+#[inline(always)]
+#[allow(static_mut_refs)]
+pub fn ln_i32(x: u8) -> i32 {
+    debug_assert!(INIT.is_completed(), "Math not initialized!");
+    unsafe { *LN_TABLE.get_unchecked(x as usize) }
+}
 
 #[inline(always)]
 pub const fn interpolate_i32(start: i32, end: i32, progress: i32, total: i32) -> i32 { ((start * (total - progress)) + (end * progress)) / total }

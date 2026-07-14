@@ -1,22 +1,25 @@
-use crate::core::{
-    color::{Color, Perspective},
-    depth::Depth,
-    eval::{
-        StaticEvaluator,
-        hce::{TaperValue, piece_score, tapered_psqt},
+use crate::{
+    core::{
+        color::{Color, Perspective},
+        depth::Depth,
+        eval::{
+            StaticEvaluator,
+            hce::{TaperValue, piece_score, tapered_psqt},
+        },
+        r#move::Move,
+        piece::{PromoPieceType, piece_type},
+        ply::Ply,
+        position::{CheckState, Position},
+        search::{
+            data::{ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+            id::{self, Bound},
+            ordering::{self, MovePicker, MoveScore, RtStage, Stage},
+            score::{AnyScore, Score, scores},
+            tree::NodeType,
+        },
+        zobrist,
     },
-    r#move::Move,
-    piece::{PromoPieceType, piece_type},
-    ply::Ply,
-    position::{CheckState, Position},
-    search::{
-        data::{ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
-        id::{self, Bound},
-        ordering::{self, MovePicker, MoveScore, RtStage, Stage},
-        score::{AnyScore, Score, scores},
-        tree::NodeType,
-    },
-    zobrist,
+    math::ln_i32,
 };
 
 pub const trait QSearchParams {
@@ -204,7 +207,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
                 // as ply increases, decrease the prunings.
                 let ply_from_start = Depth::from(pos.ply() - self.start_ply);
-                let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * ((ply_from_start.v() + 1) as f32).ln() as i32);
+                let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * ln_i32(ply_from_start.v() + 1));
 
                 // Safety: the score was constructed relative to `P`
                 let futility_score = capture_bonus + promo_bonus + futility_margin + move_count_margin + phase_margin + ply_margin;
