@@ -203,7 +203,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
                 // as ply increases, decrease the prunings.
                 let ply_from_start = Depth::from(pos.ply() - self.start_ply);
-                let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * ply_from_start.v() as i32);
+                let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * ((ply_from_start.v() + 1) as f32).ln() as i32);
 
                 // Safety: the score was constructed relative to `P`
                 let futility_score = captured_value + value_bonus + futility_margin + move_count_margin + phase_margin + ply_margin;
