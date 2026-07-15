@@ -323,6 +323,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     hh: &'a mut HH,
     eval: &'b mut E,
     params: X::Ref,
+    #[cfg(feature = "id-nmp")]
     in_nmp_verify: bool,
 }
 
@@ -850,32 +851,32 @@ impl From<quiesce::TTEntry> for TTEntry {
     }
 }
 
-impl const TTKey for TTEntry {
+const impl TTKey for TTEntry {
     fn key(&self) -> zobrist::Hash { self.key }
 }
 
-impl const TTScore for TTEntry {
+const impl TTScore for TTEntry {
     fn score(&self) -> AnyScore { self.score }
 }
 
-impl const TTMove for TTEntry {
+const impl TTMove for TTEntry {
     fn mov(&self) -> Move { self.mov }
 }
 
-impl const TTDepth for TTEntry {
+const impl TTDepth for TTEntry {
     fn depth(&self) -> Depth { self.depth }
 }
 
-impl const TTBound for TTEntry {
+const impl TTBound for TTEntry {
     fn bound(&self) -> Bound { self.bound }
 }
 
-impl const data::TTStaticEval for TTEntry {
+const impl data::TTStaticEval for TTEntry {
     fn static_eval(&self) -> AnyScore { self.static_eval }
     fn static_eval_mut(&mut self) -> &mut AnyScore { &mut self.static_eval }
 }
 
-impl const Default for TTEntry {
+const impl Default for TTEntry {
     fn default() -> Self {
         Self {
             key: zobrist::Hash::default(),

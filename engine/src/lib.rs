@@ -29,6 +29,9 @@
 #![feature(int_roundings)]
 #![feature(derive_const)]
 #![feature(const_clone)]
+#![feature(const_try)]
+#![feature(const_try_residual)]
+#![feature(try_trait_v2_residual)]
 
 #[macro_use] extern crate impl_ops;
 
