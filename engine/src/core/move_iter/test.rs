@@ -96,8 +96,8 @@ fn plegal_with_filter_is_same_as_legal(fen: &str, depth: Depth) {
                 list_filtered_plegal.len(),
                 "Move count mismatch in position: {} \nExpected: {} \nGot: {} \nDiff: {:?}",
                 crate::core::position::FenExport(pos),
-                &list_filtered_plegal,
-                &list_legal,
+                list_filtered_plegal,
+                list_legal,
                 {
                     let expected = list_filtered_plegal.iter().collect::<HashSet<_>>();
                     let result = list_legal.iter().collect::<HashSet<_>>();

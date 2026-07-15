@@ -4,7 +4,6 @@ use std::ops::ControlFlow;
 
 use saturating_cast::SaturatingCast;
 
-use crate::core::search::id;
 use crate::{
     core::{
         bitboard::Bitboard,
@@ -19,6 +18,7 @@ use crate::{
         piece::{PieceType, PromoPieceType, piece_type},
         position::{PieceInfo, Position},
         search::{
+            id,
             ordering::stages::{GenerateCapturesAndPromos, GenerateQuiets},
             score::scores,
         },
@@ -565,7 +565,17 @@ pub mod test {
     };
 
     use crate::core::{
-        color::colors, coordinates::squares, r#move::{MoveList, move_flags}, move_iter::sliding_piece::magics, params::C_IdNnueParams, position::Position, search::{id::{self, Killers}, ordering}, zobrist
+        color::colors,
+        coordinates::squares,
+        r#move::{MoveList, move_flags},
+        move_iter::sliding_piece::magics,
+        params::C_IdNnueParams,
+        position::Position,
+        search::{
+            id::{self, Killers},
+            ordering,
+        },
+        zobrist,
     };
 
     use super::*;
@@ -712,7 +722,7 @@ pub mod test {
 
             let mut hh = id::HH::new();
 
-            let mut picker = MovePicker::new(hash_move, killers.clone());
+            let mut picker = MovePicker::new(hash_move, killers);
 
             let scorer = id::Scorer::<C_IdNnueParams> {
                 tt_move: hash_move,
