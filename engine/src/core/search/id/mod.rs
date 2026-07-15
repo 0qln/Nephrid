@@ -363,6 +363,7 @@ where
             hh,
             eval,
             params,
+            #[cfg(feature = "id-nmp")]
             in_nmp_verify: false,
         }
     }
