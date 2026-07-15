@@ -519,7 +519,7 @@ where
         let mut threat = Score::<P::Opponent>::NULL;
 
         #[cfg(feature = "id-fhr")]
-        let mut lazy_threat_score = |this: &Self, pos: &Position| {
+        let mut lazy_threat_score = |pos: &Position| {
             // is it already computed? if so, return it.
             if threat.0.is_valid() {
                 return threat;
@@ -605,7 +605,7 @@ where
                 if kind == NodeKind::Cut && !in_check {
                     // the quiet score of this position is the static score minus threat score (the
                     // best threat that the opponent can do).
-                    let q_score = lazy_static_eval(self, pos) + !lazy_threat_score(self, pos);
+                    let q_score = lazy_static_eval(self, pos) + !lazy_threat_score(pos);
 
                     // if the quiet score
                     if q_score >= beta { 1 } else { 0 }
