@@ -299,9 +299,13 @@ where
     // todo: tune the ordering
 
     let all_pawns = pos.get_bitboard(piece_type::PAWN, P::COLOR);
-    let pinned_bb = pos.get_blockers();
-    let safe_pawns = Bitboard { v: all_pawns.v & !pinned_bb.v };
-    let pinned_pawns = Bitboard { v: all_pawns.v & pinned_bb.v };
+    let (safe_pawns, pinned_pawns) = if O::legal() {
+        let pinned_bb = pos.get_blockers();
+        (all_pawns & !pinned_bb, all_pawns & pinned_bb)
+    }
+    else {
+        (all_pawns, Bitboard::empty())
+    };
 
     let mut acc = init;
 
@@ -340,7 +344,7 @@ where
         }
     }
 
-    if !pinned_pawns.is_empty() {
+    if O::legal() && !pinned_pawns.is_empty() {
         type Moves<'a, O> = PawnMoves<O, variants::Pinned<'a>>;
         type Promo<'a, O> = PawnMoves<O, variants::PromoPinned<'a>>;
 
