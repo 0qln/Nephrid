@@ -9,7 +9,7 @@ use crate::core::{
     position::Position,
 };
 use const_for::const_for;
-use std::{marker::PhantomData, ops::Try};
+use std::ops::Try;
 
 use variants::Variant;
 
@@ -52,25 +52,18 @@ mod variants {
     }
 }
 
-struct PawnMoves<O: Options, V: Variant> {
+struct PawnMoves<V: Variant> {
     from: Bitboard,
     to: Bitboard,
     flag: MoveFlag,
     v_data: V::Data,
-    _opts: PhantomData<O>,
 }
 
-impl<O: Options, V: Variant> PawnMoves<O, V> {
+impl<V: Variant> PawnMoves<V> {
     #[inline(always)]
     fn new(from: Bitboard, to: Bitboard, flag: MoveFlag, v_data: V::Data) -> Self {
         debug_assert!(from.pop_cnt() >= to.pop_cnt(), "From needs to have atleast as many squares as to.");
-        Self {
-            from,
-            to,
-            flag,
-            v_data,
-            _opts: PhantomData,
-        }
+        Self { from, to, flag, v_data }
     }
 
     #[inline(always)]
@@ -156,7 +149,7 @@ impl<O: Options, V: Variant> PawnMoves<O, V> {
     }
 }
 
-impl<O: Options, V: variants::Promo> PawnMoves<O, V> {
+impl<V: variants::Promo> PawnMoves<V> {
     #[inline(always)]
     fn promo<P: Perspective, T: const NoDoubleCheck>(pos: &Position, pawns: Bitboard, v_data: V::Data) -> Self {
         let color = P::COLOR;
@@ -183,7 +176,7 @@ impl<O: Options, V: variants::Promo> PawnMoves<O, V> {
     }
 }
 
-impl<O: Options> Iterator for PawnMoves<O, variants::Pinned<'_>> {
+impl Iterator for PawnMoves<variants::Pinned<'_>> {
     type Item = Move;
 
     #[inline(always)]
@@ -212,7 +205,7 @@ impl<O: Options> Iterator for PawnMoves<O, variants::Pinned<'_>> {
     }
 }
 
-impl<O: Options> Iterator for PawnMoves<O, variants::Unpinned> {
+impl Iterator for PawnMoves<variants::Unpinned> {
     type Item = Move;
 
     #[inline(always)]
@@ -223,7 +216,7 @@ impl<O: Options> Iterator for PawnMoves<O, variants::Unpinned> {
     }
 }
 
-impl<O: Options> PawnMoves<O, variants::PromoUnpinned> {
+impl PawnMoves<variants::PromoUnpinned> {
     #[inline(always)]
     fn try_fold<B, F, R>(&mut self, init: B, mut f: F) -> R
     where
@@ -244,7 +237,7 @@ impl<O: Options> PawnMoves<O, variants::PromoUnpinned> {
     }
 }
 
-impl<O: Options> PawnMoves<O, variants::PromoPinned<'_>> {
+impl PawnMoves<variants::PromoPinned<'_>> {
     #[inline(always)]
     fn try_fold<B, F, R>(&mut self, init: B, mut f: F) -> R
     where
@@ -310,16 +303,16 @@ where
     let mut acc = init;
 
     if !safe_pawns.is_empty() {
-        type Moves<O> = PawnMoves<O, variants::Unpinned>;
-        type Promo<O> = PawnMoves<O, variants::PromoUnpinned>;
+        type Moves = PawnMoves<variants::Unpinned>;
+        type Promo = PawnMoves<variants::PromoUnpinned>;
 
         if O::gen_captures() || O::gen_promos() {
             acc = apply!(
                 acc,
                 safe_pawns,
                 (),
-                Promo::<O>::promo_capture::<P, { compass_rose::WEST_C }, T>,
-                Promo::<O>::promo_capture::<P, { compass_rose::EAST_C }, T>
+                Promo::promo_capture::<P, { compass_rose::WEST_C }, T>,
+                Promo::promo_capture::<P, { compass_rose::EAST_C }, T>
             );
         }
 
@@ -328,33 +321,33 @@ where
                 acc,
                 safe_pawns,
                 (),
-                Moves::<O>::capture::<P, { compass_rose::WEST_C }, T>,
-                Moves::<O>::capture::<P, { compass_rose::EAST_C }, T>,
-                Moves::<O>::ep::<P, { compass_rose::WEST_C }>,
-                Moves::<O>::ep::<P, { compass_rose::EAST_C }>
+                Moves::capture::<P, { compass_rose::WEST_C }, T>,
+                Moves::capture::<P, { compass_rose::EAST_C }, T>,
+                Moves::ep::<P, { compass_rose::WEST_C }>,
+                Moves::ep::<P, { compass_rose::EAST_C }>
             );
         }
 
         if O::gen_promos() {
-            acc = apply!(acc, safe_pawns, (), Promo::<O>::promo::<P, T>);
+            acc = apply!(acc, safe_pawns, (), Promo::promo::<P, T>);
         }
 
         if O::gen_quiets() {
-            acc = apply!(acc, safe_pawns, (), Moves::<O>::single_step::<P, T>, Moves::<O>::double_step::<P, T>);
+            acc = apply!(acc, safe_pawns, (), Moves::single_step::<P, T>, Moves::double_step::<P, T>);
         }
     }
 
     if O::legal() && !pinned_pawns.is_empty() {
-        type Moves<'a, O> = PawnMoves<O, variants::Pinned<'a>>;
-        type Promo<'a, O> = PawnMoves<O, variants::PromoPinned<'a>>;
+        type Moves<'a> = PawnMoves<variants::Pinned<'a>>;
+        type Promo<'a> = PawnMoves<variants::PromoPinned<'a>>;
 
         if O::gen_captures() || O::gen_promos() {
             acc = apply!(
                 acc,
                 pinned_pawns,
                 pos,
-                Promo::<O>::promo_capture::<P, { compass_rose::WEST_C }, T>,
-                Promo::<O>::promo_capture::<P, { compass_rose::EAST_C }, T>
+                Promo::promo_capture::<P, { compass_rose::WEST_C }, T>,
+                Promo::promo_capture::<P, { compass_rose::EAST_C }, T>
             );
         }
 
@@ -363,10 +356,10 @@ where
                 acc,
                 pinned_pawns,
                 pos,
-                Moves::<O>::capture::<P, { compass_rose::WEST_C }, T>,
-                Moves::<O>::capture::<P, { compass_rose::EAST_C }, T>,
-                Moves::<O>::ep::<P, { compass_rose::WEST_C }>,
-                Moves::<O>::ep::<P, { compass_rose::EAST_C }>
+                Moves::capture::<P, { compass_rose::WEST_C }, T>,
+                Moves::capture::<P, { compass_rose::EAST_C }, T>,
+                Moves::ep::<P, { compass_rose::WEST_C }>,
+                Moves::ep::<P, { compass_rose::EAST_C }>
             );
         }
 
@@ -376,7 +369,7 @@ where
         }
 
         if O::gen_quiets() {
-            acc = apply!(acc, pinned_pawns, pos, Moves::<O>::single_step::<P, T>, Moves::<O>::double_step::<P, T>);
+            acc = apply!(acc, pinned_pawns, pos, Moves::single_step::<P, T>, Moves::double_step::<P, T>);
         }
     }
 
