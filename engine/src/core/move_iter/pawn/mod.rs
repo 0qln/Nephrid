@@ -21,7 +21,6 @@ mod variants {
     use super::*;
 
     pub trait Variant {
-        type Promo: Promo;
         type Data;
     }
     pub trait Promo: Variant {}
@@ -30,29 +29,25 @@ mod variants {
         pub _pos: PhantomData<&'a ()>,
     }
     impl<'a> Variant for Pinned<'a> {
-        type Promo = PromoPinned<'a>;
         type Data = &'a Position;
     }
 
     pub struct PromoPinned<'a> {
         pub _pos: PhantomData<&'a ()>,
     }
-    impl Promo for PromoPinned<'_> {}
+    impl<'a> Promo for PromoPinned<'a> {}
     impl<'a> Variant for PromoPinned<'a> {
-        type Promo = Self;
         type Data = &'a Position;
     }
 
     pub struct Unpinned;
     impl Variant for Unpinned {
-        type Promo = PromoUnpinned;
         type Data = ();
     }
 
     pub struct PromoUnpinned;
     impl Promo for PromoUnpinned {}
     impl Variant for PromoUnpinned {
-        type Promo = Self;
         type Data = ();
     }
 }
@@ -152,13 +147,11 @@ impl<V: Variant> PawnMoves<V> {
         };
         Self::new(from, to, move_flags::EN_PASSANT, v_data)
     }
+}
 
+impl<V: variants::Promo> PawnMoves<V> {
     #[inline(always)]
-    fn promo<P: Perspective, T: const NoDoubleCheck>(
-        pos: &Position,
-        pawns: Bitboard,
-        v_data: <<V as Variant>::Promo as Variant>::Data,
-    ) -> PawnMoves<V::Promo> {
+    fn promo<P: Perspective, T: const NoDoubleCheck>(pos: &Position, pawns: Bitboard, v_data: V::Data) -> Self {
         let color = P::COLOR;
         let pieces = pos.get_occupancy();
         let tabu_squares = !quiets_targets::<T>(pos, color) | pieces;
@@ -167,15 +160,11 @@ impl<V: Variant> PawnMoves<V> {
         let from = promo_pawns & !single_step_tabus;
         let to = forward(from, single_step(color));
         let flag_base = move_flags::PROMOTION_KNIGHT;
-        PawnMoves::<V::Promo>::new(from, to, flag_base, v_data)
+        Self::new(from, to, flag_base, v_data)
     }
 
     #[inline(always)]
-    fn promo_capture<P: Perspective, const DIR: TCompassRose, T: NoDoubleCheck>(
-        pos: &Position,
-        pawns: Bitboard,
-        v_data: <<V as Variant>::Promo as Variant>::Data,
-    ) -> PawnMoves<V::Promo> {
+    fn promo_capture<P: Perspective, const DIR: TCompassRose, T: NoDoubleCheck>(pos: &Position, pawns: Bitboard, v_data: V::Data) -> Self {
         let color = P::COLOR;
         let capture_dir = capture(color, CompassRose::new(DIR));
         let promo_pawns = pawns & Bitboard::from(promo_rank(color));
@@ -183,11 +172,9 @@ impl<V: Variant> PawnMoves<V> {
         let to = forward(capture_west_pawns, capture_dir) & captures_targets::<T>(pos, color);
         let from = backward(to, capture_dir);
         let flag_base = move_flags::CAPTURE_PROMOTION_KNIGHT;
-        PawnMoves::<V::Promo>::new(from, to, flag_base, v_data)
+        Self::new(from, to, flag_base, v_data)
     }
 }
-
-impl<V: Variant> PawnMoves<V> {}
 
 impl Iterator for PawnMoves<variants::Pinned<'_>> {
     type Item = Move;
@@ -305,22 +292,27 @@ where
     // todo: tune the ordering
 
     let all_pawns = pos.get_bitboard(piece_type::PAWN, P::COLOR);
-    let pinned_bb = pos.get_blockers();
-    let safe_pawns = Bitboard { v: all_pawns.v & !pinned_bb.v };
-    let pinned_pawns = Bitboard { v: all_pawns.v & pinned_bb.v };
+    let (safe_pawns, pinned_pawns) = if O::legal() {
+        let pinned_bb = pos.get_blockers();
+        (all_pawns & !pinned_bb, all_pawns & pinned_bb)
+    }
+    else {
+        (all_pawns, Bitboard::empty())
+    };
 
     let mut acc = init;
 
     if !safe_pawns.is_empty() {
-        type M = PawnMoves<variants::Unpinned>;
+        type Moves = PawnMoves<variants::Unpinned>;
+        type Promo = PawnMoves<variants::PromoUnpinned>;
 
         if O::gen_captures() || O::gen_promos() {
             acc = apply!(
                 acc,
                 safe_pawns,
                 (),
-                M::promo_capture::<P, { compass_rose::WEST_C }, T>,
-                M::promo_capture::<P, { compass_rose::EAST_C }, T>
+                Promo::promo_capture::<P, { compass_rose::WEST_C }, T>,
+                Promo::promo_capture::<P, { compass_rose::EAST_C }, T>
             );
         }
 
@@ -329,32 +321,33 @@ where
                 acc,
                 safe_pawns,
                 (),
-                M::capture::<P, { compass_rose::WEST_C }, T>,
-                M::capture::<P, { compass_rose::EAST_C }, T>,
-                M::ep::<P, { compass_rose::WEST_C }>,
-                M::ep::<P, { compass_rose::EAST_C }>
+                Moves::capture::<P, { compass_rose::WEST_C }, T>,
+                Moves::capture::<P, { compass_rose::EAST_C }, T>,
+                Moves::ep::<P, { compass_rose::WEST_C }>,
+                Moves::ep::<P, { compass_rose::EAST_C }>
             );
         }
 
         if O::gen_promos() {
-            acc = apply!(acc, safe_pawns, (), M::promo::<P, T>);
+            acc = apply!(acc, safe_pawns, (), Promo::promo::<P, T>);
         }
 
         if O::gen_quiets() {
-            acc = apply!(acc, safe_pawns, (), M::single_step::<P, T>, M::double_step::<P, T>);
+            acc = apply!(acc, safe_pawns, (), Moves::single_step::<P, T>, Moves::double_step::<P, T>);
         }
     }
 
-    if !pinned_pawns.is_empty() {
-        type M<'a> = PawnMoves<variants::Pinned<'a>>;
+    if O::legal() && !pinned_pawns.is_empty() {
+        type Moves<'a> = PawnMoves<variants::Pinned<'a>>;
+        type Promo<'a> = PawnMoves<variants::PromoPinned<'a>>;
 
         if O::gen_captures() || O::gen_promos() {
             acc = apply!(
                 acc,
                 pinned_pawns,
                 pos,
-                M::promo_capture::<P, { compass_rose::WEST_C }, T>,
-                M::promo_capture::<P, { compass_rose::EAST_C }, T>
+                Promo::promo_capture::<P, { compass_rose::WEST_C }, T>,
+                Promo::promo_capture::<P, { compass_rose::EAST_C }, T>
             );
         }
 
@@ -363,10 +356,10 @@ where
                 acc,
                 pinned_pawns,
                 pos,
-                M::capture::<P, { compass_rose::WEST_C }, T>,
-                M::capture::<P, { compass_rose::EAST_C }, T>,
-                M::ep::<P, { compass_rose::WEST_C }>,
-                M::ep::<P, { compass_rose::EAST_C }>
+                Moves::capture::<P, { compass_rose::WEST_C }, T>,
+                Moves::capture::<P, { compass_rose::EAST_C }, T>,
+                Moves::ep::<P, { compass_rose::WEST_C }>,
+                Moves::ep::<P, { compass_rose::EAST_C }>
             );
         }
 
@@ -376,7 +369,7 @@ where
         }
 
         if O::gen_quiets() {
-            acc = apply!(acc, pinned_pawns, pos, M::single_step::<P, T>, M::double_step::<P, T>);
+            acc = apply!(acc, pinned_pawns, pos, Moves::single_step::<P, T>, Moves::double_step::<P, T>);
         }
     }
 
