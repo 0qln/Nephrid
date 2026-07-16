@@ -219,6 +219,7 @@ impl MovePicker {
                 }
             }
 
+            let stage = self.move_gen.stage();
             let slice = self.move_gen.buf.as_mut_subslice(self.curr..self.slice.end);
             partial_sort_desc(slice);
 
@@ -233,7 +234,7 @@ impl MovePicker {
                 }
                 else {
                     let flag = m.get_flag();
-                    if !flag.is_capture() && !flag.is_promo() {
+                    if !flag.is_capture() && !flag.is_promo() && matches!(stage, RtStage::YieldQuiets | RtStage::GenerateQuiets) {
                         self.yielded_quiets.push(slice[0]);
                     }
                 }

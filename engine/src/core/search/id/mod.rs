@@ -790,9 +790,10 @@ where
 
             #[cfg(debug_assertions)]
             {
-                // push any move whose statistic can be used to estimate a quiet moves score.
-                // that includes killers and the hashmove.
-                if !flag.is_capture() && !flag.is_promo() {
+                // only push the moves from the yield-quiets movegen stage, because those are
+                // the ones that we neeed to give a penalty. the other ones are not scored by
+                // the history heuristic.
+                if !flag.is_capture() && !flag.is_promo() && m != tt_move && self.ss.get(rel_ply).killers.position(&m).is_none() {
                     hh_searched_quiets.push(m);
                 }
             }
