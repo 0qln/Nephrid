@@ -620,8 +620,6 @@ where
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
         let mut curr = 0;
-
-        #[cfg(debug_assertions)]
         let mut hh_searched_quiets = MoveList::new();
 
         // todo: take killers by ref
@@ -742,33 +740,14 @@ where
                             self.ss.get_mut(rel_ply).killers._push(m);
                         }
 
-                        if let Some(searched_quiets) = move_picker.yielded_quiets() {
-                            #[cfg(debug_assertions)]
-                            {
-                                use itertools::Itertools;
-
-                                let bad_searched_quiets = &searched_quiets[..searched_quiets.len() - 1];
-
-                                let expected = hh_searched_quiets.iter().copied().collect::<std::collections::HashSet<_>>();
-                                let result = bad_searched_quiets.iter().map(ScoredMove::mov).collect::<std::collections::HashSet<_>>();
-                                let diff = expected.symmetric_difference(&result).cloned().collect_vec();
-
-                                assert_eq!(
-                                    searched_quiets.len() - 1,
-                                    hh_searched_quiets.len() as usize,
-                                    "the quiet moves that were yielded in the movegen stage should be the same as the ones that were searched, dif: \
-                                     \n{diff:?} \nin position: \n{} \ncurr move: {m:?} \nexpected: \n{expected:#?} \nresult: \n{result:#?}",
-                                    crate::core::position::FenExport(pos)
-                                );
-                            }
-
+                        // update hh
+                        {
                             let hh_bonus = MoveScore::from(depth.v()).pow(2);
 
                             // penalty history heuristic that were expected but
                             // failed to cause a cutoff
-                            let bad_searched_quiets = &searched_quiets[..searched_quiets.len() - 1];
-                            for searched_quiet in bad_searched_quiets {
-                                let (from, to, _) = searched_quiet.mov().into();
+                            for &searched_quiet in hh_searched_quiets.as_slice() {
+                                let (from, to, _) = searched_quiet.into();
                                 let moving_pt = pos.get_piece(from).piece_type();
                                 self.hh.update_for::<P::Opponent>(moving_pt, to, -hh_bonus);
                             }
@@ -788,13 +767,10 @@ where
 
             curr += 1;
 
-            #[cfg(debug_assertions)]
-            {
-                // push any move whose statistic can be used to estimate a quiet moves score.
-                // that includes killers and the hashmove.
-                if !flag.is_capture() && !flag.is_promo() {
-                    hh_searched_quiets.push(m);
-                }
+            // push any move whose statistic can be used to estimate a quiet moves score.
+            // that includes killers and the hashmove.
+            if !flag.is_capture() && !flag.is_promo() {
+                hh_searched_quiets.push(m);
             }
         }
 

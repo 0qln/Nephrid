@@ -144,7 +144,6 @@ pub trait MoveScorer {
 #[derive(Debug)]
 pub struct MovePicker {
     move_gen: MoveGenerator,
-    yielded_quiets: List<MAX_LEGAL_MOVES, ScoredMove>,
     slice: Range<usize>,
     curr: usize,
     max_stage: RtStage,
@@ -162,7 +161,6 @@ impl MovePicker {
 
         Self {
             move_gen: MoveGenerator::new_precomputed(RtStage::Done, moves),
-            yielded_quiets: List::new(),
             slice: 0..len,
             curr: 0,
             max_stage: RtStage::Done,
@@ -172,7 +170,6 @@ impl MovePicker {
     pub fn new(hash_move: Move, killers: id::Killers) -> Self {
         Self {
             move_gen: MoveGenerator::new(hash_move, killers),
-            yielded_quiets: List::new(),
             slice: Range::default(),
             curr: 0,
             max_stage: RtStage::Done,
@@ -182,7 +179,6 @@ impl MovePicker {
     pub fn new_with_max_stage(hash_move: Move, killers: id::Killers, max_stage: RtStage) -> Self {
         Self {
             move_gen: MoveGenerator::new(hash_move, killers),
-            yielded_quiets: List::new(),
             slice: Range::default(),
             curr: 0,
             max_stage,
@@ -231,35 +227,9 @@ impl MovePicker {
                 if !pos.is_legal_for::<P>(m) {
                     continue;
                 }
-                else {
-                    let flag = m.get_flag();
-                    if !flag.is_capture() && !flag.is_promo() {
-                        self.yielded_quiets.push(slice[0]);
-                    }
-                }
             }
 
             return Some(m);
-        }
-    }
-
-    /// If the movegen has passed or is currently in the yield-quiets-stage,
-    /// this return an iterator over the quiet moves that have already been
-    /// yielded.
-    #[inline(always)]
-    pub fn yielded_quiets(&self) -> Option<&[ScoredMove]> {
-        if self.move_gen.stage >= RtStage::YieldQuiets {
-            Some(if !LEGAL {
-                self.yielded_quiets.as_slice()
-            }
-            else {
-                let start = self.move_gen.start_quiets;
-                let slice = self.move_gen.buf.as_subslice(start..self.curr);
-                slice
-            })
-        }
-        else {
-            None
         }
     }
 }
@@ -279,7 +249,7 @@ pub fn partial_sort_desc(slice: &mut [ScoredMove]) {
 }
 
 /// If true, generates legals, if false, generates pseudo legals.
-pub const LEGAL: bool = false;
+pub const LEGAL: bool = true;
 
 pub const MAX_MOVES: usize = if LEGAL { MAX_LEGAL_MOVES } else { 256 };
 
