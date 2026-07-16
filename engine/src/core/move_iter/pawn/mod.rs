@@ -314,6 +314,16 @@ where
     if !safe_pawns.is_empty() {
         type M = PawnMoves<variants::Unpinned>;
 
+        if O::gen_captures() || O::gen_promos() {
+            acc = apply!(
+                acc,
+                safe_pawns,
+                (),
+                M::promo_capture::<P, { compass_rose::WEST_C }, T>,
+                M::promo_capture::<P, { compass_rose::EAST_C }, T>
+            );
+        }
+
         if O::gen_captures() {
             acc = apply!(
                 acc,
@@ -322,9 +332,7 @@ where
                 M::capture::<P, { compass_rose::WEST_C }, T>,
                 M::capture::<P, { compass_rose::EAST_C }, T>,
                 M::ep::<P, { compass_rose::WEST_C }>,
-                M::ep::<P, { compass_rose::EAST_C }>,
-                M::promo_capture::<P, { compass_rose::WEST_C }, T>,
-                M::promo_capture::<P, { compass_rose::EAST_C }, T>
+                M::ep::<P, { compass_rose::EAST_C }>
             );
         }
 
@@ -340,6 +348,16 @@ where
     if !pinned_pawns.is_empty() {
         type M<'a> = PawnMoves<variants::Pinned<'a>>;
 
+        if O::gen_captures() || O::gen_promos() {
+            acc = apply!(
+                acc,
+                pinned_pawns,
+                pos,
+                M::promo_capture::<P, { compass_rose::WEST_C }, T>,
+                M::promo_capture::<P, { compass_rose::EAST_C }, T>
+            );
+        }
+
         if O::gen_captures() {
             acc = apply!(
                 acc,
@@ -348,9 +366,7 @@ where
                 M::capture::<P, { compass_rose::WEST_C }, T>,
                 M::capture::<P, { compass_rose::EAST_C }, T>,
                 M::ep::<P, { compass_rose::WEST_C }>,
-                M::ep::<P, { compass_rose::EAST_C }>,
-                M::promo_capture::<P, { compass_rose::WEST_C }, T>,
-                M::promo_capture::<P, { compass_rose::EAST_C }, T>
+                M::ep::<P, { compass_rose::EAST_C }>
             );
         }
 
