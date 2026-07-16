@@ -460,7 +460,7 @@ const fn compute_moves<const C: TColor>(pawns: Bitboard) -> Bitboard {
 }
 
 #[inline(always)]
-pub fn lookup_moves(sq: Square, color: Color) -> Bitboard {
+pub const fn lookup_moves(sq: Square, color: Color) -> Bitboard {
     static MOVES_W: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
