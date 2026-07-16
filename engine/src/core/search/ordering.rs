@@ -232,7 +232,10 @@ impl MovePicker {
                     continue;
                 }
                 else {
-                    self.yielded_quiets.push(slice[0]);
+                    let flag = m.get_flag();
+                    if !flag.is_capture() && !flag.is_promo() {
+                        self.yielded_quiets.push(slice[0]);
+                    }
                 }
             }
 

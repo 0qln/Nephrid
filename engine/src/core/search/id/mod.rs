@@ -742,18 +742,23 @@ where
                             self.ss.get_mut(rel_ply).killers._push(m);
                         }
 
-                        // todo: the killers and hashmove are currently not scored in the history
-                        // heurstic, because they happen to be yielded in another stage of the move
-                        // gen. should those be included? test this.
                         if let Some(searched_quiets) = move_picker.yielded_quiets() {
                             #[cfg(debug_assertions)]
                             {
-                                // if the move picker also generated plegals internally, this
-                                // assertion does not make sense.
+                                use itertools::Itertools;
+
+                                let bad_searched_quiets = &searched_quiets[..searched_quiets.len() - 1];
+
+                                let expected = hh_searched_quiets.iter().copied().collect::<std::collections::HashSet<_>>();
+                                let result = bad_searched_quiets.iter().map(ScoredMove::mov).collect::<std::collections::HashSet<_>>();
+                                let diff = expected.symmetric_difference(&result).cloned().collect_vec();
+
                                 assert_eq!(
                                     searched_quiets.len() - 1,
                                     hh_searched_quiets.len() as usize,
-                                    "the quiet moves that were yielded in the movegen stage should be the same as the ones that were searched"
+                                    "the quiet moves that were yielded in the movegen stage should be the same as the ones that were searched, dif: \
+                                     \n{diff:?} \nin position: \n{} \ncurr move: {m:?} \nexpected: \n{expected:#?} \nresult: \n{result:#?}",
+                                    crate::core::position::FenExport(pos)
                                 );
                             }
 
@@ -785,10 +790,9 @@ where
 
             #[cfg(debug_assertions)]
             {
-                // only push the moves from the yield-quiets movegen stage, because those are
-                // the ones that we neeed to give a penalty. the other ones are not scored by
-                // the history heuristic.
-                if !flag.is_capture() && !flag.is_promo() && m != tt_move && self.ss.get(rel_ply).killers.position(&m).is_none() {
+                // push any move whose statistic can be used to estimate a quiet moves score.
+                // that includes killers and the hashmove.
+                if !flag.is_capture() && !flag.is_promo() {
                     hh_searched_quiets.push(m);
                 }
             }
