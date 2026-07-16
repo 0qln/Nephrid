@@ -117,7 +117,7 @@ pub fn psqt(phase: TaperValue, piece: PieceType, from: Square, to: Square, flag:
 
 pub type MoveScore = i16;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct ScoredMove {
     pub score: MoveScore,
     pub mov: Move,
@@ -144,6 +144,7 @@ pub trait MoveScorer {
 #[derive(Debug)]
 pub struct MovePicker {
     move_gen: MoveGenerator,
+    yielded_quiets: List<MAX_LEGAL_MOVES, ScoredMove>,
     slice: Range<usize>,
     curr: usize,
     max_stage: RtStage,
@@ -161,6 +162,7 @@ impl MovePicker {
 
         Self {
             move_gen: MoveGenerator::new_precomputed(RtStage::Done, moves),
+            yielded_quiets: List::new(),
             slice: 0..len,
             curr: 0,
             max_stage: RtStage::Done,
@@ -170,6 +172,7 @@ impl MovePicker {
     pub fn new(hash_move: Move, killers: id::Killers) -> Self {
         Self {
             move_gen: MoveGenerator::new(hash_move, killers),
+            yielded_quiets: List::new(),
             slice: Range::default(),
             curr: 0,
             max_stage: RtStage::Done,
@@ -179,6 +182,7 @@ impl MovePicker {
     pub fn new_with_max_stage(hash_move: Move, killers: id::Killers, max_stage: RtStage) -> Self {
         Self {
             move_gen: MoveGenerator::new(hash_move, killers),
+            yielded_quiets: List::new(),
             slice: Range::default(),
             curr: 0,
             max_stage,
@@ -223,9 +227,13 @@ impl MovePicker {
             self.curr += 1;
 
             // if we also generated p-legals, check for legality before yielding them.
-            if !LEGAL && !pos.is_legal_for::<P>(m) {
-                slice[0] = Default::default();
-                continue;
+            if !LEGAL {
+                if !pos.is_legal_for::<P>(m) {
+                    continue;
+                }
+                else {
+                    self.yielded_quiets.push(slice[0]);
+                }
             }
 
             return Some(m);
@@ -238,9 +246,14 @@ impl MovePicker {
     #[inline(always)]
     pub fn yielded_quiets(&self) -> Option<&[ScoredMove]> {
         if self.move_gen.stage >= RtStage::YieldQuiets {
-            let start = self.move_gen.start_quiets;
-            let slice = self.move_gen.buf.as_subslice(start..self.curr);
-            Some(slice)
+            Some(if !LEGAL {
+                self.yielded_quiets.as_slice()
+            }
+            else {
+                let start = self.move_gen.start_quiets;
+                let slice = self.move_gen.buf.as_subslice(start..self.curr);
+                slice
+            })
         }
         else {
             None

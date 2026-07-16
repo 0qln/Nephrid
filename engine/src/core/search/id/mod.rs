@@ -750,16 +750,11 @@ where
                             {
                                 // if the move picker also generated plegals internally, this
                                 // assertion does not make sense.
-                                //
-                                // todo: or just allocate a new List<> in yielded_quiets to keep the api
-                                // consistent?
-                                if ordering::LEGAL {
-                                    assert_eq!(
-                                        searched_quiets.len() - 1,
-                                        hh_searched_quiets.len() as usize,
-                                        "the quiet moves that were yielded in the movegen stage should be the same as the ones that were searched"
-                                    );
-                                }
+                                assert_eq!(
+                                    searched_quiets.len() - 1,
+                                    hh_searched_quiets.len() as usize,
+                                    "the quiet moves that were yielded in the movegen stage should be the same as the ones that were searched"
+                                );
                             }
 
                             let hh_bonus = MoveScore::from(depth.v()).pow(2);
@@ -767,8 +762,8 @@ where
                             // penalty history heuristic that were expected but
                             // failed to cause a cutoff
                             let bad_searched_quiets = &searched_quiets[..searched_quiets.len() - 1];
-                            for searched_quiet in bad_searched_quiets.into_iter().map(ScoredMove::mov).filter(|&m| m != Move::null()) {
-                                let (from, to, _) = searched_quiet.into();
+                            for searched_quiet in bad_searched_quiets {
+                                let (from, to, _) = searched_quiet.mov().into();
                                 let moving_pt = pos.get_piece(from).piece_type();
                                 self.hh.update_for::<P::Opponent>(moving_pt, to, -hh_bonus);
                             }
