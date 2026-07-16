@@ -23,6 +23,7 @@ mod variants {
     pub trait Variant {
         type Data;
     }
+    pub trait Promo: Variant {}
 
     pub struct Pinned<'a> {
         pub _pos: PhantomData<&'a ()>,
@@ -34,6 +35,7 @@ mod variants {
     pub struct PromoPinned<'a> {
         pub _pos: PhantomData<&'a ()>,
     }
+    impl<'a> Promo for PromoPinned<'a> {}
     impl<'a> Variant for PromoPinned<'a> {
         type Data = &'a Position;
     }
@@ -44,6 +46,7 @@ mod variants {
     }
 
     pub struct PromoUnpinned;
+    impl Promo for PromoUnpinned {}
     impl Variant for PromoUnpinned {
         type Data = ();
     }
@@ -151,7 +154,9 @@ impl<O: Options, V: Variant> PawnMoves<O, V> {
         };
         Self::new(from, to, move_flags::EN_PASSANT, v_data)
     }
+}
 
+impl<O: Options, V: variants::Promo> PawnMoves<O, V> {
     #[inline(always)]
     fn promo<P: Perspective, T: const NoDoubleCheck>(pos: &Position, pawns: Bitboard, v_data: V::Data) -> Self {
         let color = P::COLOR;
