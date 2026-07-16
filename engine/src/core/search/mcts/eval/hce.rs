@@ -124,7 +124,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
 
         let quality: Cp = match pos.get_turn().v() {
             colors::WHITE_C => qsearcher
-                .go::<perspectives::White, node_types::Normal>(
+                .go::<perspectives::White, node_types::Pv>(
                     pos,
                     Score::NEG_INF,
                     Score::POS_INF,
@@ -134,7 +134,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                 )
                 .into(),
             colors::BLACK_C => qsearcher
-                .go::<perspectives::Black, node_types::Normal>(
+                .go::<perspectives::Black, node_types::Pv>(
                     pos,
                     Score::NEG_INF,
                     Score::POS_INF,
