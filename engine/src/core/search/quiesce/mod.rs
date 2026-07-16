@@ -3,7 +3,7 @@ use crate::core::{
     depth::Depth,
     eval::{
         StaticEvaluator,
-        hce::{self, TaperValue, piece_score},
+        hce::{TaperValue, piece_score},
     },
     r#move::Move,
     piece::{PromoPieceType, piece_type},
@@ -234,28 +234,28 @@ pub struct TTEntry {
     mov: Move,
 }
 
-impl const TTMove for TTEntry {
+const impl TTMove for TTEntry {
     fn mov(&self) -> Move { self.mov }
 }
 
-impl const TTKey for TTEntry {
+const impl TTKey for TTEntry {
     fn key(&self) -> zobrist::Hash { self.key }
 }
 
-impl const TTDepth for TTEntry {
+const impl TTDepth for TTEntry {
     fn depth(&self) -> Depth { self.depth }
 }
 
-impl const TTStaticEval for TTEntry {
+const impl TTStaticEval for TTEntry {
     fn static_eval(&self) -> AnyScore { self.static_eval }
     fn static_eval_mut(&mut self) -> &mut AnyScore { &mut self.static_eval }
 }
 
-impl const TTBound for TTEntry {
+const impl TTBound for TTEntry {
     fn bound(&self) -> Bound { self.bound }
 }
 
-impl const TTScore for TTEntry {
+const impl TTScore for TTEntry {
     fn score(&self) -> AnyScore { self.score }
 }
 
@@ -272,31 +272,12 @@ impl ordering::MoveScorer for MoveScorer {
                 0
             }
             ordering::RtStage::GenerateCapturesAndPromos | ordering::RtStage::YieldGoodCapturesAndPromos | ordering::RtStage::YieldBadCaptures => {
-                let (from, to, flag) = mov.into();
-
                 let pieces = pos.piece_info();
 
-                // what if the pt is a pawn that would promote if he captures?
-                let pt = PromoPieceType::try_from(flag)
-                    .ok()
-                    .map(|promo| promo.v())
-                    .unwrap_or_else(|| pieces.get_piece(from).piece_type());
+                let (from, to, _) = mov.into();
+                let piece = pieces.get_piece(from);
 
-                // material diff of the capture
-                let material_diff = ordering::see(pieces, mov, self.color);
-
-                // psqt diff of the moving piece
-                let psqt_move_diff = ordering::psqt(self.phase, pt, from, to, flag, self.color);
-
-                // we are capturing a piece which also had a psqt in the position. see
-                // doesn't do psqt so we should probably add that as a bonus here aswell.
-                let psqt_capture_gain = mov
-                    .get_capture_sq()
-                    .map(|sq| hce::tapered_psqt(self.phase, pos.get_piece(sq).piece_type(), sq, !self.color))
-                    .unwrap_or(scores::ZERO)
-                    .v() as MoveScore;
-
-                material_diff + psqt_move_diff + psqt_capture_gain
+                ordering::see(pieces, mov, self.color) + ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
             }
             ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
             ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {

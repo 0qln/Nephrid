@@ -28,7 +28,7 @@ use crate::{
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{fold_moves, opt::AllLegal},
         params::IParams,
-        piece::piece_type,
+        piece::{PromoPieceType, piece_type},
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
@@ -980,9 +980,31 @@ where
 
             // captures and promos, ordered by see value.
             RtStage::GenerateCapturesAndPromos | RtStage::YieldGoodCapturesAndPromos | RtStage::YieldBadCaptures => {
-                // todo: currently see evaluates the promo values, but we don't need a whole
-                // see for quiet promos, maybe that can be optimized...
-                ordering::see(pos.piece_info(), mov, self.color)
+                let (from, to, flag) = mov.into();
+
+                let pieces = pos.piece_info();
+
+                // what if the pt is a pawn that would promote if he captures?
+                let pt = PromoPieceType::try_from(flag)
+                    .ok()
+                    .map(|promo| promo.v())
+                    .unwrap_or_else(|| pieces.get_piece(from).piece_type());
+
+                // material diff of the capture
+                let material_diff = ordering::see(pieces, mov, self.color);
+
+                // psqt diff of the moving piece
+                let psqt_move_diff = ordering::psqt(self.phase, pt, from, to, flag, self.color);
+
+                // we are capturing a piece which also had a psqt in the position. see
+                // doesn't do psqt so we should probably add that as a bonus here aswell.
+                let psqt_capture_gain = mov
+                    .get_capture_sq()
+                    .map(|sq| hce::tapered_psqt(self.phase, pos.get_piece(sq).piece_type(), sq, !self.color))
+                    .unwrap_or(scores::ZERO)
+                    .v() as MoveScore;
+
+                material_diff + psqt_move_diff + psqt_capture_gain
             }
 
             // score killer moves by their age
