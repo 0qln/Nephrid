@@ -379,15 +379,6 @@ pub struct Configuration {
     /// Margin for futility pruning. In centipawns
     eval_futility_margin: ConfigOption<Spin<UciInteger>>,
 
-    /// Factor for move-count pruning. A score.
-    eval_movecount_pruning_factor: ConfigOption<Spin<UciInteger>>,
-
-    /// Factor for delta pruning. A score.
-    eval_phase_pruning_factor: ConfigOption<Spin<UciInteger>>,
-
-    /// Factor for ply pruning. A score.
-    eval_ply_pruning_factor: ConfigOption<Spin<UciInteger>>,
-
     /// Margin for delta pruning. A tapervalue.
     eval_delta_pruning_threshold: ConfigOption<Spin<UciInteger>>,
 
@@ -478,9 +469,6 @@ impl Configuration {
                 ponder: ConfigOption::new("ponder", Check::new(true)),
                 eval_policy_temperature: ConfigOption::new("eval-policy-temperature", Spin::<UciPercent>::new(_ratio(20.), _ratio(1.), _ratio(100.))),
                 eval_futility_margin: ConfigOption::new("eval-futility-margin", Spin::new(150, 100, 300)),
-                eval_movecount_pruning_factor: ConfigOption::new("eval-movecount-pruning-factor", Spin::new(-20, -200, 200)),
-                eval_phase_pruning_factor: ConfigOption::new("eval-phase-pruning-factor", Spin::new(-20, -200, 200)),
-                eval_ply_pruning_factor: ConfigOption::new("eval-ply-pruning-factor", Spin::new(30, -200, 200)),
                 eval_delta_pruning_threshold: ConfigOption::new("eval-delta-pruning-threshold", Spin::new(16, 0, 24)),
                 select_cpuct: ConfigOption::new("select-cpuct", Spin::<UciPercent>::new(_ratio(1.4), _ratio(0.01), _ratio(50.))),
                 mcts_proven_loss_visit_threshold: ConfigOption::new("mcts-proven-loss-visit-threshold", Spin::new(5, 1, 100)),
@@ -518,9 +506,6 @@ impl ConfigBuilder {
         let cfg = &mut self.config;
         cfg.eval_futility_margin.seed(params.futility_margin().v());
         cfg.eval_delta_pruning_threshold.seed(params.delta_pruning_threshold().v());
-        cfg.eval_movecount_pruning_factor.seed(params.movecount_pruning_factor().v());
-        cfg.eval_phase_pruning_factor.seed(params.phase_pruning_factor().v());
-        cfg.eval_ply_pruning_factor.seed(params.ply_pruning_factor().v());
         self
     }
 
@@ -594,9 +579,6 @@ impl ConfigBuilder {
 impl Configuration {
     pub fn eval_policy_temperature(&self) -> f32 { self.eval_policy_temperature.value.get::<ratio>() }
     pub fn eval_futility_margin(&self) -> AnyScore { AnyScore::new(self.eval_futility_margin.value) }
-    pub fn eval_movecount_pruning_factor(&self) -> AnyScore { AnyScore::new(self.eval_movecount_pruning_factor.value) }
-    pub fn eval_phase_pruning_factor(&self) -> AnyScore { AnyScore::new(self.eval_phase_pruning_factor.value) }
-    pub fn eval_ply_pruning_factor(&self) -> AnyScore { AnyScore::new(self.eval_ply_pruning_factor.value) }
     pub fn eval_delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(self.eval_delta_pruning_threshold.value) }
     pub fn select_cpuct(&self) -> f32 { self.select_cpuct.value.get::<ratio>() }
     pub fn mcts_proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(self.mcts_proven_loss_visit_threshold.value as u32) }
@@ -731,9 +713,6 @@ impl Configuration {
         if cfg!(feature = "tunable") {
             println!("{}", self.eval_delta_pruning_threshold);
             println!("{}", self.eval_futility_margin);
-            println!("{}", self.eval_movecount_pruning_factor);
-            println!("{}", self.eval_phase_pruning_factor);
-            println!("{}", self.eval_ply_pruning_factor);
             println!("{}", self.eval_policy_temperature);
             println!("{}", self.mcts_killer_exploitation);
             println!("{}", self.mcts_proven_loss_visit_threshold);

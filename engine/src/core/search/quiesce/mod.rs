@@ -22,9 +22,6 @@ use crate::core::{
 pub const trait QSearchParams {
     fn futility_margin(&self) -> AnyScore;
     fn delta_pruning_threshold(&self) -> TaperValue;
-    fn movecount_pruning_factor(&self) -> AnyScore;
-    fn phase_pruning_factor(&self) -> AnyScore;
-    fn ply_pruning_factor(&self) -> AnyScore;
 }
 
 pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
