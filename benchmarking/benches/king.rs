@@ -4,6 +4,7 @@ use std::{hint::black_box, ops::ControlFlow};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::core::{
+    color::perspectives,
     coordinates::squares,
     r#move::Move,
     move_iter::{
@@ -76,7 +77,7 @@ pub fn king_move_iter_castling(c: &mut Criterion) {
         let pos = Position::from_fen(input).unwrap();
         c.bench_with_input(BenchmarkId::new("king::move_iter::castling", input), &pos, |b, pos| {
             b.iter(|| {
-                king::fold_legal_castling(
+                king::fold_legal_castling::<perspectives::White, _, _, _>(
                     black_box(pos),
                     black_box(0),
                     black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
