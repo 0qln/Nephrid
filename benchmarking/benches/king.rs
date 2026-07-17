@@ -81,7 +81,7 @@ pub fn king_move_iter_castling(c: &mut Criterion) {
                     black_box(pos),
                     black_box(0),
                     black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
-                    king::nstm_attacks(pos, pos.get_occupancy()),
+                    king::nstm_attacks_for::<perspectives::White>(pos, pos.get_occupancy()),
                 )
             })
         });

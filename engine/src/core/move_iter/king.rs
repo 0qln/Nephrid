@@ -30,23 +30,12 @@ impl<P: Perspective, O: Options> FoldMoves<P, NoCheck, O> for King {
     {
         let king_bb = pos.get_bitboard(King::ID, P::COLOR);
         if let Some(king) = king_bb.lsb() {
-            if O::gen_quiets() {
-                if O::legal() {
-                    // todo: enemy_attacks is computed twice...
-                    let enemy_attacks = nstm_attacks(pos, pos.get_occupancy());
-                    init = king::fold_legal_castling::<P, _, _, _>(pos, init, &mut f, enemy_attacks)?;
-                }
-                else {
-                    init = king::fold_pseudo_legal_castling::<P, _, _, _>(pos, init, &mut f)?;
-                }
-            }
-
-            let attacks = if O::legal() {
-                let enemy_attacks = nstm_attacks(pos, pos.get_occupancy());
-                lookup_attacks(king) & !enemy_attacks
+            let (attacks, enemy_attacks) = if O::legal() {
+                let enemy_attacks = nstm_attacks_for::<P>(pos, pos.get_occupancy());
+                (lookup_attacks(king) & !enemy_attacks, enemy_attacks)
             }
             else {
-                lookup_attacks(king)
+                (lookup_attacks(king), Bitboard::empty())
             };
 
             if O::gen_captures() {
@@ -55,6 +44,13 @@ impl<P: Perspective, O: Options> FoldMoves<P, NoCheck, O> for King {
             }
 
             if O::gen_quiets() {
+                if O::legal() {
+                    init = king::fold_legal_castling::<P, _, _, _>(pos, init, &mut f, enemy_attacks)?;
+                }
+                else {
+                    init = king::fold_pseudo_legal_castling::<P, _, _, _>(pos, init, &mut f)?;
+                }
+
                 let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, P::COLOR);
                 init = map_quiets(legal_quiets, king).try_fold(init, &mut f)?;
             }
@@ -82,7 +78,7 @@ impl<P: Perspective, O: Options, C: SomeCheck> FoldMoves<P, C, O> for King {
                 // If the to square covers anything, it doesn't matter, because the king will be
                 // in check. (=> we don't need to add the to square to occupancy)
                 let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
-                let enemy_attacks = nstm_attacks(pos, occupancy_after_king_move);
+                let enemy_attacks = nstm_attacks_for::<P>(pos, occupancy_after_king_move);
                 lookup_attacks(king) & !enemy_attacks
             }
             else {
@@ -109,9 +105,8 @@ impl<P: Perspective, O: Options, C: SomeCheck> FoldMoves<P, C, O> for King {
     }
 }
 
-pub fn nstm_attacks(pos: &Position, occupancy: Bitboard) -> Bitboard {
-    let stm = pos.get_turn();
-    let nstm = !stm;
+pub fn nstm_attacks_for<P: Perspective>(pos: &Position, occupancy: Bitboard) -> Bitboard {
+    let nstm = P::Opponent::COLOR;
 
     let pawns = pos.get_bitboard(piece_type::PAWN, nstm);
     let knights = pos.get_bitboard(piece_type::KNIGHT, nstm);
