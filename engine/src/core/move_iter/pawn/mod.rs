@@ -93,58 +93,72 @@ impl<V: Variant> PawnMoves<V> {
 
     #[inline(always)]
     fn capture<P: Perspective, const DIR: TCompassRose, T: NoDoubleCheck>(pos: &Position, pawns: Bitboard, v_data: V::Data) -> Self {
-        let color = P::COLOR;
-        let capture_dir = capture(color, CompassRose::new(DIR));
-        let non_promo_pawns = pawns & !Bitboard::from(promo_rank(color));
+        let capture_dir = capture(P::COLOR, CompassRose::new(DIR));
+        let non_promo_pawns = pawns & !Bitboard::from(promo_rank(P::COLOR));
         let capturing_pawns = non_promo_pawns & !Bitboard::from(File::edge::<DIR>());
-        let to = forward(capturing_pawns, capture_dir) & captures_targets::<T>(pos, color);
+        let to = forward(capturing_pawns, capture_dir) & captures_targets::<T>(pos, P::COLOR);
         let from = backward(to, capture_dir);
         Self::new(from, to, move_flags::CAPTURE, v_data)
     }
 
     #[inline(always)]
-    fn ep<P: Perspective, const DIR: TCompassRose>(pos: &Position, pawns: Bitboard, v_data: V::Data) -> Self {
-        let color = P::COLOR;
+    fn ep<O: Options, P: Perspective, const DIR: TCompassRose>(pos: &Position, pawns: Bitboard, v_data: V::Data) -> Self {
         let capture_sq = pos.get_ep_capture_square();
-        let target = EpTargetSquare::from((capture_sq, !color));
-        let mut to = Bitboard::from(target.v());
-        let from = if to.is_empty() {
-            Bitboard::empty()
+        let target = EpTargetSquare::from((capture_sq, P::Opponent::COLOR));
+        let to = Bitboard::from(target.v());
+        let (from, to) = if to.is_empty() {
+            (Bitboard::empty(), Bitboard::empty())
         }
         else {
-            let capture_dir = capture(color, CompassRose::new(DIR));
+            let capture_dir = capture(P::COLOR, CompassRose::new(DIR));
             let capturing_pawns = pawns & !Bitboard::from(File::edge::<DIR>());
             let from = backward(forward(capturing_pawns, capture_dir) & to, capture_dir);
+
             if from.is_empty() {
-                to = Bitboard::empty();
-                Bitboard::empty()
+                (Bitboard::empty(), Bitboard::empty())
             }
             else {
-                // Safety: king the board has no king, but gen_legal is used,
-                // the context is broken anyway.
-                let king_bb = pos.get_bitboard(King::ID, color);
+                // Safety: the board has no king, but gen_legal is used, the context is broken
+                // anyway.
+                let king_bb = pos.get_bitboard(King::ID, P::COLOR);
                 let king_sq = unsafe { king_bb.lsb().unwrap_unchecked() };
+
                 // Check that the king is not in check after the capture happens.
                 let occupancy = pos.get_occupancy();
                 let capt_bb = Bitboard::from(capture_sq.v());
-                let occupancy_after_capture = (occupancy ^ from ^ capt_bb) | to;
-                let rooks = pos.get_bitboard(piece_type::ROOK, !color);
-                let bishops = pos.get_bitboard(piece_type::BISHOP, !color);
-                let queens = pos.get_bitboard(piece_type::QUEEN, !color);
-                let rook_attacks = Rook::lookup_attacks(king_sq, occupancy_after_capture);
-                let bishop_attacks = Bishop::lookup_attacks(king_sq, occupancy_after_capture);
-                let q_or_r_check = !rook_attacks.and_c(rooks | queens).is_empty();
-                let q_or_b_check = !bishop_attacks.and_c(bishops | queens).is_empty();
-                let check = q_or_r_check || q_or_b_check;
-                if check {
-                    to = Bitboard::empty();
-                    Bitboard::empty()
+
+                let check_after_eq = if O::legal() {
+                    let occupancy_after_capture = occupancy ^ from ^ capt_bb ^ to;
+                    let rook_attacks = || Rook::lookup_attacks(king_sq, occupancy_after_capture);
+                    let bishop_attacks = || Bishop::lookup_attacks(king_sq, occupancy_after_capture);
+
+                    let queens = pos.get_bitboard(piece_type::QUEEN, !P::COLOR);
+                    let rooks = || pos.get_bitboard(piece_type::ROOK, !P::COLOR);
+                    let bishops = || pos.get_bitboard(piece_type::BISHOP, !P::COLOR);
+
+                    if !rook_attacks().and_c(rooks() | queens).is_empty() {
+                        true
+                    }
+                    else if !bishop_attacks().and_c(bishops() | queens).is_empty() {
+                        true
+                    }
+                    else {
+                        false
+                    }
                 }
                 else {
-                    from
+                    false
+                };
+
+                if !check_after_eq {
+                    (Bitboard::empty(), Bitboard::empty())
+                }
+                else {
+                    (from, to)
                 }
             }
         };
+
         Self::new(from, to, move_flags::EN_PASSANT, v_data)
     }
 }
@@ -323,8 +337,8 @@ where
                 (),
                 Moves::capture::<P, { compass_rose::WEST_C }, T>,
                 Moves::capture::<P, { compass_rose::EAST_C }, T>,
-                Moves::ep::<P, { compass_rose::WEST_C }>,
-                Moves::ep::<P, { compass_rose::EAST_C }>
+                Moves::ep::<O, P, { compass_rose::WEST_C }>,
+                Moves::ep::<O, P, { compass_rose::EAST_C }>
             );
         }
 
@@ -358,8 +372,8 @@ where
                 pos,
                 Moves::capture::<P, { compass_rose::WEST_C }, T>,
                 Moves::capture::<P, { compass_rose::EAST_C }, T>,
-                Moves::ep::<P, { compass_rose::WEST_C }>,
-                Moves::ep::<P, { compass_rose::EAST_C }>
+                Moves::ep::<O, P, { compass_rose::WEST_C }>,
+                Moves::ep::<O, P, { compass_rose::EAST_C }>
             );
         }
 
