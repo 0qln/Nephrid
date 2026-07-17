@@ -20,7 +20,7 @@ pub struct Bitboard {
 
 pub type Floats = [[f32; files::N_VARIANTS]; ranks::N_VARIANTS];
 
-impl Try for Bitboard {
+impl const Try for Bitboard {
     type Output = Self;
     type Residual = Self;
 
@@ -38,8 +38,12 @@ impl Try for Bitboard {
     }
 }
 
-impl FromResidual for Bitboard {
+impl const FromResidual for Bitboard {
     fn from_residual(residual: <Self as Try>::Residual) -> Self { residual }
+}
+
+impl const ops::Residual<Bitboard> for Bitboard {
+    type TryType = Self;
 }
 
 impl Debug for Bitboard {

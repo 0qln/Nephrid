@@ -273,8 +273,8 @@ pub struct Configuration {
     uci_nalimov_path: ConfigOption<StringOption>,
 
     /// # [UCI] Size of Nalimov tablebase cache.
-    ///	this is the size in MB for the cache for the nalimov table bases
-    ///	These last two options should also be present in the initial options
+    /// this is the size in MB for the cache for the nalimov table bases
+    /// These last two options should also be present in the initial options
     /// exchange dialog when the engine is booted if the engine supports it
     uci_nalimov_cache: ConfigOption<Spin<UciMebibyte>>,
 

@@ -171,10 +171,6 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
             let (from, to, flag) = m.into();
 
-            // if !pos.is_legal_for::<P>(m) {
-            //     continue;
-            // }
-
             // delta pruning
             if !in_check && m != hash_move {
                 let move_gain: Score<P> = {
@@ -268,28 +264,28 @@ pub struct TTEntry {
     mov: Move,
 }
 
-impl const TTMove for TTEntry {
+const impl TTMove for TTEntry {
     fn mov(&self) -> Move { self.mov }
 }
 
-impl const TTKey for TTEntry {
+const impl TTKey for TTEntry {
     fn key(&self) -> zobrist::Hash { self.key }
 }
 
-impl const TTDepth for TTEntry {
+const impl TTDepth for TTEntry {
     fn depth(&self) -> Depth { self.depth }
 }
 
-impl const TTStaticEval for TTEntry {
+const impl TTStaticEval for TTEntry {
     fn static_eval(&self) -> AnyScore { self.static_eval }
     fn static_eval_mut(&mut self) -> &mut AnyScore { &mut self.static_eval }
 }
 
-impl const TTBound for TTEntry {
+const impl TTBound for TTEntry {
     fn bound(&self) -> Bound { self.bound }
 }
 
-impl const TTScore for TTEntry {
+const impl TTScore for TTEntry {
     fn score(&self) -> AnyScore { self.score }
 }
 
@@ -341,6 +337,7 @@ impl ordering::MoveScorer for MoveScorer {
 
                 let (from, to, flag) = mov.into();
                 let pieces = pos.piece_info();
+                let (from, to, _) = mov.into();
                 let piece = pieces.get_piece(from);
                 let pt = piece.piece_type(); // todo: what if the pt is a pawn that would promote?
 

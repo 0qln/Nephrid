@@ -19,6 +19,11 @@ impl_variants_with_assertion! {
     }
 }
 
+impl Color {
+    #[inline(always)]
+    pub const fn index(&self) -> usize { self.v as usize }
+}
+
 impl_op!(!|c: Color| -> Color { Color { v: c.v ^ 1 } });
 
 pub type ColorParseError = ValueOutOfSetError<char>;

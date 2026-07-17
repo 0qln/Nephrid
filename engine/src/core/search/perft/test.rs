@@ -47,8 +47,8 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
                 list_filtered.len(),
                 "Move count mismatch in position: {} \nExpected: {} \nGot: {} \nDiff: {:?}",
                 FenExport(pos),
-                &list_filtered,
-                &list_skipped,
+                list_filtered,
+                list_skipped,
                 {
                     let expected = list_filtered.iter().collect::<HashSet<_>>();
                     let result = list_skipped.iter().collect::<HashSet<_>>();

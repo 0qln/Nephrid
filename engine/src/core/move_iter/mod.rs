@@ -86,22 +86,22 @@ pub const trait SomeCheck {}
 pub const trait NoDoubleCheck: const CheckState {}
 
 pub struct NoCheck;
-impl const CheckState for NoCheck {
+const impl CheckState for NoCheck {
     #[inline(always)]
     fn check_state() -> RtCheckState { RtCheckState::None }
 }
-impl const NoDoubleCheck for NoCheck {}
+const impl NoDoubleCheck for NoCheck {}
 
 pub struct SingleCheck;
-impl const CheckState for SingleCheck {
+const impl CheckState for SingleCheck {
     #[inline(always)]
     fn check_state() -> RtCheckState { RtCheckState::Single }
 }
-impl const SomeCheck for SingleCheck {}
-impl const NoDoubleCheck for SingleCheck {}
+const impl SomeCheck for SingleCheck {}
+const impl NoDoubleCheck for SingleCheck {}
 
 struct DoubleCheck;
-impl const CheckState for DoubleCheck {
+const impl CheckState for DoubleCheck {
     #[inline(always)]
     fn check_state() -> RtCheckState { RtCheckState::Double }
 }
@@ -169,7 +169,7 @@ pub mod opt {
     use super::Options;
 
     pub struct AllLegal;
-    impl const Options for AllLegal {
+    const impl Options for AllLegal {
         #[inline(always)]
         fn gen_quiets() -> bool { true }
 
@@ -181,7 +181,7 @@ pub mod opt {
     }
 
     pub struct AllPseudoLegal;
-    impl const Options for AllPseudoLegal {
+    const impl Options for AllPseudoLegal {
         #[inline(always)]
         fn gen_quiets() -> bool { true }
 
@@ -196,7 +196,7 @@ pub mod opt {
     }
 
     pub struct Captures;
-    impl const Options for Captures {
+    const impl Options for Captures {
         #[inline(always)]
         fn gen_quiets() -> bool { false }
 

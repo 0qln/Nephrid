@@ -220,6 +220,9 @@ impl<T: const Default + Copy + Eq, const N: usize> RbSet<T, N> {
     #[inline(always)]
     pub const fn new() -> Self { Self { items: [T::default(); N] } }
 
+    #[inline(always)]
+    pub const fn len() -> usize { N }
+
     // todo: make sure this is unrolled for our N=2/3
     // todo: this is O(n) but i don't  think this matters for our n=2 lmao
     #[inline(always)]
