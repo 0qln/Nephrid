@@ -1,6 +1,13 @@
 use crate::core::{
     eval::GameResult,
-    move_iter::{SingleCheck, captures_targets, fold_moves, king, opt::AllLegal, pin_mask, queen::Queen, quiets_targets},
+    move_iter::{
+        SingleCheck, captures_targets, fold_moves,
+        king::{self, check_mask_qs, tabu_mask_ks},
+        opt::AllLegal,
+        pin_mask,
+        queen::Queen,
+        quiets_targets,
+    },
 };
 use core::fmt;
 use std::{
@@ -483,10 +490,14 @@ impl PieceInfoObserver for () {
 }
 
 impl<T: PieceInfoObserver + ?Sized> PieceInfoObserver for &mut T {
-    #[inline(always)] fn on_init(&mut self, p: &PieceInfo) { (**self).on_init(p); }
-    #[inline(always)] fn on_piece_put(&mut self, s: Square, p: Piece) { (**self).on_piece_put(s, p); }
-    #[inline(always)] fn on_piece_removed(&mut self, s: Square, p: Piece) { (**self).on_piece_removed(s, p); }
-    #[inline(always)] fn on_piece_moved(&mut self, f: Square, t: Square, p: Piece) { (**self).on_piece_moved(f, t, p); }
+    #[inline(always)]
+    fn on_init(&mut self, p: &PieceInfo) { (**self).on_init(p); }
+    #[inline(always)]
+    fn on_piece_put(&mut self, s: Square, p: Piece) { (**self).on_piece_put(s, p); }
+    #[inline(always)]
+    fn on_piece_removed(&mut self, s: Square, p: Piece) { (**self).on_piece_removed(s, p); }
+    #[inline(always)]
+    fn on_piece_moved(&mut self, f: Square, t: Square, p: Piece) { (**self).on_piece_moved(f, t, p); }
 }
 
 impl<A: PieceInfoObserver, B: PieceInfoObserver> PieceInfoObserver for (A, B) {
@@ -866,15 +877,10 @@ impl Position {
         let stm = P::COLOR;
         let nstm = !stm;
 
-        // todo: only check block mask in pseudo-legal generation
         // king castle cannot move through check
         if matches!(flag, move_flags::KING_CASTLE) {
-            let check_mask = Bitboard {
-                v: unsafe { *[0x60_u64, 0x60_u64 << 56].get_unchecked(stm.v() as usize) },
-            };
-
             let occ = self.piece_info.get_occupancy();
-            for sq in check_mask {
+            for sq in tabu_mask_ks::<P>() {
                 if self.piece_info.attackers_to_exist(sq, nstm, occ) {
                     return false;
                 }
@@ -883,12 +889,8 @@ impl Position {
         }
         // queen castle cannot move through check
         else if matches!(flag, move_flags::QUEEN_CASTLE) {
-            let check_mask = Bitboard {
-                v: unsafe { *[0xC_u64, 0xC_u64 << 56].get_unchecked(stm.v() as usize) },
-            };
-
             let occ = self.piece_info.get_occupancy();
-            for sq in check_mask {
+            for sq in check_mask_qs::<P>() {
                 if self.piece_info.attackers_to_exist(sq, nstm, occ) {
                     return false;
                 }

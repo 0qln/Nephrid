@@ -620,8 +620,6 @@ where
         let mut best_score = Score::NEG_INF;
         let mut best_move = Move::null();
         let mut curr = 0;
-
-        #[cfg(debug_assertions)]
         let mut hh_searched_quiets = MoveList::new();
 
         // todo: take killers by ref
@@ -629,12 +627,6 @@ where
             let (from, to, flag) = m.into();
             let moving_piece = pos.get_piece(from);
             let moving_pt = moving_piece.piece_type();
-
-            // generating plegals and then filtering hasn't show to be faster, maybe
-            // optimize this more and then try again.
-            // if !pos.is_legal_for::<P>(m) {
-            //     continue;
-            // }
 
             // make the move
             self.ss.propagate_forward(rel_ply, |s, next_s| next_s.phase = s.phase);
@@ -748,26 +740,14 @@ where
                             self.ss.get_mut(rel_ply).killers._push(m);
                         }
 
-                        // todo: the killers and hashmove are currently not scored in the history
-                        // heurstic, because they happen to be yielded in another stage of the move
-                        // gen. should those be included? test this.
-                        if let Some(searched_quiets) = move_picker.yielded_quiets() {
-                            #[cfg(debug_assertions)]
-                            {
-                                assert_eq!(
-                                    searched_quiets.len() - 1,
-                                    hh_searched_quiets.len() as usize,
-                                    "the quiet moves that were yielded in the movegen stage should be the same as the ones that were searched"
-                                );
-                            }
-
+                        // update hh
+                        {
                             let hh_bonus = MoveScore::from(depth.v()).pow(2);
 
                             // penalty history heuristic that were expected but
                             // failed to cause a cutoff
-                            let bad_searched_quiets = &searched_quiets[..searched_quiets.len() - 1];
-                            for searched_quiet in bad_searched_quiets {
-                                let (from, to, _) = searched_quiet.mov().into();
+                            for &searched_quiet in hh_searched_quiets.as_slice() {
+                                let (from, to, _) = searched_quiet.into();
                                 let moving_pt = pos.get_piece(from).piece_type();
                                 self.hh.update_for::<P::Opponent>(moving_pt, to, -hh_bonus);
                             }
@@ -787,14 +767,10 @@ where
 
             curr += 1;
 
-            #[cfg(debug_assertions)]
-            {
-                // only push the moves from the yield-quiets movegen stage, because those are
-                // the ones that we neeed to give a penalty. the other ones are not scored by
-                // the history heuristic.
-                if !flag.is_capture() && !flag.is_promo() && m != tt_move && self.ss.get(rel_ply).killers.position(&m).is_none() {
-                    hh_searched_quiets.push(m);
-                }
+            // push any move whose statistic can be used to estimate a quiet moves score.
+            // that includes killers and the hashmove.
+            if !flag.is_capture() && !flag.is_promo() {
+                hh_searched_quiets.push(m);
             }
         }
 

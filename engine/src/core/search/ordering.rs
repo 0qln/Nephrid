@@ -117,7 +117,7 @@ pub fn psqt(phase: TaperValue, piece: PieceType, from: Square, to: Square, flag:
 
 pub type MoveScore = i16;
 
-#[derive(Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct ScoredMove {
     pub score: MoveScore,
     pub mov: Move,
@@ -195,47 +195,41 @@ impl MovePicker {
     }
 
     pub fn next_for<P: Perspective>(&mut self, pos: &Position, scorer: &impl MoveScorer) -> Option<Move> {
-        // try to generate new moves if we've exhausted the current slice. `curr` is an
-        // absolute index into the generator's buffer.
-        while self.curr >= self.slice.end {
-            if self.move_gen.stage > self.max_stage {
-                // we'd have to generate moves past the max stage
-                return None;
-            }
-            match self.move_gen.next_for::<P>(pos, scorer) {
-                Err(MoveGenExhausted) => {
-                    // move gen is done, there are no more moves
+        loop {
+            // try to generate new moves if we've exhausted the current slice. `curr` is an
+            // absolute index into the generator's buffer.
+            while self.curr >= self.slice.end {
+                if self.move_gen.stage > self.max_stage {
+                    // we'd have to generate moves past the max stage
                     return None;
                 }
-                Ok(s) => {
-                    self.curr = s.start;
-                    self.slice = s;
+                match self.move_gen.next_for::<P>(pos, scorer) {
+                    Err(MoveGenExhausted) => {
+                        // move gen is done, there are no more moves
+                        return None;
+                    }
+                    Ok(s) => {
+                        self.curr = s.start;
+                        self.slice = s;
+                    }
                 }
             }
-        }
 
-        let slice = self.move_gen.buf.as_mut_subslice(self.curr..self.slice.end);
-        partial_sort_desc(slice);
+            let slice = self.move_gen.buf.as_mut_subslice(self.curr..self.slice.end);
+            partial_sort_desc(slice);
 
-        let m = slice[0].mov();
+            let m = slice[0].mov();
 
-        self.curr += 1;
+            self.curr += 1;
 
-        Some(m)
-    }
+            // if we also generated p-legals, check for legality before yielding them.
+            if !LEGAL {
+                if !pos.is_legal_for::<P>(m) {
+                    continue;
+                }
+            }
 
-    /// If the movegen has passed or is currently in the yield-quiets-stage,
-    /// this return an iterator over the quiet moves that have already been
-    /// yielded.
-    #[inline(always)]
-    pub fn yielded_quiets(&self) -> Option<&[ScoredMove]> {
-        if self.move_gen.stage >= RtStage::YieldQuiets {
-            let start = self.move_gen.start_quiets;
-            let slice = self.move_gen.buf.as_subslice(start..self.curr);
-            Some(slice)
-        }
-        else {
-            None
+            return Some(m);
         }
     }
 }
@@ -256,6 +250,14 @@ pub fn partial_sort_desc(slice: &mut [ScoredMove]) {
 
 /// If true, generates legals, if false, generates pseudo legals.
 pub const LEGAL: bool = true;
+
+pub const MAX_MOVES: usize = if LEGAL { MAX_LEGAL_MOVES } else { 256 };
+
+// if we are generating legal moves, we need to check if they are actually
+// legal.
+// if we are generating pseudo-legal, the recurse loop in id fn should test for
+// legality anyway before playing se we don't need to check anyway.
+const SKIP_LEGALITY_CHECK: bool = !LEGAL;
 
 // todo: stage for generating checks?
 #[repr(u8)]
@@ -368,7 +370,7 @@ pub struct MoveGenerator {
     stage: RtStage,
     hash_move: Move,
     killers: id::Killers,
-    buf: List<{ MAX_LEGAL_MOVES }, ScoredMove>,
+    buf: List<{ MAX_MOVES }, ScoredMove>,
     start_good_capt_and_promos: usize,
     num_good_capt_and_promos: usize,
     num_capt_and_promos: usize,
@@ -391,7 +393,7 @@ impl MoveGenerator {
         }
     }
 
-    pub fn new_precomputed(stage: RtStage, buf: List<{ MAX_LEGAL_MOVES }, ScoredMove>) -> Self {
+    pub fn new_precomputed(stage: RtStage, buf: List<{ MAX_MOVES }, ScoredMove>) -> Self {
         Self {
             buf,
             stage,
@@ -424,7 +426,10 @@ impl MoveGenerator {
     pub fn next_for<P: Perspective>(&mut self, pos: &Position, scorer: &impl MoveScorer) -> Result<Range<usize>, MoveGenExhausted> {
         match self.stage {
             RtStage::YieldHashMove => {
-                if self.hash_move != Move::null() && pos.is_pseudo_legal_for::<P>(self.hash_move) && pos.is_legal_for::<P>(self.hash_move) {
+                if self.hash_move != Move::null()
+                    && pos.is_pseudo_legal_for::<P>(self.hash_move)
+                    && (SKIP_LEGALITY_CHECK || pos.is_legal_for::<P>(self.hash_move))
+                {
                     let score = scorer.score::<stages::YieldHashMove>(pos, self.hash_move);
                     self.buf.push(ScoredMove::new(self.hash_move, score));
 
@@ -493,7 +498,7 @@ impl MoveGenerator {
                 for &killer in self.killers.as_slice() {
                     debug_assert!(killer.get_capture_sq().is_none(), "Killers should not be captures");
 
-                    if killer != Move::null() && pos.is_pseudo_legal_for::<P>(killer) && pos.is_legal_for::<P>(killer) {
+                    if killer != Move::null() && pos.is_pseudo_legal_for::<P>(killer) && (SKIP_LEGALITY_CHECK || pos.is_legal_for::<P>(killer)) {
                         let s = scorer.score::<stages::YieldKillers>(pos, killer);
                         self.buf.push(ScoredMove::new(killer, s));
                     }
@@ -736,6 +741,10 @@ pub mod test {
             let mut cnt = 0;
             let mut got = MoveList::new();
             while let Some(mov) = picker.next(pos, &scorer) {
+                if SKIP_LEGALITY_CHECK && !pos.is_legal(mov) {
+                    continue;
+                }
+
                 got.push(mov);
                 cnt += 1;
                 pos.make_move(mov, &mut ());

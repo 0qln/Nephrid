@@ -1,7 +1,14 @@
 use std::{hint, ops::Try};
 
 use crate::core::{
-    bitboard::{Bitboard, BitboardIteratorExt}, castling::castling_sides, color::Perspective, coordinates::{File, Rank, Square, files, ranks, squares}, r#move::{Move, move_flags}, move_iter::{captures_targets, king, knight, pawn, quiets_targets}, piece::{IPieceType, PieceType, piece_type}, position::Position
+    bitboard::{Bitboard, BitboardIteratorExt},
+    castling::castling_sides,
+    color::Perspective,
+    coordinates::{File, Rank, Square, files, ranks, squares},
+    r#move::{Move, move_flags},
+    move_iter::{captures_targets, king, knight, pawn, quiets_targets},
+    piece::{IPieceType, PieceType, piece_type},
+    position::Position,
 };
 
 use const_for::const_for;
@@ -23,23 +30,12 @@ impl<P: Perspective, O: Options> FoldMoves<P, NoCheck, O> for King {
     {
         let king_bb = pos.get_bitboard(King::ID, P::COLOR);
         if let Some(king) = king_bb.lsb() {
-            if O::gen_quiets() {
-                if O::legal() {
-                    // todo: enemy_attacks is computed twice...
-                    let enemy_attacks = nstm_attacks(pos, pos.get_occupancy());
-                    init = king::fold_legal_castling(pos, init, &mut f, enemy_attacks)?;
-                }
-                else {
-                    init = king::fold_pseudo_legal_castling(pos, init, &mut f)?;
-                }
-            }
-
-            let attacks = if O::legal() {
-                let enemy_attacks = nstm_attacks(pos, pos.get_occupancy());
-                lookup_attacks(king) & !enemy_attacks
+            let (attacks, enemy_attacks) = if O::legal() {
+                let enemy_attacks = nstm_attacks_for::<P>(pos, pos.get_occupancy());
+                (lookup_attacks(king) & !enemy_attacks, enemy_attacks)
             }
             else {
-                lookup_attacks(king)
+                (lookup_attacks(king), Bitboard::empty())
             };
 
             if O::gen_captures() {
@@ -48,6 +44,13 @@ impl<P: Perspective, O: Options> FoldMoves<P, NoCheck, O> for King {
             }
 
             if O::gen_quiets() {
+                if O::legal() {
+                    init = king::fold_legal_castling::<P, _, _, _>(pos, init, &mut f, enemy_attacks)?;
+                }
+                else {
+                    init = king::fold_pseudo_legal_castling::<P, _, _, _>(pos, init, &mut f)?;
+                }
+
                 let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, P::COLOR);
                 init = map_quiets(legal_quiets, king).try_fold(init, &mut f)?;
             }
@@ -75,7 +78,7 @@ impl<P: Perspective, O: Options, C: SomeCheck> FoldMoves<P, C, O> for King {
                 // If the to square covers anything, it doesn't matter, because the king will be
                 // in check. (=> we don't need to add the to square to occupancy)
                 let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
-                let enemy_attacks = nstm_attacks(pos, occupancy_after_king_move);
+                let enemy_attacks = nstm_attacks_for::<P>(pos, occupancy_after_king_move);
                 lookup_attacks(king) & !enemy_attacks
             }
             else {
@@ -102,9 +105,8 @@ impl<P: Perspective, O: Options, C: SomeCheck> FoldMoves<P, C, O> for King {
     }
 }
 
-pub fn nstm_attacks(pos: &Position, occupancy: Bitboard) -> Bitboard {
-    let stm = pos.get_turn();
-    let nstm = !stm;
+pub fn nstm_attacks_for<P: Perspective>(pos: &Position, occupancy: Bitboard) -> Bitboard {
+    let nstm = P::Opponent::COLOR;
 
     let pawns = pos.get_bitboard(piece_type::PAWN, nstm);
     let knights = pos.get_bitboard(piece_type::KNIGHT, nstm);
@@ -125,36 +127,25 @@ pub fn nstm_attacks(pos: &Position, occupancy: Bitboard) -> Bitboard {
         | king.lsb().map(self::lookup_attacks).unwrap_or_default()
 }
 
-pub fn fold_pseudo_legal_castling<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+pub fn fold_pseudo_legal_castling<P: Perspective, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    let color = pos.get_turn();
-    let color_v = color.v() as usize;
-    let rank = color * ranks::_8;
+    let rank = P::COLOR * ranks::_8;
     let from = Square::from((files::E, rank));
     let castling = pos.get_castling();
 
-    if castling.is_true(castling_sides::KING_SIDE, color) {
-        const TABU_MASK: [Bitboard; 2] = [Bitboard { v: 0x60_u64 }, Bitboard { v: 0x60_u64 << 56 }];
-        let tabus = pos.get_occupancy();
-        // Safety: Color is in range [0..2]
-        let tabu_mask = unsafe { TABU_MASK.get_unchecked(color_v) };
-        if (tabus & *tabu_mask).is_empty() {
+    if castling.is_true(castling_sides::KING_SIDE, P::COLOR) {
+        if (pos.get_occupancy() & tabu_mask_ks::<P>()).is_empty() {
             // Safety: [e1|e8] + 2 < 63
             let to = unsafe { Square::from_v(from.v() + 2) };
             init = f(init, Move::new(from, to, move_flags::KING_CASTLE))?;
         }
     }
 
-    if castling.is_true(castling_sides::QUEEN_SIDE, color) {
-        const BLOCK_MASK: [Bitboard; 2] = [Bitboard { v: 0xE_u64 }, Bitboard { v: 0xE_u64 << 56 }];
-        // Safety: Color is in range [0..2]
-        let block_mask = unsafe { *BLOCK_MASK.get_unchecked(color_v) };
-        let blockers = pos.get_occupancy();
-        let blocked = block_mask & blockers;
-        if blocked.is_empty() {
+    if castling.is_true(castling_sides::QUEEN_SIDE, P::COLOR) {
+        if (pos.get_occupancy() & block_mask_qs::<P>()).is_empty() {
             // Safety: [e1|e8] - 2 > 0
             let to = unsafe { Square::from_v(from.v() - 2) };
             return f(init, Move::new(from, to, move_flags::QUEEN_CASTLE));
@@ -164,38 +155,27 @@ where
     try { init }
 }
 
-pub fn fold_legal_castling<B, F, R>(pos: &Position, mut init: B, mut f: F, enemy_attacks: Bitboard) -> R
+pub fn fold_legal_castling<P: Perspective, B, F, R>(pos: &Position, mut init: B, mut f: F, enemy_attacks: Bitboard) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    let color = pos.get_turn();
-    let color_v = color.v() as usize;
-    let rank = color * ranks::_8;
+    let rank = P::COLOR * ranks::_8;
     let from = Square::from((files::E, rank));
     let castling = pos.get_castling();
 
-    if castling.is_true(castling_sides::KING_SIDE, color) {
-        const TABU_MASK: [Bitboard; 2] = [Bitboard { v: 0x60_u64 }, Bitboard { v: 0x60_u64 << 56 }];
+    if castling.is_true(castling_sides::KING_SIDE, P::COLOR) {
         let tabus = enemy_attacks | pos.get_occupancy();
-        // Safety: Color is in range [0..2]
-        let tabu_mask = unsafe { TABU_MASK.get_unchecked(color_v) };
-        if (tabus & *tabu_mask).is_empty() {
+        if (tabus & tabu_mask_ks::<P>()).is_empty() {
             // Safety: [e1|e8] + 2 < 63
             let to = unsafe { Square::from_v(from.v() + 2) };
             init = f(init, Move::new(from, to, move_flags::KING_CASTLE))?;
         }
     }
 
-    if castling.is_true(castling_sides::QUEEN_SIDE, color) {
-        const BLOCK_MASK: [Bitboard; 2] = [Bitboard { v: 0xE_u64 }, Bitboard { v: 0xE_u64 << 56 }];
-        const CHECK_MASK: [Bitboard; 2] = [Bitboard { v: 0xC_u64 }, Bitboard { v: 0xC_u64 << 56 }];
-        // Safety: Color is in range [0..2]
-        let block_mask = unsafe { *BLOCK_MASK.get_unchecked(color_v) };
-        let check_mask = unsafe { *CHECK_MASK.get_unchecked(color_v) };
-        let blockers = pos.get_occupancy();
-        let blocked = block_mask & blockers;
-        let checked = check_mask & enemy_attacks;
+    if castling.is_true(castling_sides::QUEEN_SIDE, P::COLOR) {
+        let blocked = block_mask_qs::<P>() & pos.get_occupancy();
+        let checked = check_mask_qs::<P>() & enemy_attacks;
         if (blocked | checked).is_empty() {
             // Safety: [e1|e8] - 2 > 0
             let to = unsafe { Square::from_v(from.v() - 2) };
@@ -206,7 +186,22 @@ where
     try { init }
 }
 
-pub fn lookup_attacks(sq: Square) -> Bitboard {
+pub const fn check_mask_qs<P: Perspective>() -> Bitboard {
+    static CHECK_MASK: [Bitboard; 2] = [Bitboard { v: 0xC_u64 }, Bitboard { v: 0xC_u64 << 56 }];
+    unsafe { *CHECK_MASK.get_unchecked(P::COLOR.index()) }
+}
+
+pub const fn block_mask_qs<P: Perspective>() -> Bitboard {
+    static BLOCK_MASK: [Bitboard; 2] = [Bitboard { v: 0xE_u64 }, Bitboard { v: 0xE_u64 << 56 }];
+    unsafe { *BLOCK_MASK.get_unchecked(P::COLOR.index()) }
+}
+
+pub const fn tabu_mask_ks<P: Perspective>() -> Bitboard {
+    static TABU_MASK: [Bitboard; 2] = [Bitboard { v: 0x60_u64 }, Bitboard { v: 0x60_u64 << 56 }];
+    unsafe { *TABU_MASK.get_unchecked(P::COLOR.index()) }
+}
+
+pub const fn lookup_attacks(sq: Square) -> Bitboard {
     static ATTACKS: [Bitboard; 64] = {
         let mut attacks = [Bitboard::empty(); 64];
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {

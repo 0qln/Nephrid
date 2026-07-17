@@ -156,10 +156,6 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         let mut best_move = Move::null();
         let mut curr = 0;
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
-            // if !pos.is_legal_for::<P>(m) {
-            //     continue;
-            // }
-
             // delta pruning
             if !in_check && phase < params.delta_pruning_threshold() {
                 let value_bonus = PromoPieceType::try_from(m.get_flag())
@@ -234,28 +230,28 @@ pub struct TTEntry {
     mov: Move,
 }
 
-impl const TTMove for TTEntry {
+const impl TTMove for TTEntry {
     fn mov(&self) -> Move { self.mov }
 }
 
-impl const TTKey for TTEntry {
+const impl TTKey for TTEntry {
     fn key(&self) -> zobrist::Hash { self.key }
 }
 
-impl const TTDepth for TTEntry {
+const impl TTDepth for TTEntry {
     fn depth(&self) -> Depth { self.depth }
 }
 
-impl const TTStaticEval for TTEntry {
+const impl TTStaticEval for TTEntry {
     fn static_eval(&self) -> AnyScore { self.static_eval }
     fn static_eval_mut(&mut self) -> &mut AnyScore { &mut self.static_eval }
 }
 
-impl const TTBound for TTEntry {
+const impl TTBound for TTEntry {
     fn bound(&self) -> Bound { self.bound }
 }
 
-impl const TTScore for TTEntry {
+const impl TTScore for TTEntry {
     fn score(&self) -> AnyScore { self.score }
 }
 
