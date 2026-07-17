@@ -648,6 +648,7 @@ where
             if depth >= Depth::new(3) && curr > 1 {
                 let d = depth.v() as f32;
                 let m = curr as f32;
+                // todo: this can be precomputed (e.i. see math::ln_i32)
                 let lmr = 0.99 + f32::ln(d) * f32::ln(m) / 3.14;
                 depth_reduct += lmr as u8;
             }
