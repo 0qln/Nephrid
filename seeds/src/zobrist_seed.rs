@@ -2,9 +2,10 @@ use std::ops::ControlFlow;
 
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 
-use engine::core::{r#move::MoveList, move_iter::sliding_piece::magics, position::Position, zobrist};
+use engine::{core::{r#move::MoveList, move_iter::sliding_piece::magics, position::Position, zobrist}, math};
 
 fn find_seeds() {
+    math::init();
     magics::init();
 
     let mut seed = 14278029879823863027;

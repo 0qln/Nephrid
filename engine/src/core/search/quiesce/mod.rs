@@ -3,7 +3,7 @@ use crate::core::{
     depth::Depth,
     eval::{
         StaticEvaluator,
-        hce::{TaperValue, piece_score},
+        hce::{TaperValue, piece_score, tapered_psqt},
     },
     r#move::Move,
     piece::{PromoPieceType, piece_type},
@@ -22,7 +22,6 @@ use crate::core::{
 pub const trait QSearchParams {
     fn futility_margin(&self) -> AnyScore;
     fn delta_pruning_threshold(&self) -> TaperValue;
-    fn movecount_pruning_factor(&self) -> AnyScore;
 }
 
 pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
@@ -39,7 +38,8 @@ pub struct QSearcher<'a, Entry, Replace> {
 }
 
 impl<'a, E, R> QSearcher<'a, E, R> {
-    pub fn new(tt: &'a mut TT<E, R>, ss: &'a mut id::SS, root_ply: Ply) -> Self { Self { tt, ss, root_ply } }
+    #[inline]
+    pub fn new(_pos: &Position, tt: &'a mut TT<E, R>, ss: &'a mut id::SS, root_ply: Ply) -> Self { Self { tt, ss, root_ply } }
 }
 
 impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>>
@@ -154,31 +154,40 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // recurse
         let mut best_move = Move::null();
-        let mut curr = 0;
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
             // delta pruning
             if !in_check && phase < params.delta_pruning_threshold() {
-                let value_bonus = PromoPieceType::try_from(m.get_flag())
-                    .ok()
-                    .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
-                    .unwrap_or(scores::ZERO);
+                let (from, to, flag) = m.into();
 
-                let captured_value = m
-                    .get_capture_sq()
-                    .map(|capt_sq| piece_score(pos.get_piece(capt_sq).piece_type()))
-                    .unwrap_or(scores::ZERO);
+                let move_gain: Score<P> = {
+                    let promo_bonus = PromoPieceType::try_from(flag)
+                        .ok()
+                        .map(|promo| {
+                            let promo_pt = promo.into();
+                            let lost = piece_score(piece_type::PAWN) + tapered_psqt(phase, piece_type::PAWN, from, P::COLOR);
+                            let gained = piece_score(promo_pt) + tapered_psqt(phase, promo_pt, to, P::COLOR);
+                            gained - lost
+                        })
+                        .unwrap_or(scores::ZERO);
 
-                let futility_margin = params.futility_margin();
+                    let capture_bonus = m
+                        .get_capture_sq()
+                        .map(|capt_sq| {
+                            let pt = pos.get_piece(capt_sq).piece_type();
+                            piece_score(pt) + tapered_psqt(phase, pt, capt_sq, P::Opponent::COLOR)
+                        })
+                        .unwrap_or(scores::ZERO);
 
-                // should allow for more aggressive futility pruning at moves that were regarded
-                // less important by the move ordering
-                let move_count_margin = params.movecount_pruning_factor() * curr;
+                    unsafe { (capture_bonus + promo_bonus).interpret_as() }
+                };
 
-                // Safety: the score was constructed relative to `P`
-                let futility_score = captured_value + value_bonus + futility_margin + move_count_margin;
-                let futility_score = unsafe { futility_score.interpret_as() };
+                let margin: Score<P> = {
+                    let futility_margin = params.futility_margin();
 
-                if best_score + futility_score < alpha {
+                    unsafe { (futility_margin).interpret_as() }
+                };
+
+                if best_score + move_gain + margin < alpha {
                     continue;
                 }
             }
@@ -204,8 +213,6 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                     break;
                 }
             }
-
-            curr += 1;
         }
 
         self.tt.try_insert(TTEntry {
@@ -268,12 +275,14 @@ impl ordering::MoveScorer for MoveScorer {
                 0
             }
             ordering::RtStage::GenerateCapturesAndPromos | ordering::RtStage::YieldGoodCapturesAndPromos | ordering::RtStage::YieldBadCaptures => {
+                let (from, to, flag) = mov.into();
                 let pieces = pos.piece_info();
-
-                let (from, to, _) = mov.into();
                 let piece = pieces.get_piece(from);
+                let pt = piece.piece_type(); // todo: what if the pt is a pawn that would promote if he captures?
+                // todo: we are capturing a piece which also had a psqt in the position. see
+                // doesn't do psqt so we should probably add that as a bonus here aswell.
 
-                ordering::see(pieces, mov, self.color) + ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
+                ordering::see(pieces, mov, self.color) + ordering::psqt(self.phase, pt, from, to, flag, self.color)
             }
             ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
             ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {
@@ -281,10 +290,15 @@ impl ordering::MoveScorer for MoveScorer {
                     pos.get_check_state() != CheckState::None,
                     "we should never be generating quiets in qsearch if we're not in check"
                 );
+
+                let (from, to, flag) = mov.into();
                 let pieces = pos.piece_info();
-                let (from, to, _) = mov.into();
                 let piece = pieces.get_piece(from);
-                ordering::psqt(self.phase, piece.piece_type(), from, to, mov.get_flag(), self.color)
+                let pt = piece.piece_type(); // todo: what if the pt is a pawn that would promote?
+
+                // todo: history heuristic
+
+                ordering::psqt(self.phase, pt, from, to, flag, self.color)
             }
             ordering::RtStage::Done => todo!("why are we scoring Done??"),
         }

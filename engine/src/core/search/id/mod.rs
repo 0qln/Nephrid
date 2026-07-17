@@ -458,7 +458,7 @@ where
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return QSearcher::new(self.tt, &mut self.ss, self.root_ply).go::<P, T>(
+            return QSearcher::new(pos, self.tt, &mut self.ss, self.root_ply).go::<P, T>(
                 pos,
                 alpha,
                 beta,
@@ -648,6 +648,7 @@ where
             if depth >= Depth::new(3) && curr > 1 {
                 let d = depth.v() as f32;
                 let m = curr as f32;
+                // todo: this can be precomputed (e.i. see math::ln_i32)
                 let lmr = 0.99 + f32::ln(d) * f32::ln(m) / 3.14;
                 depth_reduct += lmr as u8;
             }
@@ -974,13 +975,13 @@ where
 
             // score quiet moves by psqt diff or history heuristic
             RtStage::GenerateQuiets | RtStage::YieldQuiets => {
-                let (from, to, _) = mov.into();
+                let (from, to, flag) = mov.into();
                 let pieces = pos.piece_info();
                 let piece = pieces.get_piece(from);
                 let piece_type = piece.piece_type();
 
                 let hh_score = self.hh.get(self.color, piece_type, to);
-                let psqt_score = ordering::psqt(self.phase, piece_type, from, to, mov.get_flag(), self.color);
+                let psqt_score = ordering::psqt(self.phase, piece_type, from, to, flag, self.color);
 
                 // todo: interpolate by depth?
                 // todo: interpolate by game phase?

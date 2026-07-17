@@ -222,11 +222,9 @@ impl MovePicker {
 
             self.curr += 1;
 
-            // if we also generated p-legals, check for legality before yielding them.
-            if !LEGAL {
-                if !pos.is_legal_for::<P>(m) {
-                    continue;
-                }
+            // only check for legality, if we also generated pseudo legals.
+            if !LEGAL && !pos.is_legal_for::<P>(m) {
+                continue;
             }
 
             return Some(m);
@@ -569,23 +567,27 @@ pub mod test {
         seq::{IndexedRandom, IteratorRandom},
     };
 
-    use crate::core::{
-        color::colors,
-        coordinates::squares,
-        r#move::{MoveList, move_flags},
-        move_iter::sliding_piece::magics,
-        params::C_IdNnueParams,
-        position::Position,
-        search::{
-            id::{self, Killers},
-            ordering,
+    use crate::{
+        core::{
+            color::colors,
+            coordinates::squares,
+            r#move::{MoveList, move_flags},
+            move_iter::sliding_piece::magics,
+            params::C_IdNnueParams,
+            position::Position,
+            search::{
+                id::{self, Killers},
+                ordering,
+            },
+            zobrist,
         },
-        zobrist,
+        math,
     };
 
     use super::*;
 
     fn run_see_test(fen: &str, mov: Move, us: Color, expected: MoveScore) {
+        math::init();
         magics::init();
         zobrist::init();
 
@@ -699,6 +701,7 @@ pub mod test {
     }
 
     fn test_does_pick_all_legal_moves(fen: &str, depth: Depth) {
+        math::init();
         magics::init();
         zobrist::init();
 

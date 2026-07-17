@@ -3,7 +3,7 @@
 use std::{hint::black_box, ops::ControlFlow};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use engine::core::{
+use engine::{core::{
     color::colors,
     coordinates::squares,
     r#move::Move,
@@ -15,7 +15,7 @@ use engine::core::{
     },
     position::Position,
     zobrist,
-};
+}, math};
 
 pub fn pawn_attacks(c: &mut Criterion) {
     let pawn = squares::E4;
@@ -29,6 +29,7 @@ pub fn pawn_attacks(c: &mut Criterion) {
 }
 
 pub fn move_iter_check_none(c: &mut Criterion) {
+    math::init();
     magics::init();
     zobrist::init();
 

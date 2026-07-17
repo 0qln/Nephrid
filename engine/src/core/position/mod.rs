@@ -2,12 +2,13 @@ use crate::core::{
     eval::GameResult,
     move_iter::{
         SingleCheck, captures_targets, fold_moves,
-        king::{self, check_mask_qs, tabu_mask_ks},
+        king::{self, King, check_mask_qs, tabu_mask_ks},
         opt::AllLegal,
         pin_mask,
         queen::Queen,
         quiets_targets,
     },
+    piece::IPieceType,
 };
 use core::fmt;
 use std::{
@@ -877,25 +878,53 @@ impl Position {
         let stm = P::COLOR;
         let nstm = !stm;
 
-        // king castle cannot move through check
-        if matches!(flag, move_flags::KING_CASTLE) {
-            let occ = self.piece_info.get_occupancy();
-            for sq in tabu_mask_ks::<P>() {
-                if self.piece_info.attackers_to_exist(sq, nstm, occ) {
+        match flag {
+            // king castle cannot move through check
+            move_flags::KING_CASTLE => {
+                let occ = self.piece_info.get_occupancy();
+                for sq in tabu_mask_ks::<P>() {
+                    if self.piece_info.attackers_to_exist(sq, nstm, occ) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            // queen castle cannot move through check
+            move_flags::QUEEN_CASTLE => {
+                let occ = self.piece_info.get_occupancy();
+                for sq in check_mask_qs::<P>() {
+                    if self.piece_info.attackers_to_exist(sq, nstm, occ) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            move_flags::EN_PASSANT if let Some(king_sq) = self.get_bitboard(King::ID, P::COLOR).lsb() => {
+                let capture_sq = self.get_ep_capture_square();
+                let occ = self.piece_info.get_occupancy();
+                let from_bb = Bitboard::from(from);
+                let to_bb = Bitboard::from(to);
+
+                // Check that the king is not in check after the capture happens.
+                let capt_bb = Bitboard::from(capture_sq.v());
+                let occupancy_after_capture = (occ ^ from_bb ^ capt_bb) | to_bb;
+
+                let b = || self.get_bitboard(piece_type::BISHOP, P::Opponent::COLOR);
+                let r = || self.get_bitboard(piece_type::ROOK, P::Opponent::COLOR);
+                let q = self.get_bitboard(piece_type::QUEEN, P::Opponent::COLOR);
+
+                let r_attacks = || Rook::lookup_attacks(king_sq, occupancy_after_capture);
+                let b_attacks = || Bishop::lookup_attacks(king_sq, occupancy_after_capture);
+
+                if !r_attacks().and_c(r() | q).is_empty() {
+                    return false;
+                }
+
+                if !b_attacks().and_c(b() | q).is_empty() {
                     return false;
                 }
             }
-            return true;
-        }
-        // queen castle cannot move through check
-        else if matches!(flag, move_flags::QUEEN_CASTLE) {
-            let occ = self.piece_info.get_occupancy();
-            for sq in check_mask_qs::<P>() {
-                if self.piece_info.attackers_to_exist(sq, nstm, occ) {
-                    return false;
-                }
-            }
-            return true;
+            _ => (),
         }
 
         match self.get_piece(from).piece_type() {

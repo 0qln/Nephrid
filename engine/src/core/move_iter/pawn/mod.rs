@@ -73,7 +73,7 @@ impl<V: Variant> PawnMoves<V> {
     }
 
     #[inline(always)]
-    fn single_step<P: Perspective, T: const NoDoubleCheck>(non_promo_pawns: Bitboard, single_step_tabus: Bitboard) -> constructor!() {
+    fn single_step<P: Perspective>(non_promo_pawns: Bitboard, single_step_tabus: Bitboard) -> constructor!() {
         move |_pos, _pawns, v_data| {
             let from = non_promo_pawns & !single_step_tabus;
             let to = forward(from, single_step(P::COLOR));
@@ -82,7 +82,7 @@ impl<V: Variant> PawnMoves<V> {
     }
 
     #[inline(always)]
-    fn double_step<P: Perspective, T: const NoDoubleCheck>(tabu_squares: Bitboard, single_step_tabus: Bitboard) -> constructor!() {
+    fn double_step<P: Perspective>(tabu_squares: Bitboard, single_step_tabus: Bitboard) -> constructor!() {
         move |_pos, pawns, v_data| {
             let double_step_tabus = backward(tabu_squares, double_step(P::COLOR)) | single_step_tabus;
             let double_step_pawns = pawns & Bitboard::from(start_rank(P::COLOR));
@@ -93,7 +93,7 @@ impl<V: Variant> PawnMoves<V> {
     }
 
     #[inline(always)]
-    fn capture<P: Perspective, const DIR: TCompassRose, T: NoDoubleCheck>(non_promo_pawns: Bitboard, capture_targets: Bitboard) -> constructor!() {
+    fn capture<P: Perspective, const DIR: TCompassRose>(non_promo_pawns: Bitboard, capture_targets: Bitboard) -> constructor!() {
         move |_pos, _pawns, v_data| {
             let capture_dir = capture(P::COLOR, CompassRose::new(DIR));
             let capturing_pawns = non_promo_pawns & !Bitboard::from(File::edge::<DIR>());
@@ -106,46 +106,40 @@ impl<V: Variant> PawnMoves<V> {
     #[inline(always)]
     fn ep<O: Options, P: Perspective, const DIR: TCompassRose>(occ: Bitboard) -> constructor!() {
         move |pos, pawns, v_data| {
-            let color = P::COLOR;
             let capture_sq = pos.get_ep_capture_square();
-            let target = EpTargetSquare::from((capture_sq, !color));
+            let target = EpTargetSquare::from((capture_sq, !P::COLOR));
             let to = Bitboard::from(target.v());
             let (from, to) = if to.is_empty() {
-                (Bitboard::empty(), to)
+                (Bitboard::empty(), Bitboard::empty())
             }
             else {
-                let capture_dir = capture(color, CompassRose::new(DIR));
+                let capture_dir = capture(P::COLOR, CompassRose::new(DIR));
                 let capturing_pawns = pawns & !Bitboard::from(File::edge::<DIR>());
                 let from = backward(forward(capturing_pawns, capture_dir) & to, capture_dir);
                 if from.is_empty() {
                     (Bitboard::empty(), Bitboard::empty())
                 }
                 else {
-                    // Safety: the board has no king, but gen_legal is used,
-                    // the context is broken anyway.
-                    let king_bb = pos.get_bitboard(King::ID, color);
-                    let king_sq = unsafe { king_bb.lsb().unwrap_unchecked() };
+                    let check = O::legal() && {
+                        // Safety: the board has no king, but gen_legal is used,
+                        // the context is broken anyway.
+                        let king_bb = pos.get_bitboard(King::ID, P::COLOR);
+                        let king_sq = unsafe { king_bb.lsb().unwrap_unchecked() };
 
-                    // Check that the king is not in check after the capture happens.
-                    let capt_bb = Bitboard::from(capture_sq.v());
-                    let occupancy_after_capture = (occ ^ from ^ capt_bb) | to;
+                        // Check that the king is not in check after the capture happens.
+                        let capt_bb = Bitboard::from(capture_sq.v());
+                        let occupancy_after_capture = (occ ^ from ^ capt_bb) | to;
 
-                    let bishops = || pos.get_bitboard(piece_type::BISHOP, !color);
-                    let queens = pos.get_bitboard(piece_type::QUEEN, !color);
-                    let rooks = || pos.get_bitboard(piece_type::ROOK, !color);
+                        let b = || pos.get_bitboard(piece_type::BISHOP, P::Opponent::COLOR);
+                        let r = || pos.get_bitboard(piece_type::ROOK, P::Opponent::COLOR);
+                        let q = pos.get_bitboard(piece_type::QUEEN, P::Opponent::COLOR);
 
-                    let rook_attacks = || Rook::lookup_attacks(king_sq, occupancy_after_capture);
-                    let bishop_attacks = || Bishop::lookup_attacks(king_sq, occupancy_after_capture);
+                        let r_attacks = || Rook::lookup_attacks(king_sq, occupancy_after_capture);
+                        let b_attacks = || Bishop::lookup_attacks(king_sq, occupancy_after_capture);
 
-                    let check = {
-                        if !rook_attacks().and_c(rooks() | queens).is_empty() {
-                            true
-                        }
-                        else if !bishop_attacks().and_c(bishops() | queens).is_empty() {
-                            true
-                        }
-                        else {
-                            false
+                        #[rustfmt::skip] {
+                            !r_attacks().and_c(r() | q).is_empty() ||
+                            !b_attacks().and_c(b() | q).is_empty()
                         }
                     };
 
@@ -165,7 +159,7 @@ impl<V: Variant> PawnMoves<V> {
 
 impl<V: variants::Promo> PawnMoves<V> {
     #[inline(always)]
-    fn promo<P: Perspective, T: const NoDoubleCheck>(promo_pawns: Bitboard, single_step_tabus: Bitboard) -> constructor!() {
+    fn promo<P: Perspective>(promo_pawns: Bitboard, single_step_tabus: Bitboard) -> constructor!() {
         move |_pos, _pawns, v_data| {
             let from = promo_pawns & !single_step_tabus;
             let to = forward(from, single_step(P::COLOR));
@@ -174,7 +168,7 @@ impl<V: variants::Promo> PawnMoves<V> {
     }
 
     #[inline(always)]
-    fn promo_capture<P: Perspective, const DIR: TCompassRose, T: NoDoubleCheck>(promo_pawns: Bitboard, capture_targets: Bitboard) -> constructor!() {
+    fn promo_capture<P: Perspective, const DIR: TCompassRose>(promo_pawns: Bitboard, capture_targets: Bitboard) -> constructor!() {
         move |_pos, _pawns, v_data| {
             let capture_dir = capture(P::COLOR, CompassRose::new(DIR));
             let capture_pawns = promo_pawns & !Bitboard::from(File::edge::<DIR>());
@@ -322,15 +316,15 @@ where
                 acc,
                 pawns,
                 (),
-                Promo::promo_capture::<P, { compass_rose::WEST_C }, T>(promo_pawns, capture_targets),
-                Promo::promo_capture::<P, { compass_rose::EAST_C }, T>(promo_pawns, capture_targets)
+                Promo::promo_capture::<P, { compass_rose::WEST_C }>(promo_pawns, capture_targets),
+                Promo::promo_capture::<P, { compass_rose::EAST_C }>(promo_pawns, capture_targets)
             );
         }
 
         let tabu_squares = !quiets_targets::<T>(pos, P::COLOR) | occ;
         let single_step_dest_tabus = backward(tabu_squares, single_step(P::COLOR));
         if O::gen_promos() {
-            acc = apply!(acc, safe_pawns, (), Promo::promo::<P, T>(promo_pawns, single_step_dest_tabus));
+            acc = apply!(acc, safe_pawns, (), Promo::promo::<P>(promo_pawns, single_step_dest_tabus));
         }
 
         let non_promo_pawns = pawns & !Bitboard::from(promo_rank(P::COLOR));
@@ -339,8 +333,8 @@ where
                 acc,
                 safe_pawns,
                 (),
-                Moves::capture::<P, { compass_rose::WEST_C }, T>(non_promo_pawns, capture_targets),
-                Moves::capture::<P, { compass_rose::EAST_C }, T>(non_promo_pawns, capture_targets),
+                Moves::capture::<P, { compass_rose::WEST_C }>(non_promo_pawns, capture_targets),
+                Moves::capture::<P, { compass_rose::EAST_C }>(non_promo_pawns, capture_targets),
                 Moves::ep::<O, P, { compass_rose::WEST_C }>(occ),
                 Moves::ep::<O, P, { compass_rose::EAST_C }>(occ)
             );
@@ -352,8 +346,8 @@ where
                 acc,
                 safe_pawns,
                 (),
-                Moves::single_step::<P, T>(non_promo_pawns, single_step_dest_tabus),
-                Moves::double_step::<P, T>(tabu_squares, single_step_occ_tabus)
+                Moves::single_step::<P>(non_promo_pawns, single_step_dest_tabus),
+                Moves::double_step::<P>(tabu_squares, single_step_occ_tabus)
             );
         }
     }
@@ -370,8 +364,8 @@ where
                 acc,
                 pinned_pawns,
                 pos,
-                Promo::promo_capture::<P, { compass_rose::WEST_C }, T>(promo_pawns, capture_targets),
-                Promo::promo_capture::<P, { compass_rose::EAST_C }, T>(promo_pawns, capture_targets)
+                Promo::promo_capture::<P, { compass_rose::WEST_C }>(promo_pawns, capture_targets),
+                Promo::promo_capture::<P, { compass_rose::EAST_C }>(promo_pawns, capture_targets)
             );
         }
 
@@ -386,8 +380,8 @@ where
                 acc,
                 pinned_pawns,
                 pos,
-                Moves::capture::<P, { compass_rose::WEST_C }, T>(non_promo_pawns, capture_targets),
-                Moves::capture::<P, { compass_rose::EAST_C }, T>(non_promo_pawns, capture_targets),
+                Moves::capture::<P, { compass_rose::WEST_C }>(non_promo_pawns, capture_targets),
+                Moves::capture::<P, { compass_rose::EAST_C }>(non_promo_pawns, capture_targets),
                 Moves::ep::<O, P, { compass_rose::WEST_C }>(occ),
                 Moves::ep::<O, P, { compass_rose::EAST_C }>(occ)
             );
@@ -401,8 +395,8 @@ where
                 acc,
                 pinned_pawns,
                 pos,
-                Moves::single_step::<P, T>(non_promo_pawns, single_step_dest_tabus),
-                Moves::double_step::<P, T>(tabu_squares, single_step_occ_tabus)
+                Moves::single_step::<P>(non_promo_pawns, single_step_dest_tabus),
+                Moves::double_step::<P>(tabu_squares, single_step_occ_tabus)
             );
         }
     }

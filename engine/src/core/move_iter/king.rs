@@ -135,21 +135,18 @@ where
     let rank = P::COLOR * ranks::_8;
     let from = Square::from((files::E, rank));
     let castling = pos.get_castling();
+    let occ = pos.get_occupancy();
 
-    if castling.is_true(castling_sides::KING_SIDE, P::COLOR) {
-        if (pos.get_occupancy() & tabu_mask_ks::<P>()).is_empty() {
-            // Safety: [e1|e8] + 2 < 63
-            let to = unsafe { Square::from_v(from.v() + 2) };
-            init = f(init, Move::new(from, to, move_flags::KING_CASTLE))?;
-        }
+    if castling.is_true(castling_sides::KING_SIDE, P::COLOR) && (occ & tabu_mask_ks::<P>()).is_empty() {
+        // Safety: [e1|e8] + 2 < 63
+        let to = unsafe { Square::from_v(from.v() + 2) };
+        init = f(init, Move::new(from, to, move_flags::KING_CASTLE))?;
     }
 
-    if castling.is_true(castling_sides::QUEEN_SIDE, P::COLOR) {
-        if (pos.get_occupancy() & block_mask_qs::<P>()).is_empty() {
-            // Safety: [e1|e8] - 2 > 0
-            let to = unsafe { Square::from_v(from.v() - 2) };
-            return f(init, Move::new(from, to, move_flags::QUEEN_CASTLE));
-        }
+    if castling.is_true(castling_sides::QUEEN_SIDE, P::COLOR) && (occ & block_mask_qs::<P>()).is_empty() {
+        // Safety: [e1|e8] - 2 > 0
+        let to = unsafe { Square::from_v(from.v() - 2) };
+        return f(init, Move::new(from, to, move_flags::QUEEN_CASTLE));
     }
 
     try { init }

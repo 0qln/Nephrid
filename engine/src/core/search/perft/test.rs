@@ -10,8 +10,7 @@ use crate::{
         position::{FenExport, Position},
         search::{limit::UciLimit, perft::perft_inner_collect},
         zobrist,
-    },
-    misc::{CancellationToken, DebugMode},
+    }, math, misc::{CancellationToken, DebugMode}
 };
 
 fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
@@ -62,6 +61,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
 
 #[test]
 pub fn compare_capture_filtering_test_1() {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -73,6 +73,7 @@ pub fn compare_capture_filtering_test_1() {
 
 #[test]
 pub fn compare_capture_filtering_test_2() {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -84,6 +85,7 @@ pub fn compare_capture_filtering_test_2() {
 
 #[test]
 pub fn compare_capture_filtering_test_3() {
+    math::init();
     magics::init();
     zobrist::init();
 

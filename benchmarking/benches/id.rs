@@ -15,8 +15,7 @@ use engine::{
             quiesce::QSearchParams,
         },
         zobrist,
-    },
-    misc::{CancellationToken, DebugMode},
+    }, math, misc::{CancellationToken, DebugMode}
 };
 use uom::si::{information::mebibyte, u64::Information};
 
@@ -53,6 +52,7 @@ where
 }
 
 pub fn id_hce_nps(c: &mut Criterion) {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -77,6 +77,7 @@ pub fn id_hce_nps(c: &mut Criterion) {
 }
 
 pub fn id_nnue_nps(c: &mut Criterion) {
+    math::init();
     magics::init();
     zobrist::init();
 

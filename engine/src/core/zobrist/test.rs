@@ -1,4 +1,4 @@
-use crate::core::{
+use crate::{core::{
     color::colors,
     coordinates::squares,
     r#move::{Move, move_flags},
@@ -6,12 +6,13 @@ use crate::core::{
     piece::{Piece, piece_type},
     position::Position,
     zobrist,
-};
+}, math};
 
 #[test]
 fn same_position_same_key() {
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -39,6 +40,7 @@ fn same_position_same_key() {
 fn move_piece_back_and_forth() {
     let fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -62,6 +64,7 @@ fn move_piece_back_and_forth() {
 
 #[test]
 fn move_piece_back_and_forth_hash_only() {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -83,6 +86,7 @@ fn move_piece_back_and_forth_hash_only() {
 
 #[test]
 fn place_piece_and_remove_hash_only() {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -104,6 +108,7 @@ fn place_piece_and_remove_hash_only() {
 
 #[test]
 fn place_piece_and_remove_nested_hash_only() {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -130,6 +135,7 @@ fn place_piece_and_remove_nested_hash_only() {
 
 #[test]
 fn place_piece_and_remove_out_of_order_hash_only() {
+    math::init();
     magics::init();
     zobrist::init();
 

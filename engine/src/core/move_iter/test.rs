@@ -10,11 +10,11 @@ use crate::{
         position::Position,
         search::{self, limit::UciLimit},
         zobrist,
-    },
-    misc::{CancellationToken, DebugMode},
+    }, math, misc::{CancellationToken, DebugMode}
 };
 
 fn test_pos(fen: &str, depth: Depth, expected: u64) {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -110,6 +110,7 @@ fn plegal_with_filter_is_same_as_legal(fen: &str, depth: Depth) {
 
 #[test]
 pub fn plegal_with_filter_is_same_as_legal_test_0() {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -118,6 +119,7 @@ pub fn plegal_with_filter_is_same_as_legal_test_0() {
 
 #[test]
 pub fn plegal_with_filter_is_same_as_legal_test_1() {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -126,6 +128,7 @@ pub fn plegal_with_filter_is_same_as_legal_test_1() {
 
 #[test]
 pub fn plegal_with_filter_is_same_as_legal_test_2() {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -134,6 +137,7 @@ pub fn plegal_with_filter_is_same_as_legal_test_2() {
 
 #[test]
 pub fn plegal_with_filter_is_same_as_legal_test_3() {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -142,6 +146,7 @@ pub fn plegal_with_filter_is_same_as_legal_test_3() {
 
 #[test]
 pub fn plegal_with_filter_is_same_as_legal_test_4() {
+    math::init();
     magics::init();
     zobrist::init();
 
@@ -150,6 +155,7 @@ pub fn plegal_with_filter_is_same_as_legal_test_4() {
 
 #[test]
 pub fn plegal_with_filter_is_same_as_legal_test_5() {
+    math::init();
     magics::init();
     zobrist::init();
 
