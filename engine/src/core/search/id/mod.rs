@@ -975,13 +975,13 @@ where
 
             // score quiet moves by psqt diff or history heuristic
             RtStage::GenerateQuiets | RtStage::YieldQuiets => {
-                let (from, to, _) = mov.into();
+                let (from, to, flag) = mov.into();
                 let pieces = pos.piece_info();
                 let piece = pieces.get_piece(from);
                 let piece_type = piece.piece_type();
 
                 let hh_score = self.hh.get(self.color, piece_type, to);
-                let psqt_score = ordering::psqt(self.phase, piece_type, from, to, mov.get_flag(), self.color);
+                let psqt_score = ordering::psqt(self.phase, piece_type, from, to, flag, self.color);
 
                 // todo: interpolate by depth?
                 // todo: interpolate by game phase?
