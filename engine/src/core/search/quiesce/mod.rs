@@ -172,47 +172,28 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             let (from, to, flag) = m.into();
 
             // delta pruning
-            if !in_check && m != hash_move {
-                let move_gain: Score<P> = {
-                    let promo_bonus = PromoPieceType::try_from(flag)
-                        .ok()
-                        .map(|promo| {
-                            let promo_pt = promo.into();
-                            let lost = piece_score(piece_type::PAWN) + tapered_psqt(phase, piece_type::PAWN, from, P::COLOR);
-                            let gained = piece_score(promo_pt) + tapered_psqt(phase, promo_pt, to, P::COLOR);
-                            gained - lost
-                        })
-                        .unwrap_or(scores::ZERO);
+            if !in_check && phase < params.delta_pruning_threshold() {
+                let value_bonus = PromoPieceType::try_from(m.get_flag())
+                    .ok()
+                    .map(|promo| piece_score(promo.into()) - piece_score(piece_type::PAWN))
+                    .unwrap_or(scores::ZERO);
 
-                    let capture_bonus = m
-                        .get_capture_sq()
-                        .map(|capt_sq| {
-                            let pt = pos.get_piece(capt_sq).piece_type();
-                            piece_score(pt) + tapered_psqt(phase, pt, capt_sq, P::Opponent::COLOR)
-                        })
-                        .unwrap_or(scores::ZERO);
+                let captured_value = m
+                    .get_capture_sq()
+                    .map(|capt_sq| piece_score(pos.get_piece(capt_sq).piece_type()))
+                    .unwrap_or(scores::ZERO);
 
-                    unsafe { (capture_bonus + promo_bonus).interpret_as() }
-                };
+                let futility_margin = params.futility_margin();
 
-                let margin: Score<P> = {
-                    let futility_margin = params.futility_margin();
+                // should allow for more aggressive futility pruning at moves that were regarded
+                // less important by the move ordering
+                let move_count_margin = params.movecount_pruning_factor() * curr;
 
-                    // should allow for more aggressive futility pruning at moves that were regarded
-                    // less important by the move ordering
-                    let move_count_margin = AnyScore::new(params.movecount_pruning_factor().v() * ln_i32(curr + 1));
+                // Safety: the score was constructed relative to `P`
+                let futility_score = captured_value + value_bonus + futility_margin + move_count_margin;
+                let futility_score = unsafe { futility_score.interpret_as() };
 
-                    // should be switched off / be reduced in late games.
-                    let phase_margin = AnyScore::new(params.phase_pruning_factor().v() * phase.v());
-
-                    // as ply increases, decrease the prunings.
-                    let ply_from_start = Depth::from(pos.ply() - self.start_ply);
-                    let ply_margin = AnyScore::new(params.ply_pruning_factor().v() * ln_i32(ply_from_start.v() + 1));
-
-                    unsafe { (futility_margin + move_count_margin + ply_margin + phase_margin).interpret_as() }
-                };
-
-                if best_score + move_gain + margin < alpha {
+                if best_score + futility_score < alpha {
                     continue;
                 }
             }
