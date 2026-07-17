@@ -85,9 +85,6 @@ pub struct TunableParams<Base> {
     hce_policy_temp: f32,
     hce_q_futility_margin: AnyScore,
     hce_q_delta_pruning_threshold: TaperValue,
-    hce_q_movecount_pruning_factor: AnyScore,
-    hce_q_phase_pruning_factor: AnyScore,
-    hce_q_ply_pruning_factor: AnyScore,
     select_cpuct: f32,
     mcts_proven_loss_visit_threshold: VisitCount,
     mcts_killer_exploitation: f32,
@@ -159,9 +156,6 @@ impl<B> TunableParams<B> {
         let hce_policy_temp = config.eval_policy_temperature();
         let hce_q_futility_margin = config.eval_futility_margin();
         let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
-        let hce_q_movecount_pruning_factor = config.eval_movecount_pruning_factor();
-        let hce_q_phase_pruning_factor = config.eval_phase_pruning_factor();
-        let hce_q_ply_pruning_factor = config.eval_ply_pruning_factor();
         let select_cpuct = config.select_cpuct();
         let mcts_proven_loss_visit_threshold = config.mcts_proven_loss_visit_threshold();
         let mcts_killer_exploitation = config.mcts_killer_exploitation();
@@ -185,9 +179,6 @@ impl<B> TunableParams<B> {
             hce_policy_temp,
             hce_q_futility_margin,
             hce_q_delta_pruning_threshold,
-            hce_q_movecount_pruning_factor,
-            hce_q_phase_pruning_factor,
-            hce_q_ply_pruning_factor,
             select_cpuct,
             mcts_proven_loss_visit_threshold,
             mcts_killer_exploitation,
