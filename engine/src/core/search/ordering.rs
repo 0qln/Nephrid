@@ -222,11 +222,9 @@ impl MovePicker {
 
             self.curr += 1;
 
-            // if we also generated p-legals, check for legality before yielding them.
-            if !LEGAL {
-                if !pos.is_legal_for::<P>(m) {
-                    continue;
-                }
+            // only check for legality, if we also generated pseudo legals.
+            if !LEGAL && !pos.is_legal_for::<P>(m) {
+                continue;
             }
 
             return Some(m);

@@ -6,6 +6,7 @@ static INIT: Once = Once::new();
 const U8_TABLE_N: usize = u8::MAX as usize + 1;
 static mut LN_TABLE: [i32; U8_TABLE_N] = [0; U8_TABLE_N];
 
+#[allow(clippy::needless_range_loop)]
 pub fn init() {
     INIT.call_once(|| unsafe {
         for i in 0..U8_TABLE_N {
