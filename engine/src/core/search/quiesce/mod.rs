@@ -1,25 +1,22 @@
-use crate::{
-    core::{
-        color::{Color, Perspective},
-        depth::Depth,
-        eval::{
-            StaticEvaluator,
-            hce::{TaperValue, piece_score, tapered_psqt},
-        },
-        r#move::Move,
-        piece::{PromoPieceType, piece_type},
-        ply::Ply,
-        position::{CheckState, Position},
-        search::{
-            data::{ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
-            id::{self, Bound},
-            ordering::{self, MovePicker, MoveScore, RtStage, Stage},
-            score::{AnyScore, Score, scores},
-            tree::NodeType,
-        },
-        zobrist,
+use crate::core::{
+    color::{Color, Perspective},
+    depth::Depth,
+    eval::{
+        StaticEvaluator,
+        hce::{TaperValue, piece_score, tapered_psqt},
     },
-    math::ln_i32,
+    r#move::Move,
+    piece::{PromoPieceType, piece_type},
+    ply::Ply,
+    position::{CheckState, Position},
+    search::{
+        data::{ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+        id::{self, Bound},
+        ordering::{self, MovePicker, MoveScore, RtStage, Stage},
+        score::{AnyScore, Score, scores},
+        tree::NodeType,
+    },
+    zobrist,
 };
 
 pub const trait QSearchParams {
@@ -41,18 +38,11 @@ pub struct QSearcher<'a, Entry, Replace> {
     tt: &'a mut TT<Entry, Replace>,
     ss: &'a mut id::SS,
     root_ply: Ply,
-    start_ply: Ply,
 }
 
 impl<'a, E, R> QSearcher<'a, E, R> {
-    pub fn new(pos: &Position, tt: &'a mut TT<E, R>, ss: &'a mut id::SS, root_ply: Ply) -> Self {
-        Self {
-            tt,
-            ss,
-            root_ply,
-            start_ply: pos.ply(),
-        }
-    }
+    #[inline]
+    pub fn new(_pos: &Position, tt: &'a mut TT<E, R>, ss: &'a mut id::SS, root_ply: Ply) -> Self { Self { tt, ss, root_ply } }
 }
 
 impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>>
@@ -167,7 +157,6 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // recurse
         let mut best_move = Move::null();
-        let mut curr = 0;
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
             // delta pruning
             if !in_check && phase < params.delta_pruning_threshold() {
@@ -198,11 +187,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 let margin: Score<P> = {
                     let futility_margin = params.futility_margin();
 
-                    // should allow for more aggressive futility pruning at moves that were regarded
-                    // less important by the move ordering
-                    let move_count_margin = params.movecount_pruning_factor() * curr;
-
-                    unsafe { (futility_margin + move_count_margin).interpret_as() }
+                    unsafe { (futility_margin).interpret_as() }
                 };
 
                 if best_score + move_gain + margin < alpha {
@@ -231,8 +216,6 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                     break;
                 }
             }
-
-            curr += 1;
         }
 
         self.tt.try_insert(TTEntry {
