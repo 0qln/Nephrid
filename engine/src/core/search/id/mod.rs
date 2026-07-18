@@ -702,8 +702,11 @@ where
                 let reduced_depth = new_depth.saturating_sub(depth_reduct + fhr_reduct);
 
                 if curr == 0 {
-                    // search with a full window to get an exact score.
-                    !self.search::<P::Opponent, Pv>(pos, stats, full_depth, !beta, !alpha)
+                    match kind {
+                        NodeKind::Root => !self.search::<P::Opponent, Pv>(pos, stats, full_depth, !beta, !alpha),
+                        NodeKind::Cut => !self.search::<P::Opponent, All>(pos, stats, full_depth, !beta, !alpha),
+                        _ => !self.search::<P::Opponent, Cut>(pos, stats, full_depth, !beta, !alpha),
+                    }
                 }
                 else {
                     // assume that our move ordering is good the first move will be the best one.
