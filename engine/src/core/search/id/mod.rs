@@ -404,6 +404,7 @@ where
     }
 
     /// returns the score relative to the current player
+    #[allow(unused)]
     fn search_root(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> AnyScore {
         fn alpha<P: Perspective>() -> Score<P> { Score::NEG_INF }
         fn beta<P: Perspective>() -> Score<P> { Score::POS_INF }
@@ -425,7 +426,7 @@ where
     fn mdtf_for<P: Perspective>(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth, mut guess: Score<P>) -> Score<P> {
         let (mut lo, mut hi) = (Score::NEG_INF, Score::POS_INF);
 
-        loop {
+        for _ in 0..100 {
             let beta = if guess == lo { lo + 1 } else { guess };
             let alpha = beta - 1;
 
@@ -440,9 +441,11 @@ where
             }
 
             if hi <= lo {
-                return guess;
+                break;
             }
         }
+
+        return guess;
     }
 
     fn scorer_for<P: Perspective>(&mut self, tt_move: Move, killers: Killers, phase: TaperValue) -> Scorer<'_, X> {
