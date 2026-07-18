@@ -241,11 +241,11 @@ where
     let mut last_best_move;
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
+        let iter_start = Instant::now();
+
         // todo we can use the final best_score from the last uci::go iteration as
         // initial estimate.
         best_score = searcher.mdtf(pos, &mut stats, depth, best_score);
-
-        let iter_start = Instant::now();
 
         // make sure to break before messing up the order of the previous iteration with
         // the incomplete results from this iteration.
