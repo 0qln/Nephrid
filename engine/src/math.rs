@@ -5,12 +5,19 @@ static INIT: Once = Once::new();
 
 const U8_TABLE_N: usize = u8::MAX as usize + 1;
 static mut LN_TABLE: [i32; U8_TABLE_N] = [0; U8_TABLE_N];
+static mut LMR_TABLE: [[u8; U8_TABLE_N]; U8_TABLE_N] = [[0; U8_TABLE_N]; U8_TABLE_N];
 
 #[allow(clippy::needless_range_loop)]
 pub fn init() {
     INIT.call_once(|| unsafe {
         for i in 0..U8_TABLE_N {
             LN_TABLE[i] = ln_i32_rt(i as u8);
+        }
+
+        for d in 0..U8_TABLE_N {
+            for m in 0..U8_TABLE_N {
+                LMR_TABLE[d][m] = lmr_u8_rt(d as u8, m as u8);
+            }
         }
     });
 }
@@ -20,7 +27,7 @@ pub fn ln_i32_rt(x: u8) -> i32 { (x as f32).ln() as i32 }
 
 /// Returns the same as ln_i32_rt, just faster.
 ///
-/// Examples
+/// # Examples
 /// ```
 /// use engine::math;
 ///
@@ -35,6 +42,34 @@ pub fn ln_i32_rt(x: u8) -> i32 { (x as f32).ln() as i32 }
 pub fn ln_i32(x: u8) -> i32 {
     debug_assert!(INIT.is_completed(), "Math not initialized!");
     unsafe { *LN_TABLE.get_unchecked(x as usize) }
+}
+
+/// # Late Move Reductions
+#[inline(always)]
+pub fn lmr_u8_rt(d: u8, m: u8) -> u8 {
+    let d = d as f32;
+    let m = m as f32;
+    let lmr = 0.99 + f32::ln(d) * f32::ln(m) / 3.14;
+    lmr as u8
+}
+
+/// Returns the same as lmr_u8_rt, just faster.
+///
+/// Examples
+/// ```
+/// use engine::math;
+///
+/// math::init();
+///
+/// assert_eq!(math::lmr_u8(1, 2), math::lmr_u8_rt(1, 2));
+/// assert_eq!(math::lmr_u8(2, 3), math::lmr_u8_rt(2, 3));
+/// assert_eq!(math::lmr_u8(67, 69), math::lmr_u8_rt(67, 79));
+/// ```
+#[inline(always)]
+#[allow(static_mut_refs)]
+pub fn lmr_u8(d: u8, m: u8) -> u8 {
+    debug_assert!(INIT.is_completed(), "Math not initialized!");
+    unsafe { *LMR_TABLE.get_unchecked(d as usize).get_unchecked(m as usize) }
 }
 
 #[inline(always)]

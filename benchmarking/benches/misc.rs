@@ -36,5 +36,29 @@ pub fn ln_i32(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, softmax, ln_i32);
+pub fn lmr_u8(c: &mut Criterion) {
+    math::init();
+
+    let mut inputs: Vec<(u8, u8)> = (0..=255).zip((0..=255).rev()).collect();
+    inputs.shuffle(&mut rand::rng());
+
+    let mut group = c.benchmark_group("lmr_u8_comparison");
+    group.bench_function("runtime_calculation", |b| {
+        b.iter(|| {
+            for &(d, m) in &inputs {
+                black_box(math::lmr_u8_rt(black_box(d), black_box(m)));
+            }
+        })
+    });
+    group.bench_function("table_lookup", |b| {
+        b.iter(|| {
+            for &(d, m) in &inputs {
+                black_box(math::lmr_u8(black_box(d), black_box(m)));
+            }
+        })
+    });
+    group.finish();
+}
+
+criterion_group!(benches, softmax, ln_i32, lmr_u8);
 criterion_main!(benches);
