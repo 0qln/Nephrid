@@ -752,10 +752,9 @@ where
 
             // update root moves
             if kind == NodeKind::Root {
-                // store the score for the root moves, such that we can use it for sorting in
-                // the next iteration.
-                // todo: don't just clamp, mate values will get lost etc.
-                self.root_stats.as_mut_slice()[curr].set_score(score.0.v().saturating_cast());
+                if let Some(root_move) = self.root_stats.iter_mut().find(|rm| rm.mov() == m) {
+                    root_move.set_score(score.0.v().saturating_cast());
+                }
             }
 
             if score > best_score {
