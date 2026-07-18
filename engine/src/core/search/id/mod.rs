@@ -258,6 +258,7 @@ where
         searcher.sort_root();
 
         best_move = searcher.root_best_move();
+
         if let Some(best_move) = best_move
             && let Some(search_time) = searcher.timeman.elapsed_search_time()
         {
@@ -432,6 +433,14 @@ where
 
             // todo: this should also be a cut node search
             guess = self.search::<P, Root>(pos, stats, depth, alpha, beta);
+
+            // make sure to break before messing up the order of the previous iteration with
+            // the incomplete results from this iteration.
+            if self.aborted {
+                break;
+            }
+
+            self.sort_root();
 
             if guess < beta {
                 hi = guess;
