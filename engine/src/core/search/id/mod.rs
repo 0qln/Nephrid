@@ -743,11 +743,14 @@ where
 
                             // penalty history heuristic that were expected but
                             // failed to cause a cutoff
-                            for &searched_quiet in hh_searched_quiets.as_slice() {
-                                let (from, to, _) = searched_quiet.into();
-                                let moving_pt = pos.get_piece(from).piece_type();
-                                self.hh.update_for::<P::Opponent>(moving_pt, to, -hh_bonus);
-                            }
+                            self.hh.updates_for::<P::Opponent>(
+                                hh_searched_quiets.iter().map(|&m| {
+                                    let (from, to, _) = m.into();
+                                    let moving_pt = pos.get_piece(from).piece_type();
+                                    (moving_pt, to)
+                                }),
+                                -hh_bonus,
+                            );
 
                             // reward history heuristic
                             self.hh.update_for::<P>(moving_pt, to, hh_bonus);

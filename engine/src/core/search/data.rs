@@ -203,7 +203,7 @@ pub struct RbSet<T, const N: usize> {
     items: [T; N],
 }
 
-impl<T: const Default, const N: usize> const Default for RbSet<T, N> {
+const impl<T: const Default, const N: usize> Default for RbSet<T, N> {
     #[inline]
     fn default() -> Self {
         Self {
@@ -212,7 +212,7 @@ impl<T: const Default, const N: usize> const Default for RbSet<T, N> {
     }
 }
 
-impl<T: const Default + Copy + Eq, const N: usize> const From<[T; N]> for RbSet<T, N> {
+const impl<T: const Default + Copy + Eq, const N: usize> From<[T; N]> for RbSet<T, N> {
     fn from(items: [T; N]) -> Self { Self { items } }
 }
 
@@ -285,7 +285,7 @@ pub struct PieceHistory {
     scores: [[MoveScore; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
 }
 
-impl const Default for PieceHistory {
+const impl Default for PieceHistory {
     fn default() -> Self { Self::new() }
 }
 
@@ -356,5 +356,11 @@ impl PieceHistories {
         let bonus = clamped_val - current_val * clamped_val.abs() / max;
         *curr_score += bonus.clamp(-max, max) as MoveScore;
         // todo: replace the last clamp with a debug assert?
+    }
+
+    pub fn updates_for<P: Perspective>(&mut self, items: impl Iterator<Item = (PieceType, Square)>, val: MoveScore) {
+        for (pt, sq) in items {
+            self.update_for::<P>(pt, sq, val);
+        }
     }
 }
