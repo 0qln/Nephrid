@@ -240,8 +240,9 @@ where
     let mut last_best_move;
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
-        let best_score = searcher.search_root(pos, &mut stats, depth);
         let iter_start = Instant::now();
+
+        let best_score = searcher.search_root(pos, &mut stats, depth);
 
         // make sure to break before messing up the order of the previous iteration with
         // the incomplete results from this iteration.
