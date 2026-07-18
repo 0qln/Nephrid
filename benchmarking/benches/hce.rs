@@ -5,7 +5,7 @@ use engine::{
         params::{C_MctsHceParams, IParams},
         zobrist,
     },
-    math::{self, Probability, Ratio},
+    math::{self, DefaultLmrParams, Probability, Ratio},
 };
 use std::{hint::black_box, time::Duration};
 
@@ -26,7 +26,7 @@ use engine::{
 };
 
 pub fn policy(c: &mut Criterion) {
-    math::init();
+    math::init(DefaultLmrParams);
     magics::init();
     zobrist::init();
 
@@ -42,7 +42,6 @@ pub fn policy(c: &mut Criterion) {
 }
 
 pub fn puct(c: &mut Criterion) {
-    math::init();
     magics::init();
     zobrist::init();
 
@@ -84,7 +83,6 @@ pub fn puct(c: &mut Criterion) {
 }
 
 pub fn prob_mix(c: &mut Criterion) {
-    math::init();
     magics::init();
     zobrist::init();
 

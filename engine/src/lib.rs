@@ -6,6 +6,7 @@
 #![allow(clippy::just_underscores_and_digits)]
 #![allow(clippy::almost_complete_range)]
 #![allow(clippy::len_without_is_empty)]
+#![allow(clippy::approx_constant)]
 #![allow(refining_impl_trait)]
 // nightly features
 #![allow(incomplete_features)]

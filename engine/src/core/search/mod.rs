@@ -1,13 +1,16 @@
-use crate::core::{
-    chrono::{ChronoParams, TimeMan},
-    eval::StaticEvaluator,
-    params::IParams,
-    search::{
-        id::{IdParams, ScorerParams},
-        mcts::search::MctsParams,
-        quiesce::QSearchParams,
-        score::Cp,
+use crate::{
+    core::{
+        chrono::{ChronoParams, TimeMan},
+        eval::StaticEvaluator,
+        params::IParams,
+        search::{
+            id::{IdParams, ScorerParams},
+            mcts::search::MctsParams,
+            quiesce::QSearchParams,
+            score::Cp,
+        },
     },
+    math::{self, LmrParams},
 };
 use thiserror::Error;
 
@@ -97,7 +100,7 @@ pub struct IdWorker<E: StaticEvaluator, X: IParams> {
 
 impl<E: StaticEvaluator + Default, X: IParams + Default> SearchWorker for IdWorker<E, X>
 where
-    X::Ref: IdParams + ChronoParams + QSearchParams + ScorerParams + fmt::Debug,
+    X::Ref: IdParams + LmrParams + ChronoParams + QSearchParams + ScorerParams + fmt::Debug,
 {
     type X = X;
 
@@ -166,6 +169,7 @@ where
                 self.params = Self::X::try_from_config(cfg()?).map_err(ExecError::bad_config)?;
                 self.eval = E::try_from_config(cfg()?).map_err(ExecError::bad_config)?;
                 self.timeman.enable_soft_targets(true); // todo: config option for enabling soft targets
+                math::force_init_lmr_u8(self.params.clone());
 
                 Ok(())
             }

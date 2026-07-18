@@ -2,14 +2,14 @@ use core::fmt;
 use std::fmt::Display;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use engine::{core::{
+use engine::core::{
     color::colors,
     coordinates::squares,
     move_iter::sliding_piece::magics,
     piece::{Piece, piece_type},
     position::Position,
     zobrist,
-}, math};
+};
 use itertools::Itertools;
 
 pub fn get_bitboard(c: &mut Criterion) {
@@ -20,7 +20,6 @@ pub fn get_bitboard(c: &mut Criterion) {
         Pair(piece_type::QUEEN, colors::BLACK),
     ];
 
-    math::init();
     magics::init();
     zobrist::init();
     let pos = Position::start_position();
@@ -40,7 +39,6 @@ pub fn put_piece(c: &mut Criterion) {
         Pair(squares::H5, Piece::from((colors::BLACK, piece_type::QUEEN))),
     ];
 
-    math::init();
     magics::init();
     zobrist::init();
     let pos = Position::default();
@@ -59,7 +57,6 @@ pub fn put_piece(c: &mut Criterion) {
 pub fn remove_piece(c: &mut Criterion) {
     let inputs = [squares::A1, squares::E2, squares::H8];
 
-    math::init();
     magics::init();
     zobrist::init();
     let pos = Position::start_position();
@@ -78,7 +75,6 @@ pub fn move_piece(c: &mut Criterion) {
         Pair(squares::H8, squares::H5),
     ];
 
-    math::init();
     magics::init();
     zobrist::init();
     let pos = Position::start_position();
@@ -95,7 +91,6 @@ pub fn move_piece(c: &mut Criterion) {
 }
 
 pub fn make_move(c: &mut Criterion) {
-    math::init();
     magics::init();
     zobrist::init();
 

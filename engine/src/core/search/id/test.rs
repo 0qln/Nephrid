@@ -1,10 +1,13 @@
 use uom::si::{information::mebibyte, u64::Information};
 
 use super::*;
-use crate::core::{move_iter::sliding_piece::magics, params::C_IdHceParams, search::limit::UciLimit};
+use crate::{
+    core::{move_iter::sliding_piece::magics, params::C_IdHceParams, search::limit::UciLimit},
+    math::DefaultLmrParams,
+};
 
 fn run_search(fen: &str, depth: u8) {
-    math::init();
+    math::init(DefaultLmrParams);
     magics::init();
     zobrist::init();
 
@@ -19,7 +22,17 @@ fn run_search(fen: &str, depth: u8) {
     let mut tt = TT::new_of_size(hash_size);
     let mut hh = HH::new();
     let mut timeman = TimeMan::new(C_IdHceParams);
-    go::<C_IdHceParams>(&mut pos, limit, &mut timeman, &debug, ct, &mut tt, &mut hh, &mut HceEvaluator, C_IdHceParams);
+    go::<C_IdHceParams>(
+        &mut pos,
+        limit,
+        &mut timeman,
+        &debug,
+        ct,
+        &mut tt,
+        &mut hh,
+        &mut HceEvaluator,
+        C_IdHceParams,
+    );
 }
 
 #[test]

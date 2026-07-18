@@ -581,13 +581,12 @@ pub mod test {
             },
             zobrist,
         },
-        math,
+        math::{self, DefaultLmrParams},
     };
 
     use super::*;
 
     fn run_see_test(fen: &str, mov: Move, us: Color, expected: MoveScore) {
-        math::init();
         magics::init();
         zobrist::init();
 
@@ -701,7 +700,7 @@ pub mod test {
     }
 
     fn test_does_pick_all_legal_moves(fen: &str, depth: Depth) {
-        math::init();
+        math::init(DefaultLmrParams);
         magics::init();
         zobrist::init();
 

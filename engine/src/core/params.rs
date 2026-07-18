@@ -1,16 +1,19 @@
 use std::{fmt, marker::PhantomData, ops::Deref};
 
-use crate::core::{
-    chrono::ChronoParams,
-    config::{ConfigBuilder, Configuration},
-    depth::Depth,
-    eval::hce::TaperValue,
-    search::{
-        id::{IdParams, ScorerParams},
-        mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
-        quiesce::QSearchParams,
-        score::AnyScore,
+use crate::{
+    core::{
+        chrono::ChronoParams,
+        config::{ConfigBuilder, Configuration},
+        depth::Depth,
+        eval::hce::TaperValue,
+        search::{
+            id::{IdParams, ScorerParams},
+            mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
+            quiesce::QSearchParams,
+            score::AnyScore,
+        },
     },
+    math::LmrParams,
 };
 
 pub const trait IConfigBuilder {
@@ -96,6 +99,8 @@ pub struct TunableParams<Base> {
     id_nmp_margin: AnyScore,
     id_nmp_depth_margin: i32,
     id_scorer_hh_weight: i32,
+    lmr_offset: f32,
+    lmr_scale: f32,
     _base: PhantomData<Base>,
 }
 
@@ -142,6 +147,11 @@ impl<B, X: Deref<Target = TunableParams<B>>> ScorerParams for X {
     fn hh_weight(&self) -> i32 { self.id_scorer_hh_weight }
 }
 
+impl<B, X: Deref<Target = TunableParams<B>>> LmrParams for X {
+    fn offset(&self) -> f32 { self.lmr_offset }
+    fn scale(&self) -> f32 { self.lmr_scale }
+}
+
 impl<B> TunableParams<B> {
     fn from_config<C: Deref<Target = Configuration>>(config: C) -> Self {
         let config = config.deref();
@@ -167,6 +177,8 @@ impl<B> TunableParams<B> {
         let id_nmp_margin = config.id_nmp_margin();
         let id_scorer_hh_weight = config.id_scorer_hh_weight();
         let id_nmp_depth_margin = config.id_nmp_depth_margin();
+        let lmr_offset = config.lmr_offset();
+        let lmr_scale = config.lmr_scale();
         Self {
             timeman_base_soft_mult,
             timeman_clamp_lower,
@@ -190,6 +202,8 @@ impl<B> TunableParams<B> {
             id_nmp_margin,
             id_nmp_depth_margin,
             id_scorer_hh_weight,
+            lmr_offset,
+            lmr_scale,
             _base: PhantomData,
         }
     }
@@ -208,7 +222,7 @@ impl<Base: fmt::Debug> IParams for TunableParams<Base> {
 impl<B> IConfigBuilder for TunableParams<B> {
     fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
-        builder.chrono(&self).policy(&self).qsearch(&self).puct(&self).mcts(&self)
+        builder.chrono(&self).policy(&self).qsearch(&self).puct(&self).mcts(&self).lmr(&self)
     }
 }
 
@@ -352,7 +366,7 @@ const_params!(IdHce);
 impl IConfigBuilder for C_IdHceParams {
     fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
-        builder.chrono(self).qsearch(self).id(self).scorer(self)
+        builder.chrono(self).qsearch(self).id(self).scorer(self).lmr(self)
     }
 }
 
@@ -385,6 +399,11 @@ const impl ScorerParams for C_IdHceParams {
     fn hh_weight(&self) -> i32 { 64 }
 }
 
+const impl LmrParams for C_IdHceParams {
+    fn offset(&self) -> f32 { 0.99 }
+    fn scale(&self) -> f32 { 3.14 }
+}
+
 // id nnue
 
 const_params!(IdNnue);
@@ -392,7 +411,7 @@ const_params!(IdNnue);
 impl IConfigBuilder for C_IdNnueParams {
     fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
         //
-        builder.chrono(self).qsearch(self).id(self).scorer(self)
+        builder.chrono(self).qsearch(self).id(self).scorer(self).lmr(self)
     }
 }
 
@@ -419,6 +438,11 @@ const impl IdParams for C_IdNnueParams {
     fn nmp_phase_factor(&self) -> u32 { 7 }
     fn nmp_margin(&self) -> AnyScore { AnyScore::new(50) }
     fn nmp_depth_margin(&self) -> i32 { 12 }
+}
+
+const impl LmrParams for C_IdNnueParams {
+    fn offset(&self) -> f32 { 0.99 }
+    fn scale(&self) -> f32 { 3.14 }
 }
 
 const impl ScorerParams for C_IdNnueParams {

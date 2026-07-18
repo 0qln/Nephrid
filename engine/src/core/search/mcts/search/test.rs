@@ -1,16 +1,15 @@
-use crate::{core::{
+use crate::core::{
     config::Configuration,
     move_iter::sliding_piece::magics,
     params::C_MctsHceParams,
     position::Position,
     search::mcts::{HceParts, MctsParts, NullNoiser, node::Tree, search::TreeSearcher, select::ucb::UcbSelector, test::DummyEvaluator},
     zobrist,
-}, math};
+};
 
 use std::{error::Error, thread};
 
 fn fuzz<const X: usize, P: MctsParts + Default>(pos: &'static str, rounds: usize) {
-    math::init();
     magics::init();
     zobrist::init();
 
