@@ -1,4 +1,4 @@
-use crate::{core::{
+use crate::core::{
     color::colors,
     coordinates::squares,
     r#move::{Move, move_flags},
@@ -12,7 +12,7 @@ use crate::{core::{
         },
     },
     zobrist,
-}, math};
+};
 
 fn test(pos: Position, expected_result: Option<GameResult>) {
     let mut tree = Tree::new();
@@ -37,7 +37,6 @@ fn test(pos: Position, expected_result: Option<GameResult>) {
 }
 
 fn test_fen(fen: &str, expected_result: Option<GameResult>) {
-    math::init();
     magics::init();
     zobrist::init();
 
@@ -64,7 +63,6 @@ fn checkmate_for_white() { test_fen("2k2R2/4R3/K7/8/8/8/8/8 b - - 0 1", Some(Gam
 
 #[test]
 fn three_fold_repetition() {
-    math::init();
     magics::init();
     zobrist::init();
 

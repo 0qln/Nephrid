@@ -3,21 +3,18 @@
 use std::{hint::black_box, ops::ControlFlow};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use engine::{
-    core::{
-        color::perspectives,
-        coordinates::squares,
-        r#move::Move,
-        move_iter::{
-            NoCheck, SingleCheck, dbg_fold_moves,
-            king::{self, King, compute_attacks, lookup_attacks},
-            opt::AllLegal,
-            sliding_piece::magics,
-        },
-        position::Position,
-        zobrist,
+use engine::core::{
+    color::perspectives,
+    coordinates::squares,
+    r#move::Move,
+    move_iter::{
+        NoCheck, SingleCheck, dbg_fold_moves,
+        king::{self, King, compute_attacks, lookup_attacks},
+        opt::AllLegal,
+        sliding_piece::magics,
     },
-    math,
+    position::Position,
+    zobrist,
 };
 
 pub fn king_attacks(c: &mut Criterion) {
@@ -31,7 +28,6 @@ pub fn king_attacks(c: &mut Criterion) {
 }
 
 pub fn king_move_iter_check_none(c: &mut Criterion) {
-    math::init();
     magics::init();
     zobrist::init();
 
@@ -50,7 +46,6 @@ pub fn king_move_iter_check_none(c: &mut Criterion) {
 }
 
 pub fn king_move_iter_check_some(c: &mut Criterion) {
-    math::init();
     magics::init();
     zobrist::init();
 
@@ -69,7 +64,6 @@ pub fn king_move_iter_check_some(c: &mut Criterion) {
 }
 
 pub fn king_move_iter_castling(c: &mut Criterion) {
-    math::init();
     magics::init();
     zobrist::init();
 

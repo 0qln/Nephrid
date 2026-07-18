@@ -21,7 +21,7 @@ use burn::{
 use burn::{backend::Autodiff, config::Config, data::dataloader::batcher::Batcher, train::TrainStep};
 use burn_cuda::{Cuda, CudaDevice};
 use engine::{
-    core::{move_iter::sliding_piece::magics, search::mcts::nn::ModelConfig, zobrist}, math, misc::CheckHealth
+    core::{move_iter::sliding_piece::magics, search::mcts::nn::ModelConfig, zobrist}, misc::CheckHealth
 };
 use rand::rngs::SmallRng;
 
@@ -39,7 +39,6 @@ pub mod loss;
 pub mod self_play;
 
 fn main() {
-    math::init();
     magics::init();
     zobrist::init();
     log4rs::init_file("./tuning/src/eval_model/log4rs.yml", Default::default()).unwrap();

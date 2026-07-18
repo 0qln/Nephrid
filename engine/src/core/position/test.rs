@@ -1,11 +1,10 @@
 use super::*;
-use crate::{core::{bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics, piece::piece_type, ply::Ply, zobrist}, math};
+use crate::core::{bitboard::Bitboard, color::colors, coordinates::ranks, move_iter::sliding_piece::magics, piece::piece_type, ply::Ply, zobrist};
 
 #[test]
 fn cloning() {
     let fens = ["r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"];
 
-    math::init();
     zobrist::init();
     magics::init();
 
@@ -18,7 +17,6 @@ fn cloning() {
 
 #[test]
 fn fen_decoding() {
-    math::init();
     zobrist::init();
     magics::init();
 
@@ -33,7 +31,6 @@ fn fen_decoding() {
 
 // relies on fen_decoding working
 fn test_fen_encoding(expected_fen: &str, fen: &str, moves: Vec<Move>) {
-    math::init();
     zobrist::init();
     magics::init();
 
@@ -92,7 +89,6 @@ fn fen_encoding_3() {
 }
 
 fn test_pgn_encoding_move_section(fen: &str, moves: &[Move], expected: &str) {
-    math::init();
     zobrist::init();
     magics::init();
 
@@ -246,7 +242,6 @@ fn parse_epd_line(line: &str) -> Result<(Position, Vec<EpdOp>), EpdLineParseErro
 
 #[test]
 fn epd_import_fen_only() {
-    math::init();
     zobrist::init();
     magics::init();
 
@@ -258,7 +253,6 @@ fn epd_import_fen_only() {
 
 #[test]
 fn epd_import_single_op() {
-    math::init();
     zobrist::init();
     magics::init();
 
@@ -273,7 +267,6 @@ fn epd_import_single_op() {
 
 #[test]
 fn epd_import_multiple_ops() {
-    math::init();
     zobrist::init();
     magics::init();
 
@@ -294,7 +287,6 @@ fn epd_import_multiple_ops() {
 
 #[test]
 fn epd_import_argument_with_spaces() {
-    math::init();
     zobrist::init();
     magics::init();
 
@@ -312,7 +304,6 @@ fn epd_import_argument_with_spaces() {
 
 #[test]
 fn epd_import_no_whitespace_between_ops() {
-    math::init();
     zobrist::init();
     magics::init();
 
@@ -361,7 +352,6 @@ fn epd_import_invalid_fen() {
 
 #[test]
 fn epd_import_real_world_example() {
-    math::init();
     zobrist::init();
     magics::init();
 

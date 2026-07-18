@@ -1,5 +1,5 @@
 use super::*;
-use crate::{core::{
+use crate::core::{
     Move, Position,
     coordinates::squares,
     depth::Depth,
@@ -7,12 +7,11 @@ use crate::{core::{
     move_iter::sliding_piece::magics,
     search::mcts::node::node_state::{Branching, Leaf, NodeState, Switch},
     zobrist,
-}, math};
+};
 
 // --- Utility Functions ---
 
 fn create_position(fen: &str) -> Position {
-    math::init();
     zobrist::init();
     magics::init();
     Position::from_fen(fen).unwrap()

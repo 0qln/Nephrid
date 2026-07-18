@@ -5,14 +5,36 @@ static INIT: Once = Once::new();
 
 const U8_TABLE_N: usize = u8::MAX as usize + 1;
 static mut LN_TABLE: [i32; U8_TABLE_N] = [0; U8_TABLE_N];
+static mut LMR_TABLE: [[u8; U8_TABLE_N]; U8_TABLE_N] = [[0; U8_TABLE_N]; U8_TABLE_N];
 
 #[allow(clippy::needless_range_loop)]
-pub fn init() {
-    INIT.call_once(|| unsafe {
-        for i in 0..U8_TABLE_N {
+pub fn init(lmr: impl LmrParams + Clone) {
+    INIT.call_once(|| {
+        force_init_ln_i32();
+        force_init_lmr_u8(lmr);
+    });
+}
+
+#[allow(static_mut_refs)]
+#[allow(clippy::needless_range_loop)]
+pub fn force_init_ln_i32() {
+    for i in 0..U8_TABLE_N {
+        unsafe {
             LN_TABLE[i] = ln_i32_rt(i as u8);
         }
-    });
+    }
+}
+
+#[allow(static_mut_refs)]
+#[allow(clippy::needless_range_loop)]
+pub fn force_init_lmr_u8(lmr: impl LmrParams + Clone) {
+    for d in 0..U8_TABLE_N {
+        for m in 0..U8_TABLE_N {
+            unsafe {
+                LMR_TABLE[d][m] = lmr_u8_rt(d as u8, m as u8, lmr.clone());
+            }
+        }
+    }
 }
 
 #[inline(always)]
@@ -20,11 +42,11 @@ pub fn ln_i32_rt(x: u8) -> i32 { (x as f32).ln() as i32 }
 
 /// Returns the same as ln_i32_rt, just faster.
 ///
-/// Examples
+/// # Examples
 /// ```
 /// use engine::math;
 ///
-/// math::init();
+/// math::init(math::DefaultLmrParams);
 ///
 /// assert_eq!(math::ln_i32(1), math::ln_i32_rt(1));
 /// assert_eq!(math::ln_i32(2), math::ln_i32_rt(2));
@@ -35,6 +57,48 @@ pub fn ln_i32_rt(x: u8) -> i32 { (x as f32).ln() as i32 }
 pub fn ln_i32(x: u8) -> i32 {
     debug_assert!(INIT.is_completed(), "Math not initialized!");
     unsafe { *LN_TABLE.get_unchecked(x as usize) }
+}
+
+pub const trait LmrParams {
+    fn offset(&self) -> f32;
+    fn scale(&self) -> f32;
+}
+
+#[derive(Clone, Copy)]
+pub struct DefaultLmrParams;
+impl LmrParams for DefaultLmrParams {
+    fn offset(&self) -> f32 { 0.99 }
+    fn scale(&self) -> f32 { 3.14 }
+}
+
+/// # Late Move Reductions
+#[inline(always)]
+pub fn lmr_u8_rt(d: u8, m: u8, params: impl LmrParams) -> u8 {
+    let d = d as f32;
+    let m = m as f32;
+    let lmr = params.offset() + f32::ln(d) * f32::ln(m) / params.scale();
+    lmr as u8
+}
+
+/// Returns the same as lmr_u8_rt, just faster.
+///
+/// Examples
+/// ```
+/// use engine::math;
+///
+/// let params = math::DefaultLmrParams;
+///
+/// math::init(params);
+///
+/// assert_eq!(math::lmr_u8(1, 2), math::lmr_u8_rt(1, 2, params));
+/// assert_eq!(math::lmr_u8(2, 3), math::lmr_u8_rt(2, 3, params));
+/// assert_eq!(math::lmr_u8(67, 69), math::lmr_u8_rt(67, 79, params));
+/// ```
+#[inline(always)]
+#[allow(static_mut_refs)]
+pub fn lmr_u8(d: u8, m: u8) -> u8 {
+    debug_assert!(INIT.is_completed(), "Math not initialized!");
+    unsafe { *LMR_TABLE.get_unchecked(d as usize).get_unchecked(m as usize) }
 }
 
 #[inline(always)]

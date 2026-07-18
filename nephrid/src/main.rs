@@ -1,6 +1,6 @@
 use engine::{
     core::{Engine, config::Configuration, execute_uci, move_iter::sliding_piece::magics, params::*, zobrist},
-    math,
+    math::{self, DefaultLmrParams},
     misc::CancellationToken,
 };
 use std::io::stdin;
@@ -82,7 +82,7 @@ fn config() -> Configuration {
 fn main() {
     use search::*;
 
-    math::init();
+    math::init(DefaultLmrParams);
     magics::init();
     zobrist::init();
 

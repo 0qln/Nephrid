@@ -31,7 +31,7 @@ use engine::{
         },
         zobrist,
     },
-    math::{self, Probability, Ratio},
+    math::{Probability, Ratio},
 };
 
 const OUT_DIR: &str = "out/eval_model/test";
@@ -105,7 +105,6 @@ pub fn test_network_can_overfit_hardcoded_target() {
 
     // Initialize environment
     logs::init();
-    math::init();
     magics::init();
     zobrist::init();
 
@@ -200,7 +199,6 @@ pub fn test_network_can_overfit_hardcoded_target() {
 #[test]
 pub fn learn_mate_in_1() {
     logs::init();
-    math::init();
     magics::init();
     zobrist::init();
 
@@ -281,7 +279,6 @@ pub fn learn_mate_in_1() {
 #[test]
 pub fn learn_mate_in_2() {
     logs::init();
-    math::init();
     magics::init();
     zobrist::init();
 

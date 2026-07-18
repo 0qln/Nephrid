@@ -11,6 +11,7 @@ use crate::{
         },
     },
     misc::{InvalidValueError, ValueOutOfRangeError},
+    math::LmrParams,
 };
 use std::{
     error::Error,
@@ -424,6 +425,12 @@ pub struct Configuration {
 
     /// [Iterative Deepening] Scorer hyper-heuristic weight.
     id_scorer_hh_weight: ConfigOption<Spin<UciInteger>>,
+
+    /// [Late Move Reductions] Base offset applied to the reduction.
+    lmr_offset: ConfigOption<Spin<UciPercent>>,
+
+    /// [Late Move Reductions] Divisor scaling the log-log reduction term.
+    lmr_scale: ConfigOption<Spin<UciPercent>>,
 }
 
 impl Configuration {
@@ -488,7 +495,9 @@ impl Configuration {
                 id_nmp_phase_factor: ConfigOption::new("id-nmp-phase-factor", Spin::new(7, 1, 50)),
                 id_nmp_margin: ConfigOption::new("id-nmp-margin", Spin::new(50, -350, 350)),
                 id_nmp_depth_margin: ConfigOption::new("id-nmp-depth-margin", Spin::new(15, 0, 100)),
-                id_scorer_hh_weight: ConfigOption::new("id-scorer-hh-weight", Spin::new(64, 0, 128))
+                id_scorer_hh_weight: ConfigOption::new("id-scorer-hh-weight", Spin::new(64, 0, 128)),
+                lmr_offset: ConfigOption::new("lmr-offset", Spin::<UciPercent>::new(_ratio(0.99), _ratio(0.), _ratio(2.))),
+                lmr_scale: ConfigOption::new("lmr-scale", Spin::<UciPercent>::new(_ratio(3.14), _ratio(0.10), _ratio(10.)))
             },
         }
     }
@@ -571,6 +580,15 @@ impl ConfigBuilder {
         self
     }
 
+    /// Seed the late-move-reduction options from [`LmrParams`].
+    #[rustfmt::skip]
+    pub fn lmr(mut self, params: &impl LmrParams) -> Self {
+        let cfg = &mut self.config;
+        cfg.lmr_offset.seed(Ratio::new::<ratio>(params.offset()));
+        cfg.lmr_scale.seed(Ratio::new::<ratio>(params.scale()));
+        self
+    }
+
     /// Finish building the [`Configuration`].
     pub fn build(self) -> Configuration { self.config }
 }
@@ -599,6 +617,8 @@ impl Configuration {
     pub fn id_nmp_margin(&self) -> AnyScore { AnyScore::new(self.id_nmp_margin.value) }
     pub fn id_nmp_depth_margin(&self) -> i32 { self.id_nmp_depth_margin.value }
     pub fn id_scorer_hh_weight(&self) -> i32 { self.id_scorer_hh_weight.value }
+    pub fn lmr_offset(&self) -> f32 { self.lmr_offset.value.get::<ratio>() }
+    pub fn lmr_scale(&self) -> f32 { self.lmr_scale.value.get::<ratio>() }
 }
 
 impl Configuration {
@@ -674,6 +694,8 @@ impl Configuration {
             #[cfg(feature = "tunable")] "id-nmp-margin" => self.id_nmp_margin.set(value),
             #[cfg(feature = "tunable")] "id-nmp-depth-margin" => self.id_nmp_depth_margin.set(value),
             #[cfg(feature = "tunable")] "id-scorer-hh-weight" => self.id_scorer_hh_weight.set(value),
+            #[cfg(feature = "tunable")] "lmr-offset" => self.lmr_offset.set(value),
+            #[cfg(feature = "tunable")] "lmr-scale" => self.lmr_scale.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
         }
     }
@@ -730,6 +752,8 @@ impl Configuration {
             println!("{}", self.id_nmp_margin);
             println!("{}", self.id_nmp_depth_margin);
             println!("{}", self.id_scorer_hh_weight);
+            println!("{}", self.lmr_offset);
+            println!("{}", self.lmr_scale);
         }
     }
 }
