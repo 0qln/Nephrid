@@ -237,10 +237,14 @@ where
     let mut searcher = Searcher::<_, X>::new(pos, limit, timeman, ct, tt, hh, eval, params.clone());
     let mut stats = SearchStats::default();
     let mut best_move = None;
+    let mut best_score = scores::ZERO;
     let mut last_best_move;
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
-        let best_score = searcher.search_root(pos, &mut stats, depth);
+        // todo we can use the final best_score from the last uci::go iteration as
+        // initial estimate.
+        best_score = searcher.mdtf(pos, &mut stats, depth, best_score);
+
         let iter_start = Instant::now();
 
         // make sure to break before messing up the order of the previous iteration with
@@ -407,6 +411,37 @@ where
             colors::WHITE => self.search::<perspectives::White, Root>(pos, stats, depth, alpha(), beta()).0,
             colors::BLACK => self.search::<perspectives::Black, Root>(pos, stats, depth, alpha(), beta()).0,
             _ => unreachable!(),
+        }
+    }
+
+    fn mdtf(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth, guess: AnyScore) -> AnyScore {
+        match pos.get_turn() {
+            colors::WHITE => self.mdtf_for::<perspectives::White>(pos, stats, depth, unsafe { guess.interpret_as() }).0,
+            colors::BLACK => self.mdtf_for::<perspectives::Black>(pos, stats, depth, unsafe { guess.interpret_as() }).0,
+            _ => unreachable!(),
+        }
+    }
+
+    fn mdtf_for<P: Perspective>(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth, mut guess: Score<P>) -> Score<P> {
+        let (mut lo, mut hi) = (Score::NEG_INF, Score::POS_INF);
+
+        loop {
+            let beta = if guess == lo { lo + 1 } else { guess };
+            let alpha = beta - 1;
+
+            // todo: this should also be a cut node search
+            guess = self.search::<P, Root>(pos, stats, depth, alpha, beta);
+
+            if guess < beta {
+                hi = guess;
+            }
+            else {
+                lo = guess;
+            }
+
+            if hi <= lo {
+                return guess;
+            }
         }
     }
 
