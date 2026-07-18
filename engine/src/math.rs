@@ -46,9 +46,11 @@ pub fn ln_i32(x: u8) -> i32 {
 
 /// # Late Move Reductions
 #[inline(always)]
+#[allow(clippy::approx_constant)]
 pub fn lmr_u8_rt(d: u8, m: u8) -> u8 {
     let d = d as f32;
     let m = m as f32;
+    // todo: tune these parameters
     let lmr = 0.99 + f32::ln(d) * f32::ln(m) / 3.14;
     lmr as u8
 }

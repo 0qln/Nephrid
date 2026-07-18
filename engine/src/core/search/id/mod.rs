@@ -644,7 +644,6 @@ where
             }
 
             // late move reductions
-            #[allow(clippy::approx_constant)]
             if depth >= Depth::new(3) && curr > 1 {
                 depth_reduct += lmr_u8(depth.v(), curr as u8);
             }
