@@ -150,7 +150,7 @@ where
         let nps = UciArg::from(self.nps(new_nodes));
         let depth = UciArg::Some(UciDepth(tree.compute_minheight().into()));
         let seldepth = UciArg::Some(UciSeldepth(tree.maxheight().into()));
-        let pv = UciArg::Some(UciPv(pv));
+        let pv = UciArg::Some(UciPv(&pv));
         let time = UciArg::from(self.search_time());
         let string = UciArg::<String>::None;
 
