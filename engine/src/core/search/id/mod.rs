@@ -715,6 +715,11 @@ where
                 depth_reduct += 1;
             }
 
+            // increase reduction for all-nodes
+            if kind == NodeKind::All {
+                depth_reduct += 1;
+            }
+
             // late move reductions
             if depth >= Depth::new(3) && curr > 1 {
                 depth_reduct += lmr_u8(depth.v(), curr as u8);
