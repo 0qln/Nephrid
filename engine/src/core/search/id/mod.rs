@@ -258,7 +258,7 @@ where
         if let Some(best_move) = best_move
             && let Some(search_time) = searcher.timeman.elapsed_search_time()
         {
-            uci_info(depth, &stats, Cp::from(best_score), best_move, search_time);
+            uci_info(depth, &stats, Cp::from(best_score), best_move, search_time, searcher.pv());
         }
 
         // update stats
@@ -372,6 +372,8 @@ where
     fn sort_root(&mut self) { self.root_stats.as_mut_slice().sort_by_key(|mov| Reverse(mov.score())); }
 
     fn root_best_move(&self) -> Option<Move> { self.root_stats.get(0).map(|x| x.mov()) }
+
+    fn pv(&self) -> &Line { &self.ss.get(Depth::ROOT).line }
 
     fn root_logits(&self) -> List<{ MAX_LEGAL_MOVES }, f32> {
         let mut root_logits = List::<{ MAX_LEGAL_MOVES }, f32>::new();
@@ -1005,7 +1007,7 @@ where
     }
 }
 
-fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move, search_time: Duration) {
+fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move, search_time: Duration, pv: &Line) {
     let depth = UciArg::Some(UciDepth(depth));
     let seldepth = UciArg::<UciSeldepth>::None; // TODO
     let score = UciArg::Some(UciScore::Centipawns(UciCp(best_score)));
@@ -1013,7 +1015,7 @@ fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move, 
     let nps = UciArg::Some(UciNps::from_nodes_and_time(stats.nodes, search_time));
     let currmove = UciArg::Some(UciCurrmove(best_move));
     let time = UciArg::Some(UciSearchtime(search_time));
-    let pv = UciArg::<UciPv<MoveList>>::None; // TODO
+    let pv = UciArg::Some(UciPv(pv));
     let string = UciArg::<String>::None;
 
     println!("info{currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}");

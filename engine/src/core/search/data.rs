@@ -363,16 +363,23 @@ impl PieceHistories {
     }
 }
 
+const LINE_CAP: usize = Depth::MAX.index();
+
 #[derive(Default, Clone, Debug)]
-pub struct Line {
-    pub moves: List<{ Depth::MAX.index() }, Move>,
-}
+pub struct Line(List<LINE_CAP, Move>);
 
 impl Deref for Line {
-    type Target = List<{ Depth::MAX.index() }, Move>;
-    fn deref(&self) -> &Self::Target { &self.moves }
+    type Target = List<LINE_CAP, Move>;
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 impl DerefMut for Line {
-    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.moves }
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.0 }
+}
+
+impl<'a> IntoIterator for &'a Line {
+    type Item = Move;
+    type IntoIter = std::iter::Copied<std::slice::Iter<'a, Move>>;
+
+    fn into_iter(self) -> Self::IntoIter { self.iter().copied() }
 }

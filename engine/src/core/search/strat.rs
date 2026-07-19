@@ -76,15 +76,15 @@ impl fmt::Display for UciSeldepth {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "seldepth {}", self.0) }
 }
 
-pub struct UciPv<Path>(pub Path);
+pub struct UciPv<'a, Path>(pub &'a Path);
 
-impl<P> fmt::Display for UciPv<P>
+impl<P> fmt::Display for UciPv<'_, P>
 where
     for<'a> &'a P: IntoIterator<Item = Move>,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "pv")?;
-        for mov in &self.0 {
+        for mov in self.0 {
             write!(f, " {mov}")?;
         }
         Ok(())
