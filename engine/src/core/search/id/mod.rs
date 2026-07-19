@@ -458,13 +458,14 @@ where
 
         let rel_ply: Depth = (pos.ply() - self.root_ply).into();
         let &SearchEntry { phase, killers, .. } = self.ss.get(rel_ply);
-        let pline = for<'l> |ss: &'l mut SS| -> &'l mut Box<Line> { &mut ss.get_mut(rel_ply).line };
-        let line_and_pline = for<'l> |ss: &'l mut SS| -> (&'l Box<Line>, &'l mut Box<Line>) {
-            let [line, pline] = unsafe { ss.get_disjoint_unchecked_mut([rel_ply + 1, rel_ply]) };
-            (&line.line, &mut pline.line)
+        let line = for<'l> |ss: &'l mut SS| -> &'l mut Box<Line> { &mut ss.get_mut(rel_ply).line };
+        let cline_and_line = for<'l> |ss: &'l mut SS| -> (&'l Box<Line>, &'l mut Box<Line>) {
+            let [cline, line] = unsafe { ss.get_disjoint_unchecked_mut([rel_ply + 1, rel_ply]) };
+            (&cline.line, &mut line.line)
         };
 
-        pline(&mut self.ss).clear();
+        // clear this ply's PV line immediately to avoid stale data leakage
+        line(&mut self.ss).clear();
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
@@ -740,10 +741,10 @@ where
                 alpha = score;
 
                 // update pv
-                let (line, pline) = line_and_pline(&mut self.ss);
-                pline.clear();
-                pline.push(m);
-                pline.extend_from_slice(1.., line.as_slice());
+                let (cline, line) = cline_and_line(&mut self.ss);
+                line.clear();
+                line.push(m);
+                line.extend_from_slice(1.., cline.as_slice());
 
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
