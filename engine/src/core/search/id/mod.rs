@@ -245,7 +245,12 @@ where
     for depth in (Depth::ROOT + 1)..=depth_lim {
         let iter_start = Instant::now();
 
-        curr_score = searcher.aspire_root(pos, &mut stats, depth, curr_score);
+        curr_score = if depth > Depth::new(3) {
+            searcher.aspire_root(pos, &mut stats, depth, curr_score)
+        }
+        else {
+            searcher.search_root(pos, &mut stats, depth)
+        };
 
         // make sure to break before messing up the order of the previous iteration with
         // the incomplete results from this iteration.
