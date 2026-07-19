@@ -728,7 +728,7 @@ where
 
                 // late move reductions
                 if depth >= Depth::new(3) && curr > 1 {
-                    r += 4 * lmr_u8(depth.v(), curr as u8);
+                    r += 5 * lmr_u8(depth.v(), curr as u8);
                 }
 
                 (e / 4, r / 4)
