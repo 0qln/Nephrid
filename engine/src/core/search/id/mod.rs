@@ -718,12 +718,12 @@ where
 
                 // reduce depth for captures with negative see
                 if flag.is_capture() && s < 0 {
-                    r += 4;
+                    r += 5;
                 }
 
                 // increase reduction for all-nodes
                 if kind == NodeKind::All {
-                    r += 4;
+                    r += 3;
                 }
 
                 // late move reductions
