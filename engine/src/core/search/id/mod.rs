@@ -464,10 +464,10 @@ where
             (&line.line, &mut pline.line)
         };
 
+        pline(&mut self.ss).clear();
+
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            pline(&mut self.ss).clear();
-
             return QSearcher::new(pos, self.tt, &mut self.ss, self.root_ply).go::<P, T>(
                 pos,
                 alpha,
