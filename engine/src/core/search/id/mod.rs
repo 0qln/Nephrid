@@ -688,7 +688,9 @@ where
         let mut hh_searched_quiets = MoveList::new();
 
         // todo: take killers by ref
-        while let Some(m) = move_picker.next_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers, phase)) {
+        while let Some(sm) = move_picker.next_with_score_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers, phase)) {
+            let ScoredMove { mov: m, score: s } = sm;
+
             let (from, to, flag) = m.into();
             let moving_piece = pos.get_piece(from);
             let moving_pt = moving_piece.piece_type();
@@ -706,6 +708,11 @@ where
             // check extensions
             if gives_check {
                 depth_ext += 1;
+            }
+
+            // reduce depth for captures with negative see
+            if flag.is_capture() && s < 0 {
+                depth_reduct += 1;
             }
 
             // late move reductions
