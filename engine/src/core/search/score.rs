@@ -14,7 +14,7 @@ use crate::{
 pub type RawScore = i32;
 
 #[derive(Debug, Copy)]
-#[derive_const(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive_const(Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct AnyScore {
     v: RawScore,
 }

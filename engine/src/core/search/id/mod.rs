@@ -218,6 +218,7 @@ pub fn go<X: IParams>(
     timeman: &mut TimeMan<X>,
     debug: &DebugMode,
     ct: CancellationToken,
+    ss: &mut SS,
     tt: &mut TT,
     hh: &mut HH,
     eval: &mut impl StaticEvaluator,
@@ -226,6 +227,8 @@ pub fn go<X: IParams>(
 where
     X::Ref: ChronoParams + QSearchParams + ScorerParams + IdParams + Clone + fmt::Debug,
 {
+    assert_eq!(ss.get(Depth::ROOT).phase, TaperValue::from_position(pos.piece_info()));
+
     let depth_lim = min(Depth::MAX, limit.depth);
 
     eval.observe_forward().on_init(pos.piece_info());
@@ -234,17 +237,19 @@ where
         println!("info string Starting ID Search with Params: {params:?}");
     }
 
-    let mut searcher = Searcher::<_, X>::new(pos, limit, timeman, ct, tt, hh, eval, debug, params.clone());
+    let mut searcher = Searcher::<_, X>::new(pos, limit, timeman, ct, ss, tt, hh, eval, debug, params.clone());
     let mut stats = SearchStats::default();
     let mut best_move = None;
-    let mut curr_score = scores::ZERO;
     let mut last_best_move;
+
+    // todo: we can use the final best_score from the last uci::go iteration as
+    // initial estimate. you'd now have to make the entries that we do for the pv
+    // line...
+    let mut curr_score = searcher.ss.get(Depth::ROOT).score[0];
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
         let iter_start = Instant::now();
 
-        // todo we can use the final best_score from the last uci::go iteration as
-        // initial estimate.
         curr_score = searcher.mdtf(pos, &mut stats, depth, curr_score);
 
         // make sure to break before messing up the order of the previous iteration with
@@ -323,7 +328,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     timeman: &'a mut TimeMan<X>,
     ct: CancellationToken,
     aborted: bool,
-    ss: SS,
+    ss: &'a mut SS,
     tt: &'a mut TT,
     hh: &'a mut HH,
     eval: &'b mut E,
@@ -343,6 +348,7 @@ where
         limit: UciLimit,
         timeman: &'a mut TimeMan<X>,
         ct: CancellationToken,
+        ss: &'a mut SS,
         tt: &'a mut TT,
         hh: &'a mut HH,
         eval: &'b mut E,
@@ -362,10 +368,7 @@ where
             timeman,
             ct,
             aborted: false,
-            ss: SS::from(vec![SearchEntry {
-                phase: TaperValue::from_position(pos.piece_info()),
-                ..Default::default()
-            }]),
+            ss,
             tt,
             hh,
             eval,
@@ -870,6 +873,15 @@ pub type TT = TranspositionTable<TTEntry, TTReplace>;
 
 pub type SS = SearchStack<SearchEntry>;
 
+impl SS {
+    pub fn from_position(pos: &Position) -> Self {
+        Self::from(vec![SearchEntry {
+            phase: TaperValue::from_position(pos.piece_info()),
+            ..Default::default()
+        }])
+    }
+}
+
 pub type Killers = RbSet<Move, 2>;
 impl Copy for Killers {}
 
@@ -1001,6 +1013,7 @@ pub struct SearchEntry {
     pub killers: Killers,
     pub phase: TaperValue,
     pub line: Box<Line>,
+    pub score: Box<List<{ data::LINE_CAP }, AnyScore>>,
 }
 
 pub const trait ScorerParams {

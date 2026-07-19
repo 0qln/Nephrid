@@ -422,7 +422,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
                 // mcts tree advances etc.
                 engine.search_t.tx.send(match game_tree_caching {
                     true => Command::AdvanceState(mov),
-                    false => Command::ResetState,
+                    false => Command::ResetState(Position::start_position()),
                 })?;
 
                 Ok(())
@@ -481,7 +481,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
                 }
                 else {
                     // Completely new game or caching disabled: safely reset the tree entirely.
-                    engine.search_t.tx.send(Command::ResetState)?;
+                    engine.search_t.tx.send(Command::ResetState(new_game.position.clone()))?;
                 }
 
                 // 4. Officially update the engine's game state
@@ -496,7 +496,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
             engine._pos_src = "".to_string();
 
             // also advance the mcts game tree
-            engine.search_t.tx.send(Command::ResetState)?;
+            engine.search_t.tx.send(Command::ResetState(Position::start_position()))?;
 
             Ok(())
         }

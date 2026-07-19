@@ -385,7 +385,7 @@ impl PieceHistories {
     }
 }
 
-const LINE_CAP: usize = Depth::MAX.index();
+pub const LINE_CAP: usize = Depth::MAX.index();
 
 #[derive(Default, Clone, Debug)]
 pub struct Line(List<LINE_CAP, Move>);

@@ -91,6 +91,7 @@ pub trait SearchWorker {
 
 /// Iterative deepening worker.
 pub struct IdWorker<E: StaticEvaluator, X: IParams> {
+    ss: id::SS,
     tt: id::TT,
     hh: id::HH,
     timeman: TimeMan<X>,
@@ -107,6 +108,7 @@ where
     fn new() -> Self {
         let params = <Self::X as Default>::default().shared();
         Self {
+            ss: id::SS::new(),
             tt: id::TT::new(0),
             hh: id::HH::new(),
             timeman: TimeMan::new(params.clone()),
@@ -139,6 +141,7 @@ where
                     &mut self.timeman,
                     &debug,
                     ct,
+                    &mut self.ss,
                     &mut self.tt,
                     &mut self.hh,
                     &mut self.eval,
@@ -173,7 +176,8 @@ where
 
                 Ok(())
             }
-            Command::ResetState => {
+            Command::ResetState(pos) => {
+                self.ss = id::SS::from_position(&pos);
                 self.tt.clear();
                 self.hh.clear();
 
@@ -291,7 +295,7 @@ where
                 }
                 Ok(())
             }
-            Command::ResetState => {
+            Command::ResetState(_) => {
                 self.mcts_state.tree = Tree::default();
                 Ok(())
             }
@@ -380,7 +384,7 @@ pub enum Command {
     AdvanceState(Move),
     RollbackAndAdvance(Move),
     Configure(Arc<Mutex<Configuration>>),
-    ResetState,
+    ResetState(Position),
     Debug,
     IsReady,
     PrintPv(Position),
