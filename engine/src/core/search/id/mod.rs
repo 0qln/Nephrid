@@ -431,28 +431,39 @@ where
     }
 
     fn aspire_root_for<P: Perspective>(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth, guess: Score<P>) -> Score<P> {
-        let mut alpha = guess - self.params.aw_margin().v();
-        let mut beta = guess + self.params.aw_margin().v();
+        let mut curr = 1;
 
-        let mut i = 1;
+        let margin = self.params.aw_margin().v();
+        let mut delta = margin;
+
+        let mut alpha = guess - margin;
+        let mut beta = guess + margin;
+
         loop {
             let score = self.search::<P, Root>(pos, stats, depth, alpha, beta);
 
+            // make sure to break before messing up the order of the previous iteration with
+            // the incomplete results from this iteration.
+            if self.aborted {
+                return Score::DRAW;
+            }
+
+            self.sort_root();
+
             if score <= alpha {
                 // fail low
-                let update = self.params.aw_margin() * i;
-                alpha -= update.v();
+                alpha = score - delta;
             }
             else if score >= beta {
                 // fail high
-                let update = self.params.aw_margin() * i;
-                beta += update.v();
+                beta = score + delta;
             }
             else {
                 return score;
             }
 
-            i += 1;
+            curr += 1;
+            delta += margin * curr;
         }
     }
 
