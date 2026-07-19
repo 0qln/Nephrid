@@ -700,13 +700,18 @@ where
             self.eval.forward();
             pos.make_move_for::<P>(m, &mut (&mut self.ss.get_mut(rel_ply + 1).phase, self.eval.observe_forward()));
 
+            let gives_check = pos.get_check_state() != CheckState::None;
+
             // depth
             let (mut depth_ext, mut depth_reduct) = (0, 0);
 
-            let gives_check = pos.get_check_state() != CheckState::None;
-
             // check extensions
             if gives_check {
+                depth_ext += 1;
+            }
+
+            // extend depth for hashmove
+            if m == tt_move {
                 depth_ext += 1;
             }
 
