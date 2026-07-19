@@ -35,6 +35,7 @@
 #![feature(try_trait_v2_residual)]
 #![feature(stmt_expr_attributes)]
 #![feature(closure_lifetime_binder)]
+#![feature(slice_ptr_get)]
 
 #[macro_use] extern crate impl_ops;
 
