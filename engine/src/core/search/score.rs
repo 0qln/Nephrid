@@ -58,12 +58,12 @@ impl AnyScore {
     pub const unsafe fn interpret_as<P: Perspective>(self) -> Score<P> { Score::<P>::new(self) }
 }
 
-impl<T: const Into<RawScore>> const From<T> for AnyScore {
+const impl<T: const Into<RawScore>> From<T> for AnyScore {
     #[inline(always)]
     fn from(val: T) -> Self { Self::new(val.into()) }
 }
 
-impl<T: const Into<AnyScore>> const ops::AddAssign<T> for AnyScore {
+const impl<T: const Into<AnyScore>> ops::AddAssign<T> for AnyScore {
     #[inline(always)]
     fn add_assign(&mut self, rhs: T) {
         debug_assert!(*self != scores::NULL, "Cannot add to a NULL score");
@@ -79,34 +79,39 @@ impl SaturatingElement<MoveScore> for AnyScore {
     }
 }
 
-impl const ops::Neg for AnyScore {
+const impl ops::Neg for AnyScore {
     type Output = Self;
     #[inline(always)]
     fn neg(self) -> Self::Output { Self::new(-self.v) }
 }
 
-impl<Rhs: const Into<AnyScore>> const ops::Add<Rhs> for AnyScore {
+const impl<Rhs: const Into<AnyScore>> ops::Add<Rhs> for AnyScore {
     type Output = Self;
     #[inline(always)]
     fn add(self, rhs: Rhs) -> Self::Output { Self::new(self.v + rhs.into().v) }
 }
 
-impl<Rhs: const Into<AnyScore>> const ops::Sub<Rhs> for AnyScore {
+const impl<Rhs: const Into<AnyScore>> ops::Sub<Rhs> for AnyScore {
     type Output = Self;
     #[inline(always)]
     fn sub(self, rhs: Rhs) -> Self::Output { Self::new(self.v - rhs.into().v) }
 }
 
-impl const ops::Div<AnyScore> for AnyScore {
+const impl<Rhs: const Into<AnyScore>> ops::Div<Rhs> for AnyScore {
     type Output = Self;
     #[inline(always)]
-    fn div(self, rhs: AnyScore) -> Self::Output { Self::new(self.v / rhs.v) }
+    fn div(self, rhs: Rhs) -> Self::Output { Self::new(self.v / rhs.into().v) }
 }
 
-impl<Rhs: const Into<AnyScore>> const ops::Mul<Rhs> for AnyScore {
+const impl<Rhs: const Into<AnyScore>> ops::Mul<Rhs> for AnyScore {
     type Output = Self;
     #[inline(always)]
     fn mul(self, rhs: Rhs) -> Self::Output { Self::new(self.v * rhs.into().v) }
+}
+
+const impl<Rhs: const Into<AnyScore>> ops::SubAssign<Rhs> for AnyScore {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: Rhs) { self.v -= rhs.into().v }
 }
 
 impl iter::Sum for AnyScore {
@@ -121,46 +126,54 @@ impl<P: Perspective> fmt::Display for Score<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "Score<{}>({})", P::COLOR, self.0) }
 }
 
-impl<P: Perspective, Rhs: const Into<Score<P>>> const ops::Add<Rhs> for Score<P> {
+const impl<P: Perspective, Rhs: const Into<Score<P>>> ops::Add<Rhs> for Score<P> {
     type Output = Self;
     #[inline(always)]
     fn add(self, rhs: Rhs) -> Self::Output { Self::new(self.0 + rhs.into().0) }
 }
-impl<P: Perspective> const ops::Add<i32> for Score<P> {
+const impl<P: Perspective> ops::Add<i32> for Score<P> {
     type Output = Self;
     #[inline(always)]
     fn add(self, rhs: i32) -> Self::Output { Self::new(self.0 + rhs) }
 }
 
-impl<P: Perspective, Rhs: const Into<Score<P>>> const ops::Sub<Rhs> for Score<P> {
+const impl<P: Perspective, Rhs: const Into<Score<P>>> ops::Sub<Rhs> for Score<P> {
     type Output = Self;
     #[inline(always)]
     fn sub(self, rhs: Rhs) -> Self::Output { Self::new(self.0 - rhs.into().0) }
 }
-impl<P: Perspective> const ops::Sub<i32> for Score<P> {
+const impl<P: Perspective> ops::Sub<i32> for Score<P> {
     type Output = Self;
     #[inline(always)]
     fn sub(self, rhs: i32) -> Self::Output { Self::new(self.0 - rhs) }
 }
+const impl<P: Perspective> ops::SubAssign<i32> for Score<P> {
+    #[inline(always)]
+    fn sub_assign(&mut self, rhs: i32) { self.0 -= rhs }
+}
+const impl<P: Perspective> ops::AddAssign<i32> for Score<P> {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: i32) { self.0 += rhs }
+}
 
-impl<P: Perspective> const ops::Div<AnyScore> for Score<P> {
+const impl<P: Perspective> ops::Div<AnyScore> for Score<P> {
     type Output = Self;
     #[inline(always)]
     fn div(self, rhs: AnyScore) -> Self::Output { Self::new(self.0 / rhs) }
 }
 
-impl<P: Perspective> const Ord for Score<P> {
+const impl<P: Perspective> Ord for Score<P> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.0.cmp(&other.0) }
 }
 
-impl<P: Perspective> const PartialOrd for Score<P> {
+const impl<P: Perspective> PartialOrd for Score<P> {
     #[inline(always)]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }
 }
 
-impl<P: Perspective> const Eq for Score<P> {}
-impl<P: Perspective> const PartialEq for Score<P> {
+const impl<P: Perspective> Eq for Score<P> {}
+const impl<P: Perspective> PartialEq for Score<P> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool { self.0 == other.0 }
 }
