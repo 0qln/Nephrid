@@ -239,7 +239,8 @@ where
     let mut stats = SearchStats::default();
     let mut best_move = None;
     let mut last_best_move;
-    let mut curr_score = scores::ZERO;
+    let root_tt_entry = searcher.tt.get(pos.get_key()).cloned();
+    let mut curr_score = root_tt_entry.as_ref().map(|e| e.score).unwrap_or(scores::ZERO);
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
         let iter_start = Instant::now();
