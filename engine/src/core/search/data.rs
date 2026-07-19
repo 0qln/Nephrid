@@ -2,18 +2,22 @@ use std::{
     hint::{assert_unchecked, unreachable_unchecked},
     iter,
     marker::PhantomData,
+    ops::{Deref, DerefMut},
 };
 
 use uom::si::{information::byte, u64::Information};
 
-use crate::core::{
-    color::{Color, Perspective, colors, perspectives},
-    coordinates::{Square, squares},
-    depth::Depth,
-    r#move::Move,
-    piece::{PieceType, piece_type},
-    search::{id, ordering::MoveScore, score::AnyScore},
-    zobrist,
+use crate::{
+    core::{
+        color::{Color, Perspective, colors, perspectives},
+        coordinates::{Square, squares},
+        depth::Depth,
+        r#move::Move,
+        piece::{PieceType, piece_type},
+        search::{id, ordering::MoveScore, score::AnyScore},
+        zobrist,
+    },
+    misc::List,
 };
 
 pub const trait TTKey {
@@ -139,8 +143,8 @@ impl<T: Clone + Default> From<Vec<T>> for SearchStack<T> {
 impl<T> SearchStack<T> {
     #[inline(always)]
     pub fn propagate(&mut self, old: Depth, new: Depth, mut f: impl FnMut(&T, &mut T)) {
-        let old_idx = old.v() as usize;
-        let new_idx = new.v() as usize;
+        let old_idx = old.index();
+        let new_idx = new.index();
         unsafe {
             let [parent, child] = self.entries.get_disjoint_unchecked_mut([old_idx, new_idx]);
             f(parent, child);
@@ -157,14 +161,14 @@ impl<T> SearchStack<T> {
     }
 
     pub fn get_mut(&mut self, ply: Depth) -> &mut T {
-        let idx = ply.v() as usize;
+        let idx = ply.index();
 
         // Safety: entries is atleast Self::CAPACITY, which is gt Depth::MAX
         unsafe { self.entries.get_unchecked_mut(idx) }
     }
 
     pub fn get(&self, ply: Depth) -> &T {
-        let idx = ply.v() as usize;
+        let idx = ply.index();
 
         // Safety: entries is atleast Self::CAPACITY, which is gt Depth::MAX
         unsafe { self.entries.get_unchecked(idx) }
@@ -203,7 +207,7 @@ pub struct RbSet<T, const N: usize> {
     items: [T; N],
 }
 
-impl<T: const Default, const N: usize> const Default for RbSet<T, N> {
+const impl<T: const Default, const N: usize> Default for RbSet<T, N> {
     #[inline]
     fn default() -> Self {
         Self {
@@ -212,7 +216,7 @@ impl<T: const Default, const N: usize> const Default for RbSet<T, N> {
     }
 }
 
-impl<T: const Default + Copy + Eq, const N: usize> const From<[T; N]> for RbSet<T, N> {
+const impl<T: const Default + Copy + Eq, const N: usize> From<[T; N]> for RbSet<T, N> {
     fn from(items: [T; N]) -> Self { Self { items } }
 }
 
@@ -285,7 +289,7 @@ pub struct PieceHistory {
     scores: [[MoveScore; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
 }
 
-impl const Default for PieceHistory {
+const impl Default for PieceHistory {
     fn default() -> Self { Self::new() }
 }
 
@@ -357,4 +361,18 @@ impl PieceHistories {
         *curr_score += bonus.clamp(-max, max) as MoveScore;
         // todo: replace the last clamp with a debug assert?
     }
+}
+
+#[derive(Default, Clone, Debug)]
+pub struct Line {
+    pub moves: List<{ Depth::MAX.index() }, Move>,
+}
+
+impl Deref for Line {
+    type Target = List<{ Depth::MAX.index() }, Move>;
+    fn deref(&self) -> &Self::Target { &self.moves }
+}
+
+impl DerefMut for Line {
+    fn deref_mut(&mut self) -> &mut Self::Target { &mut self.moves }
 }

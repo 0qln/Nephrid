@@ -32,7 +32,7 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, PieceHistories, RbSet, SearchStack, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+            data::{self, Line, PieceHistories, RbSet, SearchStack, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
@@ -455,10 +455,14 @@ where
         }
 
         let rel_ply: Depth = (pos.ply() - self.root_ply).into();
-        let &SearchEntry { phase, killers } = self.ss.get(rel_ply);
+        let &SearchEntry { phase, killers, .. } = self.ss.get(rel_ply);
+        let pline = for<'l> |ss: &'l mut SS| -> &'l mut Box<Line> { &mut ss.get_mut(rel_ply).line };
+        let line = for<'l> |ss: &'l SS| -> &'l Box<Line> { &ss.get(rel_ply + 1).line };
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
+            pline(&mut self.ss).clear();
+
             return QSearcher::new(pos, self.tt, &mut self.ss, self.root_ply).go::<P, T>(
                 pos,
                 alpha,
@@ -727,7 +731,14 @@ where
             }
 
             if score > alpha {
+                // update alpha
                 alpha = score;
+
+                // update pv
+                let line = line(&self.ss).clone();
+                pline(&mut self.ss).clear();
+                pline(&mut self.ss).push(m);
+                pline(&mut self.ss).extend_from_slice(1.., line.as_slice());
 
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
@@ -922,6 +933,7 @@ impl Bound {
 pub struct SearchEntry {
     pub killers: Killers,
     pub phase: TaperValue,
+    pub line: Box<Line>,
 }
 
 pub const trait ScorerParams {
