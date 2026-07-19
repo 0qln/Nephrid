@@ -529,7 +529,7 @@ where
                 beta,
                 self.params.clone(),
                 self.eval,
-                Depth::new(100),
+                Depth::MAX - rel_ply,
             );
         }
 
