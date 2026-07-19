@@ -4,12 +4,16 @@ engine1="$1"
 engine2="$2"
 openings="$3"
 out="$4"
+log_file="${out%.*}.log"
 
 shift 4
 
 # todo: use these aswell when score output of engines is implemented
 # -draw movenumber=40 movecount=8 score=10 \
 # -resign movecount=3 score=400 \
+
+# debugging:
+# -debug \
 cutechess-cli \
     -engine cmd="$engine1" name="$engine1" option.gui-lag=50 \
     -engine cmd="$engine2" name="$engine2" option.gui-lag=50 \
@@ -22,4 +26,4 @@ cutechess-cli \
     -ratinginterval 50 \
     -outcomeinterval 50 \
     -pgnout "$out" \
-    "$@"
+    "$@" |& tee "$log_file"
