@@ -15,7 +15,7 @@ use crate::{
         chrono::{ChronoParams, TimeMan},
         color::{
             Color, Perspective, colors,
-            perspectives::{self},
+            perspectives::{Black, White},
         },
         config::Configuration,
         coordinates::EpTargetSquare,
@@ -209,6 +209,7 @@ pub const trait IdParams {
     fn nmp_phase_factor(&self) -> u32;
     fn nmp_margin(&self) -> AnyScore;
     fn nmp_depth_margin(&self) -> i32;
+    fn aw_margin(&self) -> AnyScore { hce::piece_score(piece_type::PAWN) / 4 }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -238,11 +239,12 @@ where
     let mut stats = SearchStats::default();
     let mut best_move = None;
     let mut last_best_move;
+    let mut curr_score = scores::ZERO;
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
         let iter_start = Instant::now();
 
-        let best_score = searcher.search_root(pos, &mut stats, depth);
+        curr_score = searcher.aspire_root(pos, &mut stats, depth, curr_score);
 
         // make sure to break before messing up the order of the previous iteration with
         // the incomplete results from this iteration.
@@ -258,7 +260,7 @@ where
         if let Some(best_move) = best_move
             && let Some(search_time) = searcher.timeman.elapsed_search_time()
         {
-            uci_info(depth, &stats, Cp::from(best_score), best_move, search_time, searcher.pv());
+            uci_info(depth, &stats, Cp::from(curr_score), best_move, search_time, searcher.pv());
         }
 
         // update stats
@@ -403,13 +405,48 @@ where
     }
 
     /// returns the score relative to the current player
+    #[allow(unused)]
     fn search_root(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> AnyScore {
         fn alpha<P: Perspective>() -> Score<P> { Score::NEG_INF }
         fn beta<P: Perspective>() -> Score<P> { Score::POS_INF }
         match pos.get_turn() {
-            colors::WHITE => self.search::<perspectives::White, Root>(pos, stats, depth, alpha(), beta()).0,
-            colors::BLACK => self.search::<perspectives::Black, Root>(pos, stats, depth, alpha(), beta()).0,
+            colors::WHITE => self.search::<White, Root>(pos, stats, depth, alpha(), beta()).0,
+            colors::BLACK => self.search::<Black, Root>(pos, stats, depth, alpha(), beta()).0,
             _ => unreachable!(),
+        }
+    }
+
+    fn aspire_root(&mut self, pos: &mut Position, stats: &mut SearchStats, d: Depth, guess: AnyScore) -> AnyScore {
+        match pos.get_turn() {
+            colors::WHITE => self.aspire_root_for::<White>(pos, stats, d, unsafe { guess.interpret_as() }).0,
+            colors::BLACK => self.aspire_root_for::<Black>(pos, stats, d, unsafe { guess.interpret_as() }).0,
+            _ => unreachable!(),
+        }
+    }
+
+    fn aspire_root_for<P: Perspective>(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth, guess: Score<P>) -> Score<P> {
+        let mut alpha = guess - self.params.aw_margin().v();
+        let mut beta = guess + self.params.aw_margin().v();
+
+        let mut i = 1;
+        loop {
+            let score = self.search::<P, Root>(pos, stats, depth, alpha, beta);
+
+            if score <= alpha {
+                // fail low
+                let update = self.params.aw_margin() * i;
+                alpha -= update.v();
+            }
+            else if score >= beta {
+                // fail high
+                let update = self.params.aw_margin() * i;
+                beta += update.v();
+            }
+            else {
+                return score;
+            }
+
+            i += 1;
         }
     }
 
