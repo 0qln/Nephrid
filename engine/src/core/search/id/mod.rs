@@ -234,10 +234,10 @@ where
         println!("info string Starting ID Search with Params: {params:?}");
     }
 
-    let mut searcher = Searcher::<_, X>::new(pos, limit, timeman, ct, tt, hh, eval, params.clone());
+    let mut searcher = Searcher::<_, X>::new(pos, limit, timeman, ct, tt, hh, eval, debug, params.clone());
     let mut stats = SearchStats::default();
     let mut best_move = None;
-    let mut best_score = scores::ZERO;
+    let mut curr_score = scores::ZERO;
     let mut last_best_move;
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
@@ -245,7 +245,7 @@ where
 
         // todo we can use the final best_score from the last uci::go iteration as
         // initial estimate.
-        best_score = searcher.mdtf(pos, &mut stats, depth, best_score);
+        curr_score = searcher.mdtf(pos, &mut stats, depth, curr_score);
 
         // make sure to break before messing up the order of the previous iteration with
         // the incomplete results from this iteration.
@@ -262,7 +262,7 @@ where
         if let Some(best_move) = best_move
             && let Some(search_time) = searcher.timeman.elapsed_search_time()
         {
-            uci_info(depth, &stats, Cp::from(best_score), best_move, search_time, searcher.pv());
+            uci_info(depth, &stats, Cp::from(curr_score), best_move, search_time, searcher.pv());
         }
 
         // update stats
@@ -330,6 +330,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     params: X::Ref,
     #[cfg(feature = "id-nmp")]
     in_nmp_verify: bool,
+    debug: &'a DebugMode,
 }
 
 impl<'a, 'b, E: StaticEvaluator, X: IParams> Searcher<'a, 'b, E, X>
@@ -345,6 +346,7 @@ where
         tt: &'a mut TT,
         hh: &'a mut HH,
         eval: &'b mut E,
+        debug: &'a DebugMode,
         params: X::Ref,
     ) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
@@ -367,6 +369,7 @@ where
             tt,
             hh,
             eval,
+            debug,
             params,
             #[cfg(feature = "id-nmp")]
             in_nmp_verify: false,
@@ -429,7 +432,11 @@ where
     fn mdtf_for<P: Perspective>(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth, mut guess: Score<P>) -> Score<P> {
         let (mut lo, mut hi) = (Score::NEG_INF, Score::POS_INF);
 
-        for _ in 0..100 {
+        for i in 0..10000 {
+            if self.debug.get() {
+                println!("info string mdtf iteration {i}: lo={lo:?}, hi={hi:?}, guess={guess:?}");
+            }
+
             let beta = if guess == lo { lo + 1 } else { guess };
             let alpha = beta - 1;
 
@@ -439,6 +446,9 @@ where
             // make sure to break before messing up the order of the previous iteration with
             // the incomplete results from this iteration.
             if self.aborted {
+                if self.debug.get() {
+                    println!("info string mdtf aborted at iteration {i}: lo={lo:?}, hi={hi:?}, guess={guess:?}");
+                }
                 break;
             }
 
@@ -452,6 +462,9 @@ where
             }
 
             if hi <= lo {
+                if self.debug.get() {
+                    println!("info string mdtf converged at iteration {i}: lo={lo:?}, hi={hi:?}, guess={guess:?}");
+                }
                 break;
             }
         }
