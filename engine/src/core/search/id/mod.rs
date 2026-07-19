@@ -15,7 +15,7 @@ use crate::{
         chrono::{ChronoParams, TimeMan},
         color::{
             Color, Perspective, colors,
-            perspectives::{self},
+            perspectives::{Black, White},
         },
         config::Configuration,
         coordinates::EpTargetSquare,
@@ -32,7 +32,7 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, PieceHistories, RbSet, SearchStack, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+            data::{self, Line, PieceHistories, RbSet, SearchStack, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
@@ -209,6 +209,7 @@ pub const trait IdParams {
     fn nmp_phase_factor(&self) -> u32;
     fn nmp_margin(&self) -> AnyScore;
     fn nmp_depth_margin(&self) -> i32;
+    fn aw_margin(&self) -> AnyScore { hce::piece_score(piece_type::PAWN) / 4 }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -238,11 +239,18 @@ where
     let mut stats = SearchStats::default();
     let mut best_move = None;
     let mut last_best_move;
+    let root_tt_entry = searcher.tt.get(pos.get_key()).cloned();
+    let mut curr_score = root_tt_entry.as_ref().map(|e| e.score).unwrap_or(scores::ZERO);
 
     for depth in (Depth::ROOT + 1)..=depth_lim {
         let iter_start = Instant::now();
 
-        let best_score = searcher.search_root(pos, &mut stats, depth);
+        curr_score = if depth > Depth::new(3) {
+            searcher.aspire_root(pos, &mut stats, depth, curr_score)
+        }
+        else {
+            searcher.search_root(pos, &mut stats, depth)
+        };
 
         // make sure to break before messing up the order of the previous iteration with
         // the incomplete results from this iteration.
@@ -258,7 +266,7 @@ where
         if let Some(best_move) = best_move
             && let Some(search_time) = searcher.timeman.elapsed_search_time()
         {
-            uci_info(depth, &stats, Cp::from(best_score), best_move, search_time);
+            uci_info(depth, &stats, Cp::from(curr_score), best_move, search_time, searcher.pv());
         }
 
         // update stats
@@ -373,6 +381,8 @@ where
 
     fn root_best_move(&self) -> Option<Move> { self.root_stats.get(0).map(|x| x.mov()) }
 
+    fn pv(&self) -> &Line { &self.ss.get(Depth::ROOT).line }
+
     fn root_logits(&self) -> List<{ MAX_LEGAL_MOVES }, f32> {
         let mut root_logits = List::<{ MAX_LEGAL_MOVES }, f32>::new();
         self.root_stats
@@ -401,13 +411,59 @@ where
     }
 
     /// returns the score relative to the current player
+    #[allow(unused)]
     fn search_root(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> AnyScore {
         fn alpha<P: Perspective>() -> Score<P> { Score::NEG_INF }
         fn beta<P: Perspective>() -> Score<P> { Score::POS_INF }
         match pos.get_turn() {
-            colors::WHITE => self.search::<perspectives::White, Root>(pos, stats, depth, alpha(), beta()).0,
-            colors::BLACK => self.search::<perspectives::Black, Root>(pos, stats, depth, alpha(), beta()).0,
+            colors::WHITE => self.search::<White, Root>(pos, stats, depth, alpha(), beta()).0,
+            colors::BLACK => self.search::<Black, Root>(pos, stats, depth, alpha(), beta()).0,
             _ => unreachable!(),
+        }
+    }
+
+    fn aspire_root(&mut self, pos: &mut Position, stats: &mut SearchStats, d: Depth, guess: AnyScore) -> AnyScore {
+        match pos.get_turn() {
+            colors::WHITE => self.aspire_root_for::<White>(pos, stats, d, unsafe { guess.interpret_as() }).0,
+            colors::BLACK => self.aspire_root_for::<Black>(pos, stats, d, unsafe { guess.interpret_as() }).0,
+            _ => unreachable!(),
+        }
+    }
+
+    fn aspire_root_for<P: Perspective>(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth, guess: Score<P>) -> Score<P> {
+        let mut curr = 1;
+
+        let margin = self.params.aw_margin().v();
+        let mut delta = margin;
+
+        let mut alpha = guess - margin;
+        let mut beta = guess + margin;
+
+        loop {
+            let score = self.search::<P, Root>(pos, stats, depth, alpha, beta);
+
+            // make sure to break before messing up the order of the previous iteration with
+            // the incomplete results from this iteration.
+            if self.aborted {
+                return Score::DRAW;
+            }
+
+            self.sort_root();
+
+            if score <= alpha {
+                // fail low
+                alpha = score - delta;
+            }
+            else if score >= beta {
+                // fail high
+                beta = score + delta;
+            }
+            else {
+                return score;
+            }
+
+            curr += 1;
+            delta += margin * curr;
         }
     }
 
@@ -446,6 +502,17 @@ where
             return Score::NEG_INF;
         }
 
+        let rel_ply: Depth = (pos.ply() - self.root_ply).into();
+        let &SearchEntry { phase, killers, .. } = self.ss.get(rel_ply);
+        let line = for<'l> |ss: &'l mut SS| -> &'l mut Box<Line> { &mut ss.get_mut(rel_ply).line };
+        let cline_and_line = for<'l> |ss: &'l mut SS| -> (&'l Box<Line>, &'l mut Box<Line>) {
+            let [cline, line] = unsafe { ss.get_disjoint_unchecked_mut([rel_ply + 1, rel_ply]) };
+            (&cline.line, &mut line.line)
+        };
+
+        // clear this ply's PV line immediately to avoid stale data leakage
+        line(&mut self.ss).clear();
+
         // check if game is over
         if let Some(result) = pos.game_result() {
             return match result {
@@ -453,9 +520,6 @@ where
                 GameResult::Draw => Score::DRAW,
             };
         }
-
-        let rel_ply: Depth = (pos.ply() - self.root_ply).into();
-        let &SearchEntry { phase, killers } = self.ss.get(rel_ply);
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
@@ -727,7 +791,14 @@ where
             }
 
             if score > alpha {
+                // update alpha
                 alpha = score;
+
+                // update pv
+                let (cline, line) = cline_and_line(&mut self.ss);
+                line.clear();
+                line.push(m);
+                line.extend_from_slice(1.., cline.as_slice());
 
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
@@ -925,6 +996,7 @@ impl Bound {
 pub struct SearchEntry {
     pub killers: Killers,
     pub phase: TaperValue,
+    pub line: Box<Line>,
 }
 
 pub const trait ScorerParams {
@@ -996,7 +1068,7 @@ where
     }
 }
 
-fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move, search_time: Duration) {
+fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move, search_time: Duration, pv: &Line) {
     let depth = UciArg::Some(UciDepth(depth));
     let seldepth = UciArg::<UciSeldepth>::None; // TODO
     let score = UciArg::Some(UciScore::Centipawns(UciCp(best_score)));
@@ -1004,7 +1076,7 @@ fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move, 
     let nps = UciArg::Some(UciNps::from_nodes_and_time(stats.nodes, search_time));
     let currmove = UciArg::Some(UciCurrmove(best_move));
     let time = UciArg::Some(UciSearchtime(search_time));
-    let pv = UciArg::<UciPv<MoveList>>::None; // TODO
+    let pv = UciArg::Some(UciPv(pv));
     let string = UciArg::<String>::None;
 
     println!("info{currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}");

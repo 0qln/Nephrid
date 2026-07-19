@@ -1,11 +1,13 @@
 use core::slice;
 use std::{
     any::type_name,
+    cmp::max,
     fmt::{self, Debug},
     iter,
     marker::PhantomData,
     mem::{self, ManuallyDrop, MaybeUninit},
-    ops::{Bound, IntoBounds, RangeBounds},
+    ops::{Bound, Index, IndexMut, IntoBounds, RangeBounds},
+    ptr,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -400,7 +402,7 @@ impl<const N: usize, T> List<N, T> {
     }
 
     #[inline]
-    pub fn as_subslice<R: RangeBounds<usize>>(&self, range: R) -> &[T] {
+    pub fn as_subslice(&self, range: impl RangeBounds<usize>) -> &[T] {
         // Resolve the exact start index
         let start = match range.start_bound() {
             Bound::Included(&s) => s,
@@ -451,11 +453,22 @@ impl<const N: usize, T> List<N, T> {
     ///
     /// The caller must ensure that `index` is less than `self.len`.
     #[inline]
-    pub unsafe fn get_unchecked(&self, index: usize) -> &T {
+    pub const unsafe fn get_unchecked(&self, index: usize) -> &T {
         // SAFETY: The caller must ensure that `index` is less than `self.len`, which
         // guarantees that the element has been initialized via the `push`
         // method.
         unsafe { self.items.get_unchecked(index).assume_init_ref() }
+    }
+
+    /// # Safety
+    ///
+    /// The caller must ensure that `index` is less than `self.len`.
+    #[inline]
+    pub const unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut T {
+        // SAFETY: The caller must ensure that `index` is less than `self.len`, which
+        // guarantees that the element has been initialized via the `push`
+        // method.
+        unsafe { self.items.get_unchecked_mut(index).assume_init_mut() }
     }
 
     /// # Safety
@@ -481,7 +494,7 @@ impl<const N: usize, T> List<N, T> {
 
         List {
             len: src.len,
-            items: unsafe { std::ptr::read((&src.items as *const [MaybeUninit<T2>; N]).cast::<[MaybeUninit<T>; N]>()) },
+            items: unsafe { ptr::read((&src.items as *const [MaybeUninit<T2>; N]).cast::<[MaybeUninit<T>; N]>()) },
         }
     }
 
@@ -511,6 +524,99 @@ impl<const N: usize, T> List<N, T> {
         self.len = 0;
 
         Drain { list: self, len, index: 0 }
+    }
+
+    /// Copies the slice src into dest range, extending the list if necessary.
+    ///
+    /// # Examples
+    ///
+    /// ### Appending to the end of a list
+    /// ```
+    /// use engine::misc::List;
+    ///
+    /// let mut list: List<10, i32> = List::new();
+    /// list.push(5);
+    ///
+    /// // Appending multiple items starting right after index 0
+    /// let extra_moves = [12, 15, 18];
+    /// list.extend_from_slice(1.., &extra_moves);
+    ///
+    /// assert_eq!(list.as_slice(), &[5, 12, 15, 18]);
+    /// assert_eq!(list.len(), 4);
+    /// ```
+    ///
+    /// ### Overwriting an existing range
+    /// ```
+    /// use engine::misc::List;
+    ///
+    /// let mut list: List<5, &'static str> = List::new();
+    /// list.push("e2e4");
+    /// list.push("e7e5");
+    /// list.push("g1f3");
+    /// list.push("g8f6");
+    ///
+    /// // Replace "e7e5" and "g1f3" with new moves
+    /// let corrections = ["c7c5", "b1c3"];
+    /// list.extend_from_slice(1..3, &corrections);
+    ///
+    /// assert_eq!(list.as_slice(), &["e2e4", "c7c5", "b1c3", "g8f6"]);
+    /// ```
+    pub fn extend_from_slice(&mut self, dest: impl RangeBounds<usize>, src: &[T])
+    where
+        T: Copy,
+    {
+        if src.len() == 0 {
+            return;
+        }
+
+        // Resolve the exact start index
+        let start = match dest.start_bound() {
+            Bound::Included(&s) => s,
+            Bound::Excluded(&s) => s + 1,
+            Bound::Unbounded => 0,
+        };
+
+        // Resolve the exact end index
+        let end = match dest.end_bound() {
+            Bound::Included(&e) => e + 1,
+            Bound::Excluded(&e) => e,
+            Bound::Unbounded => start + src.len(),
+        };
+
+        debug_assert!(start <= end, "range start must be <= end");
+        debug_assert_eq!(end - start, src.len(), "Source slice length must match the destination range length");
+
+        unsafe {
+            let ptr = self.items.as_mut_ptr().cast::<T>().add(start);
+            ptr::copy_nonoverlapping(src.as_ptr(), ptr, src.len());
+        }
+
+        let new_len = max(self.len, end);
+        debug_assert!(new_len <= N, "List capacity exceeded");
+
+        // Updat length
+        self.len = new_len;
+    }
+}
+
+const impl<const N: usize, T> Index<usize> for List<N, T> {
+    type Output = T;
+    fn index(&self, index: usize) -> &Self::Output {
+        debug_assert!(index < self.len, "Index out of bounds");
+
+        // SAFETY: The bounds check is handled by the caller or by design constraints
+        // (like the maximum 218 legal chess moves).
+        unsafe { self.get_unchecked(index) }
+    }
+}
+
+const impl<const N: usize, T> IndexMut<usize> for List<N, T> {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        debug_assert!(index < self.len, "Index out of bounds");
+
+        // SAFETY: The bounds check is handled by the caller or by design constraints
+        // (like the maximum 218 legal chess moves).
+        unsafe { self.get_unchecked_mut(index) }
     }
 }
 
