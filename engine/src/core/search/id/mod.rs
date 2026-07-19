@@ -703,32 +703,36 @@ where
             let gives_check = pos.get_check_state() != CheckState::None;
 
             // depth
-            let (mut depth_ext, mut depth_reduct) = (0, 0);
+            let (depth_ext, depth_reduct) = {
+                let (mut e, mut r) = (0, 0);
 
-            // check extensions
-            if gives_check {
-                depth_ext += 1;
-            }
+                // check extensions
+                if gives_check {
+                    e += 5;
+                }
 
-            // extend depth for hashmove
-            if m == tt_move {
-                depth_ext += 1;
-            }
+                // extend depth for hashmove in pv nodes
+                if m == tt_move && kind == NodeKind::Pv {
+                    e += 3;
+                }
 
-            // reduce depth for captures with negative see
-            if flag.is_capture() && s < 0 {
-                depth_reduct += 1;
-            }
+                // reduce depth for captures with negative see
+                if flag.is_capture() && s < 0 {
+                    r += 4;
+                }
 
-            // increase reduction for all-nodes
-            if kind == NodeKind::All {
-                depth_reduct += 1;
-            }
+                // increase reduction for all-nodes
+                if kind == NodeKind::All {
+                    r += 4;
+                }
 
-            // late move reductions
-            if depth >= Depth::new(3) && curr > 1 {
-                depth_reduct += lmr_u8(depth.v(), curr as u8);
-            }
+                // late move reductions
+                if depth >= Depth::new(3) && curr > 1 {
+                    r += 4 * lmr_u8(depth.v(), curr as u8);
+                }
+
+                (e / 4, r / 4)
+            };
 
             // recurse
             let score = {
