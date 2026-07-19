@@ -448,14 +448,6 @@ where
             return Score::NEG_INF;
         }
 
-        // check if game is over
-        if let Some(result) = pos.game_result() {
-            return match result {
-                GameResult::Win { .. } => Score::NEG_INF,
-                GameResult::Draw => Score::DRAW,
-            };
-        }
-
         let rel_ply: Depth = (pos.ply() - self.root_ply).into();
         let &SearchEntry { phase, killers, .. } = self.ss.get(rel_ply);
         let line = for<'l> |ss: &'l mut SS| -> &'l mut Box<Line> { &mut ss.get_mut(rel_ply).line };
@@ -466,6 +458,14 @@ where
 
         // clear this ply's PV line immediately to avoid stale data leakage
         line(&mut self.ss).clear();
+
+        // check if game is over
+        if let Some(result) = pos.game_result() {
+            return match result {
+                GameResult::Win { .. } => Score::NEG_INF,
+                GameResult::Draw => Score::DRAW,
+            };
+        }
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
