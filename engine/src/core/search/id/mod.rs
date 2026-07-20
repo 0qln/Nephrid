@@ -503,7 +503,9 @@ where
         }
 
         let rel_ply: Depth = (pos.ply() - self.root_ply).into();
-        let &SearchEntry { phase, killers, .. } = self.ss.get(rel_ply);
+        let &SearchEntry {
+            phase, killers, se_excluded_move, ..
+        } = self.ss.get(rel_ply);
         let line = for<'l> |ss: &'l mut SS| -> &'l mut Box<Line> { &mut ss.get_mut(rel_ply).line };
         let cline_and_line = for<'l> |ss: &'l mut SS| -> (&'l Box<Line>, &'l mut Box<Line>) {
             let [cline, line] = unsafe { ss.get_disjoint_unchecked_mut([rel_ply + 1, rel_ply]) };
@@ -541,6 +543,8 @@ where
 
         // tt-cutoff
         if kind != NodeKind::Root
+            // are we in SE verification search?
+            && se_excluded_move == Move::null()
             && let Some(ref entry) = tt_entry
             && entry.depth >= depth
             && ((entry.bound == Bound::Exact)
@@ -620,6 +624,8 @@ where
             let is_in_check = pos.get_check_state() != CheckState::None;
 
             if kind == NodeKind::Cut
+                // are we in SE verification search?
+                && se_excluded_move == Move::null()
                 // are we in verification search?
                 && !self.in_nmp_verify
                 // don't underflow depth
@@ -667,7 +673,10 @@ where
             feature = "id-fhr" => {{
                 let in_check = pos.get_check_state() != CheckState::None;
 
-                if kind == NodeKind::Cut && !in_check {
+                if kind == NodeKind::Cut && !in_check
+                    // are we in SE verification search?
+                    && self.excluded_move == Move::null()
+                {
                     // the quiet score of this position is the static score minus threat score (the
                     // best threat that the opponent can do).
                     let q_score = lazy_static_eval(self, pos) + !lazy_threat_score(pos);
@@ -691,9 +700,39 @@ where
         while let Some(sm) = move_picker.next_with_score_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers, phase)) {
             let ScoredMove { mov: m, score: s } = sm;
 
+            if m == se_excluded_move {
+                continue;
+            }
+
             let (from, to, flag) = m.into();
             let moving_piece = pos.get_piece(from);
             let moving_pt = moving_piece.piece_type();
+
+            // singular extensions
+            // if all but one move fail low, that move is singular and should be extended.
+            let singular_ext = {
+                if kind != NodeKind::Root
+                    && curr == 0
+                    && depth >= Depth::new(6)
+                    && se_excluded_move == Move::null()
+                    && let Some(tt_score) = tt_entry.as_ref().and_then(|e| e.score().validated())
+                    && tt_entry.as_ref().is_some_and(|e| e.depth() >= depth - 3)
+                    && tt_entry.as_ref().is_some_and(|e| matches!(e.bound(), Bound::Lower | Bound::Exact))
+                {
+                    let tt_score = unsafe { tt_score.interpret_as::<P>() };
+                    let se_margin = tt_score - (60 + if kind != NodeKind::Pv { 70 } else { 0 }) * depth.v() as i32 / 59;
+                    let se_depth = (depth - 1) / 2;
+
+                    self.ss.get_mut(rel_ply).se_excluded_move = m;
+                    let score = self.search::<P, T>(pos, stats, se_depth, se_margin - 1, se_margin);
+                    self.ss.get_mut(rel_ply).se_excluded_move = Move::null();
+
+                    if score < se_margin { 1 } else { 0 }
+                }
+                else {
+                    0
+                }
+            };
 
             // make the move
             self.ss.propagate_forward(rel_ply, |s, next_s| next_s.phase = s.phase);
@@ -736,7 +775,7 @@ where
 
             // recurse
             let score = {
-                let new_depth = depth - 1 + depth_ext;
+                let new_depth = depth - 1 + depth_ext + singular_ext;
                 let full_depth = new_depth.saturating_sub(fhr_reduct);
                 let reduced_depth = new_depth.saturating_sub(depth_reduct + fhr_reduct);
 
@@ -1015,6 +1054,7 @@ pub struct SearchEntry {
     pub killers: Killers,
     pub phase: TaperValue,
     pub line: Box<Line>,
+    pub se_excluded_move: Move,
 }
 
 pub const trait ScorerParams {
