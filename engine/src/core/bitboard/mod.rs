@@ -103,7 +103,7 @@ const impl ops::Not for Bitboard {
 impl Iterator for Bitboard {
     type Item = Square;
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> { self.pop_lsb() }
 }
 

@@ -2,7 +2,7 @@ use crate::core::{
     bitboard::BitboardIteratorExt,
     eval::GameResult,
     move_iter::{
-        SingleCheck, captures_targets, fold_moves,
+        Options, SingleCheck, captures_targets, fold_moves, fold_moves_for,
         king::{self, King, check_mask_qs, tabu_mask_ks},
         opt::AllLegal,
         pin_mask,
@@ -557,8 +557,12 @@ impl Position {
         }
     }
 
-    pub fn collect_legals_for<P: Perspective, C: Extend<Move>>(&self, mut move_list: C) -> C {
-        _ = fold_legal_moves_for::<P, _, _, _>(self, (), |_, m| {
+    #[inline(never)]
+    pub fn collect_legals_for<P: Perspective, C: Extend<Move>>(&self, x: C) -> C { self.collect_moves_for::<P, AllLegal, C>(x) }
+
+    #[inline(never)]
+    pub fn collect_moves_for<P: Perspective, O: Options, C: Extend<Move>>(&self, mut move_list: C) -> C {
+        _ = fold_moves_for::<P, O, _, _, _>(self, (), |_, m| {
             move_list.extend_one(m);
             ControlFlow::Continue::<(), _>(())
         });

@@ -1,16 +1,8 @@
 use std::ops::Try;
 
-use crate::core::{
-    bitboard::Bitboard,
-    color::Perspective,
-    coordinates::Square,
-    r#move::Move,
-    move_iter::{Options, captures_targets, quiets_targets},
-    piece::{IPieceType, piece_type},
-    position::Position,
-};
+use crate::core::{bitboard::Bitboard, color::Perspective, coordinates::Square, r#move::Move, move_iter::Options, piece::IPieceType};
 
-use super::{FoldMoves, NoDoubleCheck, map_captures, map_quiets, pin_mask};
+use super::{map_captures, map_quiets, pin_mask};
 
 pub mod magics;
 
@@ -21,44 +13,44 @@ pub trait SlidingAttacks {
 
 pub trait SlidingPieceType: SlidingAttacks + IPieceType {}
 
-impl<P: Perspective, O: Options, C, T> FoldMoves<P, C, O> for T
+#[inline(always)]
+pub fn fold_moves_for<B, F, R, P: Perspective, O: Options, T: SlidingPieceType>(
+    pieces: Bitboard,
+    blockers: Bitboard,
+    occupancy: Bitboard,
+    king: Option<Square>,
+    capture_targets: Bitboard,
+    quiet_targets: Bitboard,
+    init: B,
+    mut f: F,
+) -> R
 where
-    C: const NoDoubleCheck,
-    T: SlidingPieceType,
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
 {
-    #[inline(always)]
-    fn fold_moves_for<B, F, R>(pos: &Position, init: B, mut f: F) -> R
-    where
-        F: FnMut(B, Move) -> R,
-        R: Try<Output = B>,
-    {
-        let our_king = pos.get_bitboard(piece_type::KING, P::COLOR).lsb();
-        let occupancy = pos.get_occupancy();
+    let mut pieces = pieces;
 
-        pos.get_bitboard(T::ID, P::COLOR).try_fold(init, move |mut acc, piece| {
-            let attacks = {
-                let attacks = T::lookup_attacks(piece, occupancy);
-                if O::legal() {
-                    let blockers = pos.get_blockers();
-                    let pin_mask = our_king.map(|k| pin_mask(piece, blockers, k)).unwrap_or(Bitboard::full());
-                    attacks & pin_mask
-                }
-                else {
-                    attacks
-                }
-            };
+    pieces.try_fold(init, move |mut acc, piece| {
+        let attacks = {
+            let attacks = T::lookup_attacks(piece, occupancy);
 
-            if O::gen_captures() {
-                let legal_captures = attacks & captures_targets::<C>(pos, P::COLOR);
-                acc = map_captures(legal_captures, piece).try_fold(acc, &mut f)?;
+            if O::legal() {
+                let pin_mask = king.map(|k| pin_mask(piece, blockers, k)).unwrap_or(Bitboard::full());
+                attacks & pin_mask
             }
-
-            if O::gen_quiets() {
-                let legal_quiets = attacks & quiets_targets::<C>(pos, P::COLOR);
-                acc = map_quiets(legal_quiets, piece).try_fold(acc, &mut f)?;
+            else {
+                attacks
             }
+        };
 
-            try { acc }
-        })
-    }
+        if O::gen_captures() {
+            acc = map_captures(attacks & capture_targets, piece).try_fold(acc, &mut f)?;
+        };
+
+        if O::gen_quiets() {
+            acc = map_quiets(attacks & quiet_targets, piece).try_fold(acc, &mut f)?;
+        }
+
+        try { acc }
+    })
 }

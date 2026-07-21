@@ -5,55 +5,59 @@ use crate::core::{
     color::Perspective,
     coordinates::{CompassRose, Square, TCompassRose, compass_rose, squares},
     r#move::Move,
-    move_iter::{captures_targets, map_captures, map_quiets, quiets_targets},
-    piece::piece_type,
-    position::Position,
+    move_iter::{map_captures, map_quiets},
 };
 
 use const_for::const_for;
 
-use super::{FoldMoves, NoDoubleCheck, Options};
+use super::Options;
 
 pub struct Knight;
 
-impl<P: Perspective, O: Options, C: const NoDoubleCheck> FoldMoves<P, C, O> for Knight {
-    #[inline(always)]
-    fn fold_moves_for<B, F, R>(pos: &Position, init: B, mut f: F) -> R
-    where
-        F: FnMut(B, Move) -> R,
-        R: Try<Output = B>,
-    {
-        let mut knights = {
-            let knights = pos.get_bitboard(piece_type::KNIGHT, P::COLOR);
-            if O::legal() {
-                // only unpinned knights if legal check required
-                knights & !pos.get_blockers()
-            }
-            else {
-                knights
-            }
+#[inline(always)]
+pub fn fold_moves_for<B, F, R, P: Perspective, O: Options>(
+    knights: Bitboard,
+    blockers: Bitboard,
+    quiet_targets: Bitboard,
+    capture_targets: Bitboard,
+    init: B,
+    mut f: F,
+) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    let mut knights = {
+        if O::legal() {
+            // only unpinned knights if legal check required
+            knights & !blockers
+        }
+        else {
+            knights
+        }
+    };
+
+    knights.try_fold(init, |mut acc, piece| {
+        // todo: if the user only wants checks, we can optimize by lookup up the attacks
+        // from the enemy king.
+        let attacks = lookup_attacks(piece);
+
+        // todo: two loops and generate ALL capture first
+
+        if O::gen_captures() {
+            acc = map_captures(attacks & capture_targets, piece).try_fold(acc, &mut f)?;
         };
 
-        knights.try_fold(init, |mut acc, piece| {
-            let attacks = lookup_attacks(piece);
+        if O::gen_quiets() {
+            acc = map_quiets(attacks & quiet_targets, piece).try_fold(acc, &mut f)?;
+        }
 
-            if O::gen_captures() {
-                let captures = attacks & captures_targets::<C>(pos, P::COLOR);
-                acc = map_captures(captures, piece).try_fold(acc, &mut f)?;
-            }
-
-            if O::gen_quiets() {
-                let quiets = attacks & quiets_targets::<C>(pos, P::COLOR);
-                acc = map_quiets(quiets, piece).try_fold(acc, &mut f)?;
-            }
-
-            try { acc }
-        })
-    }
+        try { acc }
+    })
 }
 
 #[inline]
-pub fn lookup_attacks(sq: Square) -> Bitboard {
+pub const fn lookup_attacks(sq: Square) -> Bitboard {
     static ATTACKS: [Bitboard; 64] = {
         let mut attacks = [Bitboard::empty(); 64];
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {

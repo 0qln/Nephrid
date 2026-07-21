@@ -6,14 +6,14 @@ use crate::core::{
     color::Perspective,
     coordinates::{File, Rank, Square, files, ranks, squares},
     r#move::{Move, move_flags},
-    move_iter::{captures_targets, king, knight, pawn, quiets_targets},
+    move_iter::{CheckState, DoubleCheck, RtCheckState, SingleCheck, king, knight, pawn},
     piece::{IPieceType, PieceType, piece_type},
     position::Position,
 };
 
 use const_for::const_for;
 
-use super::{FoldMoves, NoCheck, Options, SomeCheck, bishop::Bishop, map_captures, map_quiets, rook::Rook, sliding_piece::SlidingAttacks};
+use super::{Options, SomeCheck, bishop::Bishop, map_captures, map_quiets, rook::Rook, sliding_piece::SlidingAttacks};
 
 pub struct King;
 
@@ -21,90 +21,122 @@ impl IPieceType for King {
     const ID: PieceType = piece_type::KING;
 }
 
-impl<P: Perspective, O: Options> FoldMoves<P, NoCheck, O> for King {
-    #[inline(always)]
-    fn fold_moves_for<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
-    where
-        F: FnMut(B, Move) -> R,
-        R: Try<Output = B>,
-    {
-        let king_bb = pos.get_bitboard(King::ID, P::COLOR);
-        if let Some(king) = king_bb.lsb() {
-            let (attacks, enemy_attacks) = if O::legal() {
-                let enemy_attacks = nstm_attacks_for::<P>(pos, pos.get_occupancy());
-                (lookup_attacks(king) & !enemy_attacks, enemy_attacks)
-            }
-            else {
-                (lookup_attacks(king), Bitboard::empty())
-            };
-
-            if O::gen_captures() {
-                let legal_captures = attacks & captures_targets::<NoCheck>(pos, P::COLOR);
-                init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
-            }
-
-            if O::gen_quiets() {
-                if O::legal() {
-                    init = king::fold_legal_castling::<P, _, _, _>(pos, init, &mut f, enemy_attacks)?;
-                }
-                else {
-                    init = king::fold_pseudo_legal_castling::<P, _, _, _>(pos, init, &mut f)?;
-                }
-
-                let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, P::COLOR);
-                init = map_quiets(legal_quiets, king).try_fold(init, &mut f)?;
-            }
-
-            try { init }
-        }
-        else {
-            // legal positions should have a king...
-            hint::cold_path();
-            try { init }
-        }
+#[inline(always)]
+pub fn fold_moves_for<B, F, R, P: Perspective, O: Options, C: CheckState>(
+    king: Option<Square>,
+    king_bb: Bitboard,
+    pos: &Position,
+    occ: Bitboard,
+    enemies: Bitboard,
+    capture_targets: Bitboard,
+    quiet_targets: Bitboard,
+    init: B,
+    f: F,
+) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    match C::check_state() {
+        RtCheckState::None => fold_moves_for_nocheck::<B, F, R, P, O>(king, pos, occ, capture_targets, quiet_targets, init, f),
+        RtCheckState::Single => fold_moves_for_somecheck::<B, F, R, P, O, SingleCheck>(pos, king_bb, king, enemies, occ, init, f),
+        RtCheckState::Double => fold_moves_for_somecheck::<B, F, R, P, O, DoubleCheck>(pos, king_bb, king, enemies, occ, init, f),
     }
 }
 
-impl<P: Perspective, O: Options, C: SomeCheck> FoldMoves<P, C, O> for King {
-    #[inline(always)]
-    fn fold_moves_for<B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
-    where
-        F: FnMut(B, Move) -> R,
-        R: Try<Output = B>,
-    {
-        let king_bb = pos.get_bitboard(King::ID, P::COLOR);
-        if let Some(king) = king_bb.lsb() {
-            let attacks = if O::legal() {
-                // If the to square covers anything, it doesn't matter, because the king will be
-                // in check. (=> we don't need to add the to square to occupancy)
-                let occupancy_after_king_move = pos.get_occupancy() ^ king_bb;
-                let enemy_attacks = nstm_attacks_for::<P>(pos, occupancy_after_king_move);
-                lookup_attacks(king) & !enemy_attacks
-            }
-            else {
-                lookup_attacks(king)
-            };
+#[inline(always)]
+pub fn fold_moves_for_nocheck<B, F, R, P: Perspective, O: Options>(
+    king: Option<Square>,
+    pos: &Position,
+    occupancy: Bitboard,
+    capture_targets: Bitboard,
+    quiet_targets: Bitboard,
+    mut init: B,
+    mut f: F,
+) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    // todo
+    // the king cannot check.
+    // if O::gen_only_checks() {
+    //     return try { init };
+    // }
 
-            if O::gen_captures() {
-                let legal_captures = attacks & captures_targets::<NoCheck>(pos, P::COLOR);
-                init = map_captures(legal_captures, king).try_fold(init, &mut f)?;
-            }
-
-            if O::gen_quiets() {
-                let legal_quiets = attacks & quiets_targets::<NoCheck>(pos, P::COLOR);
-                init = map_quiets(legal_quiets, king).try_fold(init, &mut f)?;
-            }
-
-            try { init }
+    if let Some(king) = king {
+        let (attacks, enemy_attacks) = if O::legal() {
+            let nstm_attacks = nstm_attacks_for::<P>(pos, occupancy);
+            (lookup_attacks(king) & !nstm_attacks, nstm_attacks)
         }
         else {
-            // legal positions should have a king...
-            hint::cold_path();
-            try { init }
+            (lookup_attacks(king), Bitboard::empty())
+        };
+
+        if O::gen_captures() {
+            init = map_captures(attacks & capture_targets, king).try_fold(init, &mut f)?;
         }
+
+        if O::gen_quiets() {
+            if O::legal() {
+                init = king::fold_legal_castling::<P, _, _, _>(pos, init, &mut f, enemy_attacks)?;
+            }
+            else {
+                init = king::fold_pseudo_legal_castling::<P, _, _, _>(pos, init, &mut f)?;
+            }
+
+            init = map_quiets(attacks & quiet_targets, king).try_fold(init, &mut f)?;
+        }
+
+        try { init }
+    }
+    else {
+        // legal positions should have a king...
+        hint::cold_path();
+        try { init }
     }
 }
 
+#[inline(always)]
+pub fn fold_moves_for_somecheck<B, F, R, P: Perspective, O: Options, C: SomeCheck>(
+    pos: &Position,
+    king_bb: Bitboard,
+    king: Option<Square>,
+    enemies: Bitboard,
+    occ: Bitboard,
+    mut init: B,
+    mut f: F,
+) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    // Safety: we are in some kind of check, so the king has to exist.
+    let king = unsafe { king.unwrap_unchecked() };
+
+    let attacks = if O::legal() {
+        // If the to square covers anything, it doesn't matter, because the king will be
+        // in check. (=> we don't need to add the to square to occupancy)
+        let occupancy_after_king_move = occ ^ king_bb;
+        let enemy_attacks = nstm_attacks_for::<P>(pos, occupancy_after_king_move);
+        lookup_attacks(king) & !enemy_attacks
+    }
+    else {
+        lookup_attacks(king)
+    };
+
+    if O::gen_captures() {
+        init = map_captures(attacks & enemies, king).try_fold(init, &mut f)?;
+    }
+
+    if O::gen_quiets() {
+        init = map_quiets(attacks & !occ, king).try_fold(init, &mut f)?;
+    }
+
+    try { init }
+}
+
+#[inline(always)]
 pub fn nstm_attacks_for<P: Perspective>(pos: &Position, occupancy: Bitboard) -> Bitboard {
     let nstm = P::Opponent::COLOR;
 

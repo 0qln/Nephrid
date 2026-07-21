@@ -330,9 +330,12 @@ pub mod stages {
     }
     #[rustfmt::skip]
     impl const move_iter::Options for GenerateCapturesAndPromos {
-        fn gen_quiets() -> bool { false }
-        fn gen_captures() -> bool { true }
-        fn gen_promos() -> bool { true }
+        fn quiet_checks() -> bool { false }
+        fn quiet_nochecks() -> bool { false }
+        fn capture_checks() -> bool { true }
+        fn capture_nochecks() -> bool { true }
+        fn promo_checks() -> bool { true }
+        fn promo_nochecks() -> bool { true }
         fn legal() -> bool { LEGAL }
     }
 
@@ -362,9 +365,12 @@ pub mod stages {
     }
     #[rustfmt::skip]
     impl const move_iter::Options for GenerateQuiets {
-        fn gen_quiets() -> bool { true }
-        fn gen_captures() -> bool { false }
-        fn gen_promos() -> bool { false }
+        fn quiet_checks() -> bool { true }
+        fn quiet_nochecks() -> bool { true }
+        fn capture_checks() -> bool { false }
+        fn capture_nochecks() -> bool { false }
+        fn promo_checks() -> bool { false }
+        fn promo_nochecks() -> bool { false }
         fn legal() -> bool { LEGAL }
     }
 
