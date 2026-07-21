@@ -161,7 +161,8 @@ impl<T> SearchStack<T> {
         self.propagate(old, Depth::new(new_idx as u8), f);
     }
 
-    /// # Safety: see slice::get_disjoint_unchecked_mut
+    /// # Safety
+    /// see slice::get_disjoint_unchecked_mut
     pub unsafe fn get_disjoint_unchecked_mut<const N: usize>(&mut self, indices: [Depth; N]) -> [&mut T; N] {
         // NB: This implementation is written as it is because any variation of
         // `indices.map(|i| self.get_unchecked_mut(i))` would make miri unhappy,
@@ -175,7 +176,7 @@ impl<T> SearchStack<T> {
         // in bounds of `self`.
         unsafe {
             for i in 0..N {
-                let idx = indices.get_unchecked(i).clone();
+                let idx = *indices.get_unchecked(i);
                 arr_ptr.cast::<&mut T>().add(i).write(&mut *slice.get_unchecked_mut(idx.index()));
             }
             arr.assume_init()

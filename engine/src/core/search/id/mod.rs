@@ -19,7 +19,7 @@ use crate::{
         },
         config::Configuration,
         coordinates::EpTargetSquare,
-        depth::Depth,
+        depth::{Depth, FractionalDepth},
         eval::{
             GameResult, StaticEvaluator,
             hce::{self, TaperValue, bishop_pair, hygge_king, king_safety, material, mobility, passed_pawns},
@@ -507,7 +507,7 @@ where
             phase, killers, se_excluded_move, ..
         } = self.ss.get(rel_ply);
         let line = for<'l> |ss: &'l mut SS| -> &'l mut Box<Line> { &mut ss.get_mut(rel_ply).line };
-        let cline_and_line = for<'l> |ss: &'l mut SS| -> (&'l Box<Line>, &'l mut Box<Line>) {
+        let cline_and_line = for<'l> |ss: &'l mut SS| -> (&'l Line, &'l mut Line) {
             let [cline, line] = unsafe { ss.get_disjoint_unchecked_mut([rel_ply + 1, rel_ply]) };
             (&cline.line, &mut line.line)
         };
@@ -669,26 +669,26 @@ where
         };
 
         // fail-high reductions
-        let fhr_reduct = cfg_select! {
+        let fhr_reduct: DepthExt = cfg_select! {
             feature = "id-fhr" => {{
                 let in_check = pos.get_check_state() != CheckState::None;
 
                 if kind == NodeKind::Cut && !in_check
                     // are we in SE verification search?
-                    && self.excluded_move == Move::null()
+                    && se_excluded_move == Move::null()
                 {
                     // the quiet score of this position is the static score minus threat score (the
                     // best threat that the opponent can do).
                     let q_score = lazy_static_eval(self, pos) + !lazy_threat_score(pos);
 
                     // if the quiet score
-                    if q_score >= beta { 1 } else { 0 }
+                    if q_score >= beta { FractionalDepth(4) } else { FractionalDepth(0) }
                 }
                 else {
-                    0
+                    FractionalDepth(0)
                 }
             }}
-            _ => 0
+            _ => FractionalDepth(0)
         };
 
         let mut best_score = Score::NEG_INF;
@@ -710,7 +710,7 @@ where
 
             // singular extensions
             // if all but one move fail low, that move is singular and should be extended.
-            let singular_ext = {
+            let singular_ext: DepthExt = {
                 if kind != NodeKind::Root
                     && curr == 0
                     && depth >= Depth::new(6)
@@ -727,10 +727,15 @@ where
                     let score = self.search::<P, T>(pos, stats, se_depth, se_margin - 1, se_margin);
                     self.ss.get_mut(rel_ply).se_excluded_move = Move::null();
 
-                    if score < se_margin { 1 } else { 0 }
+                    if score < se_margin {
+                        FractionalDepth(4)
+                    }
+                    else {
+                        FractionalDepth(0)
+                    }
                 }
                 else {
-                    0
+                    FractionalDepth(0)
                 }
             };
 
@@ -743,7 +748,7 @@ where
 
             // depth
             let (depth_ext, depth_reduct) = {
-                let (mut e, mut r) = (0, 0);
+                let (mut e, mut r) = (FractionalDepth(0), FractionalDepth(0));
 
                 // check extensions
                 if gives_check {
@@ -767,15 +772,15 @@ where
 
                 // late move reductions
                 if depth >= Depth::new(3) && curr > 1 {
-                    r += 5 * lmr_u8(depth.v(), curr as u8);
+                    r += 5 * lmr_u8(depth.v(), curr as u8) as i32;
                 }
 
-                (e / 4, r / 4)
+                (e, r)
             };
 
             // recurse
             let score = {
-                let new_depth = depth - 1 + depth_ext + singular_ext;
+                let new_depth = (depth - 1).saturating_add(depth_ext + singular_ext);
                 let full_depth = new_depth.saturating_sub(fhr_reduct);
                 let reduced_depth = new_depth.saturating_sub(depth_reduct + fhr_reduct);
 
@@ -1139,3 +1144,5 @@ fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move, 
 
     println!("info{currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}");
 }
+
+pub type DepthExt = FractionalDepth;
