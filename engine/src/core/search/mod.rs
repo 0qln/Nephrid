@@ -162,7 +162,7 @@ where
                 // no need to update the tt, the depth will be the same
                 Ok(())
             }
-            Command::Configure(config) => {
+            Command::Configure(ConfigureArgs(config)) => {
                 let cfg = || config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")));
 
                 self.tt = id::TT::new_of_size(cfg()?.uci_hash());
@@ -265,7 +265,7 @@ where
 
                 Ok(())
             }
-            Command::Configure(config) => {
+            Command::Configure(ConfigureArgs(config)) => {
                 let cfg = &config.lock().map_err(|e| ExecError::BadConfig(format!("Config cannot be locked: {e}")))?;
 
                 let mut parts = <C::Parts as TryFrom<&Configuration>>::try_from(cfg).map_err(|e| ExecError::BadConfig(e.to_string()))?;
@@ -351,7 +351,7 @@ where
     }
 }
 
-pub fn init<W: SearchWorker>(default_config: Arc<Mutex<Configuration>>) -> SearchThread {
+pub fn init<W: SearchWorker>(default_config: ConfigureArgs) -> SearchThread {
     let (tx, rx) = channel::<Command>();
     thread::Builder::new()
         .stack_size(8 * 1024 * 1024)
@@ -372,14 +372,14 @@ pub fn init<W: SearchWorker>(default_config: Arc<Mutex<Configuration>>) -> Searc
     SearchThread { tx }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum Command {
     Perft(Position, UciLimit, CancellationToken, DebugMode, bool),
     Normal(Position, UciLimit, CancellationToken, DebugMode),
     Ponder(Position, UciLimit, CancellationToken, DebugMode, PonderToken),
     AdvanceState(Move),
     RollbackAndAdvance(Move),
-    Configure(Arc<Mutex<Configuration>>),
+    Configure(ConfigureArgs),
     ResetState,
     Debug,
     IsReady,
@@ -400,3 +400,6 @@ impl PonderToken {
 
     pub fn start_ponder(&self) { self.0.store(false, Ordering::Relaxed) }
 }
+
+#[derive(Debug)]
+pub struct ConfigureArgs(pub Arc<Mutex<Configuration>>);

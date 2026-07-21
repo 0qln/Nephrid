@@ -67,11 +67,21 @@ macro_rules! const_params {
                 fn shared(self) -> Self::Ref { self }
                 fn try_from_config<C: Deref<Target = Configuration>>(_: C) -> Result<Self::Ref, std::convert::Infallible> { Ok(Self) }
             }
+
+            impl ITunableParams {
+                type Config = ();
+            }
         }
     };
 }
 
 // generic tunable
+
+pub trait ITunableParams {
+    type Config;
+}
+
+pub struct TunableParamsConfig {}
 
 pub type TunableParamsRef<B> = std::rc::Rc<TunableParams<B>>;
 
@@ -406,7 +416,19 @@ const impl LmrParams for C_IdHceParams {
 
 // id nnue
 
-const_params!(IdNnue);
+pub struct SpsaParameter(value, min, max, step);
+
+pub trait WheatherFactoryParameter {
+    type Unit: config::UciUnit;
+    fn uci_config_option() -> Config<config::Spin<Unit>>;
+}
+
+const_params!(IdNnue {
+    ChronoParams {
+        base_soft_mult(0.48, 0.1, 1.1, 0.05)
+        // ...
+    }
+});
 
 impl IConfigBuilder for C_IdNnueParams {
     fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {

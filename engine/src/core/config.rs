@@ -1,23 +1,18 @@
 use crate::{
     core::{
-        chrono::ChronoParams,
-        depth::Depth,
-        eval::hce::TaperValue,
-        search::{
+        chrono::ChronoParams, depth::Depth, eval::hce::TaperValue, params::IParams, search::{
             id::{IdParams, ScorerParams},
             mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
             quiesce::QSearchParams,
             score::AnyScore,
-        },
-    },
-    misc::{InvalidValueError, ValueOutOfRangeError},
-    math::LmrParams,
+        }
+    }, math::LmrParams, misc::{InvalidValueError, ValueOutOfRangeError}
 };
 use std::{
     error::Error,
     fmt,
     ops::{Deref, DerefMut},
-    str::FromStr,
+    str::FromStr, sync::{Arc, Mutex},
 };
 use thiserror::Error;
 use uom::si::{
@@ -259,7 +254,7 @@ impl fmt::Debug for Button {
 
 /// Engine configuration.
 #[derive(Debug, Clone)]
-pub struct Configuration {
+pub struct Configuration<Params: ITunableParams> {
     /// # [UCI] Hash size.
     /// the value in MB for memory for hash tables can be changed, this should
     /// be answered with the first "setoptions" command at program boot if the
@@ -431,6 +426,8 @@ pub struct Configuration {
 
     /// [Late Move Reductions] Divisor scaling the log-log reduction term.
     lmr_scale: ConfigOption<Spin<UciPercent>>,
+
+    params_config: Params::Config
 }
 
 impl Configuration {
@@ -504,8 +501,8 @@ impl Configuration {
 }
 
 #[derive(Debug, Clone)]
-pub struct ConfigBuilder {
-    config: Configuration,
+pub struct ConfigBuilder<Parasm> {
+    config: Configuration<Params>,
 }
 
 impl ConfigBuilder {
@@ -757,3 +754,34 @@ impl Configuration {
         }
     }
 }
+
+pub struct ConfigurationRef(Arc<Mutex<Configuration<dyn IParams>>>);
+
+pub trait Config {
+    fn uci_hash(&self) -> Information;
+    fn uci_nalimov_path(&self) -> &str;
+    fn uci_nalimov_cache(&self) -> Information;
+    fn uci_ponder(&self) -> bool;
+    fn uci_ownbook(&self) -> bool;
+    fn uci_multipv(&self) -> i32;
+    fn uci_show_currline(&self) -> bool;
+    fn uci_show_refutations(&self) -> bool;
+    fn uci_limit_strength(&self) -> bool;
+    fn uci_elo(&self) -> i32;
+    fn uci_analyse_mode(&self) -> bool;
+    fn uci_opponent(&self) -> &str;
+    fn uci_engine_about(&self) -> &str;
+    fn uci_shredder_bases_path(&self) -> &str;
+    fn uci_set_position_value(&self) -> &str;
+    fn threads(&self) -> i32;
+    fn dirichlet_alpha(&self) -> f32;
+    fn dirichlet_epsilon(&self) -> f32;
+    fn weights_path(&self) -> &str;
+    fn nnue_path(&self) -> &str;
+    fn game_tree_caching(&self) -> bool;
+    fn gui_lag(&self) -> u16;
+    fn ponder(&self) -> bool;
+
+}
+
+

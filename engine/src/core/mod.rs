@@ -6,9 +6,7 @@ use crate::core::{
     params::{IParams, MctsHceParams},
     position::PieceInfoObserver,
     search::{
-        id,
-        mcts::{self},
-        score::Cp,
+        ConfigureArgs, id, mcts::{self}, score::Cp
     },
 };
 use search::mode::Mode;
@@ -128,9 +126,9 @@ impl Game {
 }
 
 /// Stores relevant information of the chess engine.
-pub struct Engine {
+pub struct Engine<Config> {
     /// Current engine configuration.
-    config: Arc<Mutex<Configuration>>,
+    config: Arc<Mutex<Config>>,
 
     /// Search thread
     search_t: SearchThread,
@@ -148,10 +146,10 @@ pub struct Engine {
     _pos_src: String,
 }
 
-impl Engine {
-    pub fn new<Searcher: SearchWorker>(config: Configuration) -> Self {
+impl<C> Engine<C> {
+    pub fn new<Searcher: SearchWorker>(config: C) -> Self {
         let config = Arc::new(Mutex::new(config));
-        let search = search::init::<Searcher>(Arc::clone(&config));
+        let search = search::init::<Searcher>(ConfigureArgs(Arc::clone(&config)));
 
         Self {
             config,
@@ -164,7 +162,7 @@ impl Engine {
     }
 }
 
-pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation_token: CancellationToken) -> Result<(), Box<dyn Error>> {
+pub fn execute_uci<C>(engine: &mut Engine<C>, command: impl Into<String>, cancellation_token: CancellationToken) -> Result<(), Box<dyn Error>> {
     let mut command: String = command.into();
     trim_newline(&mut command);
 
@@ -404,7 +402,7 @@ pub fn execute_uci(engine: &mut Engine, command: impl Into<String>, cancellation
             Ok(())
         }
         Some("position") => {
-            let process_move = |engine: &mut Engine, mov| -> Result<(), Box<dyn Error>> {
+            let process_move = |engine: &mut Engine<C>, mov| -> Result<(), Box<dyn Error>> {
                 // decode move
                 let mov = Move::from_lan(mov, engine.game.position())?;
 
