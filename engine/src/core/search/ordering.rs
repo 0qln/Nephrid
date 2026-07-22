@@ -185,7 +185,6 @@ impl MovePicker {
         }
     }
 
-    #[inline]
     pub fn next(&mut self, pos: &Position, scorer: &impl MoveScorer) -> Option<Move> {
         match pos.get_turn() {
             colors::WHITE => self.next_for::<perspectives::White>(pos, scorer),
@@ -194,7 +193,19 @@ impl MovePicker {
         }
     }
 
+    pub fn next_with_score(&mut self, pos: &Position, scorer: &impl MoveScorer) -> Option<ScoredMove> {
+        match pos.get_turn() {
+            colors::WHITE => self.next_with_score_for::<perspectives::White>(pos, scorer),
+            colors::BLACK => self.next_with_score_for::<perspectives::Black>(pos, scorer),
+            _ => unreachable!(),
+        }
+    }
+
     pub fn next_for<P: Perspective>(&mut self, pos: &Position, scorer: &impl MoveScorer) -> Option<Move> {
+        self.next_with_score_for::<P>(pos, scorer).map(|m| m.mov())
+    }
+
+    pub fn next_with_score_for<P: Perspective>(&mut self, pos: &Position, scorer: &impl MoveScorer) -> Option<ScoredMove> {
         loop {
             // try to generate new moves if we've exhausted the current slice. `curr` is an
             // absolute index into the generator's buffer.
@@ -218,12 +229,12 @@ impl MovePicker {
             let slice = self.move_gen.buf.as_mut_subslice(self.curr..self.slice.end);
             partial_sort_desc(slice);
 
-            let m = slice[0].mov();
+            let m = slice[0];
 
             self.curr += 1;
 
             // only check for legality, if we also generated pseudo legals.
-            if !LEGAL && !pos.is_legal_for::<P>(m) {
+            if !LEGAL && !pos.is_legal_for::<P>(m.mov()) {
                 continue;
             }
 

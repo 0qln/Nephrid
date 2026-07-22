@@ -565,7 +565,7 @@ impl<const N: usize, T> List<N, T> {
     where
         T: Copy,
     {
-        if src.len() == 0 {
+        if src.is_empty() {
             return;
         }
 
