@@ -755,19 +755,9 @@ where
                     e += 5;
                 }
 
-                // extend depth for hashmove in pv nodes
-                if m == tt_move && kind == NodeKind::Pv {
-                    e += 3;
-                }
-
                 // reduce depth for captures with negative see
                 if flag.is_capture() && s < 0 {
                     r += 5;
-                }
-
-                // increase reduction for all-nodes
-                if kind == NodeKind::All {
-                    r += 3;
                 }
 
                 // late move reductions
