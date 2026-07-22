@@ -1,4 +1,5 @@
 use crate::core::{
+    bitboard::BitboardIteratorExt,
     eval::GameResult,
     move_iter::{
         SingleCheck, captures_targets, fold_moves,
@@ -106,16 +107,13 @@ impl StateInfo {
             // a king through zero or more pieces.
             let x_ray_checkers = ((rook::lookup_attacks_0_occ(king_sq) & r_n_q) | (bishop::lookup_attacks_0_occ(king_sq) & b_n_q)) & enemies;
 
-            self.blockers = x_ray_checkers.fold(Bitboard::empty(), |acc, x_ray_checker| {
-                let between_squares = Bitboard::between(x_ray_checker, king_sq);
-                let between_occupancy = occupancy & between_squares;
-                if between_occupancy.pop_cnt_eq_1() {
-                    acc | between_squares
-                }
-                else {
-                    acc
-                }
-            });
+            self.blockers = x_ray_checkers
+                .filter_map(|x_ray_checker| {
+                    let between_squares = Bitboard::between(x_ray_checker, king_sq);
+                    let between_occupancy = occupancy & between_squares;
+                    between_occupancy.pop_cnt_eq_1().then_some(between_squares)
+                })
+                .aggregate();
         }
         else {
             // there is almost always a king on the board... might aswell make this
