@@ -93,10 +93,10 @@ impl StateInfo {
         let occupancy = pieces.get_occupancy();
         let enemies = pieces.get_color_bb(nstm);
         let allies = pieces.get_color_bb(stm);
-        let queens = pieces.get_piece_bb(piece_type::QUEEN) & enemies;
+        let queens = pieces.get_piece_bb(piece_type::QUEEN);
         let kings = pieces.get_piece_bb(piece_type::KING);
-        let r_n_q = (pieces.get_piece_bb(piece_type::ROOK) | queens) & enemies;
-        let b_n_q = (pieces.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
+        let r_n_q = pieces.get_piece_bb(piece_type::ROOK) | queens;
+        let b_n_q = pieces.get_piece_bb(piece_type::BISHOP) | queens;
 
         if let Some(king_sq) = (allies & kings).lsb() {
             // Normal checkers
@@ -104,8 +104,7 @@ impl StateInfo {
 
             // The X-Ray checkers for the given king. X-Ray checkers are pieces which attack
             // a king through zero or more pieces.
-            let x_ray_checkers =
-                { Bitboard::empty() | (rook::lookup_attacks_0_occ(king_sq) & r_n_q) | (bishop::lookup_attacks_0_occ(king_sq) & b_n_q) };
+            let x_ray_checkers = ((rook::lookup_attacks_0_occ(king_sq) & r_n_q) | (bishop::lookup_attacks_0_occ(king_sq) & b_n_q)) & enemies;
 
             self.blockers = x_ray_checkers.fold(Bitboard::empty(), |acc, x_ray_checker| {
                 let between_squares = Bitboard::between(x_ray_checker, king_sq);
