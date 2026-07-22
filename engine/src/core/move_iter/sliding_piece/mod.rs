@@ -1,7 +1,13 @@
 use std::ops::Try;
 
 use crate::core::{
-    bitboard::Bitboard, color::Perspective, coordinates::Square, r#move::Move, move_iter::{Options, captures_targets, quiets_targets}, piece::{IPieceType, piece_type}, position::Position
+    bitboard::Bitboard,
+    color::Perspective,
+    coordinates::Square,
+    r#move::Move,
+    move_iter::{Options, captures_targets, quiets_targets},
+    piece::{IPieceType, piece_type},
+    position::Position,
 };
 
 use super::{FoldMoves, NoDoubleCheck, map_captures, map_quiets, pin_mask};
@@ -27,10 +33,10 @@ where
         R: Try<Output = B>,
     {
         let our_king = pos.get_bitboard(piece_type::KING, P::COLOR).lsb();
+        let occupancy = pos.get_occupancy();
 
         pos.get_bitboard(T::ID, P::COLOR).try_fold(init, move |mut acc, piece| {
             let attacks = {
-                let occupancy = pos.get_occupancy();
                 let attacks = T::lookup_attacks(piece, occupancy);
                 if O::legal() {
                     let blockers = pos.get_blockers();
