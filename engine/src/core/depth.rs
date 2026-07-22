@@ -21,6 +21,7 @@ impl fmt::Display for Depth {
 
 impl_op!(-|a: Depth, b: u8| -> Depth { Depth { v: a.v - b } });
 impl_op!(+|a: Depth, b: u8| -> Depth { Depth { v: a.v + b } });
+impl_op!(/|a: Depth, b: u8| -> Depth { Depth { v: a.v / b } });
 impl_op!(+|a: Depth, b: Depth| -> Depth { Depth { v: a.v + b.v } });
 impl_op!(+=|a: &mut Depth, b: u8| { a.v += b });
 impl_op!(-=|a: &mut Depth, b: u8| { a.v -= b });
@@ -54,7 +55,22 @@ impl Depth {
 
     pub const fn new(depth: u8) -> Depth { Depth { v: depth } }
 
-    pub const fn saturating_sub(&self, rhs: u8) -> Depth { Self { v: self.v.saturating_sub(rhs) } }
+    pub const fn saturating_sub(&self, rhs: impl const Into<Depth>) -> Depth {
+        let d: Depth = rhs.into();
+        Self { v: self.v.saturating_sub(d.v) }
+    }
+    pub const fn saturating_add(&self, rhs: impl const Into<Depth>) -> Depth {
+        let d: Depth = rhs.into();
+
+        // todo better implementation without casting to i32
+        if d.v as i32 + self.v as i32 > Self::MAX.v as i32 {
+            Self::MAX
+        }
+        else {
+            Self { v: self.v + d.v }
+        }
+    }
+
     pub const fn div_floor(&self, rhs: u8) -> Depth { Self { v: self.v.div_floor(rhs) } }
 }
 
@@ -83,5 +99,29 @@ impl From<Height> for Depth {
         let v = value.0.saturating_sub(1);
         let cap = Self::MAX.v as u16;
         Depth { v: min(v, cap) as u8 }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub struct FractionalDepth(pub i32);
+
+impl_op!(+=|a: &mut FractionalDepth, b: i32| { a.0 += b });
+impl_op!(-=|a: &mut FractionalDepth, b: i32| { a.0 -= b });
+impl_op!(+|a: FractionalDepth, b: FractionalDepth| -> Self { Self(a.0 + b.0) });
+
+impl FractionalDepth {
+    const FACTOR: i32 = 4;
+}
+
+const impl From<Depth> for FractionalDepth {
+    fn from(d: Depth) -> Self { Self(d.v() as i32 * FractionalDepth::FACTOR) }
+}
+
+const impl From<FractionalDepth> for Depth {
+    fn from(fd: FractionalDepth) -> Self {
+        let d = fd.0 / FractionalDepth::FACTOR;
+        let min = Depth::ROOT.v() as i32;
+        let max = Depth::MAX.v() as i32;
+        Depth::new(d.clamp(min, max) as u8)
     }
 }
