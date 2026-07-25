@@ -166,41 +166,59 @@ where
     init = {
         let rooks = pos.get_bitboard(piece_type::ROOK, P::COLOR);
         let sliders = queens | rooks;
-        let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+
+        let to_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
-            // direct checks
             Rook::lookup_attacks(k, occ)
-            // indirect checks
-            | if discovered_checkers.is_empty() { Bitboard::empty() } else { rook::lookup_attacks_0_occ_multiple(rooks & discovered_checkers) }
         }
         else {
             Bitboard::full()
         };
-        let quiets = make_quiets(mask);
-        let captures = make_captures(mask);
-        sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(sliders, blockers, occ, king, captures, quiets, init, &mut f)?
+
+        sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(
+            sliders,
+            (!O::quiet_nochecks()).then_some(discovered_checkers).unwrap_or(Bitboard::full()),
+            (!O::capture_nochecks()).then_some(discovered_checkers).unwrap_or(Bitboard::full()),
+            blockers,
+            occ,
+            king,
+            captures,
+            quiets,
+            (!O::capture_nochecks()).then_some(to_mask).unwrap_or(Bitboard::full()),
+            (!O::quiet_nochecks()).then_some(to_mask).unwrap_or(Bitboard::full()),
+            init,
+            &mut f,
+        )?
     };
 
     init = {
         let bishops = pos.get_bitboard(piece_type::BISHOP, P::COLOR);
         let sliders = queens | bishops;
-        let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+
+        let to_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
-            // direct checks
             Bishop::lookup_attacks(k, occ)
-            // indirect checks (no need to check for queen, if a rook could pin a queen to the enemy
-            // king and we are on the move, the queen could capture the king, which is an invalid
-            // position)
-            | if discovered_checkers.is_empty() { Bitboard::empty() } else { bishop::lookup_attacks_0_occ_multiple(bishops & discovered_checkers) }
         }
         else {
             Bitboard::full()
         };
-        let quiets = make_quiets(mask);
-        let captures = make_captures(mask);
-        sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(sliders, blockers, occ, king, captures, quiets, init, &mut f)?
+
+        sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(
+            sliders,
+            (!O::quiet_nochecks()).then_some(discovered_checkers).unwrap_or(Bitboard::full()),
+            (!O::capture_nochecks()).then_some(discovered_checkers).unwrap_or(Bitboard::full()),
+            blockers,
+            occ,
+            king,
+            captures,
+            quiets,
+            (!O::capture_nochecks()).then_some(to_mask).unwrap_or(Bitboard::full()),
+            (!O::quiet_nochecks()).then_some(to_mask).unwrap_or(Bitboard::full()),
+            init,
+            &mut f,
+        )?
     };
 
     init = {
@@ -417,8 +435,8 @@ where
 pub const fn is_blocker(blockers: Bitboard, piece_bb: Bitboard) -> bool { !(blockers & piece_bb).is_empty() }
 
 #[inline]
-pub fn pin_mask(piece: Square, blockers: Bitboard, our_king: Square) -> Bitboard {
-    if is_blocker(blockers, Bitboard::from(piece)) {
+pub fn pin_mask(piece: Square, piece_bb: Bitboard, blockers: Bitboard, our_king: Square) -> Bitboard {
+    if is_blocker(blockers, piece_bb) {
         Bitboard::ray(piece, our_king)
     }
     else {

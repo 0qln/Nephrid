@@ -24,11 +24,15 @@ pub trait SlidingPieceType: SlidingAttacks + IPieceType {}
 #[inline(always)]
 pub fn fold_moves_for<B, F, R, P: Perspective, O: Options, T: SlidingPieceType>(
     pieces: Bitboard,
+    from_mask_quiets: Bitboard,
+    from_mask_captures: Bitboard,
     blockers: Bitboard,
     occupancy: Bitboard,
     king: Option<Square>,
-    capture_targets: Bitboard,
-    quiet_targets: Bitboard,
+    to_mask_captures: Bitboard,
+    to_mask_quiets: Bitboard,
+    to_mask_capture_checks: Bitboard,
+    to_mask_quiet_checks: Bitboard,
     init: B,
     mut f: F,
 ) -> R
@@ -39,11 +43,13 @@ where
     let mut pieces = pieces;
 
     pieces.try_fold(init, move |mut acc, piece| {
+        let piece_bb = Bitboard::from(piece);
+
         let attacks = {
             let attacks = T::lookup_attacks(piece, occupancy);
 
             if O::legal() {
-                let pin_mask = king.map(|k| pin_mask(piece, blockers, k)).unwrap_or(Bitboard::full());
+                let pin_mask = king.map(|k| pin_mask(piece, piece_bb, blockers, k)).unwrap_or(Bitboard::full());
                 attacks & pin_mask
             }
             else {
@@ -52,11 +58,23 @@ where
         };
 
         if O::gen_captures() {
-            acc = map_captures(attacks & capture_targets, piece).try_fold(acc, &mut f)?;
+            let target_mask = if from_mask_captures.contains(piece_bb) {
+                to_mask_captures
+            }
+            else {
+                to_mask_captures & to_mask_capture_checks
+            };
+            acc = map_captures(attacks & target_mask, piece).try_fold(acc, &mut f)?;
         };
 
         if O::gen_quiets() {
-            acc = map_quiets(attacks & quiet_targets, piece).try_fold(acc, &mut f)?;
+            let target_mask = if from_mask_quiets.contains(piece_bb) {
+                to_mask_quiets
+            }
+            else {
+                to_mask_quiets & to_mask_quiet_checks
+            };
+            acc = map_quiets(attacks & target_mask, piece).try_fold(acc, &mut f)?;
         }
 
         try { acc }

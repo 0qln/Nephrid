@@ -999,9 +999,10 @@ impl Position {
             }
             _ => {
                 let piece = from;
+                let piece_bb = Bitboard::from(piece);
                 let blockers = self.get_blockers();
                 let our_king = self.get_bitboard(piece_type::KING, stm).lsb();
-                let pin_mask = our_king.map(|k| pin_mask(piece, blockers, k)).unwrap_or(Bitboard::full());
+                let pin_mask = our_king.map(|k| pin_mask(piece, piece_bb, blockers, k)).unwrap_or(Bitboard::full());
 
                 // pinned pieces can only move along the ray of the pin
                 if (pin_mask & to.into()).is_empty() {

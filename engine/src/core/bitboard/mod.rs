@@ -14,7 +14,8 @@ use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose, squares::*};
 
 #[cfg(test)] pub mod tests;
 
-#[derive(Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Default)]
+#[derive_const(PartialEq, Eq)]
 pub struct Bitboard {
     pub v: u64,
 }
@@ -222,6 +223,9 @@ impl Bitboard {
             false => Self { v: self.v >> -DIR },
         }
     }
+
+    #[inline(always)]
+    pub const fn contains(&self, other: Self) -> bool { (*self & other) == other }
 
     #[inline]
     pub const fn is_empty(&self) -> bool { self.v == 0 }

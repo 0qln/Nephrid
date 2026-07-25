@@ -200,12 +200,13 @@ impl PawnMoves<variants::Pinned<'_>> {
             // Safety: The 'from' bitboard is constructed to have at least one square
             // per 'to' square, so unwrap_unchecked is safe.
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
+            let from_bb = Bitboard::from(from);
             let to_bb = Bitboard::from(to);
 
             // Check if the pawn is pinned and the move is valid.
             let blockers = self.v_data.0;
             // todo: no need to check this if options is pseudo legal
-            let pin_mask = self.v_data.1.map(|our_king| pin_mask(from, blockers, our_king)).unwrap_or_default();
+            let pin_mask = self.v_data.1.map(|our_king| pin_mask(from, from_bb, blockers, our_king)).unwrap_or_default();
             if (pin_mask & to_bb).is_empty() {
                 continue;
             }
@@ -259,11 +260,12 @@ impl PawnMoves<variants::PromoPinned<'_>> {
         let mut acc = init;
         while let Some(to) = self.to.pop_lsb() {
             let from = unsafe { self.from.pop_lsb().unwrap_unchecked() };
+            let from_bb = Bitboard::from(from);
             let to_bb = Bitboard::from(to);
 
             // verify the pin mask for pinned promotions
             let blockers = self.v_data.0;
-            let pin_mask = self.v_data.1.map(|our_king| pin_mask(from, blockers, our_king)).unwrap_or_default();
+            let pin_mask = self.v_data.1.map(|our_king| pin_mask(from, from_bb, blockers, our_king)).unwrap_or_default();
             if (pin_mask & to_bb).is_empty() {
                 continue;
             }
