@@ -77,12 +77,14 @@ where
             init = map_captures(attacks & capture_targets, king).try_fold(init, &mut f)?;
         }
 
-        if O::quiet_nochecks() {
-            if O::legal() {
-                init = king::fold_legal_castling::<P, _, _, _>(pos, init, &mut f, enemy_attacks)?;
-            }
-            else {
-                init = king::fold_pseudo_legal_castling::<P, _, _, _>(pos, init, &mut f)?;
+        if O::gen_quiets() {
+            if O::quiet_nochecks() {
+                if O::legal() {
+                    init = king::fold_legal_castling::<P, _, _, _>(pos, init, &mut f, enemy_attacks)?;
+                }
+                else {
+                    init = king::fold_pseudo_legal_castling::<P, _, _, _>(pos, init, &mut f)?;
+                }
             }
 
             init = map_quiets(attacks & quiet_targets, king).try_fold(init, &mut f)?;

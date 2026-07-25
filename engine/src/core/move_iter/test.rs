@@ -308,6 +308,9 @@ pub fn test_checks_perft_discovered_checks() {
 
     // bishop
     options_match_oracle_perft::<Checks>("8/8/5k2/8/5B2/5R2/8/3K4 w - - 0 1", Depth::new(4));
+
+    // king
+    options_match_oracle_perft::<Checks>("8/8/5k2/8/5K2/4nR2/8/8 w - - 0 1", Depth::new(4));
 }
 
 // todo: test that options work (i.e. if gen_captures is false no captures will

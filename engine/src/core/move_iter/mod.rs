@@ -196,14 +196,23 @@ where
     };
 
     init = {
-        let king_quiets = if O::gen_quiets() && O::quiet_nochecks() {
+        let is_discovered_checker = || king.is_some_and(|k| !(Bitboard::from(k) & discovered_checkers).is_empty());
+
+        let king_quiets = if O::quiet_nochecks() || is_discovered_checker() {
             !occ
         }
         else {
             Bitboard::empty()
         };
 
-        king::fold_moves_for::<_, _, _, P, O, C>(king, kings, pos, occ, enemies, captures, king_quiets, init, &mut f)?
+        let king_captures = if O::capture_nochecks() || is_discovered_checker() {
+            captures
+        }
+        else {
+            Bitboard::empty()
+        };
+
+        king::fold_moves_for::<_, _, _, P, O, C>(king, kings, pos, occ, enemies, king_captures, king_quiets, init, &mut f)?
     };
 
     init = {
@@ -223,16 +232,29 @@ where
 
     init = {
         let pawns = pos.get_bitboard(piece_type::PAWN, P::COLOR);
-        let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+        let (quiet_mask, capture_mask) = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
-            pawn::lookup_attacks(k, P::Opponent::COLOR)
+            let mask = pawn::lookup_attacks(k, P::Opponent::COLOR);
+            let quiet_mask = if !O::quiet_nochecks() {
+                mask | pawn::compute_moves_for::<P>(pawns & discovered_checkers)
+            }
+            else {
+                Bitboard::full()
+            };
+            let capt_mask = if !O::capture_nochecks() {
+                mask | pawn::compute_attacks_for::<P>(pawns & discovered_checkers)
+            }
+            else {
+                Bitboard::full()
+            };
+            (quiet_mask, capt_mask)
         }
         else {
-            Bitboard::full()
+            (Bitboard::full(), Bitboard::full())
         };
-        let quiets = make_quiets(mask | pawn::compute_moves_for::<P>(pawns & discovered_checkers));
-        let captures = make_captures(mask | pawn::compute_attacks_for::<P>(pawns & discovered_checkers));
+        let quiets = make_quiets(quiet_mask);
+        let captures = make_captures(capture_mask);
         pawn::fold_moves_for::<P, O, C, _, _, _>(pawns, occ, blockers, king, captures, quiets, promos, pos, init, &mut f)?
     };
 
