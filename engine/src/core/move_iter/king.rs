@@ -58,12 +58,6 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    // todo
-    // the king cannot check.
-    // if O::gen_only_checks() {
-    //     return try { init };
-    // }
-
     if let Some(king) = king {
         let (attacks, enemy_attacks) = if O::legal() {
             let nstm_attacks = nstm_attacks_for::<P>(pos, occupancy);
