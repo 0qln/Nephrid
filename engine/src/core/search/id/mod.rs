@@ -166,7 +166,7 @@ impl HceThreatener {
         }
 
         // todo: or just track this in the make_move unmake_move functions.
-        let captures = pos.collect_moves_for::<P::Opponent, Captures, _>(MoveList::new());
+        let captures = pos.while_not_being_in_check_collect_moves_for::<P::Opponent, Captures, _>(MoveList::new());
 
         // pick the biggest threat.
         for &mov in captures.iter() {

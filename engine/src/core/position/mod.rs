@@ -569,6 +569,17 @@ impl Position {
         move_list
     }
 
+    #[inline(never)]
+    pub fn while_not_being_in_check_collect_moves_for<P: Perspective, O: Options, C: Extend<Move>>(&self, mut move_list: C) -> C {
+        debug_assert!(self.get_check_state() == CheckState::None);
+
+        _ = fold_all_moves_for::<P, O, NoCheck, _, _, _>(self, (), |_, m| {
+            move_list.extend_one(m);
+            ControlFlow::Continue::<(), _>(())
+        });
+        move_list
+    }
+
     #[inline]
     pub const fn get_turn(&self) -> Turn { self.state.get_current().turn }
 
