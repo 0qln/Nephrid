@@ -1,6 +1,13 @@
 use std::ops::Try;
 
-use crate::core::{bitboard::Bitboard, color::Perspective, coordinates::Square, r#move::Move, move_iter::Options, piece::IPieceType};
+use crate::core::{
+    bitboard::{Bitboard, BitboardIteratorExt},
+    color::Perspective,
+    coordinates::Square,
+    r#move::Move,
+    move_iter::Options,
+    piece::IPieceType,
+};
 
 use super::{map_captures, map_quiets, pin_mask};
 
@@ -9,6 +16,7 @@ pub mod magics;
 pub trait SlidingAttacks {
     fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard;
     fn lookup_attacks(sq: Square, occupancy: Bitboard) -> Bitboard;
+    fn lookup_attacks_multiple(pieces: Bitboard, occupancy: Bitboard) -> Bitboard { pieces.map(|p| Self::lookup_attacks(p, occupancy)).aggregate() }
 }
 
 pub trait SlidingPieceType: SlidingAttacks + IPieceType {}

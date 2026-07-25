@@ -4,6 +4,7 @@ use crate::core::{
 };
 use std::{
     fmt::Debug,
+    marker::Destruct,
     ops::{self, ControlFlow, FromResidual, Try},
 };
 
@@ -100,7 +101,7 @@ const impl ops::Not for Bitboard {
     fn not(self) -> Self::Output { Bitboard { v: !self.v } }
 }
 
-impl Iterator for Bitboard {
+const impl Iterator for Bitboard {
     type Item = Square;
 
     #[inline(always)]
@@ -450,15 +451,13 @@ const impl From<DiagA8H1> for Bitboard {
     }
 }
 
-pub trait BitboardIteratorExt: Iterator<Item = Bitboard> + Sized {
-    #[inline]
+pub const trait BitboardIteratorExt: [const] Iterator<Item = Bitboard> + Sized + [const] Destruct {
+    #[inline(always)]
     fn aggregate(self) -> Bitboard {
-        self.fold(
-            Bitboard::empty(),
-            #[inline]
-            |acc, bb| acc | bb,
-        )
+        #[inline(always)]
+        const fn or(l: Bitboard, r: Bitboard) -> Bitboard { Bitboard { v: l.v | r.v } }
+        self.fold(Bitboard::empty(), or)
     }
 }
 
-impl<I: Iterator<Item = Bitboard>> BitboardIteratorExt for I {}
+const impl<I: [const] Iterator<Item = Bitboard> + [const] Destruct> BitboardIteratorExt for I {}

@@ -38,6 +38,8 @@
 #![feature(slice_ptr_get)]
 #![feature(impl_trait_in_bindings)]
 #![feature(const_option_ops)]
+#![feature(const_iter)]
+#![feature(const_destruct)]
 
 #[macro_use] extern crate impl_ops;
 

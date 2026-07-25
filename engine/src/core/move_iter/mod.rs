@@ -161,20 +161,21 @@ where
 
     init = {
         let rooks = pos.get_bitboard(piece_type::ROOK, P::COLOR);
+        let sliders = queens | rooks;
         let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
             // direct checks
             Rook::lookup_attacks(k, occ)
             // indirect checks
-            | if discovered_checkers.is_empty() { Bitboard::empty() } else { (rooks & discovered_checkers).map(|r| Rook::lookup_attacks(r, occ)).aggregate() }
+            | if discovered_checkers.is_empty() { Bitboard::empty() } else { Rook::lookup_attacks_multiple(rooks & discovered_checkers, occ) }
         }
         else {
             Bitboard::full()
         };
         let quiets = make_quiets(mask);
         let captures = make_captures(mask);
-        sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(queens | rooks, blockers, occ, king, captures, quiets, init, &mut f)?
+        sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(sliders, blockers, occ, king, captures, quiets, init, &mut f)?
     };
 
     init = {
@@ -188,7 +189,7 @@ where
             // indirect checks (no need to check for queen, if a rook could pin a queen to the enemy
             // king and we are on the move, the queen could capture the king, which is an invalid
             // position)
-            | if discovered_checkers.is_empty() { Bitboard::empty() } else { (bishops & discovered_checkers).map(|b| Bishop::lookup_attacks(b, occ)).aggregate() }
+            | if discovered_checkers.is_empty() { Bitboard::empty() } else { Bishop::lookup_attacks_multiple(bishops & discovered_checkers, occ) }
         }
         else {
             Bitboard::full()
@@ -228,7 +229,7 @@ where
         let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
-            knight::lookup_attacks(k) | knight::compute_attacks_multiple(knights & discovered_checkers)
+            knight::lookup_attacks(k) | knight::lookup_attacks_multiple(knights & discovered_checkers)
         }
         else {
             Bitboard::full()

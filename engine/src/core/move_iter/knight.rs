@@ -1,7 +1,7 @@
 use std::ops::Try;
 
 use crate::core::{
-    bitboard::Bitboard,
+    bitboard::{Bitboard, BitboardIteratorExt},
     color::Perspective,
     coordinates::{CompassRose, Square, TCompassRose, compass_rose, squares},
     r#move::Move,
@@ -69,6 +69,11 @@ pub const fn lookup_attacks(sq: Square) -> Bitboard {
     };
     // Safety: sq is in range 0..64
     unsafe { *ATTACKS.get_unchecked(sq.v() as usize) }
+}
+
+#[inline]
+pub fn lookup_attacks_multiple(knights: Bitboard) -> Bitboard {
+    knights.map(lookup_attacks).aggregate()
 }
 
 #[inline]
