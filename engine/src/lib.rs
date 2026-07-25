@@ -37,6 +37,7 @@
 #![feature(closure_lifetime_binder)]
 #![feature(slice_ptr_get)]
 #![feature(impl_trait_in_bindings)]
+#![feature(const_option_ops)]
 
 #[macro_use] extern crate impl_ops;
 

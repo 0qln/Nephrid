@@ -28,8 +28,8 @@ pub fn fold_moves_for<B, F, R, P: Perspective, O: Options, C: CheckState>(
     pos: &Position,
     occ: Bitboard,
     enemies: Bitboard,
-    capture_targets: Bitboard,
-    quiet_targets: Bitboard,
+    captures: Bitboard,
+    quiets: Bitboard,
     init: B,
     f: F,
 ) -> R
@@ -38,9 +38,9 @@ where
     R: Try<Output = B>,
 {
     match C::check_state() {
-        RtCheckState::None => fold_moves_for_nocheck::<B, F, R, P, O>(king, pos, occ, capture_targets, quiet_targets, init, f),
-        RtCheckState::Single => fold_moves_for_somecheck::<B, F, R, P, O, SingleCheck>(pos, king_bb, king, enemies, occ, init, f),
-        RtCheckState::Double => fold_moves_for_somecheck::<B, F, R, P, O, DoubleCheck>(pos, king_bb, king, enemies, occ, init, f),
+        RtCheckState::None => fold_moves_for_nocheck::<B, F, R, P, O>(king, pos, occ, captures, quiets, init, f),
+        RtCheckState::Single => fold_moves_for_somecheck::<B, F, R, P, O, SingleCheck>(pos, king_bb, king, enemies, occ, quiets, init, f),
+        RtCheckState::Double => fold_moves_for_somecheck::<B, F, R, P, O, DoubleCheck>(pos, king_bb, king, enemies, occ, quiets, init, f),
     }
 }
 
@@ -77,7 +77,7 @@ where
             init = map_captures(attacks & capture_targets, king).try_fold(init, &mut f)?;
         }
 
-        if O::gen_quiets() {
+        if O::quiet_nochecks() {
             if O::legal() {
                 init = king::fold_legal_castling::<P, _, _, _>(pos, init, &mut f, enemy_attacks)?;
             }
@@ -104,6 +104,7 @@ pub fn fold_moves_for_somecheck<B, F, R, P: Perspective, O: Options, C: SomeChec
     king: Option<Square>,
     enemies: Bitboard,
     occ: Bitboard,
+    quiets: Bitboard,
     mut init: B,
     mut f: F,
 ) -> R
@@ -130,7 +131,7 @@ where
     }
 
     if O::gen_quiets() {
-        init = map_quiets(attacks & !occ, king).try_fold(init, &mut f)?;
+        init = map_quiets(attacks & quiets, king).try_fold(init, &mut f)?;
     }
 
     try { init }

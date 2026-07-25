@@ -10,6 +10,7 @@ use crate::core::{
         perspectives::{Black, White},
     },
     r#move::move_flags,
+    move_iter::sliding_piece::SlidingAttacks,
     piece::{IPieceType, piece_type},
     position,
 };
@@ -23,7 +24,6 @@ pub mod pawn;
 pub mod queen;
 pub mod rook;
 pub mod sliding_piece;
-pub mod staged;
 
 #[cfg(test)] mod test;
 
@@ -45,9 +45,6 @@ pub const fn quiets_targets<C: const NoDoubleCheck>(pos: &Position, color: Color
         RtCheckState::Double => unsafe { unreachable_unchecked() },
     }
 }
-
-#[inline(always)]
-pub const fn check_targets<P: Perspective>(pos: &Position) -> Bitboard { pos.get_bitboard(King::ID, P::Opponent::COLOR) }
 
 /// To squares for captures
 #[inline(always)]
@@ -132,65 +129,152 @@ where
     R: Try<Output = B>,
 {
     let quiets = if O::gen_quiets() {
-        let mut t = quiets_targets::<C>(pos, P::COLOR);
-
-        if !O::quiet_nochecks() {
-            t &= check_targets::<P>(pos);
-        }
-
-        t
+        quiets_targets::<C>(pos, P::COLOR)
     }
     else {
         Bitboard::empty()
     };
 
     let captures = if O::gen_captures() {
-        let mut t = captures_targets::<C>(pos, P::COLOR);
-
-        if !O::capture_nochecks() {
-            t &= check_targets::<P>(pos);
-        }
-
-        t
+        captures_targets::<C>(pos, P::COLOR)
     }
     else {
         Bitboard::empty()
     };
 
     let promos = if O::gen_promos() {
-        let mut t = quiets_targets::<C>(pos, P::COLOR);
-
-        if !O::promo_nochecks() {
-            t &= check_targets::<P>(pos);
-        }
-
-        t
+        quiets_targets::<C>(pos, P::COLOR)
     }
     else {
         Bitboard::empty()
     };
 
-    let blockers = pos.get_blockers();
     let occ = pos.get_occupancy();
+    let blockers = pos.get_blockers();
     let enemies = pos.get_color_bb(P::Opponent::COLOR);
     let kings = pos.get_bitboard(King::ID, P::COLOR);
     let king = kings.lsb();
+    let their_k = pos.get_bitboard(King::ID, P::Opponent::COLOR).lsb();
 
     let queens = pos.get_bitboard(piece_type::QUEEN, P::COLOR);
 
     let rooks = pos.get_bitboard(piece_type::ROOK, P::COLOR);
-    init = sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(queens | rooks, blockers, occ, king, captures, quiets, init, &mut f)?;
+    let rook_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+        && let Some(k) = their_k
+    {
+        Rook::lookup_attacks(k, occ)
+    }
+    else {
+        Bitboard::full()
+    };
+    let rook_quiets = {
+        let mut t = quiets;
+        if !O::quiet_nochecks() {
+            t &= rook_mask;
+        }
+        t
+    };
+    let rook_captures = {
+        let mut t = captures;
+        if !O::capture_nochecks() {
+            t &= rook_mask;
+        }
+        t
+    };
+    init = sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(queens | rooks, blockers, occ, king, rook_captures, rook_quiets, init, &mut f)?;
 
     let bishops = pos.get_bitboard(piece_type::BISHOP, P::COLOR);
-    init = sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(queens | bishops, blockers, occ, king, captures, quiets, init, &mut f)?;
+    let bishop_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+        && let Some(k) = their_k
+    {
+        Bishop::lookup_attacks(k, occ)
+    }
+    else {
+        Bitboard::full()
+    };
+    let bishop_quiets = {
+        let mut t = quiets;
+        if !O::quiet_nochecks() {
+            t &= bishop_mask;
+        }
+        t
+    };
+    let bishop_captures = {
+        let mut t = captures;
+        if !O::capture_nochecks() {
+            t &= bishop_mask;
+        }
+        t
+    };
+    init =
+        sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(queens | bishops, blockers, occ, king, bishop_captures, bishop_quiets, init, &mut f)?;
 
-    init = king::fold_moves_for::<_, _, _, P, O, C>(king, kings, pos, occ, enemies, captures, quiets, init, &mut f)?;
+    init = {
+        let king_quiets = if O::gen_quiets() {
+            let mut t = !occ;
+
+            if !O::quiet_nochecks() {
+                t &= Bitboard::empty();
+            }
+
+            t
+        }
+        else {
+            Bitboard::empty()
+        };
+
+        king::fold_moves_for::<_, _, _, P, O, C>(king, kings, pos, occ, enemies, captures, king_quiets, init, &mut f)?
+    };
 
     let knights = pos.get_bitboard(piece_type::KNIGHT, P::COLOR);
-    init = knight::fold_moves_for::<_, _, _, P, O>(knights, blockers, quiets, captures, init, &mut f)?;
+    let knight_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+        && let Some(k) = their_k
+    {
+        knight::lookup_attacks(k)
+    }
+    else {
+        Bitboard::full()
+    };
+    let knight_quiets = {
+        let mut t = quiets;
+        if !O::quiet_nochecks() {
+            t &= knight_mask;
+        }
+        t
+    };
+    let knight_captures = {
+        let mut t = captures;
+        if !O::capture_nochecks() {
+            t &= knight_mask;
+        }
+        t
+    };
+    init = knight::fold_moves_for::<_, _, _, P, O>(knights, blockers, knight_quiets, knight_captures, init, &mut f)?;
 
     let pawns = pos.get_bitboard(piece_type::PAWN, P::COLOR);
-    init = pawn::fold_moves_for::<P, O, C, _, _, _>(pawns, occ, blockers, king, captures, quiets, promos, pos, init, &mut f)?;
+    let pawn_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+        && let Some(k) = their_k
+    {
+        pawn::lookup_attacks(k, P::Opponent::COLOR)
+    }
+    else {
+        Bitboard::full()
+    };
+    let pawn_quiets = {
+        let mut t = quiets;
+        if !O::quiet_nochecks() {
+            t &= pawn_mask;
+        }
+        t
+    };
+    let pawn_captures = {
+        let mut t = captures;
+        if !O::capture_nochecks() {
+            t &= pawn_mask;
+        }
+        t
+    };
+    init = pawn::fold_moves_for::<P, O, C, _, _, _>(pawns, occ, blockers, king, pawn_captures, pawn_quiets, promos, pos, init, &mut f)?;
 
     try { init }
 }
@@ -207,7 +291,7 @@ impl DoubleCheck {
         let occ = pos.get_occupancy();
         let enemies = pos.get_color_bb(P::Opponent::COLOR);
 
-        king::fold_moves_for_somecheck::<_, _, _, P, O, Self>(pos, kings, king, enemies, occ, init, f)
+        king::fold_moves_for_somecheck::<_, _, _, P, O, Self>(pos, kings, king, enemies, occ, !occ, init, f)
     }
 }
 
@@ -257,6 +341,20 @@ pub mod opt {
         fn capture_nochecks() -> bool { true }
         fn promo_checks() -> bool { false }
         fn promo_nochecks() -> bool { false }
+    }
+
+    pub struct Threats;
+    impl Options for Threats {
+        fn quiet_checks() -> bool { true }
+        fn quiet_nochecks() -> bool { false }
+
+        fn capture_checks() -> bool { true }
+        fn capture_nochecks() -> bool { true }
+
+        fn promo_checks() -> bool { true }
+        fn promo_nochecks() -> bool { false }
+
+        fn legal() -> bool { true }
     }
 }
 

@@ -84,7 +84,7 @@ pub fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
 
 /// Computes the attacks of the rook on the square `sq` with the given
 /// `occupancy`.
-fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
+const fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let file = File::from(sq);
     let rank = Rank::from(sq);
     let file_bb = Bitboard::from(file);
@@ -99,7 +99,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let nearest = occupands.msb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
     let moves = range.shift_c::<{ compass_rose::SOUT.v() }>() & ray;
-    result |= moves;
+    result.v |= moves.v;
 
     // north
     let ray = file_bb & nort_bb;
@@ -107,7 +107,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let nearest = occupands.lsb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
     let moves = range.shift_c::<{ compass_rose::NORT.v() }>() & ray;
-    result |= moves;
+    result.v |= moves.v;
 
     // west
     let ray = rank_bb & sout_bb;
@@ -115,7 +115,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let nearest = occupands.msb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_north);
     let moves = range.shift_c::<{ compass_rose::WEST.v() }>() & ray;
-    result |= moves;
+    result.v |= moves.v;
 
     // east
     let ray = rank_bb & nort_bb;
@@ -123,7 +123,7 @@ fn compute_attacks(sq: Square, occupancy: Bitboard) -> Bitboard {
     let nearest = occupands.lsb();
     let range = nearest.map_or(Bitboard::full(), Bitboard::split_south);
     let moves = range.shift_c::<{ compass_rose::EAST.v() }>() & ray;
-    result |= moves;
+    result.v |= moves.v;
 
     result
 }

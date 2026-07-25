@@ -33,7 +33,7 @@ use crate::{
         r#move::{Move, SAN, SanParseError, move_flags},
         move_iter::{
             bishop::{self, Bishop},
-            fold_legal_moves_for, fold_pseudo_legal_moves_for,
+            fold_pseudo_legal_moves_for,
             knight::{self},
             pawn,
             rook::{self, Rook},

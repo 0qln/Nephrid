@@ -62,9 +62,7 @@ struct PawnMoves<V: Variant> {
 }
 
 macro_rules! constructor {
-    () => {
-        impl FnOnce(&Position, Bitboard, V::Data) -> Self
-    };
+    () => { impl FnOnce(&Position, Bitboard, V::Data) -> Self };
 }
 
 impl<V: Variant> PawnMoves<V> {

@@ -26,7 +26,10 @@ use crate::{
             nnue::{self, AccumulatorStack, EagerAccUpdates},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
-        move_iter::{Options, fold_moves, opt::AllLegal},
+        move_iter::{
+            fold_moves,
+            opt::{AllLegal, Threats},
+        },
         params::IParams,
         piece::piece_type,
         ply::Ply,
@@ -154,23 +157,11 @@ impl HceThreatener {
 
         let mut max_threat = Score::<P::Opponent>::ZERO;
 
-        struct Opts;
-        impl Options for Opts {
-            fn quiet_checks() -> bool { true }
-            fn quiet_nochecks() -> bool { false }
-
-            fn capture_checks() -> bool { true }
-            fn capture_nochecks() -> bool { true }
-
-            fn promo_checks() -> bool { true }
-            fn promo_nochecks() -> bool { false }
-
-            fn legal() -> bool { true }
-        }
-
-        // todo: only generate captures, promos, and checks.
+        // only generate captures, promos, and checks.
         // todo: or just track this in the make_move unmake_move functions.
-        let moves = pos.collect_moves_for::<P::Opponent, Opts, _>(MoveList::new());
+        let moves = pos.collect_moves_for::<P::Opponent, Threats, _>(MoveList::new());
+
+        // pick the biggest threat.
         for &mov in moves.iter() {
             match pos.does_check(mov) {
                 CheckState::None => {}
