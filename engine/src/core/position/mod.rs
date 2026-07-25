@@ -749,6 +749,7 @@ impl Position {
 
     pub fn has_legal_moves(&self) -> bool { fold_moves::<AllLegal, _, _, _>(self, false, |_, _| ControlFlow::Break(true)).into_value() }
 
+    #[inline(never)]
     pub fn has_legal_check(&self) -> bool { fold_moves::<Checks, _, _, _>(self, false, |_, _| ControlFlow::Break(true)).into_value() }
 
     /// Tests whether a (potentially corrupt) move is pseudo-legal in the
