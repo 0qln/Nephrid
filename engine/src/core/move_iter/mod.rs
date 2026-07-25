@@ -123,7 +123,7 @@ const impl CheckState for DoubleCheck {
 impl SomeCheck for DoubleCheck {}
 
 #[inline(always)]
-fn fold_all_moves_for<P: Perspective, O: Options, C: const NoDoubleCheck, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+pub fn fold_all_moves_for<P: Perspective, O: Options, C: const NoDoubleCheck, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,

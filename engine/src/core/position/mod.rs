@@ -2,7 +2,7 @@ use crate::core::{
     bitboard::BitboardIteratorExt,
     eval::GameResult,
     move_iter::{
-        Options, SingleCheck, captures_targets, fold_moves, fold_moves_for,
+        NoCheck, Options, SingleCheck, captures_targets, fold_all_moves_for, fold_moves, fold_moves_for,
         king::{self, King, check_mask_qs, tabu_mask_ks},
         opt::{AllLegal, Checks},
         pin_mask,
@@ -795,8 +795,10 @@ impl Position {
     pub fn has_legal_moves(&self) -> bool { fold_moves::<AllLegal, _, _, _>(self, false, |_, _| ControlFlow::Break(true)).into_value() }
 
     #[inline(never)]
-    pub fn has_legal_check_for<P: Perspective>(&self) -> bool {
-        fold_moves_for::<P, Checks, _, _, _>(self, false, |_, _| ControlFlow::Break(true)).into_value()
+    pub fn while_not_being_in_check_has_legal_check_for<P: Perspective>(&self) -> bool {
+        debug_assert!(self.get_check_state() == CheckState::None);
+
+        fold_all_moves_for::<P, Checks, NoCheck, _, _, _>(self, false, |_, _| ControlFlow::Break(true)).into_value()
     }
 
     /// Tests whether a (potentially corrupt) move is pseudo-legal in the

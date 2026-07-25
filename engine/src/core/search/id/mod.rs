@@ -152,12 +152,16 @@ impl HceThreatener {
     /// `P::Opponent`.
     #[allow(dead_code)]
     fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
+        // the threatener should not be called on a position that is VERY noisy (e.g.
+        // it's in check).
+        debug_assert!(pos.get_check_state() == CheckState::None);
+
         const QUEEN_SCORE: AnyScore = hce::piece_score(piece_type::QUEEN);
         const ROOK_SCORE: AnyScore = hce::piece_score(piece_type::ROOK);
 
         let mut max_threat = Score::<P::Opponent>::ZERO;
 
-        if pos.has_legal_check_for::<P>() {
+        if pos.while_not_being_in_check_has_legal_check_for::<P>() {
             return unsafe { QUEEN_SCORE.interpret_as() };
         }
 

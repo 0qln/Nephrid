@@ -77,6 +77,7 @@ impl<V: Variant> PawnMoves<V> {
 
     #[inline(always)]
     fn single_step<P: Perspective>(non_promo_pawns: Bitboard, single_step_tabus: Bitboard) -> constructor!() {
+        #[inline(always)]
         move |_pos, _pawns, v_data| {
             let from = non_promo_pawns & !single_step_tabus;
             let to = forward(from, single_step(P::COLOR));
@@ -86,6 +87,7 @@ impl<V: Variant> PawnMoves<V> {
 
     #[inline(always)]
     fn double_step<P: Perspective>(tabu_squares: Bitboard, single_step_tabus: Bitboard) -> constructor!() {
+        #[inline(always)]
         move |_pos, pawns, v_data| {
             let double_step_tabus = backward(tabu_squares, double_step(P::COLOR)) | single_step_tabus;
             let double_step_pawns = pawns & Bitboard::from(start_rank(P::COLOR));
@@ -97,6 +99,7 @@ impl<V: Variant> PawnMoves<V> {
 
     #[inline(always)]
     fn capture<P: Perspective, const DIR: TCompassRose>(non_promo_pawns: Bitboard, capture_targets: Bitboard) -> constructor!() {
+        #[inline(always)]
         move |_pos, _pawns, v_data| {
             let capture_dir = capture(P::COLOR, CompassRose::new(DIR));
             let capturing_pawns = non_promo_pawns & !Bitboard::from(File::edge::<DIR>());
@@ -108,6 +111,7 @@ impl<V: Variant> PawnMoves<V> {
 
     #[inline(always)]
     fn ep<O: Options, P: Perspective, const DIR: TCompassRose>(occ: Bitboard) -> constructor!() {
+        #[inline(always)]
         move |pos, pawns, v_data| {
             let capture_sq = pos.get_ep_capture_square();
             let target = EpTargetSquare::from((capture_sq, !P::COLOR));
@@ -163,6 +167,7 @@ impl<V: Variant> PawnMoves<V> {
 impl<V: variants::Promo> PawnMoves<V> {
     #[inline(always)]
     fn promo<P: Perspective>(promo_pawns: Bitboard, single_step_tabus: Bitboard) -> constructor!() {
+        #[inline(always)]
         move |_pos, _pawns, v_data| {
             let from = promo_pawns & !single_step_tabus;
             let to = forward(from, single_step(P::COLOR));
@@ -172,6 +177,7 @@ impl<V: variants::Promo> PawnMoves<V> {
 
     #[inline(always)]
     fn promo_capture<P: Perspective, const DIR: TCompassRose>(promo_pawns: Bitboard, capture_targets: Bitboard) -> constructor!() {
+        #[inline(always)]
         move |_pos, _pawns, v_data| {
             let capture_dir = capture(P::COLOR, CompassRose::new(DIR));
             let capture_pawns = promo_pawns & !Bitboard::from(File::edge::<DIR>());
@@ -182,11 +188,14 @@ impl<V: variants::Promo> PawnMoves<V> {
     }
 }
 
-impl Iterator for PawnMoves<variants::Pinned<'_>> {
-    type Item = Move;
-
+impl PawnMoves<variants::Pinned<'_>> {
     #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
+    fn try_fold<B, F, R>(&mut self, init: B, mut f: F) -> R
+    where
+        F: FnMut(B, Move) -> R,
+        R: Try<Output = B>,
+    {
+        let mut acc = init;
         while let Some(to) = self.to.pop_lsb() {
             // Safety: The 'from' bitboard is constructed to have at least one square
             // per 'to' square, so unwrap_unchecked is safe.
@@ -195,16 +204,16 @@ impl Iterator for PawnMoves<variants::Pinned<'_>> {
 
             // Check if the pawn is pinned and the move is valid.
             let blockers = self.v_data.0;
-            // todo: no need to check this if optinos is pseudo legal
+            // todo: no need to check this if options is pseudo legal
             let pin_mask = self.v_data.1.map(|our_king| pin_mask(from, blockers, our_king)).unwrap_or_default();
             if (pin_mask & to_bb).is_empty() {
                 continue;
             }
 
-            return Some(Move::new(from, to, self.flag));
+            acc = f(acc, Move::new(from, to, self.flag))?;
         }
 
-        None
+        try { acc }
     }
 }
 
