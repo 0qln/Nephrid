@@ -676,6 +676,8 @@ where
                 if kind == NodeKind::Cut && !in_check
                     // are we in SE verification search?
                     && se_excluded_move == Move::null()
+                    // only in fail-high searches
+                    && beta - 1 == alpha
                 {
                     // the quiet score of this position is the static score minus threat score (the
                     // best threat that the opponent can do).
