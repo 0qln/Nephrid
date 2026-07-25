@@ -4,7 +4,7 @@ use crate::core::{
     move_iter::{
         Options, SingleCheck, captures_targets, fold_moves, fold_moves_for,
         king::{self, King, check_mask_qs, tabu_mask_ks},
-        opt::AllLegal,
+        opt::{AllLegal, Checks},
         pin_mask,
         queen::Queen,
         quiets_targets,
@@ -748,6 +748,8 @@ impl Position {
     }
 
     pub fn has_legal_moves(&self) -> bool { fold_moves::<AllLegal, _, _, _>(self, false, |_, _| ControlFlow::Break(true)).into_value() }
+
+    pub fn has_legal_check(&self) -> bool { fold_moves::<Checks, _, _, _>(self, false, |_, _| ControlFlow::Break(true)).into_value() }
 
     /// Tests whether a (potentially corrupt) move is pseudo-legal in the
     /// current position. Used to validate moves coming from the transposition

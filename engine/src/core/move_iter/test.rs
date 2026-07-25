@@ -160,19 +160,9 @@ pub fn plegal_with_filter_is_same_as_legal_test_5() {
     plegal_with_filter_is_same_as_legal("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10 ", Depth::new(5))
 }
 
-fn gives_check(pos: &mut Position, m: Move) -> bool {
-    pos.make_move(m, &mut ());
-    let check = pos.get_check_state();
-    pos.unmake_move(m, &mut ());
-
-    assert_eq!(check, pos.does_check(m));
-
-    check != CheckState::None
-}
-
 /// Ground-truth validator that determines if a move satisfies `O`
-fn is_valid_move_for_opts<O: Options>(pos: &mut Position, m: Move) -> bool {
-    let is_check = gives_check(pos, m);
+fn is_valid_move_for_opts<O: Options>(pos: &Position, m: Move) -> bool {
+    let is_check = pos.does_check(m) != CheckState::None;
     let flag = m.get_flag();
     let is_promo = flag.is_promo();
     let is_capture = flag.is_capture();
@@ -207,64 +197,96 @@ fn is_valid_move_for_opts<O: Options>(pos: &mut Position, m: Move) -> bool {
     }
 }
 
-fn assert_options_match_filtered_oracle<O: Options>(fen: &str) {
-    magics::init();
-    zobrist::init();
+fn options_match_oracle_perft<O: Options>(fen: &str, depth: Depth) {
+    let limit = UciLimit { depth, ..Default::default() };
+    let ct = CancellationToken::default();
+    let debug = DebugMode::default();
 
-    let mut pos = Position::from_fen(fen).unwrap();
+    search::perft::perft_inner_collect(
+        &mut Position::from_fen(fen).unwrap(),
+        limit.depth,
+        &limit,
+        &ct,
+        &debug,
+        |_, _, _, _| {},
+        move |pos, _| {
+            let mut all_legals = MoveList::default();
+            _ = fold_moves::<opt::AllLegal, _, _, _>(pos, (), |_, m| {
+                all_legals.push(m);
+                ControlFlow::Continue::<(), ()>(())
+            });
 
-    let mut all_legals = MoveList::default();
-    _ = fold_moves::<opt::AllLegal, _, _, _>(&pos, (), |_, m| {
-        all_legals.push(m);
-        ControlFlow::Continue::<(), ()>(())
-    });
+            let mut expected = MoveList::default();
+            for &m in all_legals.iter() {
+                if is_valid_move_for_opts::<O>(pos, m) {
+                    expected.push(m);
+                }
+            }
 
-    let mut expected = MoveList::default();
-    for &m in all_legals.iter() {
-        if is_valid_move_for_opts::<O>(&mut pos, m) {
-            expected.push(m);
-        }
-    }
+            let mut actual = MoveList::default();
+            _ = fold_moves::<O, _, _, _>(pos, (), |_, m| {
+                actual.push(m);
+                ControlFlow::Continue::<(), ()>(())
+            });
 
-    let mut actual = MoveList::default();
-    _ = fold_moves::<O, _, _, _>(&pos, (), |_, m| {
-        actual.push(m);
-        ControlFlow::Continue::<(), ()>(())
-    });
+            let expected_set: HashSet<_> = expected.iter().copied().collect();
+            let actual_set: HashSet<_> = actual.iter().copied().collect();
 
-    let expected_set: HashSet<_> = expected.iter().copied().collect();
-    let actual_set: HashSet<_> = actual.iter().copied().collect();
-
-    assert_eq!(
-        actual_set,
-        expected_set,
-        "\nMove generator mismatch for position: {}\nExpected ({} moves): {:?}\nGot ({} moves): {:?}\nDiff: {:?}",
-        FenExport(&pos),
-        expected.len(),
-        expected,
-        actual.len(),
-        actual,
-        expected_set.symmetric_difference(&actual_set).cloned().collect_vec()
+            assert_eq!(
+                actual_set,
+                expected_set,
+                "\nOptions move mismatch in perft tree!\nPosition FEN: {}\nExpected ({} moves): {:?}\nGot ({} moves): {:?}\nDiff: {:?}",
+                FenExport(pos),
+                expected.len(),
+                expected,
+                actual.len(),
+                actual,
+                expected_set.symmetric_difference(&actual_set).cloned().collect_vec()
+            );
+        },
     );
 }
 
 #[test]
-fn test_custom_check_options_starting_pos() {
-    assert_options_match_filtered_oracle::<Threats>("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+pub fn test_threats_perft_startpos() {
+    magics::init();
+    zobrist::init();
+
+    options_match_oracle_perft::<Threats>("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", Depth::new(4));
 }
 
 #[test]
-fn test_custom_check_options_tactical_kiwipete() {
-    assert_options_match_filtered_oracle::<Threats>("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+pub fn test_threats_perft_kiwipete() {
+    magics::init();
+    zobrist::init();
+
+    options_match_oracle_perft::<Threats>("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", Depth::new(3));
 }
 
 #[test]
-fn test_custom_check_options_promotions_and_checks() {
-    assert_options_match_filtered_oracle::<Threats>("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
+pub fn test_threats_perft_pos3() {
+    magics::init();
+    zobrist::init();
+
+    options_match_oracle_perft::<Threats>("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", Depth::new(4));
 }
 
 #[test]
-fn test_custom_check_options_pawns_and_checks() { assert_options_match_filtered_oracle::<Threats>("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1"); }
+pub fn test_threats_perft_pos4_promotions() {
+    magics::init();
+    zobrist::init();
+
+    options_match_oracle_perft::<Threats>("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1", Depth::new(3));
+}
+
+#[test]
+pub fn test_threats_perft_discovered_checks_fuzzer() {
+    magics::init();
+    zobrist::init();
+
+    options_match_oracle_perft::<Threats>("8/8/8/8/k2N3R/8/8/3K4 w - - 0 1", Depth::new(4));
+    options_match_oracle_perft::<Threats>("8/8/5k2/8/3P4/2B5/8/3K4 w - - 0 1", Depth::new(4));
+}
 
 // todo: test that options work (i.e. if gen_captures is false no captures will
 // be generated)

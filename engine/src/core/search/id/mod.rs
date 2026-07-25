@@ -28,7 +28,7 @@ use crate::{
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{
             fold_moves,
-            opt::{AllLegal, Threats},
+            opt::{AllLegal, Captures},
         },
         params::IParams,
         piece::piece_type,
@@ -157,23 +157,18 @@ impl HceThreatener {
 
         let mut max_threat = Score::<P::Opponent>::ZERO;
 
-        // only generate captures, promos, and checks.
+        if pos.has_legal_check() {
+            return unsafe { QUEEN_SCORE.interpret_as() };
+        }
+
         // todo: or just track this in the make_move unmake_move functions.
-        let moves = pos.collect_moves_for::<P::Opponent, Threats, _>(MoveList::new());
+        let captures = pos.collect_moves_for::<P::Opponent, Captures, _>(MoveList::new());
 
         // pick the biggest threat.
-        for &mov in moves.iter() {
-            match pos.does_check(mov) {
-                CheckState::None => {}
-                CheckState::Single => return unsafe { QUEEN_SCORE.interpret_as() },
-                CheckState::Double => return unsafe { (QUEEN_SCORE + ROOK_SCORE).interpret_as() },
-            }
-
-            if mov.get_flag().is_capture() {
-                let see: AnyScore = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR).into();
-                let see_threat = unsafe { see.interpret_as::<P::Opponent>() };
-                max_threat = max(max_threat, see_threat);
-            }
+        for &mov in captures.iter() {
+            let see: AnyScore = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR).into();
+            let see_threat = unsafe { see.interpret_as::<P::Opponent>() };
+            max_threat = max(max_threat, see_threat);
         }
 
         max_threat

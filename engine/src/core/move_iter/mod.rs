@@ -356,6 +356,17 @@ pub mod opt {
 
         fn legal() -> bool { true }
     }
+
+    pub struct Checks;
+    impl Options for Checks {
+        fn quiet_checks() -> bool { true }
+        fn quiet_nochecks() -> bool { false }
+        fn capture_checks() -> bool { true }
+        fn capture_nochecks() -> bool { false }
+        fn promo_checks() -> bool { true }
+        fn promo_nochecks() -> bool { false }
+        fn legal() -> bool { true }
+    }
 }
 
 #[inline]
