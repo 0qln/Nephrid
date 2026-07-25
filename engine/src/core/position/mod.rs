@@ -635,7 +635,7 @@ impl Position {
     }
 
     #[inline]
-    pub fn get_indirect_blockers(&self) -> Bitboard {
+    pub fn compute_indirect_blockers(&self) -> Bitboard {
         let pieces = self.piece_info();
         let stm = self.get_turn();
         let nstm = !stm;

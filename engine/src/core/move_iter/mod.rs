@@ -134,8 +134,8 @@ where
 
     let occ = pos.get_occupancy();
     let blockers = pos.get_blockers();
-    let discovered_checkers = if !O::quiet_nochecks() || O::capture_nochecks() {
-        pos.get_indirect_blockers()
+    let discovered_checkers = if !O::quiet_nochecks() || !O::capture_nochecks() {
+        pos.compute_indirect_blockers()
     }
     else {
         Bitboard::empty()
