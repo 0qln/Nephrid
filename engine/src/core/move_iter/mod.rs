@@ -178,8 +178,7 @@ where
 
         sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(
             sliders,
-            (!O::quiet_nochecks()).then_some(discovered_checkers).unwrap_or(Bitboard::full()),
-            (!O::capture_nochecks()).then_some(discovered_checkers).unwrap_or(Bitboard::full()),
+            discovered_checkers,
             blockers,
             occ,
             king,
@@ -207,8 +206,7 @@ where
 
         sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(
             sliders,
-            (!O::quiet_nochecks()).then_some(discovered_checkers).unwrap_or(Bitboard::full()),
-            (!O::capture_nochecks()).then_some(discovered_checkers).unwrap_or(Bitboard::full()),
+            discovered_checkers,
             blockers,
             occ,
             king,

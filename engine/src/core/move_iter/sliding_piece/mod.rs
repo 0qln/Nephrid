@@ -24,8 +24,7 @@ pub trait SlidingPieceType: SlidingAttacks + IPieceType {}
 #[inline(always)]
 pub fn fold_moves_for<B, F, R, P: Perspective, O: Options, T: SlidingPieceType>(
     pieces: Bitboard,
-    from_mask_quiets: Bitboard,
-    from_mask_captures: Bitboard,
+    from_mask: Bitboard,
     blockers: Bitboard,
     occupancy: Bitboard,
     king: Option<Square>,
@@ -40,41 +39,62 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    let mut pieces = pieces;
+    let only_check_mask_quiet = (!O::quiet_nochecks())
+        .then_some(to_mask_quiets & to_mask_quiet_checks)
+        .unwrap_or_default();
 
-    pieces.try_fold(init, move |mut acc, piece| {
+    let only_check_mask_capt = (!O::capture_nochecks())
+        .then_some(to_mask_captures & to_mask_capture_checks)
+        .unwrap_or_default();
+
+    let attacks = |piece| {
         let piece_bb = Bitboard::from(piece);
+        let attacks = T::lookup_attacks(piece, occupancy);
 
-        let attacks = {
-            let attacks = T::lookup_attacks(piece, occupancy);
+        if O::legal() {
+            let pin_mask = king.map(|k| pin_mask(piece, piece_bb, blockers, k)).unwrap_or(Bitboard::full());
+            attacks & pin_mask
+        }
+        else {
+            attacks
+        }
+    };
 
-            if O::legal() {
-                let pin_mask = king.map(|k| pin_mask(piece, piece_bb, blockers, k)).unwrap_or(Bitboard::full());
-                attacks & pin_mask
-            }
-            else {
-                attacks
-            }
-        };
+    let mut acc = init;
 
+    acc = (pieces & from_mask).try_fold(acc, |mut acc, piece| -> R {
         if O::gen_captures() {
-            let target_mask = if O::capture_nochecks() || from_mask_captures.contains(piece_bb) {
-                to_mask_captures
-            }
-            else {
-                to_mask_captures & to_mask_capture_checks
-            };
-            acc = map_captures(attacks & target_mask, piece).try_fold(acc, &mut f)?;
+            let target_mask = to_mask_captures;
+            acc = map_captures(attacks(piece) & target_mask, piece).try_fold(acc, &mut f)?;
         };
 
         if O::gen_quiets() {
-            let target_mask = if O::quiet_nochecks() || from_mask_quiets.contains(piece_bb) {
+            let target_mask = to_mask_quiets;
+            acc = map_quiets(attacks(piece) & target_mask, piece).try_fold(acc, &mut f)?;
+        }
+
+        try { acc }
+    })?;
+
+    (pieces & !from_mask).try_fold(acc, move |mut acc, piece| {
+        if O::gen_captures() {
+            let target_mask = if O::capture_nochecks() {
+                to_mask_captures
+            }
+            else {
+                only_check_mask_capt
+            };
+            acc = map_captures(attacks(piece) & target_mask, piece).try_fold(acc, &mut f)?;
+        };
+
+        if O::gen_quiets() {
+            let target_mask = if O::quiet_nochecks() {
                 to_mask_quiets
             }
             else {
-                to_mask_quiets & to_mask_quiet_checks
+                only_check_mask_quiet
             };
-            acc = map_quiets(attacks & target_mask, piece).try_fold(acc, &mut f)?;
+            acc = map_quiets(attacks(piece) & target_mask, piece).try_fold(acc, &mut f)?;
         }
 
         try { acc }
