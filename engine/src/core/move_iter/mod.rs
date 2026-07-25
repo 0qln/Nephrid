@@ -352,10 +352,8 @@ pub mod opt {
     impl Options for Threats {
         fn quiet_checks() -> bool { true }
         fn quiet_nochecks() -> bool { false }
-
         fn capture_checks() -> bool { true }
         fn capture_nochecks() -> bool { true }
-
         fn promo_checks() -> bool { true }
         fn promo_nochecks() -> bool { false }
 
