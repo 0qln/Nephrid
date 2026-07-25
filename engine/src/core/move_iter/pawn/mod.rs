@@ -2,7 +2,7 @@ use super::{NoDoubleCheck, bishop::Bishop, king::King, pin_mask, rook::Rook, sli
 use crate::core::{
     bitboard::Bitboard,
     color::{
-        Color, Perspective, TColor, colors,
+        Color, Perspective,
         perspectives::{Black, White},
     },
     coordinates::{CompassRose, EpTargetSquare, File, Square, TCompassRose, compass_rose::*, files, pawn_utils::*, squares},

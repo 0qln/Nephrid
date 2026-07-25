@@ -167,7 +167,7 @@ where
             // direct checks
             Rook::lookup_attacks(k, occ)
             // indirect checks
-            | (rooks & discovered_checkers).map(|r| Rook::lookup_attacks(r, occ)).aggregate()
+            | if discovered_checkers.is_empty() { Bitboard::empty() } else { (rooks & discovered_checkers).map(|r| Rook::lookup_attacks(r, occ)).aggregate() }
         }
         else {
             Bitboard::full()
@@ -179,40 +179,48 @@ where
 
     init = {
         let bishops = pos.get_bitboard(piece_type::BISHOP, P::COLOR);
+        let sliders = queens | bishops;
         let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
             // direct checks
             Bishop::lookup_attacks(k, occ)
-            // indirect checks
-            | (bishops & discovered_checkers).map(|b| Bishop::lookup_attacks(b, occ)).aggregate()
+            // indirect checks (no need to check for queen, if a rook could pin a queen to the enemy
+            // king and we are on the move, the queen could capture the king, which is an invalid
+            // position)
+            | if discovered_checkers.is_empty() { Bitboard::empty() } else { (bishops & discovered_checkers).map(|b| Bishop::lookup_attacks(b, occ)).aggregate() }
         }
         else {
             Bitboard::full()
         };
         let quiets = make_quiets(mask);
         let captures = make_captures(mask);
-        sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(queens | bishops, blockers, occ, king, captures, quiets, init, &mut f)?
+        sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(sliders, blockers, occ, king, captures, quiets, init, &mut f)?
     };
 
     init = {
-        let is_discovered_checker = || king.is_some_and(|k| !(Bitboard::from(k) & discovered_checkers).is_empty());
+        let is_discovered_checker = if !O::quiet_nochecks() || O::capture_nochecks() {
+            king.is_some_and(|k| !(Bitboard::from(k) & discovered_checkers).is_empty())
+        }
+        else {
+            false
+        };
 
-        let king_quiets = if O::quiet_nochecks() || is_discovered_checker() {
+        let quiets = if O::quiet_nochecks() || is_discovered_checker {
             !occ
         }
         else {
             Bitboard::empty()
         };
 
-        let king_captures = if O::capture_nochecks() || is_discovered_checker() {
+        let captures = if O::capture_nochecks() || is_discovered_checker {
             captures
         }
         else {
             Bitboard::empty()
         };
 
-        king::fold_moves_for::<_, _, _, P, O, C>(king, kings, pos, occ, enemies, king_captures, king_quiets, init, &mut f)?
+        king::fold_moves_for::<_, _, _, P, O, C>(king, kings, pos, occ, enemies, captures, quiets, init, &mut f)?
     };
 
     init = {
