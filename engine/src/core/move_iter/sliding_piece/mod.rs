@@ -58,7 +58,7 @@ where
         };
 
         if O::gen_captures() {
-            let target_mask = if from_mask_captures.contains(piece_bb) {
+            let target_mask = if O::capture_nochecks() || from_mask_captures.contains(piece_bb) {
                 to_mask_captures
             }
             else {
@@ -68,7 +68,7 @@ where
         };
 
         if O::gen_quiets() {
-            let target_mask = if from_mask_quiets.contains(piece_bb) {
+            let target_mask = if O::quiet_nochecks() || from_mask_quiets.contains(piece_bb) {
                 to_mask_quiets
             }
             else {
