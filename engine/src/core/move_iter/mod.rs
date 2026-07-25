@@ -295,6 +295,16 @@ pub mod opt {
         fn promo_nochecks() -> bool { false }
     }
 
+    pub struct NonCheckCaptures;
+    const impl Options for NonCheckCaptures {
+        fn quiet_checks() -> bool { false }
+        fn quiet_nochecks() -> bool { false }
+        fn capture_checks() -> bool { true }
+        fn capture_nochecks() -> bool { false }
+        fn promo_checks() -> bool { false }
+        fn promo_nochecks() -> bool { false }
+    }
+
     pub struct Threats;
     impl Options for Threats {
         fn quiet_checks() -> bool { true }

@@ -28,7 +28,7 @@ use crate::{
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{
             fold_moves,
-            opt::{AllLegal, Captures},
+            opt::{AllLegal, Captures, NonCheckCaptures},
         },
         params::IParams,
         piece::piece_type,
@@ -157,12 +157,12 @@ impl HceThreatener {
 
         let mut max_threat = Score::<P::Opponent>::ZERO;
 
-        if pos.has_legal_check() {
+        if pos.has_legal_check_for::<P>() {
             return unsafe { QUEEN_SCORE.interpret_as() };
         }
 
         // todo: or just track this in the make_move unmake_move functions.
-        let captures = pos.collect_moves_for::<P::Opponent, Captures, _>(MoveList::new());
+        let captures = pos.collect_moves_for::<P::Opponent, NonCheckCaptures, _>(MoveList::new());
 
         // pick the biggest threat.
         for &mov in captures.iter() {
