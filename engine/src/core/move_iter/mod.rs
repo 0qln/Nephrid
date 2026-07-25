@@ -128,26 +128,9 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    let quiets = if O::gen_quiets() {
-        quiets_targets::<C>(pos, P::COLOR)
-    }
-    else {
-        Bitboard::empty()
-    };
-
-    let captures = if O::gen_captures() {
-        captures_targets::<C>(pos, P::COLOR)
-    }
-    else {
-        Bitboard::empty()
-    };
-
-    let promos = if O::gen_promos() {
-        quiets_targets::<C>(pos, P::COLOR)
-    }
-    else {
-        Bitboard::empty()
-    };
+    let quiets = O::gen_quiets().then_some(quiets_targets::<C>(pos, P::COLOR)).unwrap_or_default();
+    let captures = O::gen_captures().then_some(captures_targets::<C>(pos, P::COLOR)).unwrap_or_default();
+    let promos = O::gen_promos().then_some(quiets_targets::<C>(pos, P::COLOR)).unwrap_or_default();
 
     let occ = pos.get_occupancy();
     let blockers = pos.get_blockers();
@@ -158,66 +141,55 @@ where
 
     let queens = pos.get_bitboard(piece_type::QUEEN, P::COLOR);
 
-    let rooks = pos.get_bitboard(piece_type::ROOK, P::COLOR);
-    let rook_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
-        && let Some(k) = their_k
-    {
-        Rook::lookup_attacks(k, occ)
-    }
-    else {
-        Bitboard::full()
-    };
-    let rook_quiets = {
+    let make_quiets = |mask: Bitboard| {
         let mut t = quiets;
         if !O::quiet_nochecks() {
-            t &= rook_mask;
+            t &= mask;
         }
         t
     };
-    let rook_captures = {
-        let mut t = captures;
-        if !O::capture_nochecks() {
-            t &= rook_mask;
-        }
-        t
-    };
-    init = sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(queens | rooks, blockers, occ, king, rook_captures, rook_quiets, init, &mut f)?;
 
-    let bishops = pos.get_bitboard(piece_type::BISHOP, P::COLOR);
-    let bishop_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
-        && let Some(k) = their_k
-    {
-        Bishop::lookup_attacks(k, occ)
-    }
-    else {
-        Bitboard::full()
-    };
-    let bishop_quiets = {
-        let mut t = quiets;
-        if !O::quiet_nochecks() {
-            t &= bishop_mask;
-        }
-        t
-    };
-    let bishop_captures = {
+    let make_captures = |mask: Bitboard| {
         let mut t = captures;
         if !O::capture_nochecks() {
-            t &= bishop_mask;
+            t &= mask;
         }
         t
     };
-    init =
-        sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(queens | bishops, blockers, occ, king, bishop_captures, bishop_quiets, init, &mut f)?;
 
     init = {
-        let king_quiets = if O::gen_quiets() {
-            let mut t = !occ;
+        let rooks = pos.get_bitboard(piece_type::ROOK, P::COLOR);
+        let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+            && let Some(k) = their_k
+        {
+            Rook::lookup_attacks(k, occ)
+        }
+        else {
+            Bitboard::full()
+        };
+        let quiets = make_quiets(mask);
+        let captures = make_captures(mask);
+        sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(queens | rooks, blockers, occ, king, captures, quiets, init, &mut f)?
+    };
 
-            if !O::quiet_nochecks() {
-                t &= Bitboard::empty();
-            }
+    init = {
+        let bishops = pos.get_bitboard(piece_type::BISHOP, P::COLOR);
+        let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+            && let Some(k) = their_k
+        {
+            Bishop::lookup_attacks(k, occ)
+        }
+        else {
+            Bitboard::full()
+        };
+        let quiets = make_quiets(mask);
+        let captures = make_captures(mask);
+        sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(queens | bishops, blockers, occ, king, captures, quiets, init, &mut f)?
+    };
 
-            t
+    init = {
+        let king_quiets = if O::gen_quiets() && O::quiet_nochecks() {
+            !occ
         }
         else {
             Bitboard::empty()
@@ -226,55 +198,35 @@ where
         king::fold_moves_for::<_, _, _, P, O, C>(king, kings, pos, occ, enemies, captures, king_quiets, init, &mut f)?
     };
 
-    let knights = pos.get_bitboard(piece_type::KNIGHT, P::COLOR);
-    let knight_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
-        && let Some(k) = their_k
-    {
-        knight::lookup_attacks(k)
-    }
-    else {
-        Bitboard::full()
-    };
-    let knight_quiets = {
-        let mut t = quiets;
-        if !O::quiet_nochecks() {
-            t &= knight_mask;
+    init = {
+        let knights = pos.get_bitboard(piece_type::KNIGHT, P::COLOR);
+        let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+            && let Some(k) = their_k
+        {
+            knight::lookup_attacks(k)
         }
-        t
+        else {
+            Bitboard::full()
+        };
+        let quiets = make_quiets(mask);
+        let captures = make_captures(mask);
+        knight::fold_moves_for::<_, _, _, P, O>(knights, blockers, quiets, captures, init, &mut f)?
     };
-    let knight_captures = {
-        let mut t = captures;
-        if !O::capture_nochecks() {
-            t &= knight_mask;
-        }
-        t
-    };
-    init = knight::fold_moves_for::<_, _, _, P, O>(knights, blockers, knight_quiets, knight_captures, init, &mut f)?;
 
-    let pawns = pos.get_bitboard(piece_type::PAWN, P::COLOR);
-    let pawn_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
-        && let Some(k) = their_k
-    {
-        pawn::lookup_attacks(k, P::Opponent::COLOR)
-    }
-    else {
-        Bitboard::full()
-    };
-    let pawn_quiets = {
-        let mut t = quiets;
-        if !O::quiet_nochecks() {
-            t &= pawn_mask;
+    init = {
+        let pawns = pos.get_bitboard(piece_type::PAWN, P::COLOR);
+        let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+            && let Some(k) = their_k
+        {
+            pawn::lookup_attacks(k, P::Opponent::COLOR)
         }
-        t
+        else {
+            Bitboard::full()
+        };
+        let quiets = make_quiets(mask);
+        let captures = make_captures(mask);
+        pawn::fold_moves_for::<P, O, C, _, _, _>(pawns, occ, blockers, king, captures, quiets, promos, pos, init, &mut f)?
     };
-    let pawn_captures = {
-        let mut t = captures;
-        if !O::capture_nochecks() {
-            t &= pawn_mask;
-        }
-        t
-    };
-    init = pawn::fold_moves_for::<P, O, C, _, _, _>(pawns, occ, blockers, king, pawn_captures, pawn_quiets, promos, pos, init, &mut f)?;
 
     try { init }
 }
