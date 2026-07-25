@@ -429,7 +429,7 @@ pub const fn compute_attacks(pawns: Bitboard, color: Color) -> Bitboard {
 }
 
 #[inline(always)]
-pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
+pub const fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
     static ATTACKS_W: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {

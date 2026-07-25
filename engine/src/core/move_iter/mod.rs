@@ -5,7 +5,6 @@ use king::King;
 use rook::Rook;
 
 use crate::core::{
-    bitboard::BitboardIteratorExt,
     color::{
         Perspective, colors,
         perspectives::{Black, White},
@@ -135,7 +134,12 @@ where
 
     let occ = pos.get_occupancy();
     let blockers = pos.get_blockers();
-    let discovered_checkers = pos.get_indirect_blockers();
+    let discovered_checkers = if !O::quiet_nochecks() || O::capture_nochecks() {
+        pos.get_indirect_blockers()
+    }
+    else {
+        Bitboard::empty()
+    };
     let enemies = pos.get_color_bb(P::Opponent::COLOR);
     let kings = pos.get_bitboard(King::ID, P::COLOR);
     let king = kings.lsb();
