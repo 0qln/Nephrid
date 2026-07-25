@@ -77,7 +77,7 @@ pub const fn compute_attacks(sq: Square) -> Bitboard {
     compute_attacks_multiple(knight)
 }
 
-const fn compute_attacks_multiple(knights: Bitboard) -> Bitboard {
+pub const fn compute_attacks_multiple(knights: Bitboard) -> Bitboard {
     let mut result = Bitboard::empty();
     compute_atttack::<{ compass_rose::NONOWE_C }>(knights, &mut result);
     compute_atttack::<{ compass_rose::NONOEA_C }>(knights, &mut result);

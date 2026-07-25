@@ -5,6 +5,7 @@ use king::King;
 use rook::Rook;
 
 use crate::core::{
+    bitboard::BitboardIteratorExt,
     color::{
         Perspective, colors,
         perspectives::{Black, White},
@@ -134,6 +135,7 @@ where
 
     let occ = pos.get_occupancy();
     let blockers = pos.get_blockers();
+    let discovered_checkers = pos.get_indirect_blockers();
     let enemies = pos.get_color_bb(P::Opponent::COLOR);
     let kings = pos.get_bitboard(King::ID, P::COLOR);
     let king = kings.lsb();
@@ -162,7 +164,10 @@ where
         let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
+            // direct checks
             Rook::lookup_attacks(k, occ)
+            // indirect checks
+            | (rooks & discovered_checkers).map(|r| Rook::lookup_attacks(r, occ)).aggregate()
         }
         else {
             Bitboard::full()
@@ -177,7 +182,10 @@ where
         let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
+            // direct checks
             Bishop::lookup_attacks(k, occ)
+            // indirect checks
+            | (bishops & discovered_checkers).map(|b| Bishop::lookup_attacks(b, occ)).aggregate()
         }
         else {
             Bitboard::full()
@@ -203,7 +211,7 @@ where
         let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
-            knight::lookup_attacks(k)
+            knight::lookup_attacks(k) | knight::compute_attacks_multiple(knights & discovered_checkers)
         }
         else {
             Bitboard::full()
@@ -223,8 +231,8 @@ where
         else {
             Bitboard::full()
         };
-        let quiets = make_quiets(mask);
-        let captures = make_captures(mask);
+        let quiets = make_quiets(mask | pawn::compute_moves_for::<P>(pawns & discovered_checkers));
+        let captures = make_captures(mask | pawn::compute_attacks_for::<P>(pawns & discovered_checkers));
         pawn::fold_moves_for::<P, O, C, _, _, _>(pawns, occ, blockers, king, captures, quiets, promos, pos, init, &mut f)?
     };
 

@@ -8,7 +8,7 @@ use crate::{
         r#move::{Move, MoveList},
         move_iter::{
             Options, fold_moves,
-            opt::{self, Threats},
+            opt::{self, Checks, Threats},
             sliding_piece::magics,
         },
         position::{CheckState, FenExport, Position},
@@ -286,6 +286,28 @@ pub fn test_threats_perft_discovered_checks_fuzzer() {
 
     options_match_oracle_perft::<Threats>("8/8/8/8/k2N3R/8/8/3K4 w - - 0 1", Depth::new(4));
     options_match_oracle_perft::<Threats>("8/8/5k2/8/3P4/2B5/8/3K4 w - - 0 1", Depth::new(4));
+}
+
+#[test]
+pub fn test_checks_perft_discovered_checks() {
+    magics::init();
+    zobrist::init();
+
+    // knight
+    options_match_oracle_perft::<Checks>("8/8/8/8/k2N3R/8/8/3K4 w - - 0 1", Depth::new(4));
+
+    // pawn quiet
+    options_match_oracle_perft::<Checks>("8/8/5k2/8/3P4/2B5/8/3K4 w - - 0 1", Depth::new(4));
+    // pawn capture
+    options_match_oracle_perft::<Checks>("8/8/5k2/2n5/3P4/2B5/8/3K4 w - - 0 1", Depth::new(4));
+    // pawn blocked
+    options_match_oracle_perft::<Checks>("8/8/5k2/3n4/3P4/2B5/8/3K4 w - - 0 1", Depth::new(4));
+
+    // rook
+    options_match_oracle_perft::<Checks>("8/8/5k2/8/3R4/2B5/8/3K4 w - - 0 1", Depth::new(4));
+
+    // bishop
+    options_match_oracle_perft::<Checks>("8/8/5k2/8/5B2/5R2/8/3K4 w - - 0 1", Depth::new(4));
 }
 
 // todo: test that options work (i.e. if gen_captures is false no captures will

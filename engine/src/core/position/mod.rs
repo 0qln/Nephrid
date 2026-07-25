@@ -68,6 +68,8 @@ pub struct StateInfo {
     // Memoized state
     pub checkers: Bitboard,
     pub blockers: Bitboard,
+    pub indirect_checkers: Bitboard,
+    pub indirect_blockers: Bitboard,
     pub check_state: CheckState,
 
     // Game history
@@ -105,9 +107,32 @@ impl StateInfo {
 
             // The X-Ray checkers for the given king. X-Ray checkers are pieces which attack
             // a king through zero or more pieces.
-            let x_ray_checkers = ((rook::lookup_attacks_0_occ(king_sq) & r_n_q) | (bishop::lookup_attacks_0_occ(king_sq) & b_n_q)) & enemies;
+            let x_ray_checkers = (rook::lookup_attacks_0_occ(king_sq) & r_n_q) | bishop::lookup_attacks_0_occ(king_sq) & b_n_q;
 
-            self.blockers = x_ray_checkers
+            self.blockers = (x_ray_checkers & enemies)
+                .filter_map(|x_ray_checker| {
+                    let between_squares = Bitboard::between(x_ray_checker, king_sq);
+                    let between_occupancy = occupancy & between_squares;
+                    between_occupancy.pop_cnt_eq_1().then_some(between_squares)
+                })
+                .aggregate();
+        }
+        else {
+            // there is almost always a king on the board... might aswell make this
+            // unreachable_unchecked and do validation when setting up positions given by
+            // the user. (todo)
+            hint::cold_path();
+        }
+
+        if let Some(king_sq) = (enemies & kings).lsb() {
+            // Normal checkers
+            self.indirect_checkers = pieces.attackers_to(king_sq, stm, occupancy);
+
+            // The X-Ray checkers for the given king. X-Ray checkers are pieces which attack
+            // a king through zero or more pieces.
+            let x_ray_checkers = (rook::lookup_attacks_0_occ(king_sq) & r_n_q) | bishop::lookup_attacks_0_occ(king_sq) & b_n_q;
+
+            self.indirect_blockers = (x_ray_checkers & allies)
                 .filter_map(|x_ray_checker| {
                     let between_squares = Bitboard::between(x_ray_checker, king_sq);
                     let between_occupancy = occupancy & between_squares;
@@ -606,7 +631,13 @@ impl Position {
     pub const fn get_checkers(&self) -> Bitboard { self.state.get_current().checkers }
 
     #[inline]
-    pub fn get_blockers(&self) -> Bitboard { self.state.get_current().blockers }
+    pub const fn get_blockers(&self) -> Bitboard { self.state.get_current().blockers }
+
+    #[inline]
+    pub const fn get_indirect_checkers(&self) -> Bitboard { self.state.get_current().indirect_checkers }
+
+    #[inline]
+    pub const fn get_indirect_blockers(&self) -> Bitboard { self.state.get_current().indirect_blockers }
 
     #[inline]
     pub fn has_threefold_repetition(&self) -> bool {

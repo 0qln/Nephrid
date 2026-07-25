@@ -1,7 +1,10 @@
 use super::{NoDoubleCheck, bishop::Bishop, king::King, pin_mask, rook::Rook, sliding_piece::SlidingAttacks};
 use crate::core::{
     bitboard::Bitboard,
-    color::{Color, Perspective, TColor, colors},
+    color::{
+        Color, Perspective, TColor, colors,
+        perspectives::{Black, White},
+    },
     coordinates::{CompassRose, EpTargetSquare, File, Square, TCompassRose, compass_rose::*, files, pawn_utils::*, squares},
     r#move::{Move, MoveFlag, move_flags},
     move_iter::Options,
@@ -405,13 +408,11 @@ where
     try { acc }
 }
 
-pub const fn compute_attacks_<const C: TColor>(pawns: Bitboard) -> Bitboard {
-    Color::assert_variant(C); // Safety
-    let color = unsafe { Color::from_v(C) };
+pub const fn compute_attacks_for<P: Perspective>(pawns: Bitboard) -> Bitboard {
     Bitboard {
         v: {
-            let attacks_west = pawns.and_not_c(Bitboard::from(files::A)).shift(capture(color, WEST));
-            let attacks_east = pawns.and_not_c(Bitboard::from(files::H)).shift(capture(color, EAST));
+            let attacks_west = pawns.and_not_c(Bitboard::from(files::A)).shift(capture(P::COLOR, WEST));
+            let attacks_east = pawns.and_not_c(Bitboard::from(files::H)).shift(capture(P::COLOR, EAST));
             attacks_west.v | attacks_east.v
         },
     }
@@ -434,7 +435,7 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from(sq);
-            result[sq.v() as usize] = compute_attacks_::<{ colors::WHITE_C }>(pawn);
+            result[sq.v() as usize] = compute_attacks_for::<White>(pawn);
         });
         result
     };
@@ -443,7 +444,7 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from(sq);
-            result[sq.v() as usize] = compute_attacks_::<{ colors::BLACK_C }>(pawn);
+            result[sq.v() as usize] = compute_attacks_for::<Black>(pawn);
         });
         result
     };
@@ -454,18 +455,15 @@ pub fn lookup_attacks(sq: Square, color: Color) -> Bitboard {
     }
 }
 
-const fn compute_moves<const C: TColor>(pawns: Bitboard) -> Bitboard {
-    Color::assert_variant(C); // Safety
-    let color = unsafe { Color::from_v(C) };
-
+pub const fn compute_moves_for<P: Perspective>(pawns: Bitboard) -> Bitboard {
     // double step
     let dpp_pawns = Bitboard {
-        v: Bitboard::from(dpp_rank(color)).v & pawns.v,
+        v: Bitboard::from(dpp_rank(P::COLOR)).v & pawns.v,
     };
-    let dpp_moves = forward(dpp_pawns, double_step(color));
+    let dpp_moves = forward(dpp_pawns, double_step(P::COLOR));
 
     // single step
-    let moves = forward(pawns, single_step(color));
+    let moves = forward(pawns, single_step(P::COLOR));
 
     Bitboard { v: dpp_moves.v | moves.v }
 }
@@ -477,7 +475,7 @@ pub const fn lookup_moves(sq: Square, color: Color) -> Bitboard {
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from(sq);
-            result[sq.v() as usize] = compute_moves::<{ colors::WHITE_C }>(pawn);
+            result[sq.v() as usize] = compute_moves_for::<White>(pawn);
         });
         result
     };
@@ -486,7 +484,7 @@ pub const fn lookup_moves(sq: Square, color: Color) -> Bitboard {
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
             let sq = unsafe { Square::from_v(sq) };
             let pawn = Bitboard::from(sq);
-            result[sq.v() as usize] = compute_moves::<{ colors::BLACK_C }>(pawn);
+            result[sq.v() as usize] = compute_moves_for::<Black>(pawn);
         });
         result
     };
