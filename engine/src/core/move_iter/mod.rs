@@ -172,7 +172,7 @@ where
             // direct checks
             Rook::lookup_attacks(k, occ)
             // indirect checks
-            | if discovered_checkers.is_empty() { Bitboard::empty() } else { Rook::lookup_attacks_multiple(rooks & discovered_checkers, occ) }
+            | if discovered_checkers.is_empty() { Bitboard::empty() } else { rook::lookup_attacks_0_occ_multiple(rooks & discovered_checkers) }
         }
         else {
             Bitboard::full()
@@ -193,7 +193,7 @@ where
             // indirect checks (no need to check for queen, if a rook could pin a queen to the enemy
             // king and we are on the move, the queen could capture the king, which is an invalid
             // position)
-            | if discovered_checkers.is_empty() { Bitboard::empty() } else { Bishop::lookup_attacks_multiple(bishops & discovered_checkers, occ) }
+            | if discovered_checkers.is_empty() { Bitboard::empty() } else { bishop::lookup_attacks_0_occ_multiple(bishops & discovered_checkers) }
         }
         else {
             Bitboard::full()

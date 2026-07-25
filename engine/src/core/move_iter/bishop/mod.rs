@@ -1,5 +1,5 @@
 use crate::core::{
-    bitboard::Bitboard,
+    bitboard::{Bitboard, BitboardIteratorExt},
     coordinates::{DiagA1H8, DiagA8H1, Square, compass_rose, squares},
     move_iter::bishop,
     piece::{IPieceType, PieceType, piece_type},
@@ -52,7 +52,8 @@ pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
 }
 
 /// Lookup the attacks of the rook on the square `sq`.
-pub fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
+#[inline]
+pub const fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
     const ATTACKS: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
@@ -63,6 +64,9 @@ pub fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
     };
     unsafe { *ATTACKS.get_unchecked(sq.index()) }
 }
+
+#[inline]
+pub fn lookup_attacks_0_occ_multiple(bishops: Bitboard) -> Bitboard { bishops.map(|b| lookup_attacks_0_occ(b)).aggregate() }
 
 /// Computes the attacks of the bishop on the square `sq` with the given
 /// `occupancy`.

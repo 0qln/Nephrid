@@ -1,5 +1,5 @@
 use crate::core::{
-    bitboard::Bitboard,
+    bitboard::{Bitboard, BitboardIteratorExt},
     coordinates::{File, Rank, Square, compass_rose, files, ranks, squares},
     move_iter::rook,
     piece::{IPieceType, PieceType, piece_type},
@@ -61,6 +61,7 @@ impl SlidingAttacks for Rook {
 impl SlidingPieceType for Rook {}
 
 /// Computes the attacks of the rook on the square `sq`.
+#[inline]
 pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
     let file_bb = Bitboard::from(File::from(sq));
     let rank_bb = Bitboard::from(Rank::from(sq));
@@ -70,7 +71,8 @@ pub const fn compute_attacks_0_occ(sq: Square) -> Bitboard {
 }
 
 /// Lookup the attacks of the rook on the square `sq`.
-pub fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
+#[inline]
+pub const fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
     const ATTACKS: [Bitboard; 64] = {
         let mut result = [Bitboard::empty(); 64];
         const_for!(sq in squares::A1_C..(squares::H8_C+1) => {
@@ -81,6 +83,9 @@ pub fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
     };
     unsafe { *ATTACKS.get_unchecked(sq.index()) }
 }
+
+#[inline]
+pub fn lookup_attacks_0_occ_multiple(rooks: Bitboard) -> Bitboard { rooks.map(|r| lookup_attacks_0_occ(r)).aggregate() }
 
 /// Computes the attacks of the rook on the square `sq` with the given
 /// `occupancy`.
