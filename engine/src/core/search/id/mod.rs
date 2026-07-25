@@ -144,14 +144,13 @@ impl StaticEvaluator for NnueEvaluator {
     }
 }
 
-#[allow(dead_code)]
-struct HceThreatener;
+pub struct HceThreatener;
 
 impl HceThreatener {
     /// Finds the biggest incoming threat to `P`, giving a score for
     /// `P::Opponent`.
     #[allow(dead_code)]
-    fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
+    pub fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
         // the threatener should not be called on a position that is VERY noisy (e.g.
         // it's in check).
         debug_assert!(pos.get_check_state() == CheckState::None);
@@ -161,7 +160,7 @@ impl HceThreatener {
 
         let mut max_threat = Score::<P::Opponent>::ZERO;
 
-        if pos.while_not_being_in_check_has_legal_check_for::<P>() {
+        if pos.while_not_being_in_check_has_legal_check_for::<P::Opponent>() {
             return unsafe { QUEEN_SCORE.interpret_as() };
         }
 
