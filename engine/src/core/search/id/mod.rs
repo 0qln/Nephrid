@@ -901,7 +901,7 @@ where
                 // penalize capture history heuristic that were expected but failed to not fail
                 // low
                 if is_capture && !is_promo {
-                    let ch_bonus = HistoryScore::new(5 + (depth.v() as THistoryScore * 2).pow(2));
+                    let ch_bonus = HistoryScore::new(20 + (depth.v() as THistoryScore * 5));
                     let capt_sq = m
                         .get_capture_sq()
                         .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -923,7 +923,7 @@ where
         let (bm_from, bm_to, bm_flag) = best_move.into();
         if bm_flag.is_capture() && !bm_flag.is_promo() {
             // reward capture history heuristic
-            let ch_bonus = HistoryScore::new(7 + (depth.v() as THistoryScore * 3).pow(2));
+            let ch_bonus = HistoryScore::new(30 + (depth.v() as THistoryScore * 7));
             let capt_sq = best_move
                 .get_capture_sq()
                 .expect("we only get here if its a capture, which means it should also have a capt square. ");
