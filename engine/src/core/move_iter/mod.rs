@@ -167,14 +167,9 @@ where
         let rooks = pos.get_bitboard(piece_type::ROOK, P::COLOR);
         let sliders = queens | rooks;
 
-        let direct_checks = if (!O::capture_nochecks() || !O::quiet_nochecks())
-            && let Some(k) = their_k
-        {
-            Rook::lookup_attacks(k, occ)
-        }
-        else {
-            Bitboard::full()
-        };
+        let direct_checks = their_k
+            .filter(|_| !O::capture_nochecks() || !O::quiet_nochecks())
+            .map_or(Bitboard::full(), |k| Rook::lookup_attacks(k, occ));
 
         sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(
             sliders,
@@ -194,14 +189,9 @@ where
         let bishops = pos.get_bitboard(piece_type::BISHOP, P::COLOR);
         let sliders = queens | bishops;
 
-        let direct_checks = if (!O::capture_nochecks() || !O::quiet_nochecks())
-            && let Some(k) = their_k
-        {
-            Bishop::lookup_attacks(k, occ)
-        }
-        else {
-            Bitboard::full()
-        };
+        let direct_checks = their_k
+            .filter(|_| !O::capture_nochecks() || !O::quiet_nochecks())
+            .map_or(Bitboard::full(), |k| Bishop::lookup_attacks(k, occ));
 
         sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(
             sliders,
@@ -218,26 +208,16 @@ where
     };
 
     init = {
-        let is_discovered_checker = if !O::quiet_nochecks() || O::capture_nochecks() {
-            king.is_some_and(|k| !(Bitboard::from(k) & discovered_checkers).is_empty())
-        }
-        else {
-            false
-        };
+        let is_discovered_checker =
+            (!O::quiet_nochecks() || O::capture_nochecks()) && king.is_some_and(|k| discovered_checkers.contains(Bitboard::from(k)));
 
-        let quiets = if O::quiet_nochecks() || is_discovered_checker {
-            !occ
-        }
-        else {
-            Bitboard::empty()
-        };
+        let quiets = (O::quiet_nochecks() || is_discovered_checker)
+            .then_some(!occ)
+            .unwrap_or(Bitboard::empty());
 
-        let captures = if O::capture_nochecks() || is_discovered_checker {
-            captures
-        }
-        else {
-            Bitboard::empty()
-        };
+        let captures = (O::capture_nochecks() || is_discovered_checker)
+            .then_some(captures)
+            .unwrap_or(Bitboard::empty());
 
         king::fold_moves_for::<_, _, _, P, O, C>(king, kings, pos, occ, enemies, captures, quiets, init, &mut f)?
     };
@@ -245,14 +225,9 @@ where
     init = {
         let knights = pos.get_bitboard(piece_type::KNIGHT, P::COLOR);
 
-        let direct_checks = if (!O::capture_nochecks() || !O::quiet_nochecks())
-            && let Some(k) = their_k
-        {
-            knight::lookup_attacks(k)
-        }
-        else {
-            Bitboard::full()
-        };
+        let direct_checks = their_k
+            .filter(|_| !O::capture_nochecks() || !O::quiet_nochecks())
+            .map_or(Bitboard::full(), knight::lookup_attacks);
 
         knight::fold_moves_for::<_, _, _, P, O>(knights, discovered_checkers, blockers, captures, quiets, direct_checks, init, &mut f)?
     };
