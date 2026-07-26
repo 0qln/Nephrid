@@ -10,7 +10,7 @@ use crate::core::{
     ply::Ply,
     position::{CheckState, Position},
     search::{
-        data::{ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+        data::{HistoryScore, ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
         id::{self, Bound},
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::{AnyScore, Score, scores},
@@ -34,12 +34,13 @@ pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
 pub struct QSearcher<'a, Entry, Replace> {
     tt: &'a mut TT<Entry, Replace>,
     ss: &'a mut id::SS,
+    ch: &'a mut id::CH,
     root_ply: Ply,
 }
 
 impl<'a, E, R> QSearcher<'a, E, R> {
     #[inline]
-    pub fn new(_pos: &Position, tt: &'a mut TT<E, R>, ss: &'a mut id::SS, root_ply: Ply) -> Self { Self { tt, ss, root_ply } }
+    pub fn new(_pos: &Position, tt: &'a mut TT<E, R>, ss: &'a mut id::SS, ch: &'a mut id::CH, root_ply: Ply) -> Self { Self { tt, ss, ch, root_ply } }
 }
 
 impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>>
@@ -155,10 +156,13 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         // recurse
         let mut best_move = Move::null();
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
+            let (from, to, flag) = m.into();
+            let is_capture = flag.is_capture();
+            let is_promo = flag.is_promo();
+            let moving_pt = pos.get_piece(from).piece_type();
+
             // delta pruning
             if !in_check && phase < params.delta_pruning_threshold() {
-                let (from, to, flag) = m.into();
-
                 let move_gain: Score<P> = {
                     let promo_bonus = PromoPieceType::try_from(flag)
                         .ok()
@@ -213,6 +217,33 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                     break;
                 }
             }
+            else {
+                // fail low
+
+                // penalize capture history heuristic that were expected but failed to not fail
+                // low
+                if is_capture && !is_promo {
+                    let ch_bonus = HistoryScore::new(30);
+                    let capt_sq = m
+                        .get_capture_sq()
+                        .expect("we only get here if its a capture, which means it should also have a capt square. ");
+                    let capt_pt = pos.get_piece(capt_sq).piece_type();
+                    self.ch.update_for::<P>(moving_pt, to, capt_pt, -ch_bonus);
+                }
+            }
+        }
+
+        // update ch
+        let (bm_from, bm_to, bm_flag) = best_move.into();
+        if bm_flag.is_capture() && !bm_flag.is_promo() {
+            // reward capture history heuristic
+            let ch_bonus = HistoryScore::new(50);
+            let capt_sq = best_move
+                .get_capture_sq()
+                .expect("we only get here if its a capture, which means it should also have a capt square. ");
+            let capt_pt = pos.get_piece(capt_sq).piece_type();
+            let moving_pt = pos.get_piece(bm_from).piece_type();
+            self.ch.update_for::<P>(moving_pt, bm_to, capt_pt, ch_bonus);
         }
 
         self.tt.try_insert(TTEntry {

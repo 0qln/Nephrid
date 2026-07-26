@@ -536,7 +536,7 @@ where
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return QSearcher::new(pos, self.tt, &mut self.ss, self.root_ply).go::<P, T>(
+            return QSearcher::new(pos, self.tt, &mut self.ss, self.ch, self.root_ply).go::<P, T>(
                 pos,
                 alpha,
                 beta,
