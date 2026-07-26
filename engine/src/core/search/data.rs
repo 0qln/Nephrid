@@ -317,6 +317,8 @@ const impl ops::Neg for HistoryScore {
 }
 
 impl HistoryScore {
+    pub const ZERO: HistoryScore = HistoryScore(0);
+
     pub const fn new(val: THistoryScore) -> Self {
         debug_assert!(val >= -MAX_HISTORY && val <= MAX_HISTORY);
         Self(val)
@@ -415,7 +417,7 @@ impl PieceHistories {
 #[derive(Clone, Copy)]
 pub struct CaptureHistory {
     /// For each piece type to it's destination square, capturing a piece type.
-    scores: [[[MoveScore; piece_type::N_VARIANTS - 1]; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
+    scores: [[[HistoryScore; piece_type::N_VARIANTS - 1]; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
 }
 
 const impl Default for CaptureHistory {
@@ -425,7 +427,7 @@ const impl Default for CaptureHistory {
 impl CaptureHistory {
     pub const fn new() -> Self {
         Self {
-            scores: [[[0; piece_type::N_VARIANTS - 1]; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
+            scores: [[[HistoryScore::new(0); piece_type::N_VARIANTS - 1]; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
         }
     }
 }
@@ -444,7 +446,7 @@ impl CaptureHistories {
 
     pub const fn clear(&mut self) { self.histories = [CaptureHistory::new(); colors::N_VARIANTS]; }
 
-    pub const fn get(&self, c: Color, pt: PieceType, sq: Square, capt: PieceType) -> MoveScore {
+    pub const fn get(&self, c: Color, pt: PieceType, sq: Square, capt: PieceType) -> HistoryScore {
         match c {
             colors::WHITE => self.get_for::<perspectives::White>(pt, sq, capt),
             colors::BLACK => self.get_for::<perspectives::Black>(pt, sq, capt),
@@ -452,7 +454,7 @@ impl CaptureHistories {
         }
     }
 
-    pub const fn get_for<P: Perspective>(&self, pt: PieceType, sq: Square, capt: PieceType) -> MoveScore {
+    pub const fn get_for<P: Perspective>(&self, pt: PieceType, sq: Square, capt: PieceType) -> HistoryScore {
         debug_assert!(pt != piece_type::NONE, "Cannot get history for NONE piece type.");
         debug_assert!(capt != piece_type::NONE, "Cannot get history for NONE piece type.");
 
@@ -472,7 +474,7 @@ impl CaptureHistories {
         }
     }
 
-    pub const fn update(&mut self, c: Color, pt: PieceType, sq: Square, capt: PieceType, val: MoveScore) {
+    pub const fn update(&mut self, c: Color, pt: PieceType, sq: Square, capt: PieceType, val: HistoryScore) {
         match c {
             colors::WHITE => self.update_for::<perspectives::White>(pt, sq, capt, val),
             colors::BLACK => self.update_for::<perspectives::Black>(pt, sq, capt, val),
@@ -480,7 +482,7 @@ impl CaptureHistories {
         }
     }
 
-    pub const fn update_for<P: Perspective>(&mut self, pt: PieceType, sq: Square, capt: PieceType, val: MoveScore) {
+    pub const fn update_for<P: Perspective>(&mut self, pt: PieceType, sq: Square, capt: PieceType, val: HistoryScore) {
         debug_assert!(pt != piece_type::NONE, "Cannot update history for NONE piece type.");
         debug_assert!(capt != piece_type::NONE, "Cannot update history for NONE piece type.");
 
@@ -498,19 +500,7 @@ impl CaptureHistories {
                 .get_unchecked_mut(capt)
         };
 
-        // This scales up history updates when a beta cutoff is unexpected, and scales
-        // down history updates when a beta cutoff is expected. A beneficial side effect
-        // is that this formula also clamps history values from -MAX_HISTORY to
-        // MAX_HISTORY, which prevents oversaturated values.
-        // ref: https://www.chessprogramming.org/History_Heuristic
-        let max = MAX_HISTORY as i32;
-        let clamped_val = i32::from(val.clamp(-MAX_HISTORY, MAX_HISTORY));
-        let current_val = i32::from(*curr_score);
-        let bonus = clamped_val - current_val * clamped_val.abs() / max;
-
-        debug_assert!(bonus >= -max && bonus <= max);
-
-        *curr_score += bonus as MoveScore;
+        curr_score.update(val);
     }
 }
 
