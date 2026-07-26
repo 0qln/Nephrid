@@ -45,10 +45,6 @@ where
 
     let mut acc = init;
 
-    // todo: if the user only wants checks and nothing else, we can optimize by
-    // lookup up the attacks from the enemy king. // or can we ? maybe not cause
-    // of discovered checks dklfjsdf this was an old comment grrr technical debt
-    // i luv uuu uwu :3
     acc = (knights & from_mask_discover_check).try_fold(acc, |mut acc, piece| -> R {
         let attacks = lookup_attacks(piece);
 
