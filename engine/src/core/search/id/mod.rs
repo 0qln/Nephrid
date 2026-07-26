@@ -543,7 +543,7 @@ where
                 self.params.clone(),
                 self.eval,
                 Depth::MAX - rel_ply,
-            );
+            ).0;
         }
 
         let kind = T::KIND;

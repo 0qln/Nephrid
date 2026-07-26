@@ -134,6 +134,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                     &mut StaticEvaluator,
                     Depth::new(30),
                 )
+                .0
                 .into(),
             colors::BLACK_C => qsearcher
                 .go::<perspectives::Black, node_types::Pv>(
@@ -144,6 +145,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                     &mut StaticEvaluator,
                     Depth::new(30),
                 )
+                .0
                 .into(),
             _ => unreachable!(),
         };

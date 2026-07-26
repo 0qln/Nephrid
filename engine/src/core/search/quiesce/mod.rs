@@ -54,7 +54,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         params: impl QSearchParams + Clone,
         eval: &mut impl StaticEvaluator,
         depth: Depth,
-    ) -> Score<P> {
+    ) -> (Score<P>, Depth) {
         let mut best_score = Score::NEG_INF;
 
         let in_check = pos.get_check_state() != CheckState::None;
@@ -92,7 +92,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         if depth == Depth::new(0) {
             // todo: return the tt score if it is valid for a more accurate eval than
             // static?
-            return lazy_static_eval(self, pos);
+            return (lazy_static_eval(self, pos), Depth::new(0));
         }
 
         // tt cutoff
@@ -114,7 +114,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             best_score = lazy_static_eval(self, pos);
 
             if best_score >= beta {
-                return best_score;
+                return (best_score, Depth::new(0));
             }
             if best_score > alpha {
                 alpha = best_score;
@@ -155,6 +155,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // recurse
         let mut best_move = Move::null();
+        let mut best_search_d = Depth::new(0);
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
             let (from, to, flag) = m.into();
             let is_capture = flag.is_capture();
@@ -200,7 +201,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             eval.forward();
             pos.make_move_for::<P>(m, &mut (self.ss.get_mut(rel_ply + 1).phase, eval.observe_forward()));
 
-            let score = !self.go::<P::Opponent, T>(pos, !beta, !alpha, params.clone(), eval, depth - 1);
+            let (score, search_d) = self.go::<P::Opponent, T>(pos, !beta, !alpha, params.clone(), eval, depth - 1);
+            let (score, search_d) = (!score, search_d + 1);
 
             pos.unmake_move_for::<P>(m, eval.observe_backward());
             eval.backward();
@@ -208,6 +210,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             if score > best_score {
                 best_score = score;
                 best_move = m;
+                best_search_d = search_d;
             }
             if score > alpha {
                 alpha = score;
@@ -223,7 +226,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 // penalize capture history heuristic that were expected but failed to not fail
                 // low
                 if is_capture && !is_promo {
-                    let ch_bonus = HistoryScore::new(30);
+                    let ch_bonus = HistoryScore::new(6 * search_d.v() as i16);
                     let capt_sq = m
                         .get_capture_sq()
                         .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -237,7 +240,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         let (bm_from, bm_to, bm_flag) = best_move.into();
         if bm_flag.is_capture() && !bm_flag.is_promo() {
             // reward capture history heuristic
-            let ch_bonus = HistoryScore::new(50);
+            let ch_bonus = HistoryScore::new(9 * best_search_d.v() as i16);
             let capt_sq = best_move
                 .get_capture_sq()
                 .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -255,7 +258,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             mov: best_move,
         });
 
-        best_score
+        (best_score, best_search_d)
     }
 }
 
