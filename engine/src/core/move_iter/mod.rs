@@ -167,7 +167,7 @@ where
         let rooks = pos.get_bitboard(piece_type::ROOK, P::COLOR);
         let sliders = queens | rooks;
 
-        let to_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+        let direct_checks = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
             Rook::lookup_attacks(k, occ)
@@ -184,8 +184,7 @@ where
             king,
             captures,
             quiets,
-            (!O::capture_nochecks()).then_some(to_mask).unwrap_or(Bitboard::full()),
-            (!O::quiet_nochecks()).then_some(to_mask).unwrap_or(Bitboard::full()),
+            direct_checks,
             init,
             &mut f,
         )?
@@ -195,7 +194,7 @@ where
         let bishops = pos.get_bitboard(piece_type::BISHOP, P::COLOR);
         let sliders = queens | bishops;
 
-        let to_mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+        let direct_checks = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
             Bishop::lookup_attacks(k, occ)
@@ -212,8 +211,7 @@ where
             king,
             captures,
             quiets,
-            (!O::capture_nochecks()).then_some(to_mask).unwrap_or(Bitboard::full()),
-            (!O::quiet_nochecks()).then_some(to_mask).unwrap_or(Bitboard::full()),
+            direct_checks,
             init,
             &mut f,
         )?

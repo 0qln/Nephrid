@@ -24,14 +24,13 @@ pub trait SlidingPieceType: SlidingAttacks + IPieceType {}
 #[inline(always)]
 pub fn fold_moves_for<B, F, R, P: Perspective, O: Options, T: SlidingPieceType>(
     pieces: Bitboard,
-    from_mask: Bitboard,
+    from_mask_discover_check: Bitboard,
     blockers: Bitboard,
     occupancy: Bitboard,
     king: Option<Square>,
     to_mask_captures: Bitboard,
     to_mask_quiets: Bitboard,
-    to_mask_capture_checks: Bitboard,
-    to_mask_quiet_checks: Bitboard,
+    to_mask_checks: Bitboard,
     init: B,
     mut f: F,
 ) -> R
@@ -39,13 +38,9 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    let only_check_mask_quiet = (!O::quiet_nochecks())
-        .then_some(to_mask_quiets & to_mask_quiet_checks)
-        .unwrap_or_default();
+    let only_check_mask_quiet = (!O::quiet_nochecks()).then_some(to_mask_quiets & to_mask_checks).unwrap_or_default();
 
-    let only_check_mask_capt = (!O::capture_nochecks())
-        .then_some(to_mask_captures & to_mask_capture_checks)
-        .unwrap_or_default();
+    let only_check_mask_capt = (!O::capture_nochecks()).then_some(to_mask_captures & to_mask_checks).unwrap_or_default();
 
     let attacks = |piece| {
         let piece_bb = Bitboard::from(piece);
@@ -62,7 +57,7 @@ where
 
     let mut acc = init;
 
-    acc = (pieces & from_mask).try_fold(acc, |mut acc, piece| -> R {
+    acc = (pieces & from_mask_discover_check).try_fold(acc, |mut acc, piece| -> R {
         let attacks = attacks(piece);
 
         if O::gen_captures() {
@@ -78,7 +73,7 @@ where
         try { acc }
     })?;
 
-    (pieces & !from_mask).try_fold(acc, move |mut acc, piece| {
+    (pieces & !from_mask_discover_check).try_fold(acc, move |mut acc, piece| {
         let attacks = attacks(piece);
 
         if O::gen_captures() {
