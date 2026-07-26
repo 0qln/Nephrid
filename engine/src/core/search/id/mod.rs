@@ -35,7 +35,10 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
-            data::{self, Line, PieceHistories, RbSet, SearchStack, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+            data::{
+                self, HistoryScore, Line, PieceHistories, RbSet, SearchStack, THistoryScore, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval,
+                TranspositionTable,
+            },
             limit::UciLimit,
             mcts::eval::Quality,
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
@@ -870,7 +873,7 @@ where
 
                         // update hh
                         {
-                            let hh_bonus = MoveScore::from(depth.v()).pow(2);
+                            let hh_bonus = HistoryScore::new((depth.v() as THistoryScore).pow(2));
 
                             // penalty history heuristic that were expected but
                             // failed to cause a cutoff
@@ -1118,7 +1121,7 @@ where
                 let hh_weight = self.params.hh_weight();
                 let total_weight = self.params.total_weight();
 
-                interpolate_i32(psqt_score as i32, hh_score as i32, hh_weight, total_weight) as MoveScore
+                interpolate_i32(psqt_score as i32, hh_score.v() as i32, hh_weight, total_weight) as MoveScore
             }
 
             RtStage::Done => 0,

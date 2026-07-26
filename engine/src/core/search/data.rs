@@ -3,7 +3,7 @@ use std::{
     iter,
     marker::PhantomData,
     mem::MaybeUninit,
-    ops::{Deref, DerefMut},
+    ops::{self, Deref, DerefMut},
 };
 
 use uom::si::{information::byte, u64::Information};
@@ -306,10 +306,45 @@ impl<T: Default + Copy + Eq> RbSet<T, 2> {
 
 const MAX_HISTORY: MoveScore = 30_000;
 
+pub type THistoryScore = i16;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct HistoryScore(THistoryScore);
+
+const impl ops::Neg for HistoryScore {
+    type Output = HistoryScore;
+    fn neg(self) -> Self::Output { Self(-self.0) }
+}
+
+impl HistoryScore {
+    pub const fn new(val: THistoryScore) -> Self {
+        debug_assert!(val >= -MAX_HISTORY && val <= MAX_HISTORY);
+        Self(val)
+    }
+
+    pub const fn v(&self) -> THistoryScore { self.0 }
+
+    pub const fn update(&mut self, val: HistoryScore) {
+        // This scales up history updates when a beta cutoff is unexpected, and scales
+        // down history updates when a beta cutoff is expected. A beneficial side effect
+        // is that this formula also clamps history values from -MAX_HISTORY to
+        // MAX_HISTORY, which prevents oversaturated values.
+        // ref: https://www.chessprogramming.org/History_Heuristic
+        let max = MAX_HISTORY as i32;
+        let clamped_val = i32::from(val.0.clamp(-MAX_HISTORY, MAX_HISTORY));
+        let current_val = i32::from(self.0);
+        let bonus = clamped_val - current_val * clamped_val.abs() / max;
+
+        debug_assert!(bonus >= -max && bonus <= max);
+
+        self.0 += bonus as THistoryScore
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct PieceHistory {
     /// For each piece type to it's destination square.
-    scores: [[MoveScore; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
+    scores: [[HistoryScore; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
 }
 
 const impl Default for PieceHistory {
@@ -319,7 +354,7 @@ const impl Default for PieceHistory {
 impl PieceHistory {
     pub const fn new() -> Self {
         Self {
-            scores: [[0; squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
+            scores: [[HistoryScore::new(0); squares::N_VARIANTS]; piece_type::N_VARIANTS - 1],
         }
     }
 }
@@ -338,7 +373,7 @@ impl PieceHistories {
 
     pub const fn clear(&mut self) { self.histories = [PieceHistory::new(); colors::N_VARIANTS]; }
 
-    pub const fn get(&self, c: Color, pt: PieceType, sq: Square) -> MoveScore {
+    pub const fn get(&self, c: Color, pt: PieceType, sq: Square) -> HistoryScore {
         match c {
             colors::WHITE => self.get_for::<perspectives::White>(pt, sq),
             colors::BLACK => self.get_for::<perspectives::Black>(pt, sq),
@@ -346,8 +381,9 @@ impl PieceHistories {
         }
     }
 
-    pub const fn get_for<P: Perspective>(&self, pt: PieceType, sq: Square) -> MoveScore {
+    pub const fn get_for<P: Perspective>(&self, pt: PieceType, sq: Square) -> HistoryScore {
         debug_assert!(pt != piece_type::NONE, "Cannot get history for NONE piece type.");
+
         let c = P::COLOR.v() as usize;
         let pt = pt.v() as usize - 1;
         let sq = sq.v() as usize;
@@ -355,7 +391,7 @@ impl PieceHistories {
         unsafe { *self.histories.get_unchecked(c).scores.get_unchecked(pt).get_unchecked(sq) }
     }
 
-    pub const fn update(&mut self, c: Color, pt: PieceType, sq: Square, val: MoveScore) {
+    pub const fn update(&mut self, c: Color, pt: PieceType, sq: Square, val: HistoryScore) {
         match c {
             colors::WHITE => self.update_for::<perspectives::White>(pt, sq, val),
             colors::BLACK => self.update_for::<perspectives::Black>(pt, sq, val),
@@ -363,7 +399,7 @@ impl PieceHistories {
         }
     }
 
-    pub const fn update_for<P: Perspective>(&mut self, pt: PieceType, sq: Square, val: MoveScore) {
+    pub const fn update_for<P: Perspective>(&mut self, pt: PieceType, sq: Square, val: HistoryScore) {
         debug_assert!(pt != piece_type::NONE, "Cannot update history for NONE piece type.");
 
         let c = P::COLOR.v() as usize;
@@ -372,19 +408,7 @@ impl PieceHistories {
 
         let curr_score = unsafe { self.histories.get_unchecked_mut(c).scores.get_unchecked_mut(pt).get_unchecked_mut(sq) };
 
-        // This scales up history updates when a beta cutoff is unexpected, and scales
-        // down history updates when a beta cutoff is expected. A beneficial side effect
-        // is that this formula also clamps history values from -MAX_HISTORY to
-        // MAX_HISTORY, which prevents oversaturated values.
-        // ref: https://www.chessprogramming.org/History_Heuristic
-        let max = MAX_HISTORY as i32;
-        let clamped_val = i32::from(val.clamp(-MAX_HISTORY, MAX_HISTORY));
-        let current_val = i32::from(*curr_score);
-        let bonus = clamped_val - current_val * clamped_val.abs() / max;
-
-        debug_assert!(bonus >= -max && bonus <= max);
-
-        *curr_score += bonus as MoveScore;
+        curr_score.update(val);
     }
 }
 
