@@ -381,8 +381,10 @@ impl PieceHistories {
         let clamped_val = i32::from(val.clamp(-MAX_HISTORY, MAX_HISTORY));
         let current_val = i32::from(*curr_score);
         let bonus = clamped_val - current_val * clamped_val.abs() / max;
-        *curr_score += bonus.clamp(-max, max) as MoveScore;
-        // todo: replace the last clamp with a debug assert?
+
+        debug_assert!(bonus >= -max && bonus <= max);
+
+        *curr_score += bonus as MoveScore;
     }
 }
 
