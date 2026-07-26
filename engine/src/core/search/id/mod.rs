@@ -165,6 +165,8 @@ impl HceThreatener {
         }
 
         // todo: or just track this in the make_move unmake_move functions.
+        // todo: or use NonCheckCaptures? depends on the situation which is faster,
+        // needs a sprt.
         let captures = pos.while_not_being_in_check_collect_moves_for::<P::Opponent, Captures, _>(MoveList::new());
 
         // pick the biggest threat.
