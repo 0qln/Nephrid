@@ -36,8 +36,8 @@ use crate::{
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
             data::{
-                self, HistoryScore, Line, PieceHistories, RbSet, SearchStack, THistoryScore, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval,
-                TranspositionTable,
+                self, CaptureHistories, HistoryScore, Line, PieceHistories, RbSet, SearchStack, THistoryScore, TTBound, TTDepth, TTKey, TTMove,
+                TTScore, TTStaticEval, TranspositionTable,
             },
             limit::UciLimit,
             mcts::eval::Quality,
@@ -708,10 +708,7 @@ where
         let mut best_move = Move::null();
         let mut curr = 0;
 
-        // todo: maybe we only need one move list, cause when the capture phase ends we
-        // don't need the captures list anymore and can just clear and reuse it.
         let mut hh_searched_quiets = MoveList::new();
-        let mut ch_searched_captures = MoveList::new();
 
         // todo: take killers by ref
         while let Some(sm) = move_picker.next_with_score_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers, phase)) {
@@ -901,23 +898,8 @@ where
 
                     // update ch
                     if is_capture && !is_promo {
+                        // reward capture history heuristic
                         let ch_bonus = HistoryScore::new((depth.v() as THistoryScore).pow(2));
-
-                        // penalty history heuristic that were expected but
-                        // failed to cause a cutoff
-                        for &m in ch_searched_captures.as_slice() {
-                            let (from, to, _) = m.into();
-                            let moving_pt = pos.get_piece(from).piece_type();
-                            // todo: replace this with `if let Some(..) = ..` check ?
-                            let capt_sq = m
-                                .get_capture_sq()
-                                .expect("we only get here if its a capture, which means it should also have a capt square. ");
-                            let capt_pt = pos.get_piece(capt_sq).piece_type();
-                            self.ch.update_for::<P>(moving_pt, to, capt_pt, -ch_bonus);
-                        }
-
-                        // reward history heuristic
-                        // todo: replace this with `if let Some(..) = ..` check ?
                         let capt_sq = m
                             .get_capture_sq()
                             .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -931,6 +913,17 @@ where
             }
             else {
                 // fail low
+
+                // penalize capture history heuristic that were expected but failed to not fail
+                // low
+                if is_capture && !is_promo {
+                    let ch_bonus = HistoryScore::new((depth.v() as THistoryScore).pow(2));
+                    let capt_sq = m
+                        .get_capture_sq()
+                        .expect("we only get here if its a capture, which means it should also have a capt square. ");
+                    let capt_pt = pos.get_piece(capt_sq).piece_type();
+                    self.ch.update_for::<P>(moving_pt, to, capt_pt, -ch_bonus);
+                }
             }
 
             curr += 1;
@@ -939,10 +932,6 @@ where
             // that includes killers and the hashmove.
             if !is_capture && !is_promo {
                 hh_searched_quiets.push(m);
-            }
-
-            if is_capture && !is_promo {
-                ch_searched_captures.push(m);
             }
         }
 
@@ -1147,9 +1136,9 @@ where
                     let moving_pt = pieces.get_piece(from).piece_type();
                     let capt_pt = pieces.get_piece(capt_sq).piece_type();
                     let ch_score = self.ch.get(self.color, moving_pt, to, capt_pt);
-                    if ch_score != 0 {
+                    if ch_score > HistoryScore::ZERO {
                         let mvv = hce::piece_score(capt_pt).v() as MoveScore;
-                        let lva = -ch_score;
+                        let lva = -ch_score.v() / 4;
                         return mvv - lva;
                     }
                 }
