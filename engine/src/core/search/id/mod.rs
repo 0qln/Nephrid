@@ -1140,7 +1140,7 @@ where
                     let ch_score = self.ch.get(self.color, moving_pt, to, capt_pt);
                     if ch_score > HistoryScore::ZERO {
                         let mvv = hce::piece_score(capt_pt).v() as MoveScore;
-                        let lva = -ch_score.v() / 4;
+                        let lva = -ch_score.v() / 8;
                         return mvv - lva;
                     }
                 }
