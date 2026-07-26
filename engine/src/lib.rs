@@ -1,8 +1,9 @@
 // deny
 #![deny(unsafe_op_in_unsafe_fn)]
 // warn
-#![warn(clippy::obfuscated_if_else)]
 // allow
+#![allow(clippy::obfuscated_if_else)]
+#![allow(clippy::too_many_arguments)]
 #![allow(clippy::just_underscores_and_digits)]
 #![allow(clippy::almost_complete_range)]
 #![allow(clippy::len_without_is_empty)]
@@ -36,6 +37,10 @@
 #![feature(stmt_expr_attributes)]
 #![feature(closure_lifetime_binder)]
 #![feature(slice_ptr_get)]
+#![feature(impl_trait_in_bindings)]
+#![feature(const_option_ops)]
+#![feature(const_iter)]
+#![feature(const_destruct)]
 
 #[macro_use] extern crate impl_ops;
 

@@ -37,7 +37,7 @@ fn compare_capture_filtering_find_error(mut pos: Position, depth: Depth) {
 
             let list_filtered = list;
             _ = fold_moves::<opt::AllLegal, _, _, _>(pos, (), |_, m| {
-                if m.get_flag().is_capture() {
+                if m.get_flag().is_capture() && !m.get_flag().is_promo() {
                     list_filtered.push(m);
                 }
                 ControlFlow::Continue::<(), ()>(())

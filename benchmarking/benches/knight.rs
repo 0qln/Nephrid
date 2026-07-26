@@ -1,17 +1,20 @@
 #![allow(deprecated)]
+#![allow(unused_imports)]
 
 use std::{hint::black_box, ops::ControlFlow};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use engine::core::{
+    color::{colors::WHITE, perspectives::White},
     coordinates::squares,
     r#move::Move,
     move_iter::{
         NoCheck, SingleCheck, dbg_fold_moves,
-        knight::{Knight, compute_attacks, lookup_attacks},
+        knight::{self, Knight, compute_attacks, lookup_attacks},
         opt,
         sliding_piece::magics,
     },
+    piece::piece_type::KNIGHT,
     position::Position,
     zobrist,
 };
@@ -26,44 +29,48 @@ pub fn knight_attacks(c: &mut Criterion) {
     group.finish();
 }
 
-pub fn move_iter_check_none(c: &mut Criterion) {
+// todo
+
+pub fn move_iter_check_none(_c: &mut Criterion) {
     magics::init();
     zobrist::init();
 
-    let inputs = ["N3N3/6p1/1pp2p2/8/3N4/7k/8/7K w - - 0 1", "N7/6p1/1pp2p2/3b4/4N3/7k/8/7K w - - 0 1"];
+    // let inputs = ["N3N3/6p1/1pp2p2/8/3N4/7k/8/7K w - - 0 1",
+// "N7/6p1/1pp2p2/3b4/4N3/7k/8/7K w - - 0 1"];
 
-    for &input in &mut inputs.iter() {
-        let pos = Position::from_fen(input).unwrap();
-        c.bench_with_input(BenchmarkId::new("knight::move_iter::check_none", input), &pos, |b, pos| {
-            b.iter(|| {
-                dbg_fold_moves::<Knight, NoCheck, opt::AllLegal, _, _, _>(
-                    black_box(pos),
-                    black_box(0),
-                    black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
-                )
-            })
-        });
-    }
+    // for &input in &mut inputs.iter() {
+    //     let pos = Position::from_fen(input).unwrap();
+    //     c.bench_with_input(BenchmarkId::new("knight::move_iter::check_none",
+// input), &pos, |b, pos| {             b.iter(|| {
+    //             let knights = pos.get_bitboard(KNIGHT, WHITE);
+    //             knight::fold_moves_for::<_, _, _, White, opt::AllLegal>(
+    //                 black_box(pos),
+    //                 black_box(0),
+    //                 black_box(|acc, m: Move| ControlFlow::Continue::<(),
+// _>(acc ^ m.get_to().v())),                 )
+    //         })
+    //     });
+    // }
 }
 
-pub fn move_iter_check_single(c: &mut Criterion) {
+pub fn move_iter_check_single(_c: &mut Criterion) {
     magics::init();
     zobrist::init();
 
-    let inputs = ["N7/6p1/1pp2p2/5r2/8/3b1N1k/8/2N2K2 w - - 0 1"];
+    // let inputs = ["N7/6p1/1pp2p2/5r2/8/3b1N1k/8/2N2K2 w - - 0 1"];
 
-    for &input in &mut inputs.iter() {
-        let pos = Position::from_fen(input).unwrap();
-        c.bench_with_input(BenchmarkId::new("knight::move_iter::check_single", input), &pos, |b, pos| {
-            b.iter(|| {
-                dbg_fold_moves::<Knight, SingleCheck, opt::AllLegal, _, _, _>(
-                    black_box(pos),
-                    black_box(0),
-                    black_box(|acc, m: Move| ControlFlow::Continue::<(), _>(acc ^ m.get_to().v())),
-                )
-            })
-        });
-    }
+    // for &input in &mut inputs.iter() {
+    //     let pos = Position::from_fen(input).unwrap();
+    //     c.bench_with_input(BenchmarkId::new("knight::move_iter::check_single"
+// , input), &pos, |b, pos| {             b.iter(|| {
+    //             dbg_fold_moves::<Knight, SingleCheck, opt::AllLegal, _, _,
+// _>(                     black_box(pos),
+    //                 black_box(0),
+    //                 black_box(|acc, m: Move| ControlFlow::Continue::<(),
+// _>(acc ^ m.get_to().v())),                 )
+    //         })
+    //     });
+    // }
 }
 
 criterion_group!(benches, knight_attacks, move_iter_check_none, move_iter_check_single);

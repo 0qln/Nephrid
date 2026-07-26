@@ -2,9 +2,6 @@ use std::{hint::unreachable_unchecked, ops::Try};
 
 use bishop::Bishop;
 use king::King;
-use knight::Knight;
-use pawn::Pawn;
-use queen::Queen;
 use rook::Rook;
 
 use crate::core::{
@@ -13,7 +10,8 @@ use crate::core::{
         perspectives::{Black, White},
     },
     r#move::move_flags,
-    piece::IPieceType,
+    move_iter::sliding_piece::SlidingAttacks,
+    piece::{IPieceType, piece_type},
     position,
 };
 
@@ -26,7 +24,6 @@ pub mod pawn;
 pub mod queen;
 pub mod rook;
 pub mod sliding_piece;
-pub mod staged;
 
 #[cfg(test)] mod test;
 
@@ -60,18 +57,36 @@ pub fn captures_targets<C: NoDoubleCheck>(pos: &Position, color: Color) -> Bitbo
     }
 }
 
+// todo: this flag does not currently include discovered checks. you could
+// implement this via also tracking 'allies that block for the enemy king'
+// in the position state (just like the normal 'blockers' field).
+
+/// the generated movesets for each gen_{level}_* flags are disjoint within
+/// their {level}.
 pub const trait Options {
-    fn gen_quiets() -> bool;
-    fn gen_captures() -> bool;
-    fn gen_promos() -> bool;
+    fn quiet_checks() -> bool { false }
+    fn quiet_nochecks() -> bool { false }
+
+    fn capture_checks() -> bool { false }
+    fn capture_nochecks() -> bool { false }
+
+    fn promo_checks() -> bool { false }
+    fn promo_nochecks() -> bool { false }
+
+    fn gen_quiets() -> bool { Self::quiet_checks() || Self::quiet_nochecks() }
+    fn gen_captures() -> bool { Self::capture_checks() || Self::capture_nochecks() }
+    fn gen_promos() -> bool { Self::promo_checks() || Self::promo_nochecks() }
+
+    fn gen_checks() -> bool { Self::quiet_checks() || Self::capture_checks() || Self::promo_checks() }
+    fn gen_only_checks() -> bool { Self::gen_checks() && !Self::quiet_nochecks() && !Self::capture_nochecks() && !Self::promo_nochecks() }
 
     /// Whether to generated moves have to be legal. If false, also generates
     /// pseudo legal moves, which's check-rules are not checked.
     fn legal() -> bool { true }
 }
 
-pub trait FoldMoves<P: Perspective, Check, O: Options> {
-    fn fold_moves_for<B, F, R>(pos: &Position, init: B, f: F) -> R
+pub trait FoldMoves<P: Perspective, Check, O: Options, Input> {
+    fn fold_moves_for<B, F, R>(i: &Input, init: B, f: F) -> R
     where
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>;
@@ -107,38 +122,125 @@ const impl CheckState for DoubleCheck {
 }
 impl SomeCheck for DoubleCheck {}
 
-impl NoCheck {
-    #[inline(always)]
-    fn fold_moves_for<P: Perspective, O: Options, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
-    where
-        F: FnMut(B, Move) -> R,
-        R: Try<Output = B>,
-    {
-        init = <Rook as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        init = <Bishop as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        init = <Queen as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        init = <King as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        init = <Knight as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        init = <Pawn as FoldMoves<P, NoCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        try { init }
-    }
-}
+#[inline(always)]
+pub fn fold_all_moves_for<P: Perspective, O: Options, C: const NoDoubleCheck, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
+where
+    F: FnMut(B, Move) -> R,
+    R: Try<Output = B>,
+{
+    let quiets = O::gen_quiets().then_some(quiets_targets::<C>(pos, P::COLOR)).unwrap_or_default();
+    let captures = O::gen_captures().then_some(captures_targets::<C>(pos, P::COLOR)).unwrap_or_default();
+    let promos = O::gen_promos().then_some(quiets_targets::<C>(pos, P::COLOR)).unwrap_or_default();
 
-impl SingleCheck {
-    #[inline(always)]
-    fn fold_moves_for<P: Perspective, O: Options, B, F, R>(pos: &Position, mut init: B, mut f: F) -> R
-    where
-        F: FnMut(B, Move) -> R,
-        R: Try<Output = B>,
-    {
-        init = <Rook as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        init = <Bishop as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        init = <Queen as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        init = <King as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        init = <Knight as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        init = <Pawn as FoldMoves<P, SingleCheck, O>>::fold_moves_for(pos, init, &mut f)?;
-        try { init }
+    let occ = pos.get_occupancy();
+    let blockers = pos.get_blockers();
+    let discovered_checkers = if !O::quiet_nochecks() || !O::capture_nochecks() {
+        pos.compute_indirect_blockers()
     }
+    else {
+        Bitboard::empty()
+    };
+    let enemies = pos.get_color_bb(P::Opponent::COLOR);
+    let kings = pos.get_bitboard(King::ID, P::COLOR);
+    let king = kings.lsb();
+    let their_k = pos.get_bitboard(King::ID, P::Opponent::COLOR).lsb();
+
+    let queens = pos.get_bitboard(piece_type::QUEEN, P::COLOR);
+
+    init = {
+        let rooks = pos.get_bitboard(piece_type::ROOK, P::COLOR);
+        let sliders = queens | rooks;
+
+        let direct_checks = their_k
+            .filter(|_| !O::capture_nochecks() || !O::quiet_nochecks())
+            .map_or(Bitboard::full(), |k| Rook::lookup_attacks(k, occ));
+
+        sliding_piece::fold_moves_for::<_, _, _, P, O, Rook>(
+            sliders,
+            discovered_checkers,
+            blockers,
+            occ,
+            king,
+            captures,
+            quiets,
+            direct_checks,
+            init,
+            &mut f,
+        )?
+    };
+
+    init = {
+        let bishops = pos.get_bitboard(piece_type::BISHOP, P::COLOR);
+        let sliders = queens | bishops;
+
+        let direct_checks = their_k
+            .filter(|_| !O::capture_nochecks() || !O::quiet_nochecks())
+            .map_or(Bitboard::full(), |k| Bishop::lookup_attacks(k, occ));
+
+        sliding_piece::fold_moves_for::<_, _, _, P, O, Bishop>(
+            sliders,
+            discovered_checkers,
+            blockers,
+            occ,
+            king,
+            captures,
+            quiets,
+            direct_checks,
+            init,
+            &mut f,
+        )?
+    };
+
+    init = {
+        let is_discovered_checker =
+            (!O::quiet_nochecks() || O::capture_nochecks()) && king.is_some_and(|k| discovered_checkers.contains(Bitboard::from(k)));
+
+        let quiets = (O::quiet_nochecks() || is_discovered_checker)
+            .then_some(!occ)
+            .unwrap_or(Bitboard::empty());
+
+        let captures = (O::capture_nochecks() || is_discovered_checker)
+            .then_some(captures)
+            .unwrap_or(Bitboard::empty());
+
+        king::fold_moves_for::<_, _, _, P, O, C>(king, kings, pos, occ, enemies, captures, quiets, init, &mut f)?
+    };
+
+    init = {
+        let knights = pos.get_bitboard(piece_type::KNIGHT, P::COLOR);
+
+        let direct_checks = their_k
+            .filter(|_| !O::capture_nochecks() || !O::quiet_nochecks())
+            .map_or(Bitboard::full(), knight::lookup_attacks);
+
+        knight::fold_moves_for::<_, _, _, P, O>(knights, discovered_checkers, blockers, captures, quiets, direct_checks, init, &mut f)?
+    };
+
+    init = {
+        let pawns = pos.get_bitboard(piece_type::PAWN, P::COLOR);
+        let (quiets, captures) = if (!O::capture_nochecks() || !O::quiet_nochecks())
+            && let Some(k) = their_k
+        {
+            let direct_checks = pawn::lookup_attacks(k, P::Opponent::COLOR);
+            let indirect_checkers = pawns & discovered_checkers;
+
+            let quiet_mask = (!O::quiet_nochecks())
+                .then_some(direct_checks | pawn::compute_moves_for::<P>(indirect_checkers))
+                .unwrap_or(Bitboard::full());
+
+            let capt_mask = (!O::capture_nochecks())
+                .then_some(direct_checks | pawn::compute_attacks_for::<P>(indirect_checkers))
+                .unwrap_or(Bitboard::full());
+
+            (quiets & quiet_mask, captures & capt_mask)
+        }
+        else {
+            (quiets, captures)
+        };
+        pawn::fold_moves_for::<P, O, C, _, _, _>(pawns, occ, blockers, king, captures, quiets, promos, pos, init, &mut f)?
+    };
+
+    try { init }
 }
 
 impl DoubleCheck {
@@ -148,7 +250,12 @@ impl DoubleCheck {
         F: FnMut(B, Move) -> R,
         R: Try<Output = B>,
     {
-        <King as FoldMoves<P, DoubleCheck, O>>::fold_moves_for(pos, init, f)
+        let kings = pos.get_bitboard(King::ID, P::COLOR);
+        let king = kings.lsb();
+        let occ = pos.get_occupancy();
+        let enemies = pos.get_color_bb(P::Opponent::COLOR);
+
+        king::fold_moves_for_somecheck::<_, _, _, P, O, Self>(pos, kings, king, enemies, occ, !occ, init, f)
     }
 }
 
@@ -159,8 +266,8 @@ where
     R: Try<Output = B>,
 {
     match pos.get_check_state() {
-        RtCheckState::None => NoCheck::fold_moves_for::<P, O, _, _, _>(pos, init, f),
-        RtCheckState::Single => SingleCheck::fold_moves_for::<P, O, _, _, _>(pos, init, f),
+        RtCheckState::None => fold_all_moves_for::<P, O, NoCheck, _, _, _>(pos, init, f),
+        RtCheckState::Single => fold_all_moves_for::<P, O, SingleCheck, _, _, _>(pos, init, f),
         RtCheckState::Double => DoubleCheck::fold_moves_for::<P, O, _, _, _>(pos, init, f),
     }
 }
@@ -170,41 +277,67 @@ pub mod opt {
 
     pub struct AllLegal;
     const impl Options for AllLegal {
-        #[inline(always)]
-        fn gen_quiets() -> bool { true }
-
-        #[inline(always)]
-        fn gen_captures() -> bool { true }
-
-        #[inline(always)]
-        fn gen_promos() -> bool { true }
+        fn quiet_checks() -> bool { true }
+        fn quiet_nochecks() -> bool { true }
+        fn capture_checks() -> bool { true }
+        fn capture_nochecks() -> bool { true }
+        fn promo_checks() -> bool { true }
+        fn promo_nochecks() -> bool { true }
     }
 
     pub struct AllPseudoLegal;
     const impl Options for AllPseudoLegal {
-        #[inline(always)]
-        fn gen_quiets() -> bool { true }
+        fn quiet_checks() -> bool { true }
+        fn quiet_nochecks() -> bool { true }
+        fn capture_checks() -> bool { true }
+        fn capture_nochecks() -> bool { true }
+        fn promo_checks() -> bool { true }
+        fn promo_nochecks() -> bool { true }
 
-        #[inline(always)]
-        fn gen_captures() -> bool { true }
-
-        #[inline(always)]
-        fn gen_promos() -> bool { true }
-
-        #[inline(always)]
         fn legal() -> bool { false }
     }
 
     pub struct Captures;
     const impl Options for Captures {
-        #[inline(always)]
-        fn gen_quiets() -> bool { false }
+        fn quiet_checks() -> bool { false }
+        fn quiet_nochecks() -> bool { false }
+        fn capture_checks() -> bool { true }
+        fn capture_nochecks() -> bool { true }
+        fn promo_checks() -> bool { false }
+        fn promo_nochecks() -> bool { false }
+    }
 
-        #[inline(always)]
-        fn gen_captures() -> bool { true }
+    pub struct NonCheckCaptures;
+    const impl Options for NonCheckCaptures {
+        fn quiet_checks() -> bool { false }
+        fn quiet_nochecks() -> bool { false }
+        fn capture_checks() -> bool { true }
+        fn capture_nochecks() -> bool { false }
+        fn promo_checks() -> bool { false }
+        fn promo_nochecks() -> bool { false }
+    }
 
-        #[inline(always)]
-        fn gen_promos() -> bool { false }
+    pub struct Threats;
+    impl Options for Threats {
+        fn quiet_checks() -> bool { true }
+        fn quiet_nochecks() -> bool { false }
+        fn capture_checks() -> bool { true }
+        fn capture_nochecks() -> bool { true }
+        fn promo_checks() -> bool { true }
+        fn promo_nochecks() -> bool { false }
+
+        fn legal() -> bool { true }
+    }
+
+    pub struct Checks;
+    impl Options for Checks {
+        fn quiet_checks() -> bool { true }
+        fn quiet_nochecks() -> bool { false }
+        fn capture_checks() -> bool { true }
+        fn capture_nochecks() -> bool { false }
+        fn promo_checks() -> bool { true }
+        fn promo_nochecks() -> bool { false }
+        fn legal() -> bool { true }
     }
 }
 
@@ -250,14 +383,11 @@ where
 }
 
 #[inline]
-pub fn is_blocker(blockers: Bitboard, piece: Square) -> bool {
-    let piece_bb = Bitboard::from(piece);
-    !(blockers & piece_bb).is_empty()
-}
+pub const fn is_blocker(blockers: Bitboard, piece_bb: Bitboard) -> bool { !(blockers & piece_bb).is_empty() }
 
 #[inline]
-pub fn pin_mask(piece: Square, blockers: Bitboard, our_king: Square) -> Bitboard {
-    if is_blocker(blockers, piece) {
+pub fn pin_mask(piece: Square, piece_bb: Bitboard, blockers: Bitboard, our_king: Square) -> Bitboard {
+    if is_blocker(blockers, piece_bb) {
         Bitboard::ray(piece, our_king)
     }
     else {
@@ -265,12 +395,12 @@ pub fn pin_mask(piece: Square, blockers: Bitboard, our_king: Square) -> Bitboard
     }
 }
 
-#[inline]
+#[inline(always)]
 pub fn map_captures(targets: Bitboard, piece: Square) -> impl Iterator<Item = Move> {
     targets.map(move |target| Move::new(piece, target, move_flags::CAPTURE))
 }
 
-#[inline]
+#[inline(always)]
 pub fn map_quiets(targets: Bitboard, piece: Square) -> impl Iterator<Item = Move> {
     targets.map(move |target| Move::new(piece, target, move_flags::QUIET))
 }
@@ -297,12 +427,12 @@ pub fn dbg_fold_moves<T, C: const CheckState, O: Options, B, F, R>(pos: &Positio
 where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
-    T: FoldMoves<White, C, O>,
-    T: FoldMoves<Black, C, O>,
+    T: FoldMoves<White, C, O, Position>,
+    T: FoldMoves<Black, C, O, Position>,
 {
     match pos.get_turn() {
-        colors::WHITE => <T as FoldMoves<White, C, O>>::fold_moves_for(pos, init, f),
-        colors::BLACK => <T as FoldMoves<Black, C, O>>::fold_moves_for(pos, init, f),
+        colors::WHITE => <T as FoldMoves<White, C, O, Position>>::fold_moves_for(pos, init, f),
+        colors::BLACK => <T as FoldMoves<Black, C, O, Position>>::fold_moves_for(pos, init, f),
         _ => unreachable!(),
     }
 }

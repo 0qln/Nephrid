@@ -1,9 +1,10 @@
 use crate::core::{
+    bitboard::BitboardIteratorExt,
     eval::GameResult,
     move_iter::{
-        SingleCheck, captures_targets, fold_moves,
+        NoCheck, Options, SingleCheck, captures_targets, fold_all_moves_for, fold_moves, fold_moves_for,
         king::{self, King, check_mask_qs, tabu_mask_ks},
-        opt::AllLegal,
+        opt::{AllLegal, Checks},
         pin_mask,
         queen::Queen,
         quiets_targets,
@@ -32,7 +33,7 @@ use crate::{
         r#move::{Move, SAN, SanParseError, move_flags},
         move_iter::{
             bishop::{self, Bishop},
-            fold_legal_moves_for, fold_pseudo_legal_moves_for,
+            fold_pseudo_legal_moves_for,
             knight::{self},
             pawn,
             rook::{self, Rook},
@@ -93,10 +94,10 @@ impl StateInfo {
         let occupancy = pieces.get_occupancy();
         let enemies = pieces.get_color_bb(nstm);
         let allies = pieces.get_color_bb(stm);
-        let queens = pieces.get_piece_bb(piece_type::QUEEN) & enemies;
         let kings = pieces.get_piece_bb(piece_type::KING);
-        let r_n_q = (pieces.get_piece_bb(piece_type::ROOK) | queens) & enemies;
-        let b_n_q = (pieces.get_piece_bb(piece_type::BISHOP) | queens) & enemies;
+        let queens = pieces.get_piece_bb(piece_type::QUEEN);
+        let r_n_q = pieces.get_piece_bb(piece_type::ROOK) | queens;
+        let b_n_q = pieces.get_piece_bb(piece_type::BISHOP) | queens;
 
         if let Some(king_sq) = (allies & kings).lsb() {
             // Normal checkers
@@ -104,19 +105,15 @@ impl StateInfo {
 
             // The X-Ray checkers for the given king. X-Ray checkers are pieces which attack
             // a king through zero or more pieces.
-            let x_ray_checkers =
-                { Bitboard::empty() | (rook::lookup_attacks_0_occ(king_sq) & r_n_q) | (bishop::lookup_attacks_0_occ(king_sq) & b_n_q) };
+            let x_ray_checkers = (rook::lookup_attacks_0_occ(king_sq) & r_n_q) | bishop::lookup_attacks_0_occ(king_sq) & b_n_q;
 
-            self.blockers = x_ray_checkers.fold(Bitboard::empty(), |acc, x_ray_checker| {
-                let between_squares = Bitboard::between(x_ray_checker, king_sq);
-                let between_occupancy = occupancy & between_squares;
-                if between_occupancy.pop_cnt_eq_1() {
-                    acc | between_squares
-                }
-                else {
-                    acc
-                }
-            });
+            self.blockers = (x_ray_checkers & enemies)
+                .filter_map(|x_ray_checker| {
+                    let between_squares = Bitboard::between(x_ray_checker, king_sq);
+                    let between_occupancy = occupancy & between_squares;
+                    between_occupancy.pop_cnt_eq_1().then_some(between_squares)
+                })
+                .aggregate();
         }
         else {
             // there is almost always a king on the board... might aswell make this
@@ -560,8 +557,23 @@ impl Position {
         }
     }
 
-    pub fn collect_legals_for<P: Perspective, C: Extend<Move>>(&self, mut move_list: C) -> C {
-        _ = fold_legal_moves_for::<P, _, _, _>(self, (), |_, m| {
+    #[inline(never)]
+    pub fn collect_legals_for<P: Perspective, C: Extend<Move>>(&self, x: C) -> C { self.collect_moves_for::<P, AllLegal, C>(x) }
+
+    #[inline(never)]
+    pub fn collect_moves_for<P: Perspective, O: Options, C: Extend<Move>>(&self, mut move_list: C) -> C {
+        _ = fold_moves_for::<P, O, _, _, _>(self, (), |_, m| {
+            move_list.extend_one(m);
+            ControlFlow::Continue::<(), _>(())
+        });
+        move_list
+    }
+
+    #[inline(never)]
+    pub fn while_not_being_in_check_collect_moves_for<P: Perspective, O: Options, C: Extend<Move>>(&self, mut move_list: C) -> C {
+        debug_assert!(self.get_check_state() == CheckState::None);
+
+        _ = fold_all_moves_for::<P, O, NoCheck, _, _, _>(self, (), |_, m| {
             move_list.extend_one(m);
             ControlFlow::Continue::<(), _>(())
         });
@@ -569,7 +581,7 @@ impl Position {
     }
 
     #[inline]
-    pub fn get_turn(&self) -> Turn { self.state.get_current().turn }
+    pub const fn get_turn(&self) -> Turn { self.state.get_current().turn }
 
     #[inline]
     pub fn get_ep_capture_square(&self) -> EpCaptureSquare { self.state.get_current().ep_capture_square }
@@ -605,7 +617,52 @@ impl Position {
     pub const fn get_checkers(&self) -> Bitboard { self.state.get_current().checkers }
 
     #[inline]
-    pub fn get_blockers(&self) -> Bitboard { self.state.get_current().blockers }
+    pub const fn get_blockers(&self) -> Bitboard { self.state.get_current().blockers }
+
+    #[inline]
+    pub fn get_indirect_checkers(&self) -> Bitboard {
+        let pieces = self.piece_info();
+        let stm = self.get_turn();
+        let nstm = !stm;
+        let occupancy = pieces.get_occupancy();
+        let king_sq = self.get_bitboard(piece_type::KING, nstm).lsb();
+        if let Some(king) = king_sq {
+            pieces.attackers_to(king, stm, occupancy)
+        }
+        else {
+            Bitboard::empty()
+        }
+    }
+
+    #[inline]
+    pub fn compute_indirect_blockers(&self) -> Bitboard {
+        let pieces = self.piece_info();
+        let stm = self.get_turn();
+        let nstm = !stm;
+        let king_sq = self.get_bitboard(piece_type::KING, nstm).lsb();
+        let queens = pieces.get_piece_bb(piece_type::QUEEN);
+        let r_n_q = pieces.get_piece_bb(piece_type::ROOK) | queens;
+        let b_n_q = pieces.get_piece_bb(piece_type::BISHOP) | queens;
+        let allies = pieces.get_color_bb(stm);
+        let occupancy = pieces.get_occupancy();
+
+        if let Some(king_sq) = king_sq {
+            // The X-Ray checkers for the given king. X-Ray checkers are pieces which attack
+            // a king through zero or more pieces.
+            let x_ray_checkers = (rook::lookup_attacks_0_occ(king_sq) & r_n_q) | bishop::lookup_attacks_0_occ(king_sq) & b_n_q;
+
+            (x_ray_checkers & allies)
+                .filter_map(|x_ray_checker| {
+                    let between_squares = Bitboard::between(x_ray_checker, king_sq);
+                    let between_occupancy = occupancy & between_squares;
+                    between_occupancy.pop_cnt_eq_1().then_some(between_squares)
+                })
+                .aggregate()
+        }
+        else {
+            Bitboard::empty()
+        }
+    }
 
     #[inline]
     pub fn has_threefold_repetition(&self) -> bool {
@@ -747,6 +804,13 @@ impl Position {
     }
 
     pub fn has_legal_moves(&self) -> bool { fold_moves::<AllLegal, _, _, _>(self, false, |_, _| ControlFlow::Break(true)).into_value() }
+
+    #[inline(never)]
+    pub fn while_not_being_in_check_has_legal_check_for<P: Perspective>(&self) -> bool {
+        debug_assert!(self.get_check_state() == CheckState::None);
+
+        fold_all_moves_for::<P, Checks, NoCheck, _, _, _>(self, false, |_, _| ControlFlow::Break(true)).into_value()
+    }
 
     /// Tests whether a (potentially corrupt) move is pseudo-legal in the
     /// current position. Used to validate moves coming from the transposition
@@ -935,9 +999,10 @@ impl Position {
             }
             _ => {
                 let piece = from;
+                let piece_bb = Bitboard::from(piece);
                 let blockers = self.get_blockers();
                 let our_king = self.get_bitboard(piece_type::KING, stm).lsb();
-                let pin_mask = our_king.map(|k| pin_mask(piece, blockers, k)).unwrap_or(Bitboard::full());
+                let pin_mask = our_king.map(|k| pin_mask(piece, piece_bb, blockers, k)).unwrap_or(Bitboard::full());
 
                 // pinned pieces can only move along the ray of the pin
                 if (pin_mask & to.into()).is_empty() {

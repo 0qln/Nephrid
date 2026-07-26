@@ -4,6 +4,7 @@ use crate::core::{
 };
 use std::{
     fmt::Debug,
+    marker::Destruct,
     ops::{self, ControlFlow, FromResidual, Try},
 };
 
@@ -13,14 +14,15 @@ use super::coordinates::{DiagA1H8, DiagA8H1, TCompassRose, squares::*};
 
 #[cfg(test)] pub mod tests;
 
-#[derive(Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Copy, Clone, Default)]
+#[derive_const(PartialEq, Eq)]
 pub struct Bitboard {
     pub v: u64,
 }
 
 pub type Floats = [[f32; files::N_VARIANTS]; ranks::N_VARIANTS];
 
-impl const Try for Bitboard {
+const impl Try for Bitboard {
     type Output = Self;
     type Residual = Self;
 
@@ -38,11 +40,11 @@ impl const Try for Bitboard {
     }
 }
 
-impl const FromResidual for Bitboard {
+const impl FromResidual for Bitboard {
     fn from_residual(residual: <Self as Try>::Residual) -> Self { residual }
 }
 
-impl const ops::Residual<Bitboard> for Bitboard {
+const impl ops::Residual<Bitboard> for Bitboard {
     type TryType = Self;
 }
 
@@ -76,7 +78,7 @@ impl_op!(+ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v + r.v } })
 impl_op!(-|l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v - r.v } });
 impl_op!(-|l: Bitboard, r: u64| -> Bitboard { Bitboard { v: l.v - r } });
 impl_op!(^ |l: Bitboard, r: Bitboard| -> Bitboard { Bitboard { v: l.v ^ r.v } } );
-impl const ops::BitOr<Bitboard> for Bitboard {
+const impl ops::BitOr<Bitboard> for Bitboard {
     type Output = Bitboard;
     fn bitor(self, r: Bitboard) -> Self::Output {
         let l = self;
@@ -84,7 +86,7 @@ impl const ops::BitOr<Bitboard> for Bitboard {
     }
 }
 impl_op!(| |l: Bitboard, r: usize| -> Bitboard { Bitboard { v: l.v | r as u64 } } );
-impl const ops::BitAnd<Bitboard> for Bitboard {
+const impl ops::BitAnd<Bitboard> for Bitboard {
     type Output = Bitboard;
     fn bitand(self, r: Bitboard) -> Self::Output {
         let l = self;
@@ -95,15 +97,15 @@ impl_op!(^= |l: &mut Bitboard, r: Bitboard| { l.v ^= r.v } );
 impl_op!(|= |l: &mut Bitboard, r: Bitboard| { l.v |= r.v } );
 impl_op!(&= |l: &mut Bitboard, r: Bitboard| { l.v &= r.v } );
 
-impl const ops::Not for Bitboard {
+const impl ops::Not for Bitboard {
     type Output = Bitboard;
     fn not(self) -> Self::Output { Bitboard { v: !self.v } }
 }
 
-impl Iterator for Bitboard {
+const impl Iterator for Bitboard {
     type Item = Square;
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> { self.pop_lsb() }
 }
 
@@ -222,6 +224,9 @@ impl Bitboard {
         }
     }
 
+    #[inline(always)]
+    pub const fn contains(&self, other: Self) -> bool { (*self & other) == other }
+
     #[inline]
     pub const fn is_empty(&self) -> bool { self.v == 0 }
 
@@ -312,16 +317,16 @@ impl Bitboard {
     }
 
     #[inline]
-    pub fn pop_cnt(&self) -> u32 { self.v.count_ones() }
+    pub const fn pop_cnt(&self) -> u32 { self.v.count_ones() }
 
     #[inline]
-    pub fn pop_cnt_eq_1(&self) -> bool { !self.is_empty() && !self.pop_cnt_gt_1() }
+    pub const fn pop_cnt_eq_1(&self) -> bool { !self.is_empty() && !self.pop_cnt_gt_1() }
 
     #[inline]
-    pub fn pop_cnt_gt_1(&self) -> bool {
+    pub const fn pop_cnt_gt_1(&self) -> bool {
         let this = *self;
         let result = !(this & Self { v: (this.v.overflowing_sub(1).0) }).is_empty();
-        debug_assert_eq!(result, self.pop_cnt() > 1);
+        debug_assert!(result == (self.pop_cnt() > 1));
         result
     }
 
@@ -340,12 +345,12 @@ impl Bitboard {
     }
 }
 
-impl const From<Square> for Bitboard {
+const impl From<Square> for Bitboard {
     #[inline]
     fn from(sq: Square) -> Self { Self { v: 1u64 << sq.v() } }
 }
 
-impl const From<Option<Square>> for Bitboard {
+const impl From<Option<Square>> for Bitboard {
     #[inline]
     fn from(sq: Option<Square>) -> Self {
         match sq {
@@ -355,7 +360,7 @@ impl const From<Option<Square>> for Bitboard {
     }
 }
 
-impl const From<File> for Bitboard {
+const impl From<File> for Bitboard {
     #[inline]
     fn from(file: File) -> Self {
         Self {
@@ -364,12 +369,12 @@ impl const From<File> for Bitboard {
     }
 }
 
-impl const From<Rank> for Bitboard {
+const impl From<Rank> for Bitboard {
     #[inline]
     fn from(rank: Rank) -> Self { Self { v: 0xFFu64 << (rank.v() * 8) } }
 }
 
-impl const From<CompassRose> for Bitboard {
+const impl From<CompassRose> for Bitboard {
     #[inline]
     fn from(dir: CompassRose) -> Self {
         match dir {
@@ -402,7 +407,7 @@ impl const From<CompassRose> for Bitboard {
     }
 }
 
-impl const From<DiagA1H8> for Bitboard {
+const impl From<DiagA1H8> for Bitboard {
     #[inline]
     fn from(diag: DiagA1H8) -> Self {
         const A1H8: [u64; 15] = [
@@ -426,7 +431,7 @@ impl const From<DiagA1H8> for Bitboard {
     }
 }
 
-impl const From<DiagA8H1> for Bitboard {
+const impl From<DiagA8H1> for Bitboard {
     #[inline]
     fn from(diag: DiagA8H1) -> Self {
         const A8H1: [u64; 15] = [
@@ -450,15 +455,13 @@ impl const From<DiagA8H1> for Bitboard {
     }
 }
 
-pub trait BitboardIteratorExt: Iterator<Item = Bitboard> + Sized {
-    #[inline]
+pub const trait BitboardIteratorExt: [const] Iterator<Item = Bitboard> + Sized + [const] Destruct {
+    #[inline(always)]
     fn aggregate(self) -> Bitboard {
-        self.fold(
-            Bitboard::empty(),
-            #[inline]
-            |acc, bb| acc | bb,
-        )
+        #[inline(always)]
+        const fn or(l: Bitboard, r: Bitboard) -> Bitboard { Bitboard { v: l.v | r.v } }
+        self.fold(Bitboard::empty(), or)
     }
 }
 
-impl<I: Iterator<Item = Bitboard>> BitboardIteratorExt for I {}
+const impl<I: [const] Iterator<Item = Bitboard> + [const] Destruct> BitboardIteratorExt for I {}

@@ -24,7 +24,10 @@ impl Color {
     pub const fn index(&self) -> usize { self.v as usize }
 }
 
-impl_op!(!|c: Color| -> Color { Color { v: c.v ^ 1 } });
+const impl ops::Not for Color {
+    type Output = Color;
+    fn not(self) -> Self::Output { Color { v: self.v ^ 1 } }
+}
 
 pub type ColorParseError = ValueOutOfSetError<char>;
 

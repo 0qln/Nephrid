@@ -25,11 +25,7 @@ static_assertions = { version = "1.1.0", features = ["nightly"] }
 [features]
 default = []
 tunable = []
-
-# fail-high reductions. currently disabled by default since they don't gain elo.
-# todo: that is probably due to bad (hce) static evaluation and bad (hce) threat detections. try using this again when nnue is implemented
 id-fhr = []
-
 id-nmp = []
 
 [lints]

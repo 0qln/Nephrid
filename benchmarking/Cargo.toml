@@ -79,3 +79,7 @@ harness = false
 [[bench]]
 name = "move_ordering"
 harness = false
+
+[[bench]]
+name = "threat"
+harness = false

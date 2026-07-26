@@ -26,7 +26,10 @@ use crate::{
             nnue::{self, AccumulatorStack, EagerAccUpdates},
         },
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
-        move_iter::{fold_moves, opt::AllLegal},
+        move_iter::{
+            fold_moves,
+            opt::{AllLegal, Captures},
+        },
         params::IParams,
         piece::piece_type,
         ply::Ply,
@@ -141,34 +144,36 @@ impl StaticEvaluator for NnueEvaluator {
     }
 }
 
-#[allow(dead_code)]
-struct HceThreatener;
+pub struct HceThreatener;
 
 impl HceThreatener {
     /// Finds the biggest incoming threat to `P`, giving a score for
     /// `P::Opponent`.
     #[allow(dead_code)]
-    fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
+    pub fn threat<P: Perspective>(&self, pos: &Position) -> Score<P::Opponent> {
+        // the threatener should not be called on a position that is VERY noisy (e.g.
+        // it's in check).
+        debug_assert!(pos.get_check_state() == CheckState::None);
+
         const QUEEN_SCORE: AnyScore = hce::piece_score(piece_type::QUEEN);
         const ROOK_SCORE: AnyScore = hce::piece_score(piece_type::ROOK);
 
         let mut max_threat = Score::<P::Opponent>::ZERO;
 
-        // todo: only generate captures, promos, and checks.
-        // todo: or just track this in the make_move unmake_move functions.
-        let moves = pos.collect_legals_for::<P::Opponent, _>(MoveList::new());
-        for &mov in moves.iter() {
-            match pos.does_check(mov) {
-                CheckState::None => {}
-                CheckState::Single => return unsafe { QUEEN_SCORE.interpret_as() },
-                CheckState::Double => return unsafe { (QUEEN_SCORE + ROOK_SCORE).interpret_as() },
-            }
+        if pos.while_not_being_in_check_has_legal_check_for::<P::Opponent>() {
+            return unsafe { QUEEN_SCORE.interpret_as() };
+        }
 
-            if mov.get_flag().is_capture() {
-                let see: AnyScore = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR).into();
-                let see_threat = unsafe { see.interpret_as::<P::Opponent>() };
-                max_threat = max(max_threat, see_threat);
-            }
+        // todo: or just track this in the make_move unmake_move functions.
+        // todo: or use NonCheckCaptures? depends on the situation which is faster,
+        // needs a sprt.
+        let captures = pos.while_not_being_in_check_collect_moves_for::<P::Opponent, Captures, _>(MoveList::new());
+
+        // pick the biggest threat.
+        for &mov in captures.iter() {
+            let see: AnyScore = ordering::see(pos.piece_info(), mov, P::Opponent::COLOR).into();
+            let see_threat = unsafe { see.interpret_as::<P::Opponent>() };
+            max_threat = max(max_threat, see_threat);
         }
 
         max_threat
@@ -212,7 +217,6 @@ pub const trait IdParams {
     fn aw_margin(&self) -> AnyScore { hce::piece_score(piece_type::PAWN) / 4 }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn go<X: IParams>(
     pos: &mut Position,
     limit: UciLimit,
@@ -340,7 +344,6 @@ impl<'a, 'b, E: StaticEvaluator, X: IParams> Searcher<'a, 'b, E, X>
 where
     X::Ref: QSearchParams + IdParams + ScorerParams + ChronoParams + Clone,
 {
-    #[allow(clippy::too_many_arguments)]
     fn new(
         pos: &Position,
         limit: UciLimit,
@@ -676,6 +679,8 @@ where
                 if kind == NodeKind::Cut && !in_check
                     // are we in SE verification search?
                     && se_excluded_move == Move::null()
+                    // only in fail-high searches
+                    && beta - 1 == alpha
                 {
                     // the quiet score of this position is the static score minus threat score (the
                     // best threat that the opponent can do).
