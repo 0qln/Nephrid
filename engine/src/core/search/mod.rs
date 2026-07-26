@@ -93,6 +93,7 @@ pub trait SearchWorker {
 pub struct IdWorker<E: StaticEvaluator, X: IParams> {
     tt: id::TT,
     hh: id::HH,
+    ch: id::CH,
     timeman: TimeMan<X>,
     params: X::Ref,
     eval: E,
@@ -109,6 +110,7 @@ where
         Self {
             tt: id::TT::new(0),
             hh: id::HH::new(),
+            ch: id::CH::new(),
             timeman: TimeMan::new(params.clone()),
             params,
             eval: E::default(),
@@ -141,6 +143,7 @@ where
                     ct,
                     &mut self.tt,
                     &mut self.hh,
+                    &mut self.ch,
                     &mut self.eval,
                     self.params.clone(),
                 );
