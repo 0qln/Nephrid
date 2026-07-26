@@ -877,7 +877,7 @@ where
                             for &searched_quiet in hh_searched_quiets.as_slice() {
                                 let (from, to, _) = searched_quiet.into();
                                 let moving_pt = pos.get_piece(from).piece_type();
-                                self.hh.update_for::<P::Opponent>(moving_pt, to, -hh_bonus);
+                                self.hh.update_for::<P>(moving_pt, to, -hh_bonus);
                             }
 
                             // reward history heuristic
