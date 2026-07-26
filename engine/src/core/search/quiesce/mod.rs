@@ -226,7 +226,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 // penalize capture history heuristic that were expected but failed to not fail
                 // low
                 if is_capture && !is_promo {
-                    let ch_bonus = HistoryScore::new(6 * search_d.v() as i16);
+                    let ch_bonus = HistoryScore::new(25 + 2 * search_d.v() as i16);
                     let capt_sq = m
                         .get_capture_sq()
                         .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -240,7 +240,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         let (bm_from, bm_to, bm_flag) = best_move.into();
         if bm_flag.is_capture() && !bm_flag.is_promo() {
             // reward capture history heuristic
-            let ch_bonus = HistoryScore::new(9 * best_search_d.v() as i16);
+            let ch_bonus = HistoryScore::new(40 + 4 * best_search_d.v() as i16);
             let capt_sq = best_move
                 .get_capture_sq()
                 .expect("we only get here if its a capture, which means it should also have a capt square. ");
