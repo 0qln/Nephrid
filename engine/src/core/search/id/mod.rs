@@ -901,7 +901,9 @@ where
                 // penalize capture history heuristic that were expected but failed to not fail
                 // low
                 if is_capture && !is_promo {
-                    let ch_bonus = HistoryScore::new(20 + (depth.v() as THistoryScore * 3));
+                    let ch_bonus = HistoryScore::new(
+                        ScorerParams::ch_penalty_base(&self.params) + ScorerParams::ch_penalty_depth_factor(&self.params) * depth.v() as THistoryScore,
+                    );
                     let capt_sq = m
                         .get_capture_sq()
                         .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -923,7 +925,9 @@ where
         let (bm_from, bm_to, bm_flag) = best_move.into();
         if bm_flag.is_capture() && !bm_flag.is_promo() {
             // reward capture history heuristic
-            let ch_bonus = HistoryScore::new(30 + (depth.v() as THistoryScore * 5));
+            let ch_bonus = HistoryScore::new(
+                ScorerParams::ch_bonus_base(&self.params) + ScorerParams::ch_bonus_depth_factor(&self.params) * depth.v() as THistoryScore,
+            );
             let capt_sq = best_move
                 .get_capture_sq()
                 .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -1092,6 +1096,16 @@ pub struct SearchEntry {
 pub const trait ScorerParams {
     fn hh_weight(&self) -> i32;
     fn total_weight(&self) -> i32 { 128 }
+    /// Base penalty applied to a capture that failed low.
+    fn ch_penalty_base(&self) -> THistoryScore;
+    /// Per-depth increment of the capture-history fail-low penalty.
+    fn ch_penalty_depth_factor(&self) -> THistoryScore;
+    /// Base bonus applied to the best capture.
+    fn ch_bonus_base(&self) -> THistoryScore;
+    /// Per-depth increment of the best-capture bonus.
+    fn ch_bonus_depth_factor(&self) -> THistoryScore;
+    /// Divisor applied to the capture-history score during move ordering.
+    fn ch_ordering_divisor(&self) -> MoveScore;
 }
 
 pub struct Scorer<'a, X: IParams> {
@@ -1134,7 +1148,7 @@ where
                     let capt_pt = pieces.get_piece(capt_sq).piece_type();
                     let ch_score = self.ch.get(self.color, moving_pt, to, capt_pt);
                     let mvv = hce::piece_score(capt_pt).v() as MoveScore;
-                    let lva = -ch_score.v() / 8;
+                    let lva = -ch_score.v() / self.params.ch_ordering_divisor();
                     return mvv - lva;
                 }
 

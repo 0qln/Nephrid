@@ -10,7 +10,7 @@ use crate::core::{
     ply::Ply,
     position::{CheckState, Position},
     search::{
-        data::{HistoryScore, ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+        data::{HistoryScore, ReplacementStrategy, THistoryScore, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
         id::{self, Bound},
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::{AnyScore, Score, scores},
@@ -22,6 +22,16 @@ use crate::core::{
 pub const trait QSearchParams {
     fn futility_margin(&self) -> AnyScore;
     fn delta_pruning_threshold(&self) -> TaperValue;
+    /// Base penalty applied to a capture that failed low.
+    fn ch_penalty_base(&self) -> THistoryScore;
+    /// Per-depth increment of the capture-history fail-low penalty.
+    fn ch_penalty_depth_factor(&self) -> THistoryScore;
+    /// Base bonus applied to the best capture.
+    fn ch_bonus_base(&self) -> THistoryScore;
+    /// Per-depth increment of the best-capture bonus.
+    fn ch_bonus_depth_factor(&self) -> THistoryScore;
+    /// Divisor applied to the capture-history score during move ordering.
+    fn ch_ordering_divisor(&self) -> MoveScore;
 }
 
 pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
@@ -158,6 +168,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 phase,
                 tt_move: hash_move,
                 ch: self.ch,
+                params: params.clone(),
             },
         ) {
             let (from, to, flag) = m.into();
@@ -229,7 +240,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                 // penalize capture history heuristic that were expected but failed to not fail
                 // low
                 if is_capture && !is_promo {
-                    let ch_bonus = HistoryScore::new(25 + 2 * search_d.v() as i16);
+                    let ch_bonus = HistoryScore::new(params.ch_penalty_base() + params.ch_penalty_depth_factor() * search_d.v() as THistoryScore);
                     let capt_sq = m
                         .get_capture_sq()
                         .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -243,7 +254,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         let (bm_from, bm_to, bm_flag) = best_move.into();
         if bm_flag.is_capture() && !bm_flag.is_promo() {
             // reward capture history heuristic
-            let ch_bonus = HistoryScore::new(40 + 4 * best_search_d.v() as i16);
+            let ch_bonus = HistoryScore::new(params.ch_bonus_base() + params.ch_bonus_depth_factor() * best_search_d.v() as THistoryScore);
             let capt_sq = best_move
                 .get_capture_sq()
                 .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -299,13 +310,14 @@ const impl TTScore for TTEntry {
     fn score(&self) -> AnyScore { self.score }
 }
 
-struct MoveScorer<'a> {
+struct MoveScorer<'a, Q> {
     color: Color,
     phase: TaperValue,
     tt_move: Move,
     ch: &'a id::CH,
+    params: Q,
 }
-impl ordering::MoveScorer for MoveScorer<'_> {
+impl<Q: QSearchParams> ordering::MoveScorer for MoveScorer<'_, Q> {
     fn score<S: Stage>(&self, pos: &Position, mov: Move) -> MoveScore {
         match S::stage() {
             ordering::RtStage::YieldHashMove => {
@@ -331,7 +343,7 @@ impl ordering::MoveScorer for MoveScorer<'_> {
                     let capt_pt = pieces.get_piece(capt_sq).piece_type();
                     let ch_score = self.ch.get(self.color, pt, to, capt_pt);
                     let mvv = hce::piece_score(capt_pt).v() as MoveScore;
-                    let lva = -ch_score.v() / 8;
+                    let lva = -ch_score.v() / self.params.ch_ordering_divisor();
                     return mvv - lva;
                 }
 

@@ -7,8 +7,10 @@ use crate::{
         depth::Depth,
         eval::hce::TaperValue,
         search::{
+            data::THistoryScore,
             id::{IdParams, ScorerParams},
             mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
+            ordering::MoveScore,
             quiesce::QSearchParams,
             score::AnyScore,
         },
@@ -88,6 +90,11 @@ pub struct TunableParams<Base> {
     hce_policy_temp: f32,
     hce_q_futility_margin: AnyScore,
     hce_q_delta_pruning_threshold: TaperValue,
+    hce_q_ch_penalty_base: THistoryScore,
+    hce_q_ch_penalty_depth_factor: THistoryScore,
+    hce_q_ch_bonus_base: THistoryScore,
+    hce_q_ch_bonus_depth_factor: THistoryScore,
+    hce_q_ch_ordering_divisor: MoveScore,
     select_cpuct: f32,
     mcts_proven_loss_visit_threshold: VisitCount,
     mcts_killer_exploitation: f32,
@@ -99,6 +106,11 @@ pub struct TunableParams<Base> {
     id_nmp_margin: AnyScore,
     id_nmp_depth_margin: i32,
     id_scorer_hh_weight: i32,
+    id_scorer_ch_penalty_base: THistoryScore,
+    id_scorer_ch_penalty_depth_factor: THistoryScore,
+    id_scorer_ch_bonus_base: THistoryScore,
+    id_scorer_ch_bonus_depth_factor: THistoryScore,
+    id_scorer_ch_ordering_divisor: MoveScore,
     lmr_offset: f32,
     lmr_scale: f32,
     _base: PhantomData<Base>,
@@ -117,6 +129,11 @@ impl<B, X: Deref<Target = TunableParams<B>>> MctsParams for X {
 impl<B, X: Deref<Target = TunableParams<B>>> QSearchParams for X {
     fn futility_margin(&self) -> AnyScore { self.hce_q_futility_margin }
     fn delta_pruning_threshold(&self) -> TaperValue { self.hce_q_delta_pruning_threshold }
+    fn ch_penalty_base(&self) -> THistoryScore { self.hce_q_ch_penalty_base }
+    fn ch_penalty_depth_factor(&self) -> THistoryScore { self.hce_q_ch_penalty_depth_factor }
+    fn ch_bonus_base(&self) -> THistoryScore { self.hce_q_ch_bonus_base }
+    fn ch_bonus_depth_factor(&self) -> THistoryScore { self.hce_q_ch_bonus_depth_factor }
+    fn ch_ordering_divisor(&self) -> MoveScore { self.hce_q_ch_ordering_divisor }
 }
 
 impl<B, X: Deref<Target = TunableParams<B>>> PolicyParams for X {
@@ -145,6 +162,11 @@ impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
 
 impl<B, X: Deref<Target = TunableParams<B>>> ScorerParams for X {
     fn hh_weight(&self) -> i32 { self.id_scorer_hh_weight }
+    fn ch_penalty_base(&self) -> THistoryScore { self.id_scorer_ch_penalty_base }
+    fn ch_penalty_depth_factor(&self) -> THistoryScore { self.id_scorer_ch_penalty_depth_factor }
+    fn ch_bonus_base(&self) -> THistoryScore { self.id_scorer_ch_bonus_base }
+    fn ch_bonus_depth_factor(&self) -> THistoryScore { self.id_scorer_ch_bonus_depth_factor }
+    fn ch_ordering_divisor(&self) -> MoveScore { self.id_scorer_ch_ordering_divisor }
 }
 
 impl<B, X: Deref<Target = TunableParams<B>>> LmrParams for X {
@@ -166,6 +188,11 @@ impl<B> TunableParams<B> {
         let hce_policy_temp = config.eval_policy_temperature();
         let hce_q_futility_margin = config.eval_futility_margin();
         let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
+        let hce_q_ch_penalty_base = config.eval_ch_penalty_base();
+        let hce_q_ch_penalty_depth_factor = config.eval_ch_penalty_depth_factor();
+        let hce_q_ch_bonus_base = config.eval_ch_bonus_base();
+        let hce_q_ch_bonus_depth_factor = config.eval_ch_bonus_depth_factor();
+        let hce_q_ch_ordering_divisor = config.eval_ch_ordering_divisor();
         let select_cpuct = config.select_cpuct();
         let mcts_proven_loss_visit_threshold = config.mcts_proven_loss_visit_threshold();
         let mcts_killer_exploitation = config.mcts_killer_exploitation();
@@ -176,6 +203,11 @@ impl<B> TunableParams<B> {
         let id_nmp_phase_factor = config.id_nmp_phase_factor();
         let id_nmp_margin = config.id_nmp_margin();
         let id_scorer_hh_weight = config.id_scorer_hh_weight();
+        let id_scorer_ch_penalty_base = config.id_scorer_ch_penalty_base();
+        let id_scorer_ch_penalty_depth_factor = config.id_scorer_ch_penalty_depth_factor();
+        let id_scorer_ch_bonus_base = config.id_scorer_ch_bonus_base();
+        let id_scorer_ch_bonus_depth_factor = config.id_scorer_ch_bonus_depth_factor();
+        let id_scorer_ch_ordering_divisor = config.id_scorer_ch_ordering_divisor();
         let id_nmp_depth_margin = config.id_nmp_depth_margin();
         let lmr_offset = config.lmr_offset();
         let lmr_scale = config.lmr_scale();
@@ -191,6 +223,11 @@ impl<B> TunableParams<B> {
             hce_policy_temp,
             hce_q_futility_margin,
             hce_q_delta_pruning_threshold,
+            hce_q_ch_penalty_base,
+            hce_q_ch_penalty_depth_factor,
+            hce_q_ch_bonus_base,
+            hce_q_ch_bonus_depth_factor,
+            hce_q_ch_ordering_divisor,
             select_cpuct,
             mcts_proven_loss_visit_threshold,
             mcts_killer_exploitation,
@@ -202,6 +239,11 @@ impl<B> TunableParams<B> {
             id_nmp_margin,
             id_nmp_depth_margin,
             id_scorer_hh_weight,
+            id_scorer_ch_penalty_base,
+            id_scorer_ch_penalty_depth_factor,
+            id_scorer_ch_bonus_base,
+            id_scorer_ch_bonus_depth_factor,
+            id_scorer_ch_ordering_divisor,
             lmr_offset,
             lmr_scale,
             _base: PhantomData,
@@ -276,6 +318,11 @@ impl const MctsParams for C_MctsHceParams {
 impl const QSearchParams for C_MctsHceParams {
     #[inline(always)] fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     #[inline(always)] fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+    #[inline(always)] fn ch_penalty_base(&self) -> THistoryScore { 25 }
+    #[inline(always)] fn ch_penalty_depth_factor(&self) -> THistoryScore { 2 }
+    #[inline(always)] fn ch_bonus_base(&self) -> THistoryScore { 40 }
+    #[inline(always)] fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
+    #[inline(always)] fn ch_ordering_divisor(&self) -> MoveScore { 8 }
 }
 
 #[rustfmt::skip]
@@ -384,6 +431,11 @@ const impl ChronoParams for C_IdHceParams {
 const impl QSearchParams for C_IdHceParams {
     fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+    fn ch_penalty_base(&self) -> THistoryScore { 25 }
+    fn ch_penalty_depth_factor(&self) -> THistoryScore { 2 }
+    fn ch_bonus_base(&self) -> THistoryScore { 40 }
+    fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
+    fn ch_ordering_divisor(&self) -> MoveScore { 8 }
 }
 
 const impl IdParams for C_IdHceParams {
@@ -397,6 +449,11 @@ const impl IdParams for C_IdHceParams {
 
 const impl ScorerParams for C_IdHceParams {
     fn hh_weight(&self) -> i32 { 64 }
+    fn ch_penalty_base(&self) -> THistoryScore { 20 }
+    fn ch_penalty_depth_factor(&self) -> THistoryScore { 3 }
+    fn ch_bonus_base(&self) -> THistoryScore { 30 }
+    fn ch_bonus_depth_factor(&self) -> THistoryScore { 5 }
+    fn ch_ordering_divisor(&self) -> MoveScore { 8 }
 }
 
 const impl LmrParams for C_IdHceParams {
@@ -429,6 +486,11 @@ const impl ChronoParams for C_IdNnueParams {
 const impl QSearchParams for C_IdNnueParams {
     fn futility_margin(&self) -> AnyScore { AnyScore::new(177) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
+    fn ch_penalty_base(&self) -> THistoryScore { 25 }
+    fn ch_penalty_depth_factor(&self) -> THistoryScore { 2 }
+    fn ch_bonus_base(&self) -> THistoryScore { 40 }
+    fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
+    fn ch_ordering_divisor(&self) -> MoveScore { 8 }
 }
 
 const impl IdParams for C_IdNnueParams {
@@ -447,4 +509,9 @@ const impl LmrParams for C_IdNnueParams {
 
 const impl ScorerParams for C_IdNnueParams {
     fn hh_weight(&self) -> i32 { 100 }
+    fn ch_penalty_base(&self) -> THistoryScore { 20 }
+    fn ch_penalty_depth_factor(&self) -> THistoryScore { 3 }
+    fn ch_bonus_base(&self) -> THistoryScore { 30 }
+    fn ch_bonus_depth_factor(&self) -> THistoryScore { 5 }
+    fn ch_ordering_divisor(&self) -> MoveScore { 8 }
 }

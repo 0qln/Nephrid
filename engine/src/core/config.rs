@@ -4,8 +4,10 @@ use crate::{
         depth::Depth,
         eval::hce::TaperValue,
         search::{
+            data::THistoryScore,
             id::{IdParams, ScorerParams},
             mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
+            ordering::MoveScore,
             quiesce::QSearchParams,
             score::AnyScore,
         },
@@ -383,6 +385,21 @@ pub struct Configuration {
     /// Margin for delta pruning. A tapervalue.
     qs_delta_pruning_threshold: ConfigOption<Spin<UciInteger>>,
 
+    /// [Q-Search] Base capture-history penalty for a capture that failed low.
+    qs_ch_penalty_base: ConfigOption<Spin<UciInteger>>,
+
+    /// [Q-Search] Per-depth increment of the capture-history fail-low penalty.
+    qs_ch_penalty_depth_factor: ConfigOption<Spin<UciInteger>>,
+
+    /// [Q-Search] Base capture-history bonus for the best capture.
+    qs_ch_bonus_base: ConfigOption<Spin<UciInteger>>,
+
+    /// [Q-Search] Per-depth increment of the best-capture bonus.
+    qs_ch_bonus_depth_factor: ConfigOption<Spin<UciInteger>>,
+
+    /// [Q-Search] Divisor applied to the capture-history score during move ordering.
+    qs_ch_ordering_divisor: ConfigOption<Spin<UciInteger>>,
+
     /// Cpuct constant for selection.
     select_cpuct: ConfigOption<Spin<UciPercent>>,
 
@@ -425,6 +442,21 @@ pub struct Configuration {
 
     /// [Iterative Deepening] Scorer hyper-heuristic weight.
     id_scorer_hh_weight: ConfigOption<Spin<UciInteger>>,
+
+    /// [Iterative Deepening] Base capture-history penalty for a capture that failed low.
+    id_scorer_ch_penalty_base: ConfigOption<Spin<UciInteger>>,
+
+    /// [Iterative Deepening] Per-depth increment of the capture-history fail-low penalty.
+    id_scorer_ch_penalty_depth_factor: ConfigOption<Spin<UciInteger>>,
+
+    /// [Iterative Deepening] Base capture-history bonus for the best capture.
+    id_scorer_ch_bonus_base: ConfigOption<Spin<UciInteger>>,
+
+    /// [Iterative Deepening] Per-depth increment of the best-capture bonus.
+    id_scorer_ch_bonus_depth_factor: ConfigOption<Spin<UciInteger>>,
+
+    /// [Iterative Deepening] Divisor applied to the capture-history score during move ordering.
+    id_scorer_ch_ordering_divisor: ConfigOption<Spin<UciInteger>>,
 
     /// [Late Move Reductions] Base offset applied to the reduction.
     lmr_offset: ConfigOption<Spin<UciPercent>>,
@@ -477,6 +509,11 @@ impl Configuration {
                 eval_policy_temperature: ConfigOption::new("eval-policy-temperature", Spin::<UciPercent>::new(_ratio(20.), _ratio(1.), _ratio(100.))),
                 qs_futility_margin: ConfigOption::new("qs-futility-margin", Spin::new(150, 100, 300)),
                 qs_delta_pruning_threshold: ConfigOption::new("qs-delta-pruning-threshold", Spin::new(16, 0, 24)),
+                qs_ch_penalty_base: ConfigOption::new("qs-ch-penalty-base", Spin::new(25, 0, 200)),
+                qs_ch_penalty_depth_factor: ConfigOption::new("qs-ch-penalty-depth-factor", Spin::new(2, 0, 32)),
+                qs_ch_bonus_base: ConfigOption::new("qs-ch-bonus-base", Spin::new(40, 0, 200)),
+                qs_ch_bonus_depth_factor: ConfigOption::new("qs-ch-bonus-depth-factor", Spin::new(4, 0, 32)),
+                qs_ch_ordering_divisor: ConfigOption::new("qs-ch-ordering-divisor", Spin::new(8, 1, 64)),
                 select_cpuct: ConfigOption::new("select-cpuct", Spin::<UciPercent>::new(_ratio(1.4), _ratio(0.01), _ratio(50.))),
                 mcts_proven_loss_visit_threshold: ConfigOption::new("mcts-proven-loss-visit-threshold", Spin::new(5, 1, 100)),
                 mcts_killer_exploitation: ConfigOption::new("mcts-killer-exploitation", Spin::<UciPercent>::new(_ratio(0.27), _ratio(0.), _ratio(10.))),
@@ -496,6 +533,11 @@ impl Configuration {
                 id_nmp_margin: ConfigOption::new("id-nmp-margin", Spin::new(50, -350, 350)),
                 id_nmp_depth_margin: ConfigOption::new("id-nmp-depth-margin", Spin::new(15, 0, 100)),
                 id_scorer_hh_weight: ConfigOption::new("id-scorer-hh-weight", Spin::new(64, 0, 128)),
+                id_scorer_ch_penalty_base: ConfigOption::new("id-scorer-ch-penalty-base", Spin::new(20, 0, 200)),
+                id_scorer_ch_penalty_depth_factor: ConfigOption::new("id-scorer-ch-penalty-depth-factor", Spin::new(3, 0, 32)),
+                id_scorer_ch_bonus_base: ConfigOption::new("id-scorer-ch-bonus-base", Spin::new(30, 0, 200)),
+                id_scorer_ch_bonus_depth_factor: ConfigOption::new("id-scorer-ch-bonus-depth-factor", Spin::new(5, 0, 32)),
+                id_scorer_ch_ordering_divisor: ConfigOption::new("id-scorer-ch-ordering-divisor", Spin::new(8, 1, 64)),
                 lmr_offset: ConfigOption::new("lmr-offset", Spin::<UciPercent>::new(_ratio(0.99), _ratio(0.), _ratio(2.))),
                 lmr_scale: ConfigOption::new("lmr-scale", Spin::<UciPercent>::new(_ratio(3.14), _ratio(0.10), _ratio(10.)))
             },
@@ -515,6 +557,11 @@ impl ConfigBuilder {
         let cfg = &mut self.config;
         cfg.qs_futility_margin.seed(params.futility_margin().v());
         cfg.qs_delta_pruning_threshold.seed(params.delta_pruning_threshold().v());
+        cfg.qs_ch_penalty_base.seed(params.ch_penalty_base() as i32);
+        cfg.qs_ch_penalty_depth_factor.seed(params.ch_penalty_depth_factor() as i32);
+        cfg.qs_ch_bonus_base.seed(params.ch_bonus_base() as i32);
+        cfg.qs_ch_bonus_depth_factor.seed(params.ch_bonus_depth_factor() as i32);
+        cfg.qs_ch_ordering_divisor.seed(params.ch_ordering_divisor() as i32);
         self
     }
 
@@ -577,6 +624,11 @@ impl ConfigBuilder {
     pub fn scorer(mut self, params: &impl ScorerParams) -> Self {
         let cfg = &mut self.config;
         cfg.id_scorer_hh_weight.seed(params.hh_weight());
+        cfg.id_scorer_ch_penalty_base.seed(params.ch_penalty_base() as i32);
+        cfg.id_scorer_ch_penalty_depth_factor.seed(params.ch_penalty_depth_factor() as i32);
+        cfg.id_scorer_ch_bonus_base.seed(params.ch_bonus_base() as i32);
+        cfg.id_scorer_ch_bonus_depth_factor.seed(params.ch_bonus_depth_factor() as i32);
+        cfg.id_scorer_ch_ordering_divisor.seed(params.ch_ordering_divisor() as i32);
         self
     }
 
@@ -598,6 +650,11 @@ impl Configuration {
     pub fn eval_policy_temperature(&self) -> f32 { self.eval_policy_temperature.value.get::<ratio>() }
     pub fn eval_futility_margin(&self) -> AnyScore { AnyScore::new(self.qs_futility_margin.value) }
     pub fn eval_delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(self.qs_delta_pruning_threshold.value) }
+    pub fn eval_ch_penalty_base(&self) -> THistoryScore { self.qs_ch_penalty_base.value as THistoryScore }
+    pub fn eval_ch_penalty_depth_factor(&self) -> THistoryScore { self.qs_ch_penalty_depth_factor.value as THistoryScore }
+    pub fn eval_ch_bonus_base(&self) -> THistoryScore { self.qs_ch_bonus_base.value as THistoryScore }
+    pub fn eval_ch_bonus_depth_factor(&self) -> THistoryScore { self.qs_ch_bonus_depth_factor.value as THistoryScore }
+    pub fn eval_ch_ordering_divisor(&self) -> MoveScore { self.qs_ch_ordering_divisor.value as MoveScore }
     pub fn select_cpuct(&self) -> f32 { self.select_cpuct.value.get::<ratio>() }
     pub fn mcts_proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(self.mcts_proven_loss_visit_threshold.value as u32) }
     pub fn mcts_killer_exploitation(&self) -> f32 { self.mcts_killer_exploitation.value.get::<ratio>() }
@@ -617,6 +674,11 @@ impl Configuration {
     pub fn id_nmp_margin(&self) -> AnyScore { AnyScore::new(self.id_nmp_margin.value) }
     pub fn id_nmp_depth_margin(&self) -> i32 { self.id_nmp_depth_margin.value }
     pub fn id_scorer_hh_weight(&self) -> i32 { self.id_scorer_hh_weight.value }
+    pub fn id_scorer_ch_penalty_base(&self) -> THistoryScore { self.id_scorer_ch_penalty_base.value as THistoryScore }
+    pub fn id_scorer_ch_penalty_depth_factor(&self) -> THistoryScore { self.id_scorer_ch_penalty_depth_factor.value as THistoryScore }
+    pub fn id_scorer_ch_bonus_base(&self) -> THistoryScore { self.id_scorer_ch_bonus_base.value as THistoryScore }
+    pub fn id_scorer_ch_bonus_depth_factor(&self) -> THistoryScore { self.id_scorer_ch_bonus_depth_factor.value as THistoryScore }
+    pub fn id_scorer_ch_ordering_divisor(&self) -> MoveScore { self.id_scorer_ch_ordering_divisor.value as MoveScore }
     pub fn lmr_offset(&self) -> f32 { self.lmr_offset.value.get::<ratio>() }
     pub fn lmr_scale(&self) -> f32 { self.lmr_scale.value.get::<ratio>() }
 }
@@ -673,6 +735,11 @@ impl Configuration {
             "weights-path" => Ok(self.weights_path.set(value)),
             "nnue-path" => Ok(self.nnue_path.set(value)),
             #[cfg(feature = "tunable")] "qs-delta-pruning-threshold" => self.qs_delta_pruning_threshold.set(value),
+            #[cfg(feature = "tunable")] "qs-ch-penalty-base" => self.qs_ch_penalty_base.set(value),
+            #[cfg(feature = "tunable")] "qs-ch-penalty-depth-factor" => self.qs_ch_penalty_depth_factor.set(value),
+            #[cfg(feature = "tunable")] "qs-ch-bonus-base" => self.qs_ch_bonus_base.set(value),
+            #[cfg(feature = "tunable")] "qs-ch-bonus-depth-factor" => self.qs_ch_bonus_depth_factor.set(value),
+            #[cfg(feature = "tunable")] "qs-ch-ordering-divisor" => self.qs_ch_ordering_divisor.set(value),
             #[cfg(feature = "tunable")] "qs-futility-margin" => self.qs_futility_margin.set(value),
             #[cfg(feature = "tunable")] "eval-policy-temperature" => self.eval_policy_temperature.set(value),
             #[cfg(feature = "tunable")] "mcts-killer-exploitation" => self.mcts_killer_exploitation.set(value),
@@ -694,6 +761,11 @@ impl Configuration {
             #[cfg(feature = "tunable")] "id-nmp-margin" => self.id_nmp_margin.set(value),
             #[cfg(feature = "tunable")] "id-nmp-depth-margin" => self.id_nmp_depth_margin.set(value),
             #[cfg(feature = "tunable")] "id-scorer-hh-weight" => self.id_scorer_hh_weight.set(value),
+            #[cfg(feature = "tunable")] "id-scorer-ch-penalty-base" => self.id_scorer_ch_penalty_base.set(value),
+            #[cfg(feature = "tunable")] "id-scorer-ch-penalty-depth-factor" => self.id_scorer_ch_penalty_depth_factor.set(value),
+            #[cfg(feature = "tunable")] "id-scorer-ch-bonus-base" => self.id_scorer_ch_bonus_base.set(value),
+            #[cfg(feature = "tunable")] "id-scorer-ch-bonus-depth-factor" => self.id_scorer_ch_bonus_depth_factor.set(value),
+            #[cfg(feature = "tunable")] "id-scorer-ch-ordering-divisor" => self.id_scorer_ch_ordering_divisor.set(value),
             #[cfg(feature = "tunable")] "lmr-offset" => self.lmr_offset.set(value),
             #[cfg(feature = "tunable")] "lmr-scale" => self.lmr_scale.set(value),
             _ => Err(Box::new(UnknownOptionError(name.to_string()))),
@@ -732,6 +804,11 @@ impl Configuration {
         if cfg!(feature = "tunable") {
             println!("{}", self.qs_delta_pruning_threshold);
             println!("{}", self.qs_futility_margin);
+            println!("{}", self.qs_ch_penalty_base);
+            println!("{}", self.qs_ch_penalty_depth_factor);
+            println!("{}", self.qs_ch_bonus_base);
+            println!("{}", self.qs_ch_bonus_depth_factor);
+            println!("{}", self.qs_ch_ordering_divisor);
             println!("{}", self.eval_policy_temperature);
             println!("{}", self.mcts_killer_exploitation);
             println!("{}", self.mcts_proven_loss_visit_threshold);
@@ -752,6 +829,11 @@ impl Configuration {
             println!("{}", self.id_nmp_margin);
             println!("{}", self.id_nmp_depth_margin);
             println!("{}", self.id_scorer_hh_weight);
+            println!("{}", self.id_scorer_ch_penalty_base);
+            println!("{}", self.id_scorer_ch_penalty_depth_factor);
+            println!("{}", self.id_scorer_ch_bonus_base);
+            println!("{}", self.id_scorer_ch_bonus_depth_factor);
+            println!("{}", self.id_scorer_ch_ordering_divisor);
             println!("{}", self.lmr_offset);
             println!("{}", self.lmr_scale);
         }
