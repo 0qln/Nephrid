@@ -244,17 +244,17 @@ where
 
     init = {
         let knights = pos.get_bitboard(piece_type::KNIGHT, P::COLOR);
-        let mask = if (!O::capture_nochecks() || !O::quiet_nochecks())
+
+        let direct_checks = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
-            knight::lookup_attacks(k) | knight::lookup_attacks_multiple(knights & discovered_checkers)
+            knight::lookup_attacks(k)
         }
         else {
             Bitboard::full()
         };
-        let quiets = make_quiets(mask);
-        let captures = make_captures(mask);
-        knight::fold_moves_for::<_, _, _, P, O>(knights, blockers, quiets, captures, init, &mut f)?
+
+        knight::fold_moves_for::<_, _, _, P, O>(knights, discovered_checkers, blockers, captures, quiets, direct_checks, init, &mut f)?
     };
 
     init = {

@@ -17,9 +17,11 @@ pub struct Knight;
 #[inline(always)]
 pub fn fold_moves_for<B, F, R, P: Perspective, O: Options>(
     knights: Bitboard,
+    from_mask_discover_check: Bitboard,
     blockers: Bitboard,
-    quiet_targets: Bitboard,
-    capture_targets: Bitboard,
+    to_mask_captures: Bitboard,
+    to_mask_quiets: Bitboard,
+    to_mask_checks: Bitboard,
     init: B,
     mut f: F,
 ) -> R
@@ -27,7 +29,7 @@ where
     F: FnMut(B, Move) -> R,
     R: Try<Output = B>,
 {
-    let mut knights = {
+    let knights = {
         if O::legal() {
             // only unpinned knights if legal check required
             knights & !blockers
@@ -37,23 +39,61 @@ where
         }
     };
 
-    knights.try_fold(init, |mut acc, piece| {
-        // todo: if the user only wants checks, we can optimize by lookup up the attacks
-        // from the enemy king.
+    let only_check_mask_quiet = (!O::quiet_nochecks()).then_some(to_mask_quiets & to_mask_checks).unwrap_or_default();
+
+    let only_check_mask_capt = (!O::capture_nochecks()).then_some(to_mask_captures & to_mask_checks).unwrap_or_default();
+
+    let mut acc = init;
+
+    // todo: if the user only wants checks and nothing else, we can optimize by
+    // lookup up the attacks from the enemy king. // or can we ? maybe not cause
+    // of discovered checks dklfjsdf this was an old comment grrr technical debt
+    // i luv uuu uwu :3
+    acc = (knights & from_mask_discover_check).try_fold(acc, |mut acc, piece| -> R {
         let attacks = lookup_attacks(piece);
 
-        // todo: two loops and generate ALL capture first
+        // todo: two loops and generate ALL capture first ?
 
         if O::gen_captures() {
-            acc = map_captures(attacks & capture_targets, piece).try_fold(acc, &mut f)?;
+            let target_mask = to_mask_captures;
+            acc = map_captures(attacks & target_mask, piece).try_fold(acc, &mut f)?;
         };
 
         if O::gen_quiets() {
-            acc = map_quiets(attacks & quiet_targets, piece).try_fold(acc, &mut f)?;
+            let target_mask = to_mask_quiets;
+            acc = map_quiets(attacks & target_mask, piece).try_fold(acc, &mut f)?;
         }
 
         try { acc }
-    })
+    })?;
+
+    acc = (knights & !from_mask_discover_check).try_fold(acc, move |mut acc, piece| -> R {
+        let attacks = lookup_attacks(piece);
+
+        if O::gen_captures() {
+            let target_mask = if O::capture_nochecks() {
+                to_mask_captures
+            }
+            else {
+                only_check_mask_capt
+            };
+            acc = map_captures(attacks & target_mask, piece).try_fold(acc, &mut f)?;
+        };
+
+        if O::gen_quiets() {
+            let target_mask = if O::quiet_nochecks() {
+                to_mask_quiets
+            }
+            else {
+                only_check_mask_quiet
+            };
+            acc = map_quiets(attacks & target_mask, piece).try_fold(acc, &mut f)?;
+        }
+
+        try { acc }
+    })?;
+
+    try { acc }
 }
 
 #[inline]
@@ -72,9 +112,7 @@ pub const fn lookup_attacks(sq: Square) -> Bitboard {
 }
 
 #[inline]
-pub fn lookup_attacks_multiple(knights: Bitboard) -> Bitboard {
-    knights.map(lookup_attacks).aggregate()
-}
+pub fn lookup_attacks_multiple(knights: Bitboard) -> Bitboard { knights.map(lookup_attacks).aggregate() }
 
 #[inline]
 pub const fn compute_attacks(sq: Square) -> Bitboard {
