@@ -745,6 +745,7 @@ pub mod test {
             killers.push(get_killer());
 
             let mut hh = id::HH::new();
+            let mut ch = id::CH::new();
 
             let mut picker = MovePicker::new(hash_move, killers);
 
@@ -752,6 +753,7 @@ pub mod test {
                 tt_move: hash_move,
                 killers,
                 hh: &mut hh,
+                ch: &mut ch,
                 color: pos.get_turn(),
                 phase: TaperValue::from_position(pos.piece_info()),
                 params: C_IdNnueParams,
