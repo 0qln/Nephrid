@@ -147,22 +147,6 @@ where
 
     let queens = pos.get_bitboard(piece_type::QUEEN, P::COLOR);
 
-    let make_quiets = |mask: Bitboard| {
-        let mut t = quiets;
-        if !O::quiet_nochecks() {
-            t &= mask;
-        }
-        t
-    };
-
-    let make_captures = |mask: Bitboard| {
-        let mut t = captures;
-        if !O::capture_nochecks() {
-            t &= mask;
-        }
-        t
-    };
-
     init = {
         let rooks = pos.get_bitboard(piece_type::ROOK, P::COLOR);
         let sliders = queens | rooks;
@@ -234,29 +218,25 @@ where
 
     init = {
         let pawns = pos.get_bitboard(piece_type::PAWN, P::COLOR);
-        let (quiet_mask, capture_mask) = if (!O::capture_nochecks() || !O::quiet_nochecks())
+        let (quiets, captures) = if (!O::capture_nochecks() || !O::quiet_nochecks())
             && let Some(k) = their_k
         {
-            let mask = pawn::lookup_attacks(k, P::Opponent::COLOR);
-            let quiet_mask = if !O::quiet_nochecks() {
-                mask | pawn::compute_moves_for::<P>(pawns & discovered_checkers)
-            }
-            else {
-                Bitboard::full()
-            };
-            let capt_mask = if !O::capture_nochecks() {
-                mask | pawn::compute_attacks_for::<P>(pawns & discovered_checkers)
-            }
-            else {
-                Bitboard::full()
-            };
-            (quiet_mask, capt_mask)
+            let direct_checks = pawn::lookup_attacks(k, P::Opponent::COLOR);
+            let indirect_checkers = pawns & discovered_checkers;
+
+            let quiet_mask = (!O::quiet_nochecks())
+                .then_some(direct_checks | pawn::compute_moves_for::<P>(indirect_checkers))
+                .unwrap_or(Bitboard::full());
+
+            let capt_mask = (!O::capture_nochecks())
+                .then_some(direct_checks | pawn::compute_attacks_for::<P>(indirect_checkers))
+                .unwrap_or(Bitboard::full());
+
+            (quiets & quiet_mask, captures & capt_mask)
         }
         else {
-            (Bitboard::full(), Bitboard::full())
+            (quiets, captures)
         };
-        let quiets = make_quiets(quiet_mask);
-        let captures = make_captures(capture_mask);
         pawn::fold_moves_for::<P, O, C, _, _, _>(pawns, occ, blockers, king, captures, quiets, promos, pos, init, &mut f)?
     };
 
