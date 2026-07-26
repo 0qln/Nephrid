@@ -896,17 +896,6 @@ where
                         }
                     }
 
-                    // update ch
-                    if is_capture && !is_promo {
-                        // reward capture history heuristic
-                        let ch_bonus = HistoryScore::new((depth.v() as THistoryScore).pow(2));
-                        let capt_sq = m
-                            .get_capture_sq()
-                            .expect("we only get here if its a capture, which means it should also have a capt square. ");
-                        let capt_pt = pos.get_piece(capt_sq).piece_type();
-                        self.ch.update_for::<P>(moving_pt, to, capt_pt, ch_bonus);
-                    }
-
                     // fail high
                     break;
                 }
@@ -933,6 +922,19 @@ where
             if !is_capture && !is_promo {
                 hh_searched_quiets.push(m);
             }
+        }
+
+        // update ch
+        let (bm_from, bm_to, bm_flag) = best_move.into();
+        if bm_flag.is_capture() && !bm_flag.is_promo() {
+            // reward capture history heuristic
+            let ch_bonus = HistoryScore::new((depth.v() as THistoryScore).pow(2));
+            let capt_sq = best_move
+                .get_capture_sq()
+                .expect("we only get here if its a capture, which means it should also have a capt square. ");
+            let capt_pt = pos.get_piece(capt_sq).piece_type();
+            let moving_pt = pos.get_piece(bm_from).piece_type();
+            self.ch.update_for::<P>(moving_pt, bm_to, capt_pt, ch_bonus);
         }
 
         self.tt.try_insert(TTEntry {
