@@ -1,9 +1,7 @@
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use engine::core::{
-    color::perspectives::{Black, White}, move_iter::sliding_piece::magics, position::Position, search::id::HceThreatener, zobrist
-};
+use engine::core::{color::perspectives::White, move_iter::sliding_piece::magics, position::Position, search::id::HceThreatener, zobrist};
 
 struct ThreatTestCase {
     name: &'static str,

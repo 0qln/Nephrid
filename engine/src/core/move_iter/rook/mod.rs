@@ -85,7 +85,7 @@ pub const fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
 }
 
 #[inline]
-pub fn lookup_attacks_0_occ_multiple(rooks: Bitboard) -> Bitboard { rooks.map(|r| lookup_attacks_0_occ(r)).aggregate() }
+pub fn lookup_attacks_0_occ_multiple(rooks: Bitboard) -> Bitboard { rooks.map(lookup_attacks_0_occ).aggregate() }
 
 /// Computes the attacks of the rook on the square `sq` with the given
 /// `occupancy`.

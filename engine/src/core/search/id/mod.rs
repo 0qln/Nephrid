@@ -28,7 +28,7 @@ use crate::{
         r#move::{MAX_LEGAL_MOVES, Move, MoveList},
         move_iter::{
             fold_moves,
-            opt::{AllLegal, Captures, NonCheckCaptures},
+            opt::{AllLegal, Captures},
         },
         params::IParams,
         piece::piece_type,
@@ -217,7 +217,6 @@ pub const trait IdParams {
     fn aw_margin(&self) -> AnyScore { hce::piece_score(piece_type::PAWN) / 4 }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn go<X: IParams>(
     pos: &mut Position,
     limit: UciLimit,
@@ -345,7 +344,6 @@ impl<'a, 'b, E: StaticEvaluator, X: IParams> Searcher<'a, 'b, E, X>
 where
     X::Ref: QSearchParams + IdParams + ScorerParams + ChronoParams + Clone,
 {
-    #[allow(clippy::too_many_arguments)]
     fn new(
         pos: &Position,
         limit: UciLimit,

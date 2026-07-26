@@ -66,7 +66,7 @@ pub const fn lookup_attacks_0_occ(sq: Square) -> Bitboard {
 }
 
 #[inline]
-pub fn lookup_attacks_0_occ_multiple(bishops: Bitboard) -> Bitboard { bishops.map(|b| lookup_attacks_0_occ(b)).aggregate() }
+pub fn lookup_attacks_0_occ_multiple(bishops: Bitboard) -> Bitboard { bishops.map(lookup_attacks_0_occ).aggregate() }
 
 /// Computes the attacks of the bishop on the square `sq` with the given
 /// `occupancy`.

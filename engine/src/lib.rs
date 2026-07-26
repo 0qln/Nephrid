@@ -1,8 +1,9 @@
 // deny
 #![deny(unsafe_op_in_unsafe_fn)]
 // warn
-#![warn(clippy::obfuscated_if_else)]
 // allow
+#![allow(clippy::obfuscated_if_else)]
+#![allow(clippy::too_many_arguments)]
 #![allow(clippy::just_underscores_and_digits)]
 #![allow(clippy::almost_complete_range)]
 #![allow(clippy::len_without_is_empty)]
