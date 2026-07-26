@@ -72,10 +72,13 @@ fn bench_positions(c: &mut Criterion, group_name: &str, target: RtStage) {
 
         let mut hh = id::HH::new();
 
+        let mut ch = id::CH::new();
+
         let scorer = Scorer::<C_IdNnueParams> {
             tt_move: Move::null(),
             killers: Killers::default(),
             hh: &mut hh,
+            ch: &mut ch,
             color: pos.get_turn(),
             phase: TaperValue::from_position(pos.piece_info()),
             params: C_IdNnueParams,

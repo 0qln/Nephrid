@@ -47,10 +47,11 @@ where
     let hash_size = Information::new::<mebibyte>(16);
     let mut tt = id::TT::new_of_size(hash_size);
     let mut hh = id::HH::new();
+    let mut ch = id::CH::new();
     let mut eval = E::default();
     let mut timeman = TimeMan::<X>::new_with_limits(&limit, pos, params.clone());
 
-    id::go::<X>(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut hh, &mut eval, params);
+    id::go::<X>(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut hh, &mut ch, &mut eval, params);
 }
 
 pub fn id_hce_nps(c: &mut Criterion) {
