@@ -63,20 +63,24 @@ where
     let mut acc = init;
 
     acc = (pieces & from_mask).try_fold(acc, |mut acc, piece| -> R {
+        let attacks = attacks(piece);
+
         if O::gen_captures() {
             let target_mask = to_mask_captures;
-            acc = map_captures(attacks(piece) & target_mask, piece).try_fold(acc, &mut f)?;
+            acc = map_captures(attacks & target_mask, piece).try_fold(acc, &mut f)?;
         };
 
         if O::gen_quiets() {
             let target_mask = to_mask_quiets;
-            acc = map_quiets(attacks(piece) & target_mask, piece).try_fold(acc, &mut f)?;
+            acc = map_quiets(attacks & target_mask, piece).try_fold(acc, &mut f)?;
         }
 
         try { acc }
     })?;
 
     (pieces & !from_mask).try_fold(acc, move |mut acc, piece| {
+        let attacks = attacks(piece);
+
         if O::gen_captures() {
             let target_mask = if O::capture_nochecks() {
                 to_mask_captures
@@ -84,7 +88,7 @@ where
             else {
                 only_check_mask_capt
             };
-            acc = map_captures(attacks(piece) & target_mask, piece).try_fold(acc, &mut f)?;
+            acc = map_captures(attacks & target_mask, piece).try_fold(acc, &mut f)?;
         };
 
         if O::gen_quiets() {
@@ -94,7 +98,7 @@ where
             else {
                 only_check_mask_quiet
             };
-            acc = map_quiets(attacks(piece) & target_mask, piece).try_fold(acc, &mut f)?;
+            acc = map_quiets(attacks & target_mask, piece).try_fold(acc, &mut f)?;
         }
 
         try { acc }
