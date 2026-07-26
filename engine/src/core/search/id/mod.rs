@@ -906,7 +906,7 @@ where
                 // penalize capture history heuristic that were expected but failed to not fail
                 // low
                 if is_capture && !is_promo {
-                    let ch_bonus = HistoryScore::new((depth.v() as THistoryScore).pow(2));
+                    let ch_bonus = HistoryScore::new((depth.v() as THistoryScore * 2).pow(2));
                     let capt_sq = m
                         .get_capture_sq()
                         .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -928,7 +928,7 @@ where
         let (bm_from, bm_to, bm_flag) = best_move.into();
         if bm_flag.is_capture() && !bm_flag.is_promo() {
             // reward capture history heuristic
-            let ch_bonus = HistoryScore::new((depth.v() as THistoryScore).pow(2));
+            let ch_bonus = HistoryScore::new((depth.v() as THistoryScore * 3).pow(2));
             let capt_sq = best_move
                 .get_capture_sq()
                 .expect("we only get here if its a capture, which means it should also have a capt square. ");
@@ -1138,11 +1138,9 @@ where
                     let moving_pt = pieces.get_piece(from).piece_type();
                     let capt_pt = pieces.get_piece(capt_sq).piece_type();
                     let ch_score = self.ch.get(self.color, moving_pt, to, capt_pt);
-                    if ch_score > HistoryScore::ZERO {
-                        let mvv = hce::piece_score(capt_pt).v() as MoveScore;
-                        let lva = -ch_score.v() / 8;
-                        return mvv - lva;
-                    }
+                    let mvv = hce::piece_score(capt_pt).v() as MoveScore;
+                    let lva = -ch_score.v() / 8;
+                    return mvv - lva;
                 }
 
                 // fallback to see for moves without ch_score or promos
