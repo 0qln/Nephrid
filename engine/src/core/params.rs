@@ -1,5 +1,7 @@
 use std::{fmt, ops::Deref};
 
+use uom::si::{f32, ratio};
+
 use crate::{
     core::{
         chrono::ChronoParams,
@@ -33,7 +35,15 @@ pub const trait IParams: IConfigBuilder {
 // const generator
 
 macro_rules! const_params {
-    ($name:ident) => {
+    (
+        $name:ident {
+            $(
+                $group:ident : $trait_name:ident {
+                    $($trait_item:item)*
+                }
+            ),* $(,)?
+        }
+    ) => {
         paste::paste! {
             #[derive(Debug, Default, Clone)]
             #[allow(non_camel_case_types)]
@@ -67,13 +77,30 @@ macro_rules! const_params {
                 fn shared(self) -> Self::Ref { self }
                 fn try_from_config<C: Deref<Target = Configuration>>(_: C) -> Result<Self::Ref, std::convert::Infallible> { Ok(Self) }
             }
+
+            impl IConfigBuilder for [<C_ $name Params>] {
+                fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+                    builder
+                        $( .$group(self) )*
+                }
+            }
+
+            // trait implementations
+            $(
+                impl const $trait_name for [<C_ $name Params>] {
+                    $(
+                        #[inline(always)]
+                        $trait_item
+                    )*
+                }
+            )*
         }
     };
 }
 
 // tunable generator
 
-macro_rules! define_engine_params {
+macro_rules! tunable_params {
     (
         $(
             $group:ident : $trait_name:ident {
@@ -231,11 +258,10 @@ macro_rules! define_engine_params {
 
 pub type TunableParamsRef<B> = std::rc::Rc<TunableParams<B>>;
 
-fn ratio_to_raw(val: f32) -> uom::si::f32::Ratio { uom::si::f32::Ratio::new::<uom::si::ratio::ratio>(val) }
+fn ratio_to_raw(val: f32) -> f32::Ratio { f32::Ratio::new::<ratio::ratio>(val) }
+fn ratio_from_raw(qty: &f32::Ratio) -> f32 { qty.get::<ratio::ratio>() }
 
-fn ratio_from_raw(qty: &uom::si::f32::Ratio) -> f32 { qty.get::<uom::si::ratio::ratio>() }
-
-define_engine_params! {
+tunable_params! {
     qsearch: QSearchParams {
         futility_margin: AnyScore {
             uci: "qs-futility-margin",
@@ -536,200 +562,154 @@ pub enum CreateTunableParamsError {
 
 // mcts hce
 
-const_params!(MctsHce);
-
-impl IConfigBuilder for C_MctsHceParams {
-    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
-        //
-        builder.puct(self).mcts(self).qsearch(self).policy(self)
+const_params! {
+    MctsHce {
+        puct: PuctParams {
+            fn select_cpuct(&self) -> f32 { 0.77 }
+        },
+        mcts: MctsParams {
+            fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
+            fn killer_exploitation(&self) -> f32 { 0.27 }
+            fn tt_best_move(&self) -> f32 { 1.65 }
+        },
+        qsearch: QSearchParams {
+            fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
+            fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+        },
+        policy: PolicyParams {
+            fn policy_temperature(&self) -> f32 { 24.58 }
+        },
+        chrono: ChronoParams {
+            fn base_soft_mult(&self) -> f32 { 0.50 }
+            fn clamp_lower(&self) -> f32 { 0.30 }
+            fn clamp_upper(&self) -> f32 { 1.50 }
+            fn movestreak_base(&self) -> f32 { 1.00 }
+            fn movestreak_slope(&self) -> f32 { 0.08 }
+            fn movestreak_floor(&self) -> f32 { 0.40 }
+            fn entropy_base(&self) -> f32 { 0.50 }
+            fn entropy_weight(&self) -> f32 { 1.00 }
+        },
     }
-}
-
-#[rustfmt::skip]
-impl const PuctParams for C_MctsHceParams {
-    #[inline(always)] fn select_cpuct(&self) -> f32 { 0.77 }
-}
-
-#[rustfmt::skip]
-impl const MctsParams for C_MctsHceParams {
-    #[inline(always)] fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
-    #[inline(always)] fn killer_exploitation(&self) -> f32 { 0.27 }
-    #[inline(always)] fn tt_best_move(&self) -> f32 { 1.65 }
-}
-
-#[rustfmt::skip]
-impl const QSearchParams for C_MctsHceParams {
-    #[inline(always)] fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
-    #[inline(always)] fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
-}
-
-#[rustfmt::skip]
-impl const PolicyParams for C_MctsHceParams {
-    #[inline(always)] fn policy_temperature(&self) -> f32 { 24.58 }
-}
-
-#[rustfmt::skip]
-impl const ChronoParams for C_MctsHceParams {
-    #[inline(always)] fn base_soft_mult(&self) -> f32 { 0.50 }
-    #[inline(always)] fn clamp_lower(&self) -> f32 { 0.30 }
-    #[inline(always)] fn clamp_upper(&self) -> f32 { 1.50 }
-    #[inline(always)] fn movestreak_base(&self) -> f32 { 1.00 }
-    #[inline(always)] fn movestreak_slope(&self) -> f32 { 0.08 }
-    #[inline(always)] fn movestreak_floor(&self) -> f32 { 0.40 }
-    #[inline(always)] fn entropy_base(&self) -> f32 { 0.50 }
-    #[inline(always)] fn entropy_weight(&self) -> f32 { 1.00 }
 }
 
 // mcts nn
 
-const_params!(MctsNn);
-
-impl IConfigBuilder for C_MctsNnParams {
-    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
-        //
-        builder.puct(self).mcts(self).policy(self)
+const_params! {
+    MctsNn {
+        puct: PuctParams {
+            fn select_cpuct(&self) -> f32 { 0.77 }
+        },
+        mcts: MctsParams {
+            fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
+            fn killer_exploitation(&self) -> f32 { 0.27 }
+            fn tt_best_move(&self) -> f32 { 1.65 }
+        },
+        policy: PolicyParams {
+            fn policy_temperature(&self) -> f32 { 24.58 }
+        },
+        chrono: ChronoParams {
+            fn base_soft_mult(&self) -> f32 { 0.50 }
+            fn clamp_lower(&self) -> f32 { 0.30 }
+            fn clamp_upper(&self) -> f32 { 1.50 }
+            fn movestreak_base(&self) -> f32 { 1.00 }
+            fn movestreak_slope(&self) -> f32 { 0.08 }
+            fn movestreak_floor(&self) -> f32 { 0.40 }
+            fn entropy_base(&self) -> f32 { 0.50 }
+            fn entropy_weight(&self) -> f32 { 1.00 }
+        },
     }
-}
-
-const impl PuctParams for C_MctsNnParams {
-    fn select_cpuct(&self) -> f32 { 0.77 }
-}
-
-const impl MctsParams for C_MctsNnParams {
-    fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
-    fn killer_exploitation(&self) -> f32 { 0.27 }
-    fn tt_best_move(&self) -> f32 { 1.65 }
-}
-
-const impl PolicyParams for C_MctsNnParams {
-    fn policy_temperature(&self) -> f32 { 24.58 }
-}
-
-const impl ChronoParams for C_MctsNnParams {
-    fn base_soft_mult(&self) -> f32 { 0.50 }
-    fn clamp_lower(&self) -> f32 { 0.30 }
-    fn clamp_upper(&self) -> f32 { 1.50 }
-    fn movestreak_base(&self) -> f32 { 1.00 }
-    fn movestreak_slope(&self) -> f32 { 0.08 }
-    fn movestreak_floor(&self) -> f32 { 0.40 }
-    fn entropy_base(&self) -> f32 { 0.50 }
-    fn entropy_weight(&self) -> f32 { 1.00 }
 }
 
 // mcts pure
 
-const_params!(MctsPure);
-
-impl IConfigBuilder for C_MctsPureParams {
-    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
-        //
-        builder
+const_params! {
+    MctsPure {
+        mcts: MctsParams {
+            fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
+            fn killer_exploitation(&self) -> f32 { 0.27 }
+            fn tt_best_move(&self) -> f32 { 1.65 }
+        },
+        chrono: ChronoParams {
+            fn base_soft_mult(&self) -> f32 { 0.50 }
+            fn clamp_lower(&self) -> f32 { 0.30 }
+            fn clamp_upper(&self) -> f32 { 1.50 }
+            fn movestreak_base(&self) -> f32 { 1.00 }
+            fn movestreak_slope(&self) -> f32 { 0.08 }
+            fn movestreak_floor(&self) -> f32 { 0.40 }
+            fn entropy_base(&self) -> f32 { 0.50 }
+            fn entropy_weight(&self) -> f32 { 1.00 }
+        },
     }
-}
-
-const impl MctsParams for C_MctsPureParams {
-    fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
-    fn killer_exploitation(&self) -> f32 { 0.27 }
-    fn tt_best_move(&self) -> f32 { 1.65 }
-}
-
-const impl ChronoParams for C_MctsPureParams {
-    fn base_soft_mult(&self) -> f32 { 0.50 }
-    fn clamp_lower(&self) -> f32 { 0.30 }
-    fn clamp_upper(&self) -> f32 { 1.50 }
-    fn movestreak_base(&self) -> f32 { 1.00 }
-    fn movestreak_slope(&self) -> f32 { 0.08 }
-    fn movestreak_floor(&self) -> f32 { 0.40 }
-    fn entropy_base(&self) -> f32 { 0.50 }
-    fn entropy_weight(&self) -> f32 { 1.00 }
 }
 
 // id hce
 
-const_params!(IdHce);
-
-impl IConfigBuilder for C_IdHceParams {
-    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
-        //
-        builder.chrono(self).qsearch(self).id(self).scorer(self).lmr(self)
+const_params! {
+    IdHce {
+        chrono: ChronoParams {
+            fn base_soft_mult(&self) -> f32 { 0.50 }
+            fn clamp_lower(&self) -> f32 { 0.30 }
+            fn clamp_upper(&self) -> f32 { 1.50 }
+            fn movestreak_base(&self) -> f32 { 1.00 }
+            fn movestreak_slope(&self) -> f32 { 0.08 }
+            fn movestreak_floor(&self) -> f32 { 0.40 }
+            fn entropy_base(&self) -> f32 { 0.50 }
+            fn entropy_weight(&self) -> f32 { 1.00 }
+        },
+        qsearch: QSearchParams {
+            fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
+            fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+        },
+        id: IdParams {
+            fn nmp_reduction(&self) -> Depth { Depth::new(2) }
+            fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(12) }
+            fn nmp_depth_factor(&self) -> u8 { 3 }
+            fn nmp_phase_factor(&self) -> u32 { 7 }
+            fn nmp_margin(&self) -> AnyScore { AnyScore::new(48) }
+            fn nmp_depth_margin(&self) -> i32 { 15 }
+        },
+        scorer: ScorerParams {
+            fn hh_weight(&self) -> i32 { 64 }
+        },
+        lmr: LmrParams {
+            fn offset(&self) -> f32 { 0.99 }
+            fn scale(&self) -> f32 { 3.14 }
+        },
     }
-}
-
-const impl ChronoParams for C_IdHceParams {
-    fn base_soft_mult(&self) -> f32 { 0.50 }
-    fn clamp_lower(&self) -> f32 { 0.30 }
-    fn clamp_upper(&self) -> f32 { 1.50 }
-    fn movestreak_base(&self) -> f32 { 1.00 }
-    fn movestreak_slope(&self) -> f32 { 0.08 }
-    fn movestreak_floor(&self) -> f32 { 0.40 }
-    fn entropy_base(&self) -> f32 { 0.50 }
-    fn entropy_weight(&self) -> f32 { 1.00 }
-}
-
-const impl QSearchParams for C_IdHceParams {
-    fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
-    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
-}
-
-const impl IdParams for C_IdHceParams {
-    fn nmp_reduction(&self) -> Depth { Depth::new(2) }
-    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(12) }
-    fn nmp_depth_factor(&self) -> u8 { 3 }
-    fn nmp_phase_factor(&self) -> u32 { 7 }
-    fn nmp_margin(&self) -> AnyScore { AnyScore::new(48) }
-    fn nmp_depth_margin(&self) -> i32 { 15 }
-}
-
-const impl ScorerParams for C_IdHceParams {
-    fn hh_weight(&self) -> i32 { 64 }
-}
-
-const impl LmrParams for C_IdHceParams {
-    fn offset(&self) -> f32 { 0.99 }
-    fn scale(&self) -> f32 { 3.14 }
 }
 
 // id nnue
 
-const_params!(IdNnue);
-
-impl IConfigBuilder for C_IdNnueParams {
-    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
-        //
-        builder.chrono(self).qsearch(self).id(self).scorer(self).lmr(self)
+const_params! {
+    IdNnue {
+        chrono: ChronoParams {
+            fn base_soft_mult(&self) -> f32 { 0.48 }
+            fn clamp_lower(&self) -> f32 { 0.34 }
+            fn clamp_upper(&self) -> f32 { 1.51 }
+            fn movestreak_base(&self) -> f32 { 1.00 }
+            fn movestreak_slope(&self) -> f32 { 0.08 }
+            fn movestreak_floor(&self) -> f32 { 0.40 }
+            fn entropy_base(&self) -> f32 { 0.50 }
+            fn entropy_weight(&self) -> f32 { 1.00 }
+        },
+        qsearch: QSearchParams {
+            fn futility_margin(&self) -> AnyScore { AnyScore::new(177) }
+            fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
+        },
+        id: IdParams {
+            fn nmp_reduction(&self) -> Depth { Depth::new(2) }
+            fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(11) }
+            fn nmp_depth_factor(&self) -> u8 { 4 }
+            fn nmp_phase_factor(&self) -> u32 { 7 }
+            fn nmp_margin(&self) -> AnyScore { AnyScore::new(50) }
+            fn nmp_depth_margin(&self) -> i32 { 12 }
+        },
+        scorer: ScorerParams {
+            fn hh_weight(&self) -> i32 { 100 }
+        },
+        lmr: LmrParams {
+            fn offset(&self) -> f32 { 0.99 }
+            fn scale(&self) -> f32 { 3.14 }
+        },
     }
-}
-
-const impl ChronoParams for C_IdNnueParams {
-    fn base_soft_mult(&self) -> f32 { 0.48 }
-    fn clamp_lower(&self) -> f32 { 0.34 }
-    fn clamp_upper(&self) -> f32 { 1.51 }
-    fn movestreak_base(&self) -> f32 { 1.00 }
-    fn movestreak_slope(&self) -> f32 { 0.08 }
-    fn movestreak_floor(&self) -> f32 { 0.40 }
-    fn entropy_base(&self) -> f32 { 0.50 }
-    fn entropy_weight(&self) -> f32 { 1.00 }
-}
-
-const impl QSearchParams for C_IdNnueParams {
-    fn futility_margin(&self) -> AnyScore { AnyScore::new(177) }
-    fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
-}
-
-const impl IdParams for C_IdNnueParams {
-    fn nmp_reduction(&self) -> Depth { Depth::new(2) }
-    fn nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(11) }
-    fn nmp_depth_factor(&self) -> u8 { 4 }
-    fn nmp_phase_factor(&self) -> u32 { 7 }
-    fn nmp_margin(&self) -> AnyScore { AnyScore::new(50) }
-    fn nmp_depth_margin(&self) -> i32 { 12 }
-}
-
-const impl LmrParams for C_IdNnueParams {
-    fn offset(&self) -> f32 { 0.99 }
-    fn scale(&self) -> f32 { 3.14 }
-}
-
-const impl ScorerParams for C_IdNnueParams {
-    fn hh_weight(&self) -> i32 { 100 }
 }
