@@ -902,7 +902,8 @@ where
                 // low
                 if is_capture && !is_promo {
                     let ch_bonus = HistoryScore::new(
-                        ScorerParams::ch_penalty_base(&self.params) + ScorerParams::ch_penalty_depth_factor(&self.params) * depth.v() as THistoryScore,
+                        ScorerParams::ch_penalty_base(&self.params)
+                            + ScorerParams::ch_penalty_depth_factor(&self.params) * depth.v() as THistoryScore,
                     );
                     let capt_sq = m
                         .get_capture_sq()
@@ -1140,7 +1141,7 @@ where
 
                 // todo: should we score promo captures via ch here? gotta benchmark
                 // probe capture scores in the history tables
-                if let Some(capt_sq) = mov.get_capture_sq()
+                let ch_score = if let Some(capt_sq) = mov.get_capture_sq()
                     && !is_promo
                     && is_capture
                 {
@@ -1149,13 +1150,19 @@ where
                     let ch_score = self.ch.get(self.color, moving_pt, to, capt_pt);
                     let mvv = hce::piece_score(capt_pt).v() as MoveScore;
                     let lva = -ch_score.v() / self.params.ch_ordering_divisor();
-                    return mvv - lva;
+
+                    mvv - lva
                 }
+                else {
+                    0
+                };
 
                 // fallback to see for moves without ch_score or promos
                 // todo: currently see evaluates the promo values, but we don't need a whole
                 // see for quiet promos, maybe that can be optimized...
-                ordering::see(pos.piece_info(), mov, self.color)
+                let see_score = ordering::see(pos.piece_info(), mov, self.color);
+
+                see_score + ch_score
             }
 
             // score killer moves by their age

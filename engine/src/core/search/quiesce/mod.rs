@@ -336,7 +336,7 @@ impl<Q: QSearchParams> ordering::MoveScorer for MoveScorer<'_, Q> {
 
                 // todo: should we score promo captures via ch here? gotta benchmark
                 // probe capture scores in the history tables
-                if let Some(capt_sq) = mov.get_capture_sq()
+                let ch_score = if let Some(capt_sq) = mov.get_capture_sq()
                     && !is_promo
                     && is_capture
                 {
@@ -344,10 +344,14 @@ impl<Q: QSearchParams> ordering::MoveScorer for MoveScorer<'_, Q> {
                     let ch_score = self.ch.get(self.color, pt, to, capt_pt);
                     let mvv = hce::piece_score(capt_pt).v() as MoveScore;
                     let lva = -ch_score.v() / self.params.ch_ordering_divisor();
-                    return mvv - lva;
-                }
 
-                ordering::see(pieces, mov, self.color) + ordering::psqt(self.phase, pt, from, to, flag, self.color)
+                    mvv - lva
+                } else { 0 };
+
+                let see_score = ordering::see(pieces, mov, self.color);
+                let psqt_score = ordering::psqt(self.phase, pt, from, to, flag, self.color);
+
+                ch_score + see_score + psqt_score
             }
             ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
             ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {
