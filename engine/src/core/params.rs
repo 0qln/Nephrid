@@ -1,4 +1,4 @@
-use std::{fmt, marker::PhantomData, ops::Deref};
+use std::{fmt, ops::Deref};
 
 use crate::{
     core::{
@@ -71,142 +71,434 @@ macro_rules! const_params {
     };
 }
 
+// tunable generator
+
+macro_rules! define_engine_params {
+    (
+        $(
+            $group:ident : $trait_name:ident {
+                $(
+                    $field:ident : $field_type:ty {
+                        uci: $uci_name:expr,
+                        unit: $unit_type:ident,
+                        default: $default:expr,
+                        min: $min:expr,
+                        max: $max:expr,
+                        getter: $getter:ident,
+                        to_raw: $to_raw:expr,
+                        from_raw: $from_raw:expr $(,)?
+                    }
+                ),* $(,)?
+            }
+        ),* $(,)?
+    ) => {
+        paste::paste! {
+            $(
+                // individual group param struct & trait impl
+                #[derive(Debug, Clone)]
+                pub struct [<$trait_name Group>] {
+                    $( pub $field: $field_type, )*
+                }
+
+                impl $trait_name for [<$trait_name Group>] {
+                    $(
+                        fn $getter(&self) -> $field_type { self.$field }
+                    )*
+                }
+
+                // individual group config struct
+                #[derive(Debug, Clone)]
+                pub struct [<$trait_name ConfigGroup>] {
+                    $( pub $field: $crate::core::config::ConfigOption<$crate::core::config::Spin<$crate::core::config::$unit_type>>, )*
+                }
+
+                impl [<$trait_name ConfigGroup>] {
+                    pub fn default_builder() -> Self {
+                        Self {
+                            $(
+                                $field: $crate::core::config::ConfigOption::new(
+                                    $uci_name,
+                                    $crate::core::config::Spin::new(($to_raw)($default), ($to_raw)($min), ($to_raw)($max))
+                                ),
+                            )*
+                        }
+                    }
+
+                    pub fn seed_from(&mut self, params: &impl $trait_name) {
+                        $( self.$field.seed(($to_raw)(params.$getter())); )*
+                    }
+
+                    pub fn extract_params(&self) -> [<$trait_name Group>] {
+                        [<$trait_name Group>] {
+                            $( $field: ($from_raw)(&self.$field.value), )*
+                        }
+                    }
+
+                    pub fn set(&mut self, name: &str, value: &str) -> Option<Result<(), Box<dyn std::error::Error>>> {
+                        match name {
+                            $( $uci_name => Some(self.$field.set(value)), )*
+                            _ => None,
+                        }
+                    }
+
+                    pub fn print_uci(&self) {
+                        $( println!("{}", self.$field); )*
+                    }
+                }
+            )*
+
+            // top-level TunableConfiguration containing all groups
+            #[derive(Debug, Clone)]
+            pub struct TunableConfiguration {
+                $( pub $group: [<$trait_name ConfigGroup>], )*
+            }
+
+            impl Default for TunableConfiguration {
+                fn default() -> Self {
+                    Self {
+                        $( $group: [<$trait_name ConfigGroup>]::default_builder(), )*
+                    }
+                }
+            }
+
+            impl TunableConfiguration {
+                pub fn set(&mut self, name: &str, value: &str) -> Option<Result<(), Box<dyn std::error::Error>>> {
+                    $(
+                        if let Some(res) = self.$group.set(name, value) {
+                            return Some(res);
+                        }
+                    )*
+                    None
+                }
+
+                pub fn print_uci(&self) {
+                    $( self.$group.print_uci(); )*
+                }
+            }
+
+            // top-level TunableParams struct
+            #[derive(Debug, Clone)]
+            pub struct TunableParams<Base> {
+                $( pub $group: [<$trait_name Group>], )*
+                _base: std::marker::PhantomData<Base>,
+            }
+
+            impl<B> TunableParams<B> {
+                fn from_config<C: std::ops::Deref<Target = Configuration>>(config: C) -> Self {
+                    Self {
+                        $( $group: config.tunable.$group.extract_params(), )*
+                        _base: std::marker::PhantomData,
+                    }
+                }
+            }
+
+            // forwarding trait impls for TunableParams
+            $(
+                impl<B> $trait_name for TunableParams<B> {
+                    $(
+                        fn $getter(&self) -> $field_type { self.$group.$getter() }
+                    )*
+                }
+
+                impl<B, X: std::ops::Deref<Target = TunableParams<B>>> $trait_name for X {
+                    $(
+                        fn $getter(&self) -> $field_type { self.$group.$getter() }
+                    )*
+                }
+            )*
+
+            // generate ConfigBuilder seeder methods automatically
+            impl ConfigBuilder {
+                $(
+                    pub fn $group(mut self, params: &impl $trait_name) -> Self {
+                        self.config.tunable.$group.seed_from(params);
+                        self
+                    }
+                )*
+            }
+
+           impl<B> IConfigBuilder for TunableParams<B> {
+                fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
+                    builder
+                        $( .$group(self) )*
+                }
+            }
+        }
+    };
+}
+
 // generic tunable
 
 pub type TunableParamsRef<B> = std::rc::Rc<TunableParams<B>>;
 
-#[derive(Debug, Clone)]
-pub struct TunableParams<Base> {
-    timeman_base_soft_mult: f32,
-    timeman_clamp_lower: f32,
-    timeman_clamp_upper: f32,
-    timeman_stability_base: f32,
-    timeman_stability_slope: f32,
-    timeman_stability_floor: f32,
-    timeman_entropy_base: f32,
-    timeman_entropy_weight: f32,
-    hce_policy_temp: f32,
-    hce_q_futility_margin: AnyScore,
-    hce_q_delta_pruning_threshold: TaperValue,
-    select_cpuct: f32,
-    mcts_proven_loss_visit_threshold: VisitCount,
-    mcts_killer_exploitation: f32,
-    mcts_tt_best_move: f32,
-    id_nmp_reduction: Depth,
-    id_nmp_phase_threshold: TaperValue,
-    id_nmp_depth_factor: u8,
-    id_nmp_phase_factor: u32,
-    id_nmp_margin: AnyScore,
-    id_nmp_depth_margin: i32,
-    id_scorer_hh_weight: i32,
-    lmr_offset: f32,
-    lmr_scale: f32,
-    _base: PhantomData<Base>,
-}
+fn ratio_to_raw(val: f32) -> uom::si::f32::Ratio { uom::si::f32::Ratio::new::<uom::si::ratio::ratio>(val) }
 
-impl<B, X: Deref<Target = TunableParams<B>>> PuctParams for X {
-    fn select_cpuct(&self) -> f32 { self.select_cpuct }
-}
+fn ratio_from_raw(qty: &uom::si::f32::Ratio) -> f32 { qty.get::<uom::si::ratio::ratio>() }
 
-impl<B, X: Deref<Target = TunableParams<B>>> MctsParams for X {
-    fn proven_loss_visit_threshold(&self) -> VisitCount { self.mcts_proven_loss_visit_threshold }
-    fn killer_exploitation(&self) -> f32 { self.mcts_killer_exploitation }
-    fn tt_best_move(&self) -> f32 { self.mcts_tt_best_move }
-}
+define_engine_params! {
+    qsearch: QSearchParams {
+        futility_margin: AnyScore {
+            uci: "qs-futility-margin",
+            unit: UciInteger,
+            default: AnyScore::new(150),
+            min: AnyScore::new(100),
+            max: AnyScore::new(300),
+            getter: futility_margin,
+            to_raw: |s: AnyScore| s.v(),
+            from_raw: |v: &i32| AnyScore::new(*v),
+        },
+        delta_pruning_threshold: TaperValue {
+            uci: "qs-delta-pruning-threshold",
+            unit: UciInteger,
+            default: TaperValue::new(16),
+            min: TaperValue::new(0),
+            max: TaperValue::new(24),
+            getter: delta_pruning_threshold,
+            to_raw: |t: TaperValue| t.v(),
+            from_raw: |v: &i32| TaperValue::new(*v),
+        },
+    },
 
-impl<B, X: Deref<Target = TunableParams<B>>> QSearchParams for X {
-    fn futility_margin(&self) -> AnyScore { self.hce_q_futility_margin }
-    fn delta_pruning_threshold(&self) -> TaperValue { self.hce_q_delta_pruning_threshold }
-}
+    policy: PolicyParams {
+        policy_temperature: f32 {
+            uci: "eval-policy-temperature",
+            unit: UciPercent,
+            default: 20.0,
+            min: 1.0,
+            max: 100.0,
+            getter: policy_temperature,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+    },
 
-impl<B, X: Deref<Target = TunableParams<B>>> PolicyParams for X {
-    fn policy_temperature(&self) -> f32 { self.hce_policy_temp }
-}
+    puct: PuctParams {
+        select_cpuct: f32 {
+            uci: "select-cpuct",
+            unit: UciPercent,
+            default: 1.4,
+            min: 0.01,
+            max: 50.0,
+            getter: select_cpuct,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+    },
 
-impl<B, X: Deref<Target = TunableParams<B>>> ChronoParams for X {
-    fn base_soft_mult(&self) -> f32 { self.timeman_base_soft_mult }
-    fn clamp_lower(&self) -> f32 { self.timeman_clamp_lower }
-    fn clamp_upper(&self) -> f32 { self.timeman_clamp_upper }
-    fn movestreak_base(&self) -> f32 { self.timeman_stability_base }
-    fn movestreak_slope(&self) -> f32 { self.timeman_stability_slope }
-    fn movestreak_floor(&self) -> f32 { self.timeman_stability_floor }
-    fn entropy_base(&self) -> f32 { self.timeman_entropy_base }
-    fn entropy_weight(&self) -> f32 { self.timeman_entropy_weight }
-}
+    mcts: MctsParams {
+        proven_loss_visit_threshold: VisitCount {
+            uci: "mcts-proven-loss-visit-threshold",
+            unit: UciInteger,
+            default: VisitCount(5),
+            min: VisitCount(1),
+            max: VisitCount(100),
+            getter: proven_loss_visit_threshold,
+            to_raw: |v: VisitCount| v.0 as i32,
+            from_raw: |v: &i32| { VisitCount(*v as u32) },
+        },
+        killer_exploitation: f32 {
+            uci: "mcts-killer-exploitation",
+            unit: UciPercent,
+            default: 0.27,
+            min: 0.0,
+            max: 10.0,
+            getter: killer_exploitation,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+        tt_best_move: f32 {
+            uci: "mcts-tt-best-move",
+            unit: UciPercent,
+            default: 1.50,
+            min: 0.0,
+            max: 10.0,
+            getter: tt_best_move,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+    },
 
-impl<B, X: Deref<Target = TunableParams<B>>> IdParams for X {
-    fn nmp_reduction(&self) -> Depth { self.id_nmp_reduction }
-    fn nmp_phase_threshold(&self) -> TaperValue { self.id_nmp_phase_threshold }
-    fn nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor }
-    fn nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor }
-    fn nmp_margin(&self) -> AnyScore { self.id_nmp_margin }
-    fn nmp_depth_margin(&self) -> i32 { self.id_nmp_depth_margin }
-}
+    chrono: ChronoParams {
+        base_soft_mult: f32 {
+            uci: "timeman-base-soft-mult",
+            unit: UciPercent,
+            default: 0.50,
+            min: 0.01,
+            max: 2.00,
+            getter: base_soft_mult,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+        clamp_lower: f32 {
+            uci: "timeman-clamp-lower",
+            unit: UciPercent,
+            default: 0.30,
+            min: 0.00,
+            max: 1.00,
+            getter: clamp_lower,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+        clamp_upper: f32 {
+            uci: "timeman-clamp-upper",
+            unit: UciPercent,
+            default: 1.50,
+            min: 0.10,
+            max: 3.00,
+            getter: clamp_upper,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+        movestreak_base: f32 {
+            uci: "timeman-stability-base",
+            unit: UciPercent,
+            default: 1.00,
+            min: 0.00,
+            max: 2.00,
+            getter: movestreak_base,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+        movestreak_slope: f32 {
+            uci: "timeman-stability-slope",
+            unit: UciPercent,
+            default: 0.08,
+            min: 0.00,
+            max: 0.50,
+            getter: movestreak_slope,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+        movestreak_floor: f32 {
+            uci: "timeman-stability-floor",
+            unit: UciPercent,
+            default: 0.40,
+            min: 0.00,
+            max: 1.00,
+            getter: movestreak_floor,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+        entropy_base: f32 {
+            uci: "timeman-entropy-base",
+            unit: UciPercent,
+            default: 0.50,
+            min: 0.00,
+            max: 2.00,
+            getter: entropy_base,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+        entropy_weight: f32 {
+            uci: "timeman-entropy-weight",
+            unit: UciPercent,
+            default: 1.00,
+            min: 0.00,
+            max: 2.00,
+            getter: entropy_weight,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+    },
 
-impl<B, X: Deref<Target = TunableParams<B>>> ScorerParams for X {
-    fn hh_weight(&self) -> i32 { self.id_scorer_hh_weight }
-}
+    id: IdParams {
+        nmp_reduction: Depth {
+            uci: "id-nmp-reduction",
+            unit: UciInteger,
+            default: Depth::new(2),
+            min: Depth::new(0),
+            max: Depth::new(10),
+            getter: nmp_reduction,
+            to_raw: |d: Depth| d.v() as i32,
+            from_raw: |v: &i32| Depth::new(*v as u8),
+        },
+        nmp_phase_threshold: TaperValue {
+            uci: "id-nmp-phase-threshold",
+            unit: UciInteger,
+            default: TaperValue::new(8),
+            min: TaperValue::new(0),
+            max: TaperValue::new(24),
+            getter: nmp_phase_threshold,
+            to_raw: |t: TaperValue| t.v(),
+            from_raw: |v: &i32| TaperValue::new(*v),
+        },
+        nmp_depth_factor: u8 {
+            uci: "id-nmp-depth-factor",
+            unit: UciInteger,
+            default: 3,
+            min: 1,
+            max: 20,
+            getter: nmp_depth_factor,
+            to_raw: |v: u8| v as i32,
+            from_raw: |v: &i32| *v as u8,
+        },
+        nmp_phase_factor: u32 {
+            uci: "id-nmp-phase-factor",
+            unit: UciInteger,
+            default: 7,
+            min: 1,
+            max: 50,
+            getter: nmp_phase_factor,
+            to_raw: |v: u32| v as i32,
+            from_raw: |v: &i32| *v as u32,
+        },
+        nmp_margin: AnyScore {
+            uci: "id-nmp-margin",
+            unit: UciInteger,
+            default: AnyScore::new(50),
+            min: AnyScore::new(-350),
+            max: AnyScore::new(350),
+            getter: nmp_margin,
+            to_raw: |s: AnyScore| s.v(),
+            from_raw: |v: &i32| AnyScore::new(*v),
+        },
+        nmp_depth_margin: i32 {
+            uci: "id-nmp-depth-margin",
+            unit: UciInteger,
+            default: 15,
+            min: 0,
+            max: 100,
+            getter: nmp_depth_margin,
+            to_raw: |v: i32| v,
+            from_raw: |v: &i32| *v,
+        },
+    },
 
-impl<B, X: Deref<Target = TunableParams<B>>> LmrParams for X {
-    fn offset(&self) -> f32 { self.lmr_offset }
-    fn scale(&self) -> f32 { self.lmr_scale }
-}
+    scorer: ScorerParams {
+        hh_weight: i32 {
+            uci: "id-scorer-hh-weight",
+            unit: UciInteger,
+            default: 64,
+            min: 0,
+            max: 128,
+            getter: hh_weight,
+            to_raw: |v: i32| v,
+            from_raw: |v: &i32| *v,
+        },
+    },
 
-impl<B> TunableParams<B> {
-    fn from_config<C: Deref<Target = Configuration>>(config: C) -> Self {
-        let config = config.deref();
-        let timeman_base_soft_mult = config.timeman_base_soft_mult();
-        let timeman_clamp_lower = config.timeman_clamp_lower();
-        let timeman_clamp_upper = config.timeman_clamp_upper();
-        let timeman_stability_base = config.timeman_stability_base();
-        let timeman_stability_slope = config.timeman_stability_slope();
-        let timeman_stability_floor = config.timeman_stability_floor();
-        let timeman_entropy_base = config.timeman_entropy_base();
-        let timeman_entropy_weight = config.timeman_entropy_weight();
-        let hce_policy_temp = config.eval_policy_temperature();
-        let hce_q_futility_margin = config.eval_futility_margin();
-        let hce_q_delta_pruning_threshold = config.eval_delta_pruning_threshold();
-        let select_cpuct = config.select_cpuct();
-        let mcts_proven_loss_visit_threshold = config.mcts_proven_loss_visit_threshold();
-        let mcts_killer_exploitation = config.mcts_killer_exploitation();
-        let mcts_tt_best_move = config.mcts_tt_best_move();
-        let id_nmp_reduction = config.id_nmp_reduction();
-        let id_nmp_phase_threshold = config.id_nmp_phase_threshold();
-        let id_nmp_depth_factor = config.id_nmp_depth_factor();
-        let id_nmp_phase_factor = config.id_nmp_phase_factor();
-        let id_nmp_margin = config.id_nmp_margin();
-        let id_scorer_hh_weight = config.id_scorer_hh_weight();
-        let id_nmp_depth_margin = config.id_nmp_depth_margin();
-        let lmr_offset = config.lmr_offset();
-        let lmr_scale = config.lmr_scale();
-        Self {
-            timeman_base_soft_mult,
-            timeman_clamp_lower,
-            timeman_clamp_upper,
-            timeman_stability_base,
-            timeman_stability_slope,
-            timeman_stability_floor,
-            timeman_entropy_base,
-            timeman_entropy_weight,
-            hce_policy_temp,
-            hce_q_futility_margin,
-            hce_q_delta_pruning_threshold,
-            select_cpuct,
-            mcts_proven_loss_visit_threshold,
-            mcts_killer_exploitation,
-            mcts_tt_best_move,
-            id_nmp_reduction,
-            id_nmp_phase_threshold,
-            id_nmp_depth_factor,
-            id_nmp_phase_factor,
-            id_nmp_margin,
-            id_nmp_depth_margin,
-            id_scorer_hh_weight,
-            lmr_offset,
-            lmr_scale,
-            _base: PhantomData,
-        }
-    }
+    lmr: LmrParams {
+        offset: f32 {
+            uci: "lmr-offset",
+            unit: UciPercent,
+            default: 0.99,
+            min: 0.0,
+            max: 2.0,
+            getter: offset,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+        scale: f32 {
+            uci: "lmr-scale",
+            unit: UciPercent,
+            default: 3.14,
+            min: 0.10,
+            max: 10.0,
+            getter: scale,
+            to_raw: ratio_to_raw,
+            from_raw: ratio_from_raw,
+        },
+    },
 }
 
 impl<Base: fmt::Debug> IParams for TunableParams<Base> {
@@ -216,13 +508,6 @@ impl<Base: fmt::Debug> IParams for TunableParams<Base> {
 
     fn try_from_config<C: Deref<Target = Configuration>>(config: C) -> Result<Self::Ref, CreateTunableParamsError> {
         Ok(Self::from_config(config).shared())
-    }
-}
-
-impl<B> IConfigBuilder for TunableParams<B> {
-    fn build_config(&self, builder: ConfigBuilder) -> ConfigBuilder {
-        //
-        builder.chrono(&self).policy(&self).qsearch(&self).puct(&self).mcts(&self).lmr(&self)
     }
 }
 
