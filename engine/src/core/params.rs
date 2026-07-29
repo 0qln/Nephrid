@@ -15,7 +15,7 @@ use crate::{
                 eval::hce::PolicyParams,
                 node::VisitCount,
                 search::MctsParams,
-                select::{hpuct::HeuristicParams, puct::PuctParams},
+                select::puct::PuctParams,
             },
             ordering::MoveScore,
             quiesce::QSearchParams,
@@ -369,9 +369,6 @@ tunable_params! {
     },
 
     mcts: MctsParams {
-    },
-
-    heuristic: HeuristicParams {
         proven_loss_visit_threshold: VisitCount {
             uci: "mcts-proven-loss-visit-threshold",
             unit: UciInteger,
@@ -380,7 +377,7 @@ tunable_params! {
             max: VisitCount(100),
             getter: proven_loss_visit_threshold,
             to_raw: |v: VisitCount| v.0 as i32,
-            from_raw: |v: &i32| { VisitCount(*v as u32) },
+            from_raw: |v: &i32| VisitCount(*v as u32),
         },
         killer_exploitation: f32 {
             uci: "mcts-killer-exploitation",
@@ -678,8 +675,6 @@ const_params! {
             fn select_cpuct(&self) -> f32 { 0.77 }
         },
         mcts: MctsParams {
-        },
-        heuristic: HeuristicParams {
             fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
             fn killer_exploitation(&self) -> f32 { 0.27 }
             fn tt_best_move(&self) -> f32 { 1.65 }
@@ -717,6 +712,9 @@ const_params! {
             fn select_cpuct(&self) -> f32 { 0.77 }
         },
         mcts: MctsParams {
+            fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
+            fn killer_exploitation(&self) -> f32 { 0.27 }
+            fn tt_best_move(&self) -> f32 { 1.65 }
         },
         policy: PolicyParams {
             fn policy_temperature(&self) -> f32 { 24.58 }
@@ -739,6 +737,9 @@ const_params! {
 const_params! {
     MctsPure {
         mcts: MctsParams {
+            fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
+            fn killer_exploitation(&self) -> f32 { 0.27 }
+            fn tt_best_move(&self) -> f32 { 1.65 }
         },
         chrono: ChronoParams {
             fn base_soft_mult(&self) -> f32 { 0.50 }
@@ -816,9 +817,9 @@ const_params! {
         qsearch: QSearchParams {
             fn futility_margin(&self) -> AnyScore { AnyScore::new(177) }
             fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
-            fn ch_penalty_base(&self) -> THistoryScore { 25 }
-            fn ch_penalty_depth_factor(&self) -> THistoryScore { 2 }
-            fn ch_bonus_base(&self) -> THistoryScore { 40 }
+            fn ch_penalty_base(&self) -> THistoryScore { 26 }
+            fn ch_penalty_depth_factor(&self) -> THistoryScore { 0 }
+            fn ch_bonus_base(&self) -> THistoryScore { 32 }
             fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
             fn ch_ordering_divisor(&self) -> MoveScore { 8 }
         },
@@ -832,10 +833,10 @@ const_params! {
         },
         scorer: ScorerParams {
             fn hh_weight(&self) -> i32 { 100 }
-            fn ch_penalty_base(&self) -> THistoryScore { 20 }
-            fn ch_penalty_depth_factor(&self) -> THistoryScore { 3 }
-            fn ch_bonus_base(&self) -> THistoryScore { 30 }
-            fn ch_bonus_depth_factor(&self) -> THistoryScore { 5 }
+            fn ch_penalty_base(&self) -> THistoryScore { 18 }
+            fn ch_penalty_depth_factor(&self) -> THistoryScore { 0 }
+            fn ch_bonus_base(&self) -> THistoryScore { 32 }
+            fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
             fn ch_ordering_divisor(&self) -> MoveScore { 8 }
         },
         lmr: LmrParams {
