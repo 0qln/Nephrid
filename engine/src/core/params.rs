@@ -486,9 +486,9 @@ const impl ChronoParams for C_IdNnueParams {
 const impl QSearchParams for C_IdNnueParams {
     fn futility_margin(&self) -> AnyScore { AnyScore::new(177) }
     fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
-    fn ch_penalty_base(&self) -> THistoryScore { 25 }
-    fn ch_penalty_depth_factor(&self) -> THistoryScore { 2 }
-    fn ch_bonus_base(&self) -> THistoryScore { 40 }
+    fn ch_penalty_base(&self) -> THistoryScore { 26 }
+    fn ch_penalty_depth_factor(&self) -> THistoryScore { 0 }
+    fn ch_bonus_base(&self) -> THistoryScore { 32 }
     fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
     fn ch_ordering_divisor(&self) -> MoveScore { 8 }
 }
@@ -509,9 +509,9 @@ const impl LmrParams for C_IdNnueParams {
 
 const impl ScorerParams for C_IdNnueParams {
     fn hh_weight(&self) -> i32 { 100 }
-    fn ch_penalty_base(&self) -> THistoryScore { 20 }
-    fn ch_penalty_depth_factor(&self) -> THistoryScore { 3 }
-    fn ch_bonus_base(&self) -> THistoryScore { 30 }
-    fn ch_bonus_depth_factor(&self) -> THistoryScore { 5 }
+    fn ch_penalty_base(&self) -> THistoryScore { 18 }
+    fn ch_penalty_depth_factor(&self) -> THistoryScore { 0 }
+    fn ch_bonus_base(&self) -> THistoryScore { 32 }
+    fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
     fn ch_ordering_divisor(&self) -> MoveScore { 8 }
 }
