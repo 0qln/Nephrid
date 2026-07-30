@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 
-cargo build --release --bin nephrid --features "engine/tunable"
-(cd tuning/src/spsa/weather-factory && python3 main.py)
+cargo build --release --bin nephrid --features "tunable"
+(cd tuning/src/params && python3 main.py)
