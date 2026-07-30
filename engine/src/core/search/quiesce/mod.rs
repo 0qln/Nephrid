@@ -54,7 +54,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         eval: &mut impl StaticEvaluator,
         depth: Depth,
     ) -> Score<P> {
-        let mut best_score = Score::NEG_INF;
+        let mut best_score = -Score::INF;
 
         let in_check = pos.get_check_state() != CheckState::None;
         let key = pos.get_key();
@@ -154,7 +154,10 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // recurse
         let mut best_move = Move::null();
+        let mut num_legal_moves = 0;
         while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
+            num_legal_moves += 1;
+
             // delta pruning
             if !in_check && phase < params.delta_pruning_threshold() {
                 let (from, to, flag) = m.into();
@@ -223,6 +226,12 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             bound: Bound::None, // Bound::from_scores(beta - 1, beta, best_score),
             mov: best_move,
         });
+
+        // explicitly check for checkmate, such that we can return a score with
+        // information about the depth of the mate and not just the stray NEG_INF.
+        if num_legal_moves == 0 && in_check {
+            return -Score::mate_in(rel_ply);
+        }
 
         best_score
     }

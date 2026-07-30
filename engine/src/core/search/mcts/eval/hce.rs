@@ -126,8 +126,8 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             colors::WHITE_C => qsearcher
                 .go::<perspectives::White, node_types::Pv>(
                     pos,
-                    Score::NEG_INF,
-                    Score::POS_INF,
+                    -Score::INF,
+                    Score::INF,
                     MctsHceParamsRef::clone(&params),
                     &mut StaticEvaluator,
                     Depth::new(30),
@@ -136,8 +136,8 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
             colors::BLACK_C => qsearcher
                 .go::<perspectives::Black, node_types::Pv>(
                     pos,
-                    Score::NEG_INF,
-                    Score::POS_INF,
+                    -Score::INF,
+                    Score::INF,
                     MctsHceParamsRef::clone(&params),
                     &mut StaticEvaluator,
                     Depth::new(30),
