@@ -1,17 +1,6 @@
 use crate::{
-    core::{
-        chrono::ChronoParams,
-        depth::Depth,
-        eval::hce::TaperValue,
-        search::{
-            id::{IdParams, ScorerParams},
-            mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
-            quiesce::QSearchParams,
-            score::AnyScore,
-        },
-    },
+    core::params::TunableConfiguration,
     misc::{InvalidValueError, ValueOutOfRangeError},
-    math::LmrParams,
 };
 use std::{
     error::Error,
@@ -94,7 +83,7 @@ impl<U: UciUnit> ConfigOption<Spin<U>>
 where
     U::Quantity: Copy,
 {
-    fn seed(&mut self, value: U::Quantity) {
+    pub fn seed(&mut self, value: U::Quantity) {
         self.inner.value = value;
         self.inner.default = value;
     }
@@ -374,63 +363,7 @@ pub struct Configuration {
     /// time until the opponent actually moves).
     ponder: ConfigOption<Check>,
 
-    /// Evaluation policy temperature.
-    eval_policy_temperature: ConfigOption<Spin<UciPercent>>,
-
-    /// Margin for futility pruning. In centipawns
-    qs_futility_margin: ConfigOption<Spin<UciInteger>>,
-
-    /// Margin for delta pruning. A tapervalue.
-    qs_delta_pruning_threshold: ConfigOption<Spin<UciInteger>>,
-
-    /// Cpuct constant for selection.
-    select_cpuct: ConfigOption<Spin<UciPercent>>,
-
-    /// Visit threshold for proven loss cutoff in mcts.
-    mcts_proven_loss_visit_threshold: ConfigOption<Spin<UciInteger>>,
-
-    /// Killer exploitation factor for mcts.
-    mcts_killer_exploitation: ConfigOption<Spin<UciPercent>>,
-
-    /// Bonus for tt best move in mcts.
-    mcts_tt_best_move: ConfigOption<Spin<UciPercent>>,
-
-    // Chrono params.
-    timeman_base_soft_mult: ConfigOption<Spin<UciPercent>>,
-    timeman_clamp_lower: ConfigOption<Spin<UciPercent>>,
-    timeman_clamp_upper: ConfigOption<Spin<UciPercent>>,
-    timeman_stability_base: ConfigOption<Spin<UciPercent>>,
-    timeman_stability_slope: ConfigOption<Spin<UciPercent>>,
-    timeman_stability_floor: ConfigOption<Spin<UciPercent>>,
-    timeman_entropy_base: ConfigOption<Spin<UciPercent>>,
-    timeman_entropy_weight: ConfigOption<Spin<UciPercent>>,
-
-    /// [Iterative Deepening] Null Move Pruning reduction (R).
-    id_nmp_reduction: ConfigOption<Spin<UciInteger>>,
-
-    /// [Iterative Deepening] Null Move Pruning phase threshold.
-    id_nmp_phase_threshold: ConfigOption<Spin<UciInteger>>,
-
-    /// [Iterative Deepening] Null Move Pruning depth factor.
-    id_nmp_depth_factor: ConfigOption<Spin<UciInteger>>,
-
-    /// [Iterative Deepening] Null Move Pruning phase factor.
-    id_nmp_phase_factor: ConfigOption<Spin<UciInteger>>,
-
-    /// [Iterative Deepening] Null Move Pruning margin.
-    id_nmp_margin: ConfigOption<Spin<UciInteger>>,
-
-    /// [Iterative Deepening] Null Move Pruning depth margin.
-    id_nmp_depth_margin: ConfigOption<Spin<UciInteger>>,
-
-    /// [Iterative Deepening] Scorer hyper-heuristic weight.
-    id_scorer_hh_weight: ConfigOption<Spin<UciInteger>>,
-
-    /// [Late Move Reductions] Base offset applied to the reduction.
-    lmr_offset: ConfigOption<Spin<UciPercent>>,
-
-    /// [Late Move Reductions] Divisor scaling the log-log reduction term.
-    lmr_scale: ConfigOption<Spin<UciPercent>>,
+    pub tunable: TunableConfiguration,
 }
 
 impl Configuration {
@@ -474,30 +407,7 @@ impl Configuration {
                 game_tree_caching: ConfigOption::new("game-tree-caching", Check::new(true)),
                 gui_lag: ConfigOption::new("gui-lag", Spin::<UciMillis>::new(_millis(100), _millis(1), _millis(10_000))),
                 ponder: ConfigOption::new("ponder", Check::new(true)),
-                eval_policy_temperature: ConfigOption::new("eval-policy-temperature", Spin::<UciPercent>::new(_ratio(20.), _ratio(1.), _ratio(100.))),
-                qs_futility_margin: ConfigOption::new("qs-futility-margin", Spin::new(150, 100, 300)),
-                qs_delta_pruning_threshold: ConfigOption::new("qs-delta-pruning-threshold", Spin::new(16, 0, 24)),
-                select_cpuct: ConfigOption::new("select-cpuct", Spin::<UciPercent>::new(_ratio(1.4), _ratio(0.01), _ratio(50.))),
-                mcts_proven_loss_visit_threshold: ConfigOption::new("mcts-proven-loss-visit-threshold", Spin::new(5, 1, 100)),
-                mcts_killer_exploitation: ConfigOption::new("mcts-killer-exploitation", Spin::<UciPercent>::new(_ratio(0.27), _ratio(0.), _ratio(10.))),
-                mcts_tt_best_move: ConfigOption::new("mcts-tt-best-move", Spin::<UciPercent>::new(_ratio(1.50), _ratio(0.), _ratio(10.))),
-                timeman_base_soft_mult: ConfigOption::new("timeman-base-soft-mult", Spin::<UciPercent>::new(_ratio(0.50), _ratio(0.01), _ratio(2.))),
-                timeman_clamp_lower: ConfigOption::new("timeman-clamp-lower", Spin::<UciPercent>::new(_ratio(0.30), _ratio(0.), _ratio(1.))),
-                timeman_clamp_upper: ConfigOption::new("timeman-clamp-upper", Spin::<UciPercent>::new(_ratio(1.50), _ratio(0.10), _ratio(3.))),
-                timeman_stability_base: ConfigOption::new("timeman-stability-base", Spin::<UciPercent>::new(_ratio(1.00), _ratio(0.), _ratio(2.))),
-                timeman_stability_slope: ConfigOption::new("timeman-stability-slope", Spin::<UciPercent>::new(_ratio(0.08), _ratio(0.), _ratio(0.50))),
-                timeman_stability_floor: ConfigOption::new("timeman-stability-floor", Spin::<UciPercent>::new(_ratio(0.40), _ratio(0.), _ratio(1.))),
-                timeman_entropy_base: ConfigOption::new("timeman-entropy-base", Spin::<UciPercent>::new(_ratio(0.50), _ratio(0.), _ratio(2.))),
-                timeman_entropy_weight: ConfigOption::new("timeman-entropy-weight", Spin::<UciPercent>::new(_ratio(1.00), _ratio(0.), _ratio(2.))),
-                id_nmp_reduction: ConfigOption::new("id-nmp-reduction", Spin::new(2, 0, 10)),
-                id_nmp_phase_threshold: ConfigOption::new("id-nmp-phase-threshold", Spin::new(8, 0, 24)),
-                id_nmp_depth_factor: ConfigOption::new("id-nmp-depth-factor", Spin::new(3, 1, 20)),
-                id_nmp_phase_factor: ConfigOption::new("id-nmp-phase-factor", Spin::new(7, 1, 50)),
-                id_nmp_margin: ConfigOption::new("id-nmp-margin", Spin::new(50, -350, 350)),
-                id_nmp_depth_margin: ConfigOption::new("id-nmp-depth-margin", Spin::new(15, 0, 100)),
-                id_scorer_hh_weight: ConfigOption::new("id-scorer-hh-weight", Spin::new(64, 0, 128)),
-                lmr_offset: ConfigOption::new("lmr-offset", Spin::<UciPercent>::new(_ratio(0.99), _ratio(0.), _ratio(2.))),
-                lmr_scale: ConfigOption::new("lmr-scale", Spin::<UciPercent>::new(_ratio(3.14), _ratio(0.10), _ratio(10.)))
+                tunable: TunableConfiguration::default()
             },
         }
     }
@@ -505,120 +415,12 @@ impl Configuration {
 
 #[derive(Debug, Clone)]
 pub struct ConfigBuilder {
-    config: Configuration,
+    pub config: Configuration,
 }
 
 impl ConfigBuilder {
-    /// Seed the quiescence-search options from [`QSearchParams`].
-    #[rustfmt::skip]
-    pub fn qsearch(mut self, params: &impl QSearchParams) -> Self {
-        let cfg = &mut self.config;
-        cfg.qs_futility_margin.seed(params.futility_margin().v());
-        cfg.qs_delta_pruning_threshold.seed(params.delta_pruning_threshold().v());
-        self
-    }
-
-    /// Seed the policy options from [`PolicyParams`].
-    #[rustfmt::skip]
-    pub fn policy(mut self, params: &impl PolicyParams) -> Self {
-        let cfg = &mut self.config;
-        cfg.eval_policy_temperature.seed(Ratio::new::<ratio>(params.policy_temperature()));
-        self
-    }
-
-    /// Seed the selection options from [`PuctParams`].
-    #[rustfmt::skip]
-    pub fn puct(mut self, params: &impl PuctParams) -> Self {
-        let cfg = &mut self.config;
-        cfg.select_cpuct.seed(Ratio::new::<ratio>(params.select_cpuct()));
-        self
-    }
-
-    /// Seed the mcts options from [`MctsParams`].
-    #[rustfmt::skip]
-    pub fn mcts(mut self, params: &impl MctsParams) -> Self {
-        let cfg = &mut self.config;
-        cfg.mcts_proven_loss_visit_threshold.seed(params.proven_loss_visit_threshold().0 as i32);
-        cfg.mcts_killer_exploitation.seed(Ratio::new::<ratio>(params.killer_exploitation()));
-        cfg.mcts_tt_best_move.seed(Ratio::new::<ratio>(params.tt_best_move()));
-        self
-    }
-
-    /// Seed the time-management options from [`ChronoParams`].
-    #[rustfmt::skip]
-    pub fn chrono(mut self, params: &impl ChronoParams) -> Self {
-        let cfg = &mut self.config;
-        cfg.timeman_base_soft_mult.seed(Ratio::new::<ratio>(params.base_soft_mult()));
-        cfg.timeman_clamp_lower.seed(Ratio::new::<ratio>(params.clamp_lower()));
-        cfg.timeman_clamp_upper.seed(Ratio::new::<ratio>(params.clamp_upper()));
-        cfg.timeman_stability_base.seed(Ratio::new::<ratio>(params.movestreak_base()));
-        cfg.timeman_stability_slope.seed(Ratio::new::<ratio>(params.movestreak_slope()));
-        cfg.timeman_stability_floor.seed(Ratio::new::<ratio>(params.movestreak_floor()));
-        cfg.timeman_entropy_base.seed(Ratio::new::<ratio>(params.entropy_base()));
-        cfg.timeman_entropy_weight.seed(Ratio::new::<ratio>(params.entropy_weight()));
-        self
-    }
-
-    /// Seed the iterative-deepening options from [`IdParams`].
-    #[rustfmt::skip]
-    pub fn id(mut self, params: &impl IdParams) -> Self {
-        let cfg = &mut self.config;
-        cfg.id_nmp_reduction.seed(params.nmp_reduction().v() as i32);
-        cfg.id_nmp_phase_threshold.seed(params.nmp_phase_threshold().v());
-        cfg.id_nmp_depth_factor.seed(params.nmp_depth_factor() as i32);
-        cfg.id_nmp_phase_factor.seed(params.nmp_phase_factor() as i32);
-        cfg.id_nmp_margin.seed(params.nmp_margin().v());
-        cfg.id_nmp_depth_margin.seed(params.nmp_depth_margin());
-        self
-    }
-
-    /// Seed the iterative-deepening scorer options from [`ScorerParams`].
-    #[rustfmt::skip]
-    pub fn scorer(mut self, params: &impl ScorerParams) -> Self {
-        let cfg = &mut self.config;
-        cfg.id_scorer_hh_weight.seed(params.hh_weight());
-        self
-    }
-
-    /// Seed the late-move-reduction options from [`LmrParams`].
-    #[rustfmt::skip]
-    pub fn lmr(mut self, params: &impl LmrParams) -> Self {
-        let cfg = &mut self.config;
-        cfg.lmr_offset.seed(Ratio::new::<ratio>(params.offset()));
-        cfg.lmr_scale.seed(Ratio::new::<ratio>(params.scale()));
-        self
-    }
-
     /// Finish building the [`Configuration`].
     pub fn build(self) -> Configuration { self.config }
-}
-
-// #[cfg(feature = "tunable")]
-impl Configuration {
-    pub fn eval_policy_temperature(&self) -> f32 { self.eval_policy_temperature.value.get::<ratio>() }
-    pub fn eval_futility_margin(&self) -> AnyScore { AnyScore::new(self.qs_futility_margin.value) }
-    pub fn eval_delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(self.qs_delta_pruning_threshold.value) }
-    pub fn select_cpuct(&self) -> f32 { self.select_cpuct.value.get::<ratio>() }
-    pub fn mcts_proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(self.mcts_proven_loss_visit_threshold.value as u32) }
-    pub fn mcts_killer_exploitation(&self) -> f32 { self.mcts_killer_exploitation.value.get::<ratio>() }
-    pub fn mcts_tt_best_move(&self) -> f32 { self.mcts_tt_best_move.value.get::<ratio>() }
-    pub fn timeman_base_soft_mult(&self) -> f32 { self.timeman_base_soft_mult.value.get::<ratio>() }
-    pub fn timeman_clamp_lower(&self) -> f32 { self.timeman_clamp_lower.value.get::<ratio>() }
-    pub fn timeman_clamp_upper(&self) -> f32 { self.timeman_clamp_upper.value.get::<ratio>() }
-    pub fn timeman_stability_base(&self) -> f32 { self.timeman_stability_base.value.get::<ratio>() }
-    pub fn timeman_stability_slope(&self) -> f32 { self.timeman_stability_slope.value.get::<ratio>() }
-    pub fn timeman_stability_floor(&self) -> f32 { self.timeman_stability_floor.value.get::<ratio>() }
-    pub fn timeman_entropy_base(&self) -> f32 { self.timeman_entropy_base.value.get::<ratio>() }
-    pub fn timeman_entropy_weight(&self) -> f32 { self.timeman_entropy_weight.value.get::<ratio>() }
-    pub fn id_nmp_reduction(&self) -> Depth { Depth::new(self.id_nmp_reduction.value as u8) }
-    pub fn id_nmp_phase_threshold(&self) -> TaperValue { TaperValue::new(self.id_nmp_phase_threshold.value) }
-    pub fn id_nmp_depth_factor(&self) -> u8 { self.id_nmp_depth_factor.value as u8 }
-    pub fn id_nmp_phase_factor(&self) -> u32 { self.id_nmp_phase_factor.value as u32 }
-    pub fn id_nmp_margin(&self) -> AnyScore { AnyScore::new(self.id_nmp_margin.value) }
-    pub fn id_nmp_depth_margin(&self) -> i32 { self.id_nmp_depth_margin.value }
-    pub fn id_scorer_hh_weight(&self) -> i32 { self.id_scorer_hh_weight.value }
-    pub fn lmr_offset(&self) -> f32 { self.lmr_offset.value.get::<ratio>() }
-    pub fn lmr_scale(&self) -> f32 { self.lmr_scale.value.get::<ratio>() }
 }
 
 impl Configuration {
@@ -646,58 +448,43 @@ impl Configuration {
     pub fn gui_lag(&self) -> u16 { self.gui_lag.value.get::<millisecond>() as u16 }
     pub fn ponder(&self) -> bool { self.ponder.value }
 
-    #[rustfmt::skip]
     #[allow(clippy::unit_arg)]
     pub fn set(&mut self, name: &str, value: &str) -> Result<(), Box<dyn Error>> {
-        match name.to_lowercase().as_str() {
-            "dirichlet-alpha" => self.dirichlet_alpha.set(value),
-            "dirichlet-epsilon" => self.dirichlet_epsilon.set(value),
-            "game-tree-caching" => self.game_tree_caching.set(value),
-            "gui-lag" => self.gui_lag.set(value),
-            "hash" => self.uci_hash.set(value),
-            "nalimovpath" => Ok(self.uci_nalimov_path.set(value)),
-            "nalimovcache" => self.uci_nalimov_cache.set(value),
-            "ownbook" => self.uci_ownbook.set(value),
-            "multipv" => self.uci_multipv.set(value),
-            "uci_showcurrline" => self.uci_show_currline.set(value),
-            "uci_showrefutations" => self.uci_show_refutations.set(value),
-            "uci_limitstrength" => self.uci_limit_strength.set(value),
-            "uci_elo" => self.uci_elo.set(value),
-            "uci_analysemode" => self.uci_analyse_mode.set(value),
-            "uci_opponent" => Ok(self.uci_opponent.set(value)),
-            "uci_engineabout" => Ok(self.uci_engine_about.set(value)),
-            "uci_shredderbasespath" => Ok(self.uci_shredder_bases_path.set(value)),
-            "uci_setpositionvalue" => Ok(self.uci_set_position_value.set(value)),
-            "ponder" => self.ponder.set(value),
-            "threads" => self.threads.set(value),
-            "weights-path" => Ok(self.weights_path.set(value)),
-            "nnue-path" => Ok(self.nnue_path.set(value)),
-            #[cfg(feature = "tunable")] "qs-delta-pruning-threshold" => self.qs_delta_pruning_threshold.set(value),
-            #[cfg(feature = "tunable")] "qs-futility-margin" => self.qs_futility_margin.set(value),
-            #[cfg(feature = "tunable")] "eval-policy-temperature" => self.eval_policy_temperature.set(value),
-            #[cfg(feature = "tunable")] "mcts-killer-exploitation" => self.mcts_killer_exploitation.set(value),
-            #[cfg(feature = "tunable")] "mcts-proven-loss-visit-threshold" => self.mcts_proven_loss_visit_threshold.set(value),
-            #[cfg(feature = "tunable")] "mcts-tt-best-move" => self.mcts_tt_best_move.set(value),
-            #[cfg(feature = "tunable")] "select-cpuct" => self.select_cpuct.set(value),
-            #[cfg(feature = "tunable")] "timeman-base-soft-mult" => self.timeman_base_soft_mult.set(value),
-            #[cfg(feature = "tunable")] "timeman-clamp-lower" => self.timeman_clamp_lower.set(value),
-            #[cfg(feature = "tunable")] "timeman-clamp-upper" => self.timeman_clamp_upper.set(value),
-            #[cfg(feature = "tunable")] "timeman-stability-base" => self.timeman_stability_base.set(value),
-            #[cfg(feature = "tunable")] "timeman-stability-slope" => self.timeman_stability_slope.set(value),
-            #[cfg(feature = "tunable")] "timeman-stability-floor" => self.timeman_stability_floor.set(value),
-            #[cfg(feature = "tunable")] "timeman-entropy-base" => self.timeman_entropy_base.set(value),
-            #[cfg(feature = "tunable")] "timeman-entropy-weight" => self.timeman_entropy_weight.set(value),
-            #[cfg(feature = "tunable")] "id-nmp-reduction" => self.id_nmp_reduction.set(value),
-            #[cfg(feature = "tunable")] "id-nmp-phase-threshold" => self.id_nmp_phase_threshold.set(value),
-            #[cfg(feature = "tunable")] "id-nmp-depth-factor" => self.id_nmp_depth_factor.set(value),
-            #[cfg(feature = "tunable")] "id-nmp-phase-factor" => self.id_nmp_phase_factor.set(value),
-            #[cfg(feature = "tunable")] "id-nmp-margin" => self.id_nmp_margin.set(value),
-            #[cfg(feature = "tunable")] "id-nmp-depth-margin" => self.id_nmp_depth_margin.set(value),
-            #[cfg(feature = "tunable")] "id-scorer-hh-weight" => self.id_scorer_hh_weight.set(value),
-            #[cfg(feature = "tunable")] "lmr-offset" => self.lmr_offset.set(value),
-            #[cfg(feature = "tunable")] "lmr-scale" => self.lmr_scale.set(value),
-            _ => Err(Box::new(UnknownOptionError(name.to_string()))),
+        let key = name.to_lowercase();
+
+        match key.as_str() {
+            "dirichlet-alpha" => return self.dirichlet_alpha.set(value),
+            "dirichlet-epsilon" => return self.dirichlet_epsilon.set(value),
+            "game-tree-caching" => return self.game_tree_caching.set(value),
+            "gui-lag" => return self.gui_lag.set(value),
+            "hash" => return self.uci_hash.set(value),
+            "nalimovpath" => return Ok(self.uci_nalimov_path.set(value)),
+            "nalimovcache" => return self.uci_nalimov_cache.set(value),
+            "ownbook" => return self.uci_ownbook.set(value),
+            "multipv" => return self.uci_multipv.set(value),
+            "uci_showcurrline" => return self.uci_show_currline.set(value),
+            "uci_showrefutations" => return self.uci_show_refutations.set(value),
+            "uci_limitstrength" => return self.uci_limit_strength.set(value),
+            "uci_elo" => return self.uci_elo.set(value),
+            "uci_analysemode" => return self.uci_analyse_mode.set(value),
+            "uci_opponent" => return Ok(self.uci_opponent.set(value)),
+            "uci_engineabout" => return Ok(self.uci_engine_about.set(value)),
+            "uci_shredderbasespath" => return Ok(self.uci_shredder_bases_path.set(value)),
+            "uci_setpositionvalue" => return Ok(self.uci_set_position_value.set(value)),
+            "ponder" => return self.ponder.set(value),
+            "threads" => return self.threads.set(value),
+            "weights-path" => return Ok(self.weights_path.set(value)),
+            "nnue-path" => return Ok(self.nnue_path.set(value)),
+            _ => {}
+        };
+
+        if cfg!(feature = "tunable")
+            && let Some(res) = self.tunable.set(&key, value)
+        {
+            return res;
         }
+
+        Err(Box::new(UnknownOptionError(name.to_string())))
     }
 
     pub fn print_uci(&self) {
@@ -728,32 +515,9 @@ impl Configuration {
         println!("{}", self.threads);
         println!("{}", self.weights_path);
 
-        // tunable params
+        // tunable options
         if cfg!(feature = "tunable") {
-            println!("{}", self.qs_delta_pruning_threshold);
-            println!("{}", self.qs_futility_margin);
-            println!("{}", self.eval_policy_temperature);
-            println!("{}", self.mcts_killer_exploitation);
-            println!("{}", self.mcts_proven_loss_visit_threshold);
-            println!("{}", self.mcts_tt_best_move);
-            println!("{}", self.select_cpuct);
-            println!("{}", self.timeman_base_soft_mult);
-            println!("{}", self.timeman_clamp_lower);
-            println!("{}", self.timeman_clamp_upper);
-            println!("{}", self.timeman_stability_base);
-            println!("{}", self.timeman_stability_slope);
-            println!("{}", self.timeman_stability_floor);
-            println!("{}", self.timeman_entropy_base);
-            println!("{}", self.timeman_entropy_weight);
-            println!("{}", self.id_nmp_reduction);
-            println!("{}", self.id_nmp_phase_threshold);
-            println!("{}", self.id_nmp_depth_factor);
-            println!("{}", self.id_nmp_phase_factor);
-            println!("{}", self.id_nmp_margin);
-            println!("{}", self.id_nmp_depth_margin);
-            println!("{}", self.id_scorer_hh_weight);
-            println!("{}", self.lmr_offset);
-            println!("{}", self.lmr_scale);
+            self.tunable.print_uci();
         }
     }
 }
