@@ -505,7 +505,7 @@ where
         // check if stop is requested or we have reached a limit
         if stats.nodes.is_multiple_of(4096) && self.should_stop(stats) {
             self.aborted = true;
-            return Score::NEG_INF;
+            return Score::POS_INF;
         }
 
         let rel_ply: Depth = (pos.ply() - self.root_ply).into();
@@ -837,7 +837,7 @@ where
 
             // check for cancellation
             if self.aborted {
-                return Score::DRAW;
+                return Score::POS_INF;
             }
 
             // update root moves
