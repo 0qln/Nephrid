@@ -8,6 +8,7 @@ pub enum NodeKind {
 }
 
 pub const trait NodeType {
+    type Next: NodeType;
     const KIND: NodeKind;
 }
 
@@ -15,22 +16,26 @@ pub mod node_types {
     use super::{NodeKind, NodeType};
 
     pub struct Root;
-    impl const NodeType for Root {
+    const impl NodeType for Root {
+        type Next = Pv;
         const KIND: NodeKind = NodeKind::Root;
     }
 
     pub struct Pv;
-    impl const NodeType for Pv {
+    const impl NodeType for Pv {
+        type Next = Cut;
         const KIND: NodeKind = NodeKind::Pv;
     }
 
     pub struct Cut;
-    impl const NodeType for Cut {
+    const impl NodeType for Cut {
+        type Next = All;
         const KIND: NodeKind = NodeKind::Cut;
     }
 
     pub struct All;
-    impl const NodeType for All {
+    const impl NodeType for All {
+        type Next = Cut;
         const KIND: NodeKind = NodeKind::All;
     }
 }

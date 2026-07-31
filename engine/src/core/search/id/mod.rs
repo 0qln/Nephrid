@@ -820,10 +820,7 @@ where
                     {
                         // new lower_bound, since it was able to beat alpha
                         let (alpha, beta) = (!beta, !zws_score);
-                        match kind {
-                            NodeKind::Cut => !self.search::<P::Opponent, All>(pos, stats, full_depth, alpha, beta),
-                            _ => !self.search::<P::Opponent, Cut>(pos, stats, full_depth, alpha, beta),
-                        }
+                        !self.search::<P::Opponent, T::Next>(pos, stats, full_depth, alpha, beta)
                     }
                     else {
                         zws_score
