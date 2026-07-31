@@ -273,7 +273,7 @@ where
         if let Some(best_move) = best_move
             && let Some(search_time) = searcher.timeman.elapsed_search_time()
         {
-            uci_info(depth, &stats, Cp::from(curr_score), best_move, search_time, searcher.pv());
+            uci_info(depth, &stats, curr_score, best_move, search_time, searcher.pv());
         }
 
         // update stats
@@ -419,8 +419,8 @@ where
     /// returns the score relative to the current player
     #[allow(unused)]
     fn search_root(&mut self, pos: &mut Position, stats: &mut SearchStats, depth: Depth) -> AnyScore {
-        fn alpha<P: Perspective>() -> Score<P> { Score::NEG_INF }
-        fn beta<P: Perspective>() -> Score<P> { Score::POS_INF }
+        fn alpha<P: Perspective>() -> Score<P> { -Score::INF }
+        fn beta<P: Perspective>() -> Score<P> { Score::INF }
         match pos.get_turn() {
             colors::WHITE => self.search::<White, Root>(pos, stats, depth, alpha(), beta()).0,
             colors::BLACK => self.search::<Black, Root>(pos, stats, depth, alpha(), beta()).0,
@@ -505,7 +505,7 @@ where
         // check if stop is requested or we have reached a limit
         if stats.nodes.is_multiple_of(4096) && self.should_stop(stats) {
             self.aborted = true;
-            return Score::NEG_INF;
+            return -Score::INF;
         }
 
         let rel_ply: Depth = (pos.ply() - self.root_ply).into();
@@ -524,7 +524,7 @@ where
         // check if game is over
         if let Some(result) = pos.game_result() {
             return match result {
-                GameResult::Win { .. } => Score::NEG_INF,
+                GameResult::Win { .. } => -Score::mate_in(rel_ply),
                 GameResult::Draw => Score::DRAW,
             };
         }
@@ -699,7 +699,7 @@ where
             _ => FractionalDepth(0)
         };
 
-        let mut best_score = Score::NEG_INF;
+        let mut best_score = -Score::INF;
         let mut best_move = Move::null();
         let mut curr = 0;
         let mut hh_searched_quiets = MoveList::new();
@@ -837,7 +837,7 @@ where
 
             // check for cancellation
             if self.aborted {
-                return Score::DRAW;
+                return -Score::INF;
             }
 
             // update root moves
@@ -1129,10 +1129,27 @@ where
     }
 }
 
-fn uci_info(depth: Depth, stats: &SearchStats, best_score: Cp, best_move: Move, search_time: Duration, pv: &Line) {
+fn uci_score(score: AnyScore) -> UciScore {
+    if let Some(mate_score) = score.plies_til_mate() {
+        let plies_til_mate = Ply::new(mate_score.v() as u16);
+        let moves_til_mate = plies_til_mate.to_mate_score();
+        if score.v() < 0 {
+            UciScore::Mate(-moves_til_mate)
+        }
+        else {
+            UciScore::Mate(moves_til_mate)
+        }
+    }
+    else {
+        let cp = Cp::from(score);
+        UciScore::Centipawns(UciCp(cp))
+    }
+}
+
+fn uci_info(depth: Depth, stats: &SearchStats, best_score: AnyScore, best_move: Move, search_time: Duration, pv: &Line) {
     let depth = UciArg::Some(UciDepth(depth));
     let seldepth = UciArg::<UciSeldepth>::None; // TODO
-    let score = UciArg::Some(UciScore::Centipawns(UciCp(best_score)));
+    let score = UciArg::Some(uci_score(best_score));
     let nodes = UciArg::Some(UciNodes(stats.nodes as usize));
     let nps = UciArg::Some(UciNps::from_nodes_and_time(stats.nodes, search_time));
     let currmove = UciArg::Some(UciCurrmove(best_move));

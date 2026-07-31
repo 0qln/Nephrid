@@ -12,6 +12,11 @@ pub struct FullMoveCount {
     pub v: u16,
 }
 
+impl FullMoveCount {
+    #[inline(always)]
+    pub const fn v(&self) -> u16 { self.v }
+}
+
 impl From<u16> for FullMoveCount {
     fn from(v: u16) -> Self { Self { v } }
 }
@@ -63,6 +68,8 @@ pub struct Ply {
 }
 
 impl Ply {
+    pub const fn new(v: u16) -> Self { Self { v } }
+
     /// # UCI mate score conversion
     /// Converts a sequence of plies into a UCI-compliant mate score (moves).
     pub fn to_mate_score(&self) -> i32 { self.v.div_ceil(2) as i32 }

@@ -6,6 +6,7 @@ use static_assertions::const_assert;
 use crate::{
     core::{
         color::{Color, Perspective},
+        depth::Depth,
         search::ordering::MoveScore,
     },
     impl_variants,
@@ -27,13 +28,20 @@ impl_variants! {
     RawScore as AnyScore in scores {
         DRAW = 0,
         ZERO = 0,
-        POS_INF = 30_000,
-        NEG_INF = -30_000,
+
+        // mate in max is the worst mate ~(INF - MAX)
+        MATE_IN_MAX = self::INF_C - 1 - (Depth::MAX.v() as i32),
+
+        // mate in 0 is the best mate ~(INF - 1)
+        MATE_IN_0 = self::INF_C - 1 - (Depth::ROOT.v() as i32),
+
+        INF = 30_000,
+
         NULL = 0x_C0FFEE,
     }
 }
 
-const_assert!(scores::NULL > scores::POS_INF || scores::NULL < scores::NEG_INF);
+const_assert!(scores::NULL > scores::INF || scores::NULL < -scores::INF);
 
 impl AnyScore {
     pub const fn new(val: i32) -> Self { Self { v: val } }
@@ -56,6 +64,20 @@ impl AnyScore {
     ///
     /// The caller has to make sure that `self` is actually of perspective `P`.
     pub const unsafe fn interpret_as<P: Perspective>(self) -> Score<P> { Score::<P>::new(self) }
+
+    #[inline(always)]
+    pub const fn mate_in(rel_ply: Depth) -> Self { scores::MATE_IN_0 - rel_ply.v() as i32 }
+
+    #[inline(always)]
+    pub fn plies_til_mate(&self) -> Option<Depth> {
+        let abs = self.v().abs();
+        if matches!(abs, scores::MATE_IN_MAX_C..scores::INF_C) {
+            Some(Depth::new((scores::MATE_IN_0_C - abs) as u8))
+        }
+        else {
+            None
+        }
+    }
 }
 
 const impl<T: const Into<RawScore>> From<T> for AnyScore {
@@ -162,6 +184,12 @@ const impl<P: Perspective> ops::Div<AnyScore> for Score<P> {
     fn div(self, rhs: AnyScore) -> Self::Output { Self::new(self.0 / rhs) }
 }
 
+const impl<P: Perspective> ops::Neg for Score<P> {
+    type Output = Self;
+    #[inline(always)]
+    fn neg(self) -> Self::Output { Self::new(-self.0) }
+}
+
 const impl<P: Perspective> Ord for Score<P> {
     #[inline(always)]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.0.cmp(&other.0) }
@@ -182,8 +210,12 @@ impl<P: Perspective> Score<P> {
     #[inline(always)]
     const fn new(val: AnyScore) -> Self { Self(val, PhantomData) }
 
-    pub const NEG_INF: Self = unsafe { scores::NEG_INF.interpret_as() };
-    pub const POS_INF: Self = unsafe { scores::POS_INF.interpret_as() };
+    #[inline(always)]
+    pub fn mate_in(rel_ply: Depth) -> Self { Self::new(AnyScore::mate_in(rel_ply)) }
+
+    pub const MATE_IN_MAX: Self = unsafe { scores::MATE_IN_MAX.interpret_as() };
+    pub const MATE_IN_0: Self = unsafe { scores::MATE_IN_0.interpret_as() };
+    pub const INF: Self = unsafe { scores::INF.interpret_as() };
     pub const DRAW: Self = unsafe { scores::DRAW.interpret_as() };
     pub const ZERO: Self = unsafe { scores::ZERO.interpret_as() };
     pub const NULL: Self = unsafe { scores::NULL.interpret_as() };
