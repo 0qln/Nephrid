@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        params::{C_MctsHceParams, CreateParamsError, IParams, MctsHceParams, MctsHceParamsRef},
+        params::{C_MctsHceParams, CreateParamsError, IConfigBuilder, IParams, MctsHceParams, MctsHceParamsRef, mcts_hce_params_default},
         search::mcts::{search::MctsParams, select::puct::PuctParams},
     },
     math::Ratio,
@@ -243,12 +243,8 @@ impl TryFrom<&Configuration> for HceParts {
 
 impl Default for HceParts {
     fn default() -> Self {
-        let config = Configuration::builder()
-            .qsearch(&C_MctsHceParams)
-            .policy(&C_MctsHceParams)
-            .puct(&C_MctsHceParams)
-            .mcts(&C_MctsHceParams)
-            .build();
+        let builder = Configuration::builder();
+        let config = mcts_hce_params_default().build_config(builder).build();
         Self::try_from(&config).expect("The default config should be healthy")
     }
 }
