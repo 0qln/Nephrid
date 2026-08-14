@@ -4,6 +4,7 @@ use rand::prelude::*;
 use crate::core::{
     color::colors,
     depth::Depth,
+    r#move::{MoveIndex, MoveList},
     search::mcts::node::node_state::{Branching, Valid},
 };
 
@@ -25,7 +26,7 @@ impl PlayoutEvaluator {
         let mut depth = Depth::ROOT;
 
         loop {
-            let moves = pos.collect_legals(Vec::new());
+            let moves = pos.collect_legals(MoveList::new());
 
             // 1. Check for Terminal State / Draw Rules
             if let Some(result) = pos.search_result_with(!moves.is_empty(), depth) {
@@ -38,7 +39,13 @@ impl PlayoutEvaluator {
             }
 
             // 3. Make a random move
-            let mov = moves[self.rng.random_range(0..moves.len())];
+            let mov = {
+                let idx = MoveIndex::from(self.rng.random_range(0..moves.len()));
+                let mov = moves.get(idx);
+                // Safety: We generated the move index from the correct range.
+                unsafe { mov.unwrap_unchecked() }
+            };
+
             pos.make_move(mov, &mut ());
 
             depth += 1;
