@@ -354,6 +354,96 @@ pub mod ponder_tests {
     }
 }
 
+#[cfg(test)]
+#[cfg(any(feature = "id-hce", feature = "id-nnue"))]
+pub mod id_ponder_tests {
+    use super::*;
+
+    fn extract_nodes(line: &str) -> Option<u64> {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if let Some(pos) = parts.iter().position(|&s| s == "nodes")
+            && pos + 1 < parts.len()
+        {
+            return parts[pos + 1].parse::<u64>().ok();
+        }
+        None
+    }
+
+    #[test]
+    #[timeout(10000)]
+    fn test_ponder_stop_outputs_ponder_move() {
+        let mut child = GuardedChild(
+            Command::cargo_bin("nephrid")
+                .unwrap()
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("Failed to spawn engine binary"),
+        );
+
+        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+        let stdout = child.stdout.take().expect("Failed to open stdout");
+        let mut reader = BufReader::new(stdout);
+
+        write_engine_line(&mut stdin, "uci");
+        block_engine_line(&mut reader, |l| l == "uciok");
+
+        write_engine_line(&mut stdin, "isready");
+        block_engine_line(&mut reader, |l| l == "readyok");
+
+        write_engine_line(&mut stdin, "position startpos");
+        write_engine_line(&mut stdin, "go ponder nodes 500000");
+
+        block_engine_line(&mut reader, |l| {
+            l.starts_with("info") && l.split_once(" pv ").is_some_and(|(_, pv)| pv.split_whitespace().count() >= 2)
+        });
+
+        write_engine_line(&mut stdin, "stop");
+
+        let bestmove_line = block_engine_line(&mut reader, |l| l.starts_with("bestmove"));
+        assert!(bestmove_line.contains("ponder"), "Expected a ponder move in bestmove output: {bestmove_line}");
+
+        write_engine_line(&mut stdin, "quit");
+    }
+
+    #[test]
+    #[timeout(10000)]
+    fn test_ponderhit_applies_limits_and_stops() {
+        let mut child = GuardedChild(
+            Command::cargo_bin("nephrid")
+                .unwrap()
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("Failed to spawn engine"),
+        );
+
+        let mut stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let mut reader = BufReader::new(stdout);
+
+        write_engine_line(&mut stdin, "uci");
+        block_engine_line(&mut reader, |l| l == "uciok");
+
+        write_engine_line(&mut stdin, "isready");
+        block_engine_line(&mut reader, |l| l == "readyok");
+
+        write_engine_line(&mut stdin, "position startpos moves e2e4 e7e5");
+        write_engine_line(&mut stdin, "go ponder nodes 500");
+
+        block_engine_line(&mut reader, |l| {
+            l.starts_with("info") && extract_nodes(l).is_some_and(|nodes| nodes > 1000)
+        });
+
+        write_engine_line(&mut stdin, "ponderhit");
+
+        let bestmove_line = block_engine_line(&mut reader, |l| l.starts_with("bestmove"));
+        assert!(!bestmove_line.is_empty(), "Engine failed to stop on its own after ponderhit!");
+
+        write_engine_line(&mut stdin, "quit");
+    }
+}
+
 #[test]
 #[timeout(10000)]
 fn test_pgn_input_command() {
