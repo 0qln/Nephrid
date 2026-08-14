@@ -443,6 +443,12 @@ where
                     exploration = sel.exploration(tree, branch_id, parent_node_id);
                     exploitation = sel.exploitation(tree, branch_id, parent_node_id);
                     score = (exploitation + killer_move_bonus) + (exploration * tt_move_bonus);
+
+                    debug_assert!(
+                        !score.0.is_nan(),
+                        "score is NAN! (tt_move_bonus={tt_move_bonus}, killer_move_bonus={killer_move_bonus}, exploration={exploration}, \
+                         exploitation={exploitation})"
+                    );
                 }
 
                 if score >= curr_score {
