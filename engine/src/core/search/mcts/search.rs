@@ -64,6 +64,18 @@ use crate::core::{
 // when switch to iterative, replace the `iterations < BATCH * 2` check. we
 // will keep a frontier of unexplorable nodes anyway (probably right?), and just
 // check if that is empty instead of doing the safestop above.
+//
+// todo:
+// mix history heuristic into nodes with low visit count as a good first
+// estimate
+//
+// todo: (maybe)
+// assumption: after back propaation only a single line will have changed.
+// optimization: skip the entire path walk down the tree if the current
+// 'generation'(?) of all the paths down the tree is older than the cached(todo)
+// path that was taken the last time.
+// (this will break down tho if we e.g. use a graph and line b can influence the
+// policy of line a.)
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ParentNodeId(pub usize);
