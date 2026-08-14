@@ -232,6 +232,8 @@ impl Policy {
 
     pub fn new_empty() -> Self { Self(List::new()) }
 
+    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+
     pub fn new_even(len: usize) -> Self {
         debug_assert!(len > 0, "Policy::new_even called with len == 0");
         let len_f = len as f32;

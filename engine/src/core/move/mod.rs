@@ -698,6 +698,9 @@ impl MoveList {
 
     #[inline]
     pub fn get(&self, index: MoveIndex) -> Option<Move> { self.inner.get(index.v as usize).copied() }
+    
+    #[inline]
+    pub fn is_empty(&self) -> bool { self.inner.is_empty() }
 }
 
 impl Default for MoveList {

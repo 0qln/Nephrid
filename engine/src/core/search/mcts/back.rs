@@ -35,7 +35,12 @@ impl RelativeValue for Guess {
 
 pub fn update_branching(tree: &mut Tree, node: NodeId<Branching>, turn: Turn, guess: &Guess, weight: f32) {
     let value = guess.to_value(!turn);
-    let evaluated = tree.set_policy(node, &guess.policy);
+    let evaluated = if !guess.policy.is_empty() {
+        tree.set_policy(node, &guess.policy)
+    }
+    else {
+        tree.skip_policy(node)
+    };
     tree.update_node(evaluated, value, weight);
 }
 

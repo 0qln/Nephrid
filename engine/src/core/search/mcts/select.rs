@@ -1,19 +1,45 @@
 use core::fmt;
 use std::ops;
 
-use crate::core::search::mcts::node::{BranchId, NodeId, Tree, node_state::Evaluated};
+use crate::core::{
+    color::Perspective, depth::Depth, position::Position, search::mcts::{
+        node::{BranchId, NodeId, Tree, node_state::Evaluated},
+        search::MctsParams,
+    }
+};
 
+pub mod hpuct;
 pub mod puct;
 pub mod ucb;
 
 pub trait Selector {
-    // note: we take the policy as an argument, because if we later convert this
-    // tree structure to a graph, we have to consider different policies from
-    // different parents. same reason that we have different struct for node and
-    // branch.
-
     fn exploitation(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
     fn exploration(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
+
+    fn pick_branch<P: Perspective>(
+        &mut self,
+        tree: &Tree,
+        parent_id: NodeId<Evaluated>,
+        _depth: Depth,
+        _position: &Position,
+        _params: &impl MctsParams,
+    ) -> BranchId {
+        let mut best_score = Score(f32::NEG_INFINITY);
+        let mut best_branch = None;
+
+        for branch_id in tree.branch_ids(parent_id) {
+            let loit = self.exploitation(tree, branch_id, parent_id);
+            let lora = self.exploration(tree, branch_id, parent_id);
+            let score = loit + lora;
+
+            if score >= best_score {
+                best_score = score;
+                best_branch = Some(branch_id);
+            }
+        }
+
+        best_branch.expect("Evaluated node must have at least one branch")
+    }
 
     fn virtual_loss(&self) -> u32 { 1 }
 }
