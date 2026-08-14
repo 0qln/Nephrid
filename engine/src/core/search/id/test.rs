@@ -31,6 +31,7 @@ fn run_search(fen: &str, depth: u8) {
         &mut tt,
         &mut hh,
         &mut HceEvaluator,
+        None,
         C_IdHceParams,
     );
 }

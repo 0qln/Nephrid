@@ -35,6 +35,7 @@ use crate::{
         ply::Ply,
         position::{CheckState, PieceInfo, PieceInfoObserver, Position},
         search::{
+            PonderToken,
             data::{
                 self, HistoryScore, Line, PieceHistories, RbSet, SearchStack, THistoryScore, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval,
                 TranspositionTable,
@@ -44,7 +45,7 @@ use crate::{
             ordering::{self, MovePicker, MoveScore, MoveScorer, RtStage, ScoredMove, Stage},
             quiesce::{self, QSearchParams, QSearcher},
             score::{AnyScore, Cp, Score, scores},
-            strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPv, UciScore, UciSearchtime, UciSeldepth},
+            strat::{UciArg, UciCp, UciCurrmove, UciDepth, UciNodes, UciNps, UciPondermove, UciPv, UciScore, UciSearchtime, UciSeldepth},
             tree::{NodeKind, NodeType, node_types::*},
         },
         turn::Turn,
@@ -220,6 +221,12 @@ pub const trait IdParams {
     fn aw_margin(&self) -> AnyScore { hce::piece_score(piece_type::PAWN) / 4 }
 }
 
+#[derive(Default)]
+pub struct SearchResult {
+    pub best_move: Option<Move>,
+    pub pv: Line,
+}
+
 pub fn go<X: IParams>(
     pos: &mut Position,
     limit: UciLimit,
@@ -229,8 +236,9 @@ pub fn go<X: IParams>(
     tt: &mut TT,
     hh: &mut HH,
     eval: &mut impl StaticEvaluator,
+    ponder: Option<PonderToken>,
     params: X::Ref,
-) -> Option<Move>
+) -> SearchResult
 where
     X::Ref: ChronoParams + QSearchParams + ScorerParams + IdParams + Clone + fmt::Debug,
 {
@@ -242,7 +250,7 @@ where
         println!("info string Starting ID Search with Params: {params:?}");
     }
 
-    let mut searcher = Searcher::<_, X>::new(pos, limit, timeman, ct, tt, hh, eval, params.clone());
+    let mut searcher = Searcher::<_, X>::new(pos, limit, timeman, ct, tt, hh, eval, params.clone(), ponder);
     let mut stats = SearchStats::default();
     let mut best_move = None;
     let mut last_best_move;
@@ -302,7 +310,10 @@ where
         }
     }
 
-    best_move
+    SearchResult {
+        best_move,
+        pv: searcher.pv().clone(),
+    }
 }
 
 #[derive(Debug)]
@@ -330,10 +341,12 @@ impl RootStats {
 struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     root_stats: List<{ MAX_LEGAL_MOVES }, RootStats>,
     root_ply: Ply,
+    root_turn: Turn,
     limit: UciLimit,
     timeman: &'a mut TimeMan<X>,
     ct: CancellationToken,
     aborted: bool,
+    ponder: Option<PonderState>,
     ss: SS,
     tt: &'a mut TT,
     hh: &'a mut HH,
@@ -341,6 +354,16 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     params: X::Ref,
     #[cfg(feature = "id-nmp")]
     in_nmp_verify: bool,
+}
+
+#[derive(Debug, Clone)]
+struct PonderState {
+    token: PonderToken,
+    is_not_pondering: bool,
+}
+
+impl PonderState {
+    fn new(token: PonderToken) -> Self { Self { token, is_not_pondering: false } }
 }
 
 impl<'a, 'b, E: StaticEvaluator, X: IParams> Searcher<'a, 'b, E, X>
@@ -356,6 +379,7 @@ where
         hh: &'a mut HH,
         eval: &'b mut E,
         params: X::Ref,
+        ponder: Option<PonderToken>,
     ) -> Self {
         let mut stats = List::<{ MAX_LEGAL_MOVES }, RootStats>::new();
         _ = fold_moves::<AllLegal, _, _, _>(pos, (), |_, m| {
@@ -366,10 +390,12 @@ where
         Self {
             root_stats: stats,
             root_ply: pos.ply(),
+            root_turn: pos.get_turn(),
             limit,
             timeman,
             ct,
             aborted: false,
+            ponder: ponder.map(PonderState::new),
             ss: SS::from(vec![SearchEntry {
                 phase: TaperValue::from_position(pos.piece_info()),
                 ..Default::default()
@@ -398,13 +424,26 @@ where
         root_logits
     }
 
-    fn should_stop(&self, stats: &SearchStats) -> bool {
+    fn should_stop(&mut self, stats: &SearchStats) -> bool {
         let nodes = stats.nodes;
         let iters = stats.iterations;
 
         // user requested stop
         if self.ct.is_cancelled() {
             return true;
+        }
+
+        // if we are pondering: check if we should still be pondering and if not, turn
+        // on the limits.
+        if let Some(ponder) = &mut self.ponder
+            && !ponder.is_not_pondering
+        {
+            if ponder.token.should_ponder() {
+                return false;
+            }
+
+            self.timeman.init_limits(&self.limit, self.root_turn);
+            ponder.is_not_pondering = true;
         }
 
         // time manager says we should stop or limit has been reached
@@ -1155,6 +1194,11 @@ fn uci_info(depth: Depth, stats: &SearchStats, best_score: AnyScore, best_move: 
     let string = UciArg::<String>::None;
 
     println!("info{currmove}{score}{nodes}{nps}{depth}{seldepth}{time}{pv}{string}");
+}
+
+pub fn uci_bestmove(best_move: Move, pv: &Line) {
+    let ponder_move = UciArg::from(pv.get(1).copied().map(UciPondermove));
+    println!("bestmove {best_move}{ponder_move}");
 }
 
 pub type DepthExt = FractionalDepth;

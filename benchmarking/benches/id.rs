@@ -50,7 +50,7 @@ where
     let mut eval = E::default();
     let mut timeman = TimeMan::<X>::new_with_limits(&limit, pos, params.clone());
 
-    id::go::<X>(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut hh, &mut eval, params);
+    id::go::<X>(pos, limit, &mut timeman, &debug, ct, &mut tt, &mut hh, &mut eval, None, params);
 }
 
 pub fn id_hce_nps(c: &mut Criterion) {
