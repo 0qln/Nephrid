@@ -252,7 +252,10 @@ where
 
     let mut searcher = Searcher::<_, X>::new(pos, limit, timeman, ct, tt, hh, eval, params.clone(), ponder);
     let mut stats = SearchStats::default();
-    let mut best_move = None;
+    let mut result = SearchResult {
+        best_move: None,
+        pv: Line::default(),
+    };
     let mut last_best_move;
     let root_tt_entry = searcher.tt.get(pos.get_key()).cloned();
     let mut curr_score = root_tt_entry.as_ref().map(|e| e.score).unwrap_or(scores::ZERO);
@@ -277,11 +280,14 @@ where
 
         searcher.sort_root();
 
-        best_move = searcher.root_best_move();
-        if let Some(best_move) = best_move
+        result.best_move = searcher.root_best_move();
+        result.pv = searcher.pv().clone();
+
+        // uci info output
+        if let Some(best_move) = result.best_move
             && let Some(search_time) = searcher.timeman.elapsed_search_time()
         {
-            uci_info(depth, &stats, curr_score, best_move, search_time, searcher.pv());
+            uci_info(depth, &stats, curr_score, best_move, search_time, &result.pv);
         }
 
         // update stats
@@ -293,7 +299,7 @@ where
             let root_policy = math::softmax(root_logits, ROOT_ENTROPY_TEMP, &mut List::new());
             math::normalized_entropy(&root_policy)
         };
-        stats.root_movestreak = if best_move == last_best_move {
+        stats.root_movestreak = if result.best_move == last_best_move {
             stats.root_movestreak + 1
         }
         else {
@@ -310,10 +316,7 @@ where
         }
     }
 
-    SearchResult {
-        best_move,
-        pv: searcher.pv().clone(),
-    }
+    result
 }
 
 #[derive(Debug)]
