@@ -41,7 +41,11 @@ impl PartialOrd for Score {
 }
 
 impl Ord for Score {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering { self.0.partial_cmp(&other.0).expect("This shouldn't happen for scores.") }
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0
+            .partial_cmp(&other.0)
+            .unwrap_or_else(|| panic!("This shouldn't happen for scores. Failed to compare scores {self:?} and {other:?}"))
+    }
 }
 
 impl From<Score> for f32 {
