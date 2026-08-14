@@ -131,9 +131,9 @@ where
                 // probably just do it on the fly in AdvanceState...
                 self.eval.init(pos.piece_info());
 
-                self.timeman.init_limits(&limit, &pos);
+                self.timeman.init_limits(&limit, pos.get_turn());
 
-                let best_move = id::go::<X>(
+                let result = id::go::<X>(
                     &mut pos,
                     limit,
                     &mut self.timeman,
@@ -142,17 +142,39 @@ where
                     &mut self.tt,
                     &mut self.hh,
                     &mut self.eval,
+                    None,
                     self.params.clone(),
                 );
 
-                if let Some(mov) = best_move {
-                    println!("bestmove {mov}");
+                if let Some(mov) = result.best_move {
+                    id::uci_bestmove(mov, &result.pv);
                 }
 
                 Ok(())
             }
-            Command::Ponder(_pos, _limit, _ct, _dbg, _ponder) => {
-                todo!()
+            Command::Ponder(mut pos, limit, ct, debug, ponder) => {
+                self.eval.init(pos.piece_info());
+
+                self.timeman.start_search();
+
+                let result = id::go::<X>(
+                    &mut pos,
+                    limit,
+                    &mut self.timeman,
+                    &debug,
+                    ct,
+                    &mut self.tt,
+                    &mut self.hh,
+                    &mut self.eval,
+                    Some(ponder),
+                    self.params.clone(),
+                );
+
+                if let Some(mov) = result.best_move {
+                    id::uci_bestmove(mov, &result.pv);
+                }
+
+                Ok(())
             }
             Command::AdvanceState(_) => {
                 // no need to update the tt, the depth will be the same

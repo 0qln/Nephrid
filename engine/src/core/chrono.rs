@@ -109,12 +109,17 @@ where
 
     pub fn new_with_limits(limit: &UciLimit, pos: &Position, params: X::Ref) -> Self {
         let mut new = Self::new(params);
-        new.init_limits(limit, pos);
+        new.init_limits(limit, pos.get_turn());
         new
     }
 
-    pub fn init_limits(&mut self, limit: &UciLimit, pos: &Position) {
-        let time_per_move = Self::time_per_move(limit, pos.get_turn());
+    pub fn start_search(&mut self) {
+        self.time_start = Some(Instant::now());
+        self.limits = HardLimits { time: None };
+    }
+
+    pub fn init_limits(&mut self, limit: &UciLimit, turn: Turn) {
+        let time_per_move = Self::time_per_move(limit, turn);
         let time_start = Instant::now();
         let time_limit = time_start + time_per_move;
 

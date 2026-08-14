@@ -192,7 +192,7 @@ where
         self.terminal_nodes_begin = tree.terminal_nodes() as u64;
         self.iterations = 0;
 
-        self.time_man.init_limits(&self.limit, pos);
+        self.time_man.init_limits(&self.limit, pos.get_turn());
         self.is_not_pondering = self.pt.is_none();
     }
 
