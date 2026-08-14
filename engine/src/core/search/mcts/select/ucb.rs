@@ -22,6 +22,8 @@ impl Selector for UcbSelector {
         match node.visits() {
             VisitCount(0) => Score(f32::INFINITY),
             VisitCount(n_i) => {
+                debug_assert_ne!(n_i, 0);
+
                 let w_i = node.value();
                 let n_i = n_i as f32;
                 Score(w_i / n_i)
@@ -36,6 +38,8 @@ impl Selector for UcbSelector {
         match node.visits() {
             VisitCount(0) => Score(f32::INFINITY),
             VisitCount(n_i) => {
+                debug_assert_ne!(n_i, 0);
+
                 let VisitCount(cap_n_i) = tree.node(parent_id).visits();
                 let n_i = n_i as f32;
                 Score(self.c * f32::sqrt((cap_n_i as f32).ln() / n_i))

@@ -1,7 +1,10 @@
 use crate::{
     core::{
-        params::{C_MctsHceParams, CreateParamsError, IParams, MctsHceParams, MctsHceParamsRef},
-        search::mcts::{search::MctsParams, select::puct::PuctParams},
+        params::{CreateParamsError, IConfigBuilder, IParams, MctsHceParams, mcts_hce_params_default},
+        search::mcts::{
+            search::MctsParams,
+            select::{hpuct::HeuristicPuct, puct::PuctParams},
+        },
     },
     math::Ratio,
 };
@@ -201,13 +204,13 @@ pub struct HceParts {
 }
 
 impl MctsParts for HceParts {
-    type Selector = PuctSelector;
+    type Selector = HeuristicPuct<MctsHceParams>;
     type Evaluator = HceEvaluator;
     type Noiser = DirichletNoiser;
 
-    fn selector(&self) -> Self::Selector { PuctSelector::new(self.cpuct) }
+    fn selector(&self) -> Self::Selector { HeuristicPuct::new(self.cpuct, self.params.clone()) }
 
-    fn evaluator(&self) -> Self::Evaluator { HceEvaluator::new(MctsHceParamsRef::clone(&self.params)) }
+    fn evaluator(&self) -> Self::Evaluator { HceEvaluator::new(self.params.clone()) }
 
     fn noiser(&self) -> Self::Noiser {
         let rng = SmallRng::from_os_rng();
@@ -243,12 +246,8 @@ impl TryFrom<&Configuration> for HceParts {
 
 impl Default for HceParts {
     fn default() -> Self {
-        let config = Configuration::builder()
-            .qsearch(&C_MctsHceParams)
-            .policy(&C_MctsHceParams)
-            .puct(&C_MctsHceParams)
-            .mcts(&C_MctsHceParams)
-            .build();
+        let builder = Configuration::builder();
+        let config = mcts_hce_params_default().build_config(builder).build();
         Self::try_from(&config).expect("The default config should be healthy")
     }
 }

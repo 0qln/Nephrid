@@ -10,7 +10,12 @@ use crate::{
         eval::hce::TaperValue,
         search::{
             id::{IdParams, ScorerParams},
-            mcts::{eval::hce::PolicyParams, node::VisitCount, search::MctsParams, select::puct::PuctParams},
+            mcts::{
+                eval::hce::PolicyParams,
+                node::VisitCount,
+                search::MctsParams,
+                select::{hpuct::HeuristicParams, puct::PuctParams},
+            },
             quiesce::QSearchParams,
             score::AnyScore,
         },
@@ -151,7 +156,7 @@ macro_rules! tunable_params {
                         }
                     }
 
-                    pub fn seed_from(&mut self, params: &impl $trait_name) {
+                    pub fn seed_from(&mut self, #[allow(unused)] params: &impl $trait_name) {
                         $( self.$field.seed(($to_raw)(params.$getter())); )*
                     }
 
@@ -161,7 +166,7 @@ macro_rules! tunable_params {
                         }
                     }
 
-                    pub fn set(&mut self, name: &str, value: &str) -> Option<Result<(), Box<dyn std::error::Error>>> {
+                    pub fn set(&mut self, name: &str, #[allow(unused)] value: &str) -> Option<Result<(), Box<dyn std::error::Error>>> {
                         match name {
                             $( $uci_name => Some(self.$field.set(value)), )*
                             _ => None,
@@ -312,6 +317,9 @@ tunable_params! {
     },
 
     mcts: MctsParams {
+    },
+
+    heuristic: HeuristicParams {
         proven_loss_visit_threshold: VisitCount {
             uci: "mcts-proven-loss-visit-threshold",
             unit: UciInteger,
@@ -568,6 +576,8 @@ const_params! {
             fn select_cpuct(&self) -> f32 { 0.77 }
         },
         mcts: MctsParams {
+        },
+        heuristic: HeuristicParams {
             fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
             fn killer_exploitation(&self) -> f32 { 0.27 }
             fn tt_best_move(&self) -> f32 { 1.65 }
@@ -600,9 +610,6 @@ const_params! {
             fn select_cpuct(&self) -> f32 { 0.77 }
         },
         mcts: MctsParams {
-            fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
-            fn killer_exploitation(&self) -> f32 { 0.27 }
-            fn tt_best_move(&self) -> f32 { 1.65 }
         },
         policy: PolicyParams {
             fn policy_temperature(&self) -> f32 { 24.58 }
@@ -625,9 +632,6 @@ const_params! {
 const_params! {
     MctsPure {
         mcts: MctsParams {
-            fn proven_loss_visit_threshold(&self) -> VisitCount { VisitCount(5) }
-            fn killer_exploitation(&self) -> f32 { 0.27 }
-            fn tt_best_move(&self) -> f32 { 1.65 }
         },
         chrono: ChronoParams {
             fn base_soft_mult(&self) -> f32 { 0.50 }
