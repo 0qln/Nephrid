@@ -1,6 +1,6 @@
 use crate::{
     core::{
-        params::{C_MctsHceParams, CreateParamsError, IConfigBuilder, IParams, MctsHceParams, MctsHceParamsRef, mcts_hce_params_default},
+        params::{CreateParamsError, IConfigBuilder, IParams, MctsHceParams, MctsHceParamsRef, mcts_hce_params_default},
         search::mcts::{search::MctsParams, select::puct::PuctParams},
     },
     math::Ratio,
