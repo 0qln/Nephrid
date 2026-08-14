@@ -2,10 +2,10 @@ use core::fmt;
 use std::ops;
 
 use crate::core::{
-    color::Perspective, depth::Depth, position::Position, search::mcts::{
-        node::{BranchId, NodeId, Tree, node_state::Evaluated},
-        search::MctsParams,
-    }
+    color::Perspective,
+    depth::Depth,
+    position::Position,
+    search::mcts::node::{BranchId, NodeId, Tree, node_state::Evaluated},
 };
 
 pub mod hpuct;
@@ -16,14 +16,7 @@ pub trait Selector {
     fn exploitation(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
     fn exploration(&self, tree: &Tree, branch_id: BranchId, parent_id: NodeId<Evaluated>) -> Score;
 
-    fn pick_branch<P: Perspective>(
-        &mut self,
-        tree: &Tree,
-        parent_id: NodeId<Evaluated>,
-        _depth: Depth,
-        _position: &Position,
-        _params: &impl MctsParams,
-    ) -> BranchId {
+    fn pick_branch<P: Perspective>(&mut self, tree: &Tree, parent_id: NodeId<Evaluated>, _depth: Depth, _position: &Position) -> BranchId {
         let mut best_score = Score(f32::NEG_INFINITY);
         let mut best_branch = None;
 

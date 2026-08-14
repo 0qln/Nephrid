@@ -12,7 +12,7 @@ use crate::core::{
     search::mcts::{
         back::{self},
         eval::{Evaluation, Evaluator, Guess, eval_terminal},
-        node::{BranchId, NodeId, NodeView, RtNodeId, Tree, VisitCount, node_state::*},
+        node::{BranchId, NodeId, NodeView, RtNodeId, Tree, node_state::*},
         noise::Noiser,
         select::Selector,
     },
@@ -215,13 +215,7 @@ impl<T> Selection<T> {
     }
 }
 
-// todo: this is basically only relevant to the HeuristicPuct selector. this
-// should be declared there.
-pub const trait MctsParams {
-    fn proven_loss_visit_threshold(&self) -> VisitCount;
-    fn killer_exploitation(&self) -> f32;
-    fn tt_best_move(&self) -> f32;
-}
+pub const trait MctsParams {}
 
 /// # Tree searcher
 pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector, N: Noiser, X: IParams> {
@@ -230,6 +224,7 @@ pub struct TreeSearcher<'pos, const BATCH_SIZE: usize, E: Evaluator, S: Selector
     evaluator: E,
     noiser: N,
     selection: Selection<E::TraceData>,
+    #[allow(unused)]
     params: X::Ref,
 }
 
@@ -373,7 +368,7 @@ where
     // }
 
     fn pick_branch<P: Perspective>(&mut self, depth: Depth, parent_node_id: NodeId<Evaluated>, tree: &mut Tree, sel_node_id: ParentNodeId) {
-        let best_branch_id = self.selector.pick_branch::<P>(tree, parent_node_id, depth, self.position, &self.params);
+        let best_branch_id = self.selector.pick_branch::<P>(tree, parent_node_id, depth, self.position);
 
         // todo: just return the branch id instead of recursing
         self.select_branch::<P>(depth, best_branch_id, tree, sel_node_id)

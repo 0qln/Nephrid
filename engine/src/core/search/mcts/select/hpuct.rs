@@ -4,50 +4,51 @@ use crate::core::{
     color::Perspective,
     depth::Depth,
     r#move::Move,
+    params::IParams,
     position::Position,
     search::mcts::{
         node::{BranchId, NodeId, Tree, VisitCount, node_state::Evaluated},
-        search::MctsParams,
         select::puct::PuctSelector,
     },
     zobrist,
 };
 
+pub const trait HeuristicParams {
+    fn proven_loss_visit_threshold(&self) -> VisitCount;
+    fn killer_exploitation(&self) -> f32;
+    fn tt_best_move(&self) -> f32;
+}
+
 /// A puct that uses heuristics
-pub struct HeuristicPuct {
+pub struct HeuristicPuct<X: IParams> {
     // the inner selector could also be generic
     puct: super::puct::PuctSelector,
     tt: Box<TranspositionTable<{ 2 << 10 }, TTData>>,
     ss: SearchStack,
+    params: X::Ref,
 }
 
-impl HeuristicPuct {
-    pub fn new(cpuct: f32) -> Self {
+impl<X: IParams> HeuristicPuct<X> {
+    pub fn new(cpuct: f32, params: X::Ref) -> Self {
         Self {
             puct: PuctSelector::new(cpuct),
-            ..Default::default()
-        }
-    }
-}
-
-impl Default for HeuristicPuct {
-    fn default() -> Self {
-        Self {
-            puct: Default::default(),
             tt: Default::default(),
-            ss: SearchStack::new(),
+            ss: Default::default(),
+            params
         }
     }
 }
 
-impl super::Selector for HeuristicPuct {
+impl<X: IParams> super::Selector for HeuristicPuct<X>
+where
+    X::Ref: HeuristicParams,
+{
     fn pick_branch<P: Perspective>(
         &mut self,
         tree: &Tree,
         parent_node_id: NodeId<Evaluated>,
         depth: Depth,
         position: &Position,
-        params: &impl MctsParams,
     ) -> BranchId {
         let key = position.get_key();
 
@@ -59,7 +60,7 @@ impl super::Selector for HeuristicPuct {
         let killer_move = ss_entry.and_then(|entry| entry.killer_move);
         let killer_exploitation = ss_entry.and_then(|entry| entry.killer_exploitation);
 
-        let visit_threshold = params.proven_loss_visit_threshold();
+        let visit_threshold = self.params.proven_loss_visit_threshold();
 
         const MIN: super::Score = super::Score(f32::NEG_INFINITY);
         let (best_branch_id, best_move, best_exploitation, _) = {
@@ -89,7 +90,7 @@ impl super::Selector for HeuristicPuct {
                         // use the exploitation score from the tt best_move as guidance in the
                         // exploration factor.
                         if tt_best_move == Some(mov) {
-                            tt_exploitation.unwrap().0 * params.tt_best_move()
+                            tt_exploitation.unwrap().0 * self.params.tt_best_move()
                         }
                         else {
                             1.
@@ -101,7 +102,7 @@ impl super::Selector for HeuristicPuct {
                         // if a quiet move from a sibling branch proved to be of high exploitation
                         // after some searching, consider that move here aswell.
                         if killer_move == Some(mov) && child.visits() <= VisitCount(2) {
-                            killer_exploitation.unwrap().0 * params.killer_exploitation()
+                            killer_exploitation.unwrap().0 * self.params.killer_exploitation()
                         }
                         else {
                             0.
