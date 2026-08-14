@@ -1,7 +1,7 @@
 use crate::{
     core::{
         params::{CreateParamsError, IConfigBuilder, IParams, MctsHceParams, MctsHceParamsRef, mcts_hce_params_default},
-        search::mcts::{search::MctsParams, select::puct::PuctParams},
+        search::mcts::{search::MctsParams, select::{hpuct::HeuristicPuct, puct::PuctParams}},
     },
     math::Ratio,
 };
@@ -201,11 +201,11 @@ pub struct HceParts {
 }
 
 impl MctsParts for HceParts {
-    type Selector = PuctSelector;
+    type Selector = HeuristicPuct;
     type Evaluator = HceEvaluator;
     type Noiser = DirichletNoiser;
 
-    fn selector(&self) -> Self::Selector { PuctSelector::new(self.cpuct) }
+    fn selector(&self) -> Self::Selector { HeuristicPuct::new(self.cpuct) }
 
     fn evaluator(&self) -> Self::Evaluator { HceEvaluator::new(MctsHceParamsRef::clone(&self.params)) }
 

@@ -8,6 +8,7 @@ use crate::core::{
     search::mcts::{
         node::{BranchId, NodeId, Tree, VisitCount, node_state::Evaluated},
         search::MctsParams,
+        select::puct::PuctSelector,
     },
     zobrist,
 };
@@ -18,6 +19,15 @@ pub struct HeuristicPuct {
     puct: super::puct::PuctSelector,
     tt: Box<TranspositionTable<{ 2 << 10 }, TTData>>,
     ss: SearchStack,
+}
+
+impl HeuristicPuct {
+    pub fn new(cpuct: f32) -> Self {
+        Self {
+            puct: PuctSelector::new(cpuct),
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for HeuristicPuct {
