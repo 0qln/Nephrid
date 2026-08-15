@@ -1,4 +1,9 @@
-use std::{collections::HashMap, env::var, fs, ops::ControlFlow, path::PathBuf};
+#![feature(const_default)]
+#![feature(const_trait_impl)]
+#![feature(control_flow_into_value)]
+#![feature(derive_const)]
+
+use std::{env::var, fs, ops::ControlFlow, path::PathBuf};
 
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 
@@ -10,6 +15,7 @@ use engine::{
         move_iter::sliding_piece::magics,
         piece::Piece,
         position::{EpdLineImport, Position},
+        search::data::{ReplacementStrategy, TTKey, TranspositionTable},
         turn::Turn,
         zobrist,
     },
@@ -43,6 +49,7 @@ fn find_seeds() {
     let mut num_positions = 1;
     let mut min_collisions = usize::MAX;
     let mut seed = 9612274973016456243;
+    let mut tt = TT::new(1 << 22);
 
     loop {
         if num_positions > all_positions.len() {
@@ -52,17 +59,21 @@ fn find_seeds() {
 
         zobrist::force_init(seed);
 
-        let r = test_seed(get_positions(num_positions), &mut moves_rng(), min_collisions);
+        let r = test_seed(get_positions(num_positions), &mut moves_rng(), &mut tt, min_collisions);
         if r.total_collisions < min_collisions {
             min_collisions = r.total_collisions;
-            println!("positions: {}, collisions: {}, seed: {}", num_positions, r.total_collisions, seed);
+            println!(
+                "[+] seed: {seed}, positions: {num_positions}, collisions: {} ({:?})",
+                r.total_collisions, r.bound
+            );
         }
 
         // too good?
         if min_collisions == 0 {
-            println!("seed {seed} perfect for {num_positions} positions. escalating...");
+            print!("[ ] seed: {seed} perfect for {num_positions} positions. escalating to ");
             num_positions += 1;
-            min_collisions = test_seed(get_positions(num_positions), &mut moves_rng(), usize::MAX).total_collisions;
+            min_collisions = test_seed(get_positions(num_positions), &mut moves_rng(), &mut tt, usize::MAX).total_collisions;
+            println!("{num_positions} positions with {min_collisions} collisions...");
         }
         // too bad?
         else {
@@ -71,9 +82,18 @@ fn find_seeds() {
     }
 }
 
+#[derive(Debug)]
+enum Bound {
+    Exact,
+    Lower,
+}
+
 struct SeedTestResult {
     total_collisions: usize,
+    bound: Bound,
 }
+
+type TT = TranspositionTable<OccupancyIndicator, AlwaysReplace>;
 
 #[derive(PartialEq, Eq)]
 struct ZobristSource {
@@ -81,6 +101,28 @@ struct ZobristSource {
     turn: Turn,
     castling: CastlingRights,
     ep_capture_square: EpCaptureSquare,
+}
+
+impl Clone for ZobristSource {
+    fn clone(&self) -> Self {
+        Self {
+            pieces: self.pieces.clone(),
+            turn: self.turn.clone(),
+            castling: self.castling.clone(),
+            ep_capture_square: self.ep_capture_square.clone(),
+        }
+    }
+}
+
+const impl Default for ZobristSource {
+    fn default() -> Self {
+        Self {
+            pieces: [Default::default(); 64],
+            turn: Default::default(),
+            castling: Default::default(),
+            ep_capture_square: Default::default(),
+        }
+    }
 }
 
 impl From<&Position> for ZobristSource {
@@ -94,41 +136,56 @@ impl From<&Position> for ZobristSource {
     }
 }
 
-fn test_seed(mut positions: impl Iterator<Item = Position>, rng: &mut SmallRng, min: usize) -> SeedTestResult {
+#[derive(Clone)]
+#[derive_const(Default)]
+struct OccupancyIndicator {
+    src: ZobristSource,
+    key: zobrist::Hash,
+}
+
+impl TTKey for OccupancyIndicator {
+    fn key(&self) -> zobrist::Hash { self.key }
+}
+
+struct AlwaysReplace;
+
+impl ReplacementStrategy for AlwaysReplace {
+    type Data = OccupancyIndicator;
+    fn should_replace(_existing: &Self::Data, _new: &Self::Data) -> bool { true }
+}
+
+fn test_seed(mut positions: impl Iterator<Item = Position>, rng: &mut SmallRng, tt: &mut TT, min: usize) -> SeedTestResult {
     const MAX_DEPTH: usize = 10; // 2^10 = 1024[nodes/position]
 
-    let mut seen_positions: HashMap<zobrist::Hash, ZobristSource> = HashMap::new();
+    tt.clear();
 
+    let mut bound = Bound::Exact;
     let collisions = positions
         .try_fold(0, |mut collisions, mut pos| {
             if collisions >= min {
-                return ControlFlow::Break(());
+                bound = Bound::Lower;
+                return ControlFlow::Break(collisions);
             }
 
-            simulate_search(&mut pos, 0, MAX_DEPTH, rng, &mut seen_positions, &mut collisions, min);
+            simulate_search(&mut pos, 0, MAX_DEPTH, rng, tt, &mut collisions, min);
 
             if collisions >= min {
-                ControlFlow::Break(())
+                bound = Bound::Lower;
+                ControlFlow::Break(collisions)
             }
             else {
                 ControlFlow::Continue(collisions)
             }
         })
-        .continue_value()
-        .unwrap_or(usize::MAX);
+        .into_value();
 
-    SeedTestResult { total_collisions: collisions }
+    SeedTestResult {
+        total_collisions: collisions,
+        bound,
+    }
 }
 
-fn simulate_search(
-    pos: &mut Position,
-    depth: usize,
-    max_depth: usize,
-    rng: &mut SmallRng,
-    seen_positions: &mut HashMap<zobrist::Hash, ZobristSource>,
-    collisions: &mut usize,
-    min: usize,
-) {
+fn simulate_search(pos: &mut Position, depth: usize, max_depth: usize, rng: &mut SmallRng, tt: &mut TT, collisions: &mut usize, min: usize) {
     if *collisions >= min {
         return;
     }
@@ -136,17 +193,21 @@ fn simulate_search(
     let hash = pos.get_key();
     let current_source = ZobristSource::from(&*pos);
 
-    match seen_positions.get(&hash) {
-        Some(existing_source) if existing_source != &current_source => {
-            *collisions += 1;
-            if *collisions >= min {
-                return;
+    match tt.get(hash) {
+        Some(existing_source) => {
+            // Note: Since `tt.get(hash)` guarantees `existing_source.key() == hash`,
+            // we only check if the physical board attributes differ to confirm a Zobrist
+            // collision.
+            if &existing_source.src != &current_source && &existing_source.src != &Default::default() {
+                *collisions += 1;
+                if *collisions >= min {
+                    return;
+                }
             }
         }
         None => {
-            seen_positions.insert(hash, current_source);
+            tt.try_insert(OccupancyIndicator { src: current_source, key: hash });
         }
-        _ => {}
     }
 
     if depth >= max_depth || pos.game_result().is_some() {
@@ -179,7 +240,7 @@ fn simulate_search(
         let mov = slice[idx];
 
         pos.make_move(mov, &mut ());
-        simulate_search(pos, depth + 1, max_depth, rng, seen_positions, collisions, min);
+        simulate_search(pos, depth + 1, max_depth, rng, tt, collisions, min);
         pos.unmake_move(mov, &mut ());
 
         if *collisions >= min {
