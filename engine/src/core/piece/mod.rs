@@ -192,7 +192,8 @@ impl TryFrom<MoveFlag> for PromoPieceType {
 
 pub type TPiece = u8;
 
-#[derive(Copy, Clone, Default, PartialEq, Eq)]
+#[derive(Copy, PartialEq, Eq)]
+#[derive_const(Clone, Default)]
 pub struct Piece {
     v: TPiece,
 }
