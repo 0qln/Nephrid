@@ -282,6 +282,9 @@ impl PieceInfo {
     }
 
     #[inline]
+    pub fn get_pieces(&self) -> &[Piece; 64] { &self.pieces }
+
+    #[inline]
     pub fn get_piece_count(&self, piece: Piece) -> i8 {
         // Safety:
         // It's not possible to safely create an instance of Piece,
@@ -1310,6 +1313,9 @@ impl Position {
 
     #[inline]
     pub fn get_piece(&self, sq: Square) -> Piece { self.piece_info.get_piece(sq) }
+
+    #[inline]
+    pub fn get_pieces(&self) -> &[Piece; 64] { self.piece_info.get_pieces() }
 
     pub fn get_piece_count(&self, piece: Piece) -> i8 { self.piece_info.get_piece_count(piece) }
 
