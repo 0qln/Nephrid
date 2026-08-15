@@ -37,42 +37,37 @@ fn find_seeds() {
 
     println!("Loaded {} positions into memory.", all_positions.len());
 
-    let mut seed = 9612274973016456243;
+    let get_positions = |n: usize| all_positions[..n].iter().cloned();
+    let moves_rng = || SmallRng::seed_from_u64(0x_dead_beef);
+
+    let mut num_positions = 1;
     let mut min_collisions = usize::MAX;
-    let mut num_positions = 4000;
+    let mut seed = 9612274973016456243;
 
-    'seed: loop {
-        zobrist::force_init(seed);
-
-
-            if num_positions > all_positions.len() {
-                println!("\n  perfect seed found: {seed}",);
-                return;
-            }
-
-            // test the current seed
-            let mut moves_rng = SmallRng::seed_from_u64(0x_dead_beef);
-            let positions_slice = all_positions[..num_positions].iter().cloned();
-            let test = test_seed(positions_slice, &mut moves_rng, min_collisions);
-
-            if test.total_collisions < min_collisions {
-                min_collisions = test.total_collisions;
-                println!("positions: {}, collisions: {}, seed: {}", num_positions, test.total_collisions, seed);
-            }
-
-            // too good?
-            if min_collisions == 0 {
-                println!("seed {} achieved 0 collisions at {} positions! escalating...", seed, num_positions);
-                num_positions += 1000;
-                min_collisions = usize::MAX;
-            }
-            // too bad?
-            else {
-                break;
-            }
+    loop {
+        if num_positions > all_positions.len() {
+            println!("reached max available dataset positions ({})!", all_positions.len());
+            break;
         }
 
-        seed = SmallRng::seed_from_u64(seed).next_u64();
+        zobrist::force_init(seed);
+
+        let r = test_seed(get_positions(num_positions), &mut moves_rng(), min_collisions);
+        if r.total_collisions < min_collisions {
+            min_collisions = r.total_collisions;
+            println!("positions: {}, collisions: {}, seed: {}", num_positions, r.total_collisions, seed);
+        }
+
+        // too good?
+        if min_collisions == 0 {
+            println!("seed {seed} perfect for {num_positions} positions. escalating...");
+            num_positions += 1;
+            min_collisions = test_seed(get_positions(num_positions), &mut moves_rng(), usize::MAX).total_collisions;
+        }
+        // too bad?
+        else {
+            seed = SmallRng::seed_from_u64(seed).next_u64();
+        }
     }
 }
 
