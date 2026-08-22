@@ -141,7 +141,7 @@ impl TryFrom<TMoveFlag> for MoveFlag {
     }
 }
 
-impl const From<CastlingSide> for MoveFlag {
+const impl From<CastlingSide> for MoveFlag {
     fn from(value: CastlingSide) -> Self {
         match value {
             castling_sides::KING_SIDE => f::KING_CASTLE,
@@ -156,7 +156,7 @@ pub struct Move {
     v: u16,
 }
 
-impl const Default for Move {
+const impl Default for Move {
     fn default() -> Self { Self::null() }
 }
 
@@ -294,6 +294,9 @@ pub struct SAN<'a> {
     pub mov: Move,
 }
 
+/// # SAN moves formatting
+///
+/// https://www.thechessdrum.net/PGN_Reference.txt
 impl<'a> fmt::Display for SAN<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let flag = self.mov.get_flag();
@@ -387,20 +390,16 @@ impl<'a> fmt::Display for SAN<'a> {
         write!(f, "{to}")?;
 
         // Promotions
-        if flag.is_promo() {
-            // Convert to a white piece such that we print as uppercase
-            let promo = PromoPieceType::try_from(flag);
-            let promo = promo.expect("We only go here if it actually is a promo");
-            let promo = Piece::from((colors::WHITE, promo));
-            write!(f, "={promo}")?;
+        if let Ok(promo) = PromoPieceType::try_from(flag) {
+            write!(f, "={}", Piece::from((colors::WHITE, promo)))?;
         }
 
         // 8.2.3.5: Check and checkmate indication characters
         {
-            // todo: find a more efficient way to check this instead of cloning
-            let mut pos = self.context.clone();
-            pos.make_move(self.mov, &mut ());
-            if pos.get_check_state() != CheckState::None {
+            if self.context.does_check(self.mov) != CheckState::None {
+                let mut pos = self.context.clone();
+                pos.make_move(self.mov, &mut ());
+
                 // If the move is a checking move, the plus sign "+" is appended as a suffix to
                 // the basic SAN move notation; if the move is a checkmating move, the
                 // octothorpe sign "#" is appended instead.
@@ -698,7 +697,7 @@ impl MoveList {
 
     #[inline]
     pub fn get(&self, index: MoveIndex) -> Option<Move> { self.inner.get(index.v as usize).copied() }
-    
+
     #[inline]
     pub fn is_empty(&self) -> bool { self.inner.is_empty() }
 }

@@ -1437,9 +1437,7 @@ impl ReducedPgn {
         }
 
         // Apply the custom FEN if provided
-        if let Some(fen) = fen_string
-            && has_setup
-        {
+        if has_setup && let Some(fen) = fen_string {
             return Position::from_fen(fen);
         }
 
