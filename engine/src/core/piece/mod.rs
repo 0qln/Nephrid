@@ -50,11 +50,11 @@ impl_variants! {
 }
 
 impl fmt::Debug for PieceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("PieceType").field("v", &Into::<char>::into(*self)).finish() }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.debug_struct("PieceType").field("v", &char::from(*self)).finish() }
 }
 
 impl fmt::Display for PieceType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", Into::<char>::into(*self)) }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", char::from(*self)) }
 }
 
 impl PieceType {
@@ -217,7 +217,7 @@ impl Piece {
     pub const fn unpack(&self) -> (Color, PieceType) { (self.color(), self.piece_type()) }
 }
 
-impl const From<(Color, PieceType)> for Piece {
+const impl From<(Color, PieceType)> for Piece {
     #[inline]
     fn from((color, piece_type): (Color, PieceType)) -> Self {
         Piece {
@@ -226,13 +226,9 @@ impl const From<(Color, PieceType)> for Piece {
     }
 }
 
-impl const From<(Color, PromoPieceType)> for Piece {
+const impl From<(Color, PromoPieceType)> for Piece {
     #[inline]
-    fn from((color, piece_type): (Color, PromoPieceType)) -> Self {
-        Piece {
-            v: color.v() | (piece_type.v().v() << 1),
-        }
-    }
+    fn from((color, piece_type): (Color, PromoPieceType)) -> Self { Self::from((color, piece_type.v())) }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
