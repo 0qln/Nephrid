@@ -294,6 +294,9 @@ pub struct SAN<'a> {
     pub mov: Move,
 }
 
+/// # SAN moves formatting
+///
+/// https://www.thechessdrum.net/PGN_Reference.txt
 impl<'a> fmt::Display for SAN<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let flag = self.mov.get_flag();
