@@ -746,7 +746,6 @@ where
         let mut curr = 0;
         let mut hh_searched_quiets = MoveList::new();
 
-        // todo: take killers by ref
         while let Some(sm) = move_picker.next_with_score_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers, phase)) {
             let ScoredMove { mov: m, score: s } = sm;
 
