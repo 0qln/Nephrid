@@ -37,8 +37,8 @@ use crate::{
         search::{
             PonderToken,
             data::{
-                self, HistoryScore, Line, PieceHistories, RbSet, SearchStack, THistoryScore, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval,
-                TranspositionTable,
+                self, CaptureHistories, HistoryScore, Line, PieceHistories, RbSet, SearchStack, THistoryScore, TTBound, TTDepth, TTKey, TTMove,
+                TTScore, TTStaticEval, TranspositionTable,
             },
             limit::UciLimit,
             mcts::eval::Quality,
@@ -235,6 +235,7 @@ pub fn go<X: IParams>(
     ct: CancellationToken,
     tt: &mut TT,
     hh: &mut HH,
+    ch: &mut CH,
     eval: &mut impl StaticEvaluator,
     ponder: Option<PonderToken>,
     params: X::Ref,
@@ -250,7 +251,7 @@ where
         println!("info string Starting ID Search with Params: {params:?}");
     }
 
-    let mut searcher = Searcher::<_, X>::new(pos, limit, timeman, ct, tt, hh, eval, params.clone(), ponder);
+    let mut searcher = Searcher::<_, X>::new(pos, limit, timeman, ct, tt, hh, ch, eval, params.clone(), ponder);
     let mut stats = SearchStats::default();
     let mut result = SearchResult {
         best_move: None,
@@ -353,6 +354,7 @@ struct Searcher<'a, 'b, E: StaticEvaluator, X: IParams> {
     ss: SS,
     tt: &'a mut TT,
     hh: &'a mut HH,
+    ch: &'a mut CH,
     eval: &'b mut E,
     params: X::Ref,
     #[cfg(feature = "id-nmp")]
@@ -380,6 +382,7 @@ where
         ct: CancellationToken,
         tt: &'a mut TT,
         hh: &'a mut HH,
+        ch: &'a mut CH,
         eval: &'b mut E,
         params: X::Ref,
         ponder: Option<PonderToken>,
@@ -405,6 +408,7 @@ where
             }]),
             tt,
             hh,
+            ch,
             eval,
             params,
             #[cfg(feature = "id-nmp")]
@@ -520,6 +524,7 @@ where
             tt_move,
             killers,
             hh: self.hh,
+            ch: self.ch,
             color: P::COLOR,
             phase,
             params: self.params.clone(),
@@ -573,14 +578,9 @@ where
 
         // qsearch at the leaf nodes
         if depth == Depth::ROOT || rel_ply >= Depth::MAX {
-            return QSearcher::new(pos, self.tt, &mut self.ss, self.root_ply).go::<P, T>(
-                pos,
-                alpha,
-                beta,
-                self.params.clone(),
-                self.eval,
-                Depth::MAX - rel_ply,
-            );
+            return QSearcher::new(pos, self.tt, &mut self.ss, self.ch, self.root_ply)
+                .go::<P, T>(pos, alpha, beta, self.params.clone(), self.eval, Depth::MAX - rel_ply)
+                .0;
         }
 
         let kind = T::KIND;
@@ -744,6 +744,7 @@ where
         let mut best_score = -Score::INF;
         let mut best_move = Move::null();
         let mut curr = 0;
+
         let mut hh_searched_quiets = MoveList::new();
 
         while let Some(sm) = move_picker.next_with_score_for::<P>(pos, &self.scorer_for::<P>(tt_move, killers, phase)) {
@@ -756,6 +757,8 @@ where
             let (from, to, flag) = m.into();
             let moving_piece = pos.get_piece(from);
             let moving_pt = moving_piece.piece_type();
+            let is_capture = flag.is_capture();
+            let is_promo = flag.is_promo();
 
             // singular extensions
             // if all but one move fail low, that move is singular and should be extended.
@@ -903,7 +906,7 @@ where
 
                 if score >= beta {
                     // mark quiet moves, fail-high as killer moves
-                    if !flag.is_capture() && !flag.is_promo() {
+                    if !is_capture && !is_promo {
                         // update killers
                         if m != tt_move {
                             self.ss.get_mut(rel_ply).killers._push(m);
@@ -932,15 +935,44 @@ where
             }
             else {
                 // fail low
+
+                // penalize capture history heuristic that were expected but failed to not fail
+                // low
+                if is_capture && !is_promo {
+                    let ch_bonus = HistoryScore::new(
+                        ScorerParams::ch_penalty_base(&self.params)
+                            + ScorerParams::ch_penalty_depth_factor(&self.params) * depth.v() as THistoryScore,
+                    );
+                    let capt_sq = m
+                        .get_capture_sq()
+                        .expect("we only get here if its a capture, which means it should also have a capt square. ");
+                    let capt_pt = pos.get_piece(capt_sq).piece_type();
+                    self.ch.update_for::<P>(moving_pt, to, capt_pt, -ch_bonus);
+                }
             }
 
             curr += 1;
 
             // push any move whose statistic can be used to estimate a quiet moves score.
             // that includes killers and the hashmove.
-            if !flag.is_capture() && !flag.is_promo() {
+            if !is_capture && !is_promo {
                 hh_searched_quiets.push(m);
             }
+        }
+
+        // update ch
+        let (bm_from, bm_to, bm_flag) = best_move.into();
+        if bm_flag.is_capture() && !bm_flag.is_promo() {
+            // reward capture history heuristic
+            let ch_bonus = HistoryScore::new(
+                ScorerParams::ch_bonus_base(&self.params) + ScorerParams::ch_bonus_depth_factor(&self.params) * depth.v() as THistoryScore,
+            );
+            let capt_sq = best_move
+                .get_capture_sq()
+                .expect("we only get here if its a capture, which means it should also have a capt square. ");
+            let capt_pt = pos.get_piece(capt_sq).piece_type();
+            let moving_pt = pos.get_piece(bm_from).piece_type();
+            self.ch.update_for::<P>(moving_pt, bm_to, capt_pt, ch_bonus);
         }
 
         self.tt.try_insert(TTEntry {
@@ -959,6 +991,8 @@ where
 }
 
 pub type HH = PieceHistories;
+
+pub type CH = CaptureHistories;
 
 pub type TT = TranspositionTable<TTEntry, TTReplace>;
 
@@ -1101,12 +1135,23 @@ pub struct SearchEntry {
 pub const trait ScorerParams {
     fn hh_weight(&self) -> i32;
     fn total_weight(&self) -> i32 { 128 }
+    /// Base penalty applied to a capture that failed low.
+    fn ch_penalty_base(&self) -> THistoryScore;
+    /// Per-depth increment of the capture-history fail-low penalty.
+    fn ch_penalty_depth_factor(&self) -> THistoryScore;
+    /// Base bonus applied to the best capture.
+    fn ch_bonus_base(&self) -> THistoryScore;
+    /// Per-depth increment of the best-capture bonus.
+    fn ch_bonus_depth_factor(&self) -> THistoryScore;
+    /// Divisor applied to the capture-history score during move ordering.
+    fn ch_ordering_divisor(&self) -> MoveScore;
 }
 
 pub struct Scorer<'a, X: IParams> {
     pub tt_move: Move,
     pub killers: Killers,
     pub hh: &'a PieceHistories,
+    pub ch: &'a CaptureHistories,
     pub color: Color,
     pub phase: TaperValue,
     pub params: X::Ref,
@@ -1127,9 +1172,35 @@ where
 
             // captures and promos, ordered by see value.
             RtStage::GenerateCapturesAndPromos | RtStage::YieldGoodCapturesAndPromos | RtStage::YieldBadCaptures => {
+                let (from, to, flag) = mov.into();
+                let pieces = pos.piece_info();
+                let is_capture = flag.is_capture();
+                let is_promo = flag.is_promo();
+
+                // todo: should we score promo captures via ch here? gotta benchmark
+                // probe capture scores in the history tables
+                let ch_score = if let Some(capt_sq) = mov.get_capture_sq()
+                    && !is_promo
+                    && is_capture
+                {
+                    let moving_pt = pieces.get_piece(from).piece_type();
+                    let capt_pt = pieces.get_piece(capt_sq).piece_type();
+                    let ch_score = self.ch.get(self.color, moving_pt, to, capt_pt);
+                    let mvv = hce::piece_score(capt_pt).v() as MoveScore;
+                    let lva = -ch_score.v() / self.params.ch_ordering_divisor();
+
+                    mvv - lva
+                }
+                else {
+                    0
+                };
+
+                // fallback to see for moves without ch_score or promos
                 // todo: currently see evaluates the promo values, but we don't need a whole
                 // see for quiet promos, maybe that can be optimized...
-                ordering::see(pos.piece_info(), mov, self.color)
+                let see_score = ordering::see(pos.piece_info(), mov, self.color);
+
+                see_score + ch_score
             }
 
             // score killer moves by their age

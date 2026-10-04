@@ -120,7 +120,9 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
 
         let mut ss = id::SS::from(vec![id::SearchEntry { phase, ..Default::default() }]);
 
-        let mut qsearcher = QSearcher::new(pos, &mut tt, &mut ss, pos.ply());
+        let mut ch = id::CH::new();
+
+        let mut qsearcher = QSearcher::new(pos, &mut tt, &mut ss, &mut ch, pos.ply());
 
         let quality: Cp = match pos.get_turn().v() {
             colors::WHITE_C => qsearcher
@@ -132,6 +134,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                     &mut StaticEvaluator,
                     Depth::new(30),
                 )
+                .0
                 .into(),
             colors::BLACK_C => qsearcher
                 .go::<perspectives::Black, node_types::Pv>(
@@ -142,6 +145,7 @@ impl<Moves: AsRef<[Move]>> EvalInfo<Moves> {
                     &mut StaticEvaluator,
                     Depth::new(30),
                 )
+                .0
                 .into(),
             _ => unreachable!(),
         };

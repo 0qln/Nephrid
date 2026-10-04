@@ -3,14 +3,14 @@ use crate::core::{
     depth::Depth,
     eval::{
         StaticEvaluator,
-        hce::{TaperValue, piece_score, tapered_psqt},
+        hce::{self, TaperValue, piece_score, tapered_psqt},
     },
     r#move::Move,
     piece::{PromoPieceType, piece_type},
     ply::Ply,
     position::{CheckState, Position},
     search::{
-        data::{ReplacementStrategy, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
+        data::{HistoryScore, ReplacementStrategy, THistoryScore, TTBound, TTDepth, TTKey, TTMove, TTScore, TTStaticEval, TranspositionTable},
         id::{self, Bound},
         ordering::{self, MovePicker, MoveScore, RtStage, Stage},
         score::{AnyScore, Score, scores},
@@ -22,6 +22,16 @@ use crate::core::{
 pub const trait QSearchParams {
     fn futility_margin(&self) -> AnyScore;
     fn delta_pruning_threshold(&self) -> TaperValue;
+    /// Base penalty applied to a capture that failed low.
+    fn ch_penalty_base(&self) -> THistoryScore;
+    /// Per-depth increment of the capture-history fail-low penalty.
+    fn ch_penalty_depth_factor(&self) -> THistoryScore;
+    /// Base bonus applied to the best capture.
+    fn ch_bonus_base(&self) -> THistoryScore;
+    /// Per-depth increment of the best-capture bonus.
+    fn ch_bonus_depth_factor(&self) -> THistoryScore;
+    /// Divisor applied to the capture-history score during move ordering.
+    fn ch_ordering_divisor(&self) -> MoveScore;
 }
 
 pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
@@ -34,12 +44,13 @@ pub type TT<Data, Strat> = TranspositionTable<Data, Strat>;
 pub struct QSearcher<'a, Entry, Replace> {
     tt: &'a mut TT<Entry, Replace>,
     ss: &'a mut id::SS,
+    ch: &'a mut id::CH,
     root_ply: Ply,
 }
 
 impl<'a, E, R> QSearcher<'a, E, R> {
     #[inline]
-    pub fn new(_pos: &Position, tt: &'a mut TT<E, R>, ss: &'a mut id::SS, root_ply: Ply) -> Self { Self { tt, ss, root_ply } }
+    pub fn new(_pos: &Position, tt: &'a mut TT<E, R>, ss: &'a mut id::SS, ch: &'a mut id::CH, root_ply: Ply) -> Self { Self { tt, ss, ch, root_ply } }
 }
 
 impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTStaticEval + Clone, R: ReplacementStrategy<Data = E>>
@@ -53,7 +64,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         params: impl QSearchParams + Clone,
         eval: &mut impl StaticEvaluator,
         depth: Depth,
-    ) -> Score<P> {
+    ) -> (Score<P>, Depth) {
         let mut best_score = -Score::INF;
 
         let in_check = pos.get_check_state() != CheckState::None;
@@ -91,7 +102,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         if depth == Depth::new(0) {
             // todo: return the tt score if it is valid for a more accurate eval than
             // static?
-            return lazy_static_eval(self, pos);
+            return (lazy_static_eval(self, pos), Depth::new(0));
         }
 
         // tt cutoff
@@ -113,7 +124,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             best_score = lazy_static_eval(self, pos);
 
             if best_score >= beta {
-                return best_score;
+                return (best_score, Depth::new(0));
             }
             if best_score > alpha {
                 alpha = best_score;
@@ -134,11 +145,6 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         else {
             Move::null()
         };
-        let scorer = MoveScorer {
-            color: P::COLOR,
-            phase,
-            tt_move: hash_move,
-        };
         let mut move_picker = MovePicker::new_with_max_stage(
             hash_move,
             // todo: killers if were in check (looking at quiets)?
@@ -154,14 +160,27 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
 
         // recurse
         let mut best_move = Move::null();
+        let mut best_search_d = Depth::new(0);
         let mut num_legal_moves = 0;
-        while let Some(m) = move_picker.next_for::<P>(pos, &scorer) {
+        while let Some(m) = move_picker.next_for::<P>(
+            pos,
+            &MoveScorer {
+                color: P::COLOR,
+                phase,
+                tt_move: hash_move,
+                ch: self.ch,
+                params: params.clone(),
+            },
+        ) {
             num_legal_moves += 1;
+
+            let (from, to, flag) = m.into();
+            let is_capture = flag.is_capture();
+            let is_promo = flag.is_promo();
+            let moving_pt = pos.get_piece(from).piece_type();
 
             // delta pruning
             if !in_check && phase < params.delta_pruning_threshold() {
-                let (from, to, flag) = m.into();
-
                 let move_gain: Score<P> = {
                     let promo_bonus = PromoPieceType::try_from(flag)
                         .ok()
@@ -199,7 +218,8 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             eval.forward();
             pos.make_move_for::<P>(m, &mut (self.ss.get_mut(rel_ply + 1).phase, eval.observe_forward()));
 
-            let score = !self.go::<P::Opponent, T>(pos, !beta, !alpha, params.clone(), eval, depth - 1);
+            let (score, search_d) = self.go::<P::Opponent, T>(pos, !beta, !alpha, params.clone(), eval, depth - 1);
+            let (score, search_d) = (!score, search_d + 1);
 
             pos.unmake_move_for::<P>(m, eval.observe_backward());
             eval.backward();
@@ -207,6 +227,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
             if score > best_score {
                 best_score = score;
                 best_move = m;
+                best_search_d = search_d;
             }
             if score > alpha {
                 alpha = score;
@@ -216,6 +237,33 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
                     break;
                 }
             }
+            else {
+                // fail low
+
+                // penalize capture history heuristic that were expected but failed to not fail
+                // low
+                if is_capture && !is_promo {
+                    let ch_bonus = HistoryScore::new(params.ch_penalty_base() + params.ch_penalty_depth_factor() * search_d.v() as THistoryScore);
+                    let capt_sq = m
+                        .get_capture_sq()
+                        .expect("we only get here if its a capture, which means it should also have a capt square. ");
+                    let capt_pt = pos.get_piece(capt_sq).piece_type();
+                    self.ch.update_for::<P>(moving_pt, to, capt_pt, -ch_bonus);
+                }
+            }
+        }
+
+        // update ch
+        let (bm_from, bm_to, bm_flag) = best_move.into();
+        if bm_flag.is_capture() && !bm_flag.is_promo() {
+            // reward capture history heuristic
+            let ch_bonus = HistoryScore::new(params.ch_bonus_base() + params.ch_bonus_depth_factor() * best_search_d.v() as THistoryScore);
+            let capt_sq = best_move
+                .get_capture_sq()
+                .expect("we only get here if its a capture, which means it should also have a capt square. ");
+            let capt_pt = pos.get_piece(capt_sq).piece_type();
+            let moving_pt = pos.get_piece(bm_from).piece_type();
+            self.ch.update_for::<P>(moving_pt, bm_to, capt_pt, ch_bonus);
         }
 
         self.tt.try_insert(TTEntry {
@@ -230,10 +278,10 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         // explicitly check for checkmate, such that we can return a score with
         // information about the depth of the mate and not just the stray NEG_INF.
         if num_legal_moves == 0 && in_check {
-            return -Score::mate_in(rel_ply);
+            return (-Score::mate_in(rel_ply), Depth::new(0));
         }
 
-        best_score
+        (best_score, best_search_d)
     }
 }
 
@@ -271,12 +319,14 @@ const impl TTScore for TTEntry {
     fn score(&self) -> AnyScore { self.score }
 }
 
-struct MoveScorer {
+struct MoveScorer<'a, Q> {
     color: Color,
     phase: TaperValue,
     tt_move: Move,
+    ch: &'a id::CH,
+    params: Q,
 }
-impl ordering::MoveScorer for MoveScorer {
+impl<Q: QSearchParams> ordering::MoveScorer for MoveScorer<'_, Q> {
     fn score<S: Stage>(&self, pos: &Position, mov: Move) -> MoveScore {
         match S::stage() {
             ordering::RtStage::YieldHashMove => {
@@ -290,8 +340,27 @@ impl ordering::MoveScorer for MoveScorer {
                 let pt = piece.piece_type(); // todo: what if the pt is a pawn that would promote if he captures?
                 // todo: we are capturing a piece which also had a psqt in the position. see
                 // doesn't do psqt so we should probably add that as a bonus here aswell.
+                let is_capture = flag.is_capture();
+                let is_promo = flag.is_promo();
 
-                ordering::see(pieces, mov, self.color) + ordering::psqt(self.phase, pt, from, to, flag, self.color)
+                // todo: should we score promo captures via ch here? gotta benchmark
+                // probe capture scores in the history tables
+                let ch_score = if let Some(capt_sq) = mov.get_capture_sq()
+                    && !is_promo
+                    && is_capture
+                {
+                    let capt_pt = pieces.get_piece(capt_sq).piece_type();
+                    let ch_score = self.ch.get(self.color, pt, to, capt_pt);
+                    let mvv = hce::piece_score(capt_pt).v() as MoveScore;
+                    let lva = -ch_score.v() / self.params.ch_ordering_divisor();
+
+                    mvv - lva
+                } else { 0 };
+
+                let see_score = ordering::see(pieces, mov, self.color);
+                let psqt_score = ordering::psqt(self.phase, pt, from, to, flag, self.color);
+
+                ch_score + see_score + psqt_score
             }
             ordering::RtStage::YieldKillers => todo!("we don't yet have killers in qsearch"),
             ordering::RtStage::GenerateQuiets | ordering::RtStage::YieldQuiets => {

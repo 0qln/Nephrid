@@ -9,6 +9,7 @@ use crate::{
         depth::Depth,
         eval::hce::TaperValue,
         search::{
+            data::THistoryScore,
             id::{IdParams, ScorerParams},
             mcts::{
                 eval::hce::PolicyParams,
@@ -16,6 +17,7 @@ use crate::{
                 search::MctsParams,
                 select::{hpuct::HeuristicParams, puct::PuctParams},
             },
+            ordering::MoveScore,
             quiesce::QSearchParams,
             score::AnyScore,
         },
@@ -288,6 +290,56 @@ tunable_params! {
             to_raw: |t: TaperValue| t.v(),
             from_raw: |v: &i32| TaperValue::new(*v),
         },
+        ch_penalty_base: THistoryScore {
+            uci: "qs-ch-penalty-base",
+            unit: UciInteger,
+            default: 25,
+            min: 0,
+            max: 100,
+            getter: ch_penalty_base,
+            to_raw: |v: THistoryScore| v as i32,
+            from_raw: |v: &i32| *v as THistoryScore,
+        },
+        ch_penalty_depth_factor: THistoryScore {
+            uci: "qs-ch-penalty-depth-factor",
+            unit: UciInteger,
+            default: 2,
+            min: 0,
+            max: 20,
+            getter: ch_penalty_depth_factor,
+            to_raw: |v: THistoryScore| v as i32,
+            from_raw: |v: &i32| *v as THistoryScore,
+        },
+        ch_bonus_base: THistoryScore {
+            uci: "qs-ch-bonus-base",
+            unit: UciInteger,
+            default: 40,
+            min: 0,
+            max: 200,
+            getter: ch_bonus_base,
+            to_raw: |v: THistoryScore| v as i32,
+            from_raw: |v: &i32| *v as THistoryScore,
+        },
+        ch_bonus_depth_factor: THistoryScore {
+            uci: "qs-ch-bonus-depth-factor",
+            unit: UciInteger,
+            default: 4,
+            min: 0,
+            max: 20,
+            getter: ch_bonus_depth_factor,
+            to_raw: |v: THistoryScore| v as i32,
+            from_raw: |v: &i32| *v as THistoryScore,
+        },
+        ch_ordering_divisor: MoveScore {
+            uci: "qs-ch-ordering-divisor",
+            unit: UciInteger,
+            default: 8,
+            min: 1,
+            max: 64,
+            getter: ch_ordering_divisor,
+            to_raw: |v: MoveScore| v as i32,
+            from_raw: |v: &i32| *v as MoveScore,
+        },
     },
 
     policy: PolicyParams {
@@ -328,7 +380,7 @@ tunable_params! {
             max: VisitCount(100),
             getter: proven_loss_visit_threshold,
             to_raw: |v: VisitCount| v.0 as i32,
-            from_raw: |v: &i32| { VisitCount(*v as u32) },
+            from_raw: |v: &i32| VisitCount(*v as u32),
         },
         killer_exploitation: f32 {
             uci: "mcts-killer-exploitation",
@@ -509,6 +561,56 @@ tunable_params! {
             to_raw: |v: i32| v,
             from_raw: |v: &i32| *v,
         },
+        ch_penalty_base: THistoryScore {
+            uci: "id-scorer-ch-penalty-base",
+            unit: UciInteger,
+            default: 20,
+            min: 0,
+            max: 100,
+            getter: ch_penalty_base,
+            to_raw: |v: THistoryScore| v as i32,
+            from_raw: |v: &i32| *v as THistoryScore,
+        },
+        ch_penalty_depth_factor: THistoryScore {
+            uci: "id-scorer-ch-penalty-depth-factor",
+            unit: UciInteger,
+            default: 3,
+            min: 0,
+            max: 20,
+            getter: ch_penalty_depth_factor,
+            to_raw: |v: THistoryScore| v as i32,
+            from_raw: |v: &i32| *v as THistoryScore,
+        },
+        ch_bonus_base: THistoryScore {
+            uci: "id-scorer-ch-bonus-base",
+            unit: UciInteger,
+            default: 30,
+            min: 0,
+            max: 200,
+            getter: ch_bonus_base,
+            to_raw: |v: THistoryScore| v as i32,
+            from_raw: |v: &i32| *v as THistoryScore,
+        },
+        ch_bonus_depth_factor: THistoryScore {
+            uci: "id-scorer-ch-bonus-depth-factor",
+            unit: UciInteger,
+            default: 5,
+            min: 0,
+            max: 20,
+            getter: ch_bonus_depth_factor,
+            to_raw: |v: THistoryScore| v as i32,
+            from_raw: |v: &i32| *v as THistoryScore,
+        },
+        ch_ordering_divisor: MoveScore {
+            uci: "id-scorer-ch-ordering-divisor",
+            unit: UciInteger,
+            default: 8,
+            min: 1,
+            max: 64,
+            getter: ch_ordering_divisor,
+            to_raw: |v: MoveScore| v as i32,
+            from_raw: |v: &i32| *v as MoveScore,
+        },
     },
 
     lmr: LmrParams {
@@ -585,6 +687,11 @@ const_params! {
         qsearch: QSearchParams {
             fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
             fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+            fn ch_penalty_base(&self) -> THistoryScore { 25 }
+            fn ch_penalty_depth_factor(&self) -> THistoryScore { 2 }
+            fn ch_bonus_base(&self) -> THistoryScore { 40 }
+            fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
+            fn ch_ordering_divisor(&self) -> MoveScore { 8 }
         },
         policy: PolicyParams {
             fn policy_temperature(&self) -> f32 { 24.58 }
@@ -663,6 +770,11 @@ const_params! {
         qsearch: QSearchParams {
             fn futility_margin(&self) -> AnyScore { AnyScore::new(166) }
             fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(16) }
+            fn ch_penalty_base(&self) -> THistoryScore { 25 }
+            fn ch_penalty_depth_factor(&self) -> THistoryScore { 2 }
+            fn ch_bonus_base(&self) -> THistoryScore { 40 }
+            fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
+            fn ch_ordering_divisor(&self) -> MoveScore { 8 }
         },
         id: IdParams {
             fn nmp_reduction(&self) -> Depth { Depth::new(2) }
@@ -674,6 +786,11 @@ const_params! {
         },
         scorer: ScorerParams {
             fn hh_weight(&self) -> i32 { 64 }
+            fn ch_penalty_base(&self) -> THistoryScore { 20 }
+            fn ch_penalty_depth_factor(&self) -> THistoryScore { 3 }
+            fn ch_bonus_base(&self) -> THistoryScore { 30 }
+            fn ch_bonus_depth_factor(&self) -> THistoryScore { 5 }
+            fn ch_ordering_divisor(&self) -> MoveScore { 8 }
         },
         lmr: LmrParams {
             fn offset(&self) -> f32 { 0.99 }
@@ -699,6 +816,11 @@ const_params! {
         qsearch: QSearchParams {
             fn futility_margin(&self) -> AnyScore { AnyScore::new(177) }
             fn delta_pruning_threshold(&self) -> TaperValue { TaperValue::new(2) }
+            fn ch_penalty_base(&self) -> THistoryScore { 26 }
+            fn ch_penalty_depth_factor(&self) -> THistoryScore { 0 }
+            fn ch_bonus_base(&self) -> THistoryScore { 32 }
+            fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
+            fn ch_ordering_divisor(&self) -> MoveScore { 8 }
         },
         id: IdParams {
             fn nmp_reduction(&self) -> Depth { Depth::new(2) }
@@ -710,6 +832,11 @@ const_params! {
         },
         scorer: ScorerParams {
             fn hh_weight(&self) -> i32 { 100 }
+            fn ch_penalty_base(&self) -> THistoryScore { 18 }
+            fn ch_penalty_depth_factor(&self) -> THistoryScore { 0 }
+            fn ch_bonus_base(&self) -> THistoryScore { 32 }
+            fn ch_bonus_depth_factor(&self) -> THistoryScore { 4 }
+            fn ch_ordering_divisor(&self) -> MoveScore { 8 }
         },
         lmr: LmrParams {
             fn offset(&self) -> f32 { 0.99 }
