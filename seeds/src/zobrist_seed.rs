@@ -20,7 +20,7 @@ use engine::{
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::{env::var, fs, io::Write, path::PathBuf};
 
-const SEED_BASELINE: u64 = 11656553772269689295;
+const SEED_BASELINE: u64 = 17472894813261399238;
 const EVAL_POSITIONS: usize = 500;
 const TT_SIZE: usize = 22;
 const MAX_DEPTH: usize = 10; // 2^10 = 1024 [nodes/position]
@@ -59,21 +59,21 @@ fn find_seeds() {
 
     let mut tt = TT::new(1 << TT_SIZE);
     let mut seed = load_seed();
+    let mut seed_i = 0;
 
     zobrist::force_init(SEED_BASELINE);
     let mut best_r = test_seed(&mut all_positions, &mut moves_rng(), &mut tt, &SeedTestResult::worst());
     println!(
-        "\r\x1b[2K[+] base: {SEED_BASELINE}, collisions: {}, insertions: {}, avg collisions/insertion: {:.8e} ({:?})",
+        "\r\x1b[2K[+] base: {SEED_BASELINE}, collisions: {}, insertions: {}, collisions/insertion: {:.8e}",
         best_r.total_collisions,
         best_r.total_insertions,
-        best_r.avg_collisions_per_insertion().unwrap_or(0.),
-        best_r.bound
+        best_r.avg_collisions_per_insertion().unwrap_or(0.)
     );
 
     loop {
         // Print the active seed on the bottom line (\r moves cursor to start, \x1b[2K
         // clears line)
-        print!("\r\x1b[2KTesting seed: {seed}");
+        print!("\r\x1b[2KTesting seed {seed_i}: {seed}");
         let _ = std::io::stdout().flush();
 
         zobrist::force_init(seed);
@@ -84,14 +84,15 @@ fn find_seeds() {
 
             // Clear the status line before logging the finding so it prints cleanly above
             println!(
-                "\r\x1b[2K[+] seed: {seed}, collisions: {}, insertions: {}, avg collisions/insertion: {:.8e} ({:?})",
-                r.total_collisions, r.total_insertions, avg_rate, r.bound
+                "\r\x1b[2K[+] seed: {seed}, collisions: {}, insertions: {}, collisions/insertion: {:.8e}",
+                r.total_collisions, r.total_insertions, avg_rate
             );
 
             best_r = r;
         }
 
         seed = SmallRng::seed_from_u64(seed).next_u64();
+        seed_i += 1;
     }
 }
 
