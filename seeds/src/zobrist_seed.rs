@@ -18,7 +18,11 @@ use engine::{
     uci::tokens::Tokenizer,
 };
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
-use std::{env::var, fs, path::PathBuf};
+use std::{env::var, fs, io::Write, path::PathBuf};
+
+const SEED_BASELINE: u64 = 11656553772269689295;
+const EVAL_POSITIONS: usize = 1000;
+const TT_SIZE: usize = 22;
 
 fn load_positions(limit: usize) -> Vec<Position> {
     let epd_lines = {
@@ -39,53 +43,101 @@ fn load_positions(limit: usize) -> Vec<Position> {
         .collect()
 }
 
+fn load_seed() -> u64 {
+    // Allow resuming from command-line argument, defaulting to the initial seed
+    std::env::args().nth(1).and_then(|arg| arg.parse::<u64>().ok()).unwrap_or(SEED_BASELINE)
+}
+
 fn find_seeds() {
     magics::init();
 
-    const EVAL_POSITIONS: usize = 1000;
     let mut all_positions: Vec<Position> = load_positions(EVAL_POSITIONS);
     println!("Loaded {} positions into memory.", all_positions.len());
 
     let moves_rng = || SmallRng::seed_from_u64(0x_dead_beef);
 
-    let mut best_collisions = usize::MAX;
-    let mut seed = 9140452822872800724;
-    let mut tt = TT::new(1 << 22);
+    let mut tt = TT::new(1 << TT_SIZE);
+    let mut seed = load_seed();
+
+    zobrist::force_init(SEED_BASELINE);
+    let mut best_r = test_seed(&mut all_positions, &mut moves_rng(), &mut tt, &SeedTestResult::worst());
+    println!(
+        "\r\x1b[2K[+] base: {SEED_BASELINE}, collisions: {}, insertions: {}, avg collisions/insertion: {:.8e} ({:?})",
+        best_r.total_collisions,
+        best_r.total_insertions,
+        best_r.avg_collisions_per_insertion().unwrap_or(0.),
+        best_r.bound
+    );
 
     loop {
+        // Print the active seed on the bottom line (\r moves cursor to start, \x1b[2K
+        // clears line)
+        print!("\r\x1b[2KTesting seed: {seed}");
+        let _ = std::io::stdout().flush();
+
         zobrist::force_init(seed);
+        let r = test_seed(&mut all_positions, &mut moves_rng(), &mut tt, &best_r);
 
-        let r = test_seed(&mut all_positions, &mut moves_rng(), &mut tt, best_collisions);
+        if r.bound == Bound::Exact && r < best_r {
+            let avg_rate = r.avg_collisions_per_insertion().unwrap_or(0.);
 
-        if r.bound == Bound::Exact && r.total_collisions < best_collisions {
-            best_collisions = r.total_collisions;
-            let avg_rate = if r.total_insertions > 0 {
-                r.total_collisions as f64 / r.total_insertions as f64
-            }
-            else {
-                0.0
-            };
-
+            // Clear the status line before logging the finding so it prints cleanly above
             println!(
-                "[+] seed: {seed}, collisions: {}, insertions: {}, avg collisions/insertion: {:.8e} ({:?})",
+                "\r\x1b[2K[+] seed: {seed}, collisions: {}, insertions: {}, avg collisions/insertion: {:.8e} ({:?})",
                 r.total_collisions, r.total_insertions, avg_rate, r.bound
             );
+
+            best_r = r;
         }
 
         seed = SmallRng::seed_from_u64(seed).next_u64();
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Default)]
 enum Bound {
+    #[default]
     Exact,
     Lower,
 }
 
+#[derive(Default)]
 struct SeedTestResult {
     total_collisions: usize,
     total_insertions: usize,
     bound: Bound,
+}
+
+impl PartialOrd for SeedTestResult {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match (self.avg_collisions_per_insertion(), other.avg_collisions_per_insertion()) {
+            (Some(a), Some(b)) => a.partial_cmp(&b),
+            _ => None,
+        }
+    }
+}
+
+impl PartialEq for SeedTestResult {
+    fn eq(&self, other: &Self) -> bool { self.avg_collisions_per_insertion() == other.avg_collisions_per_insertion() }
+}
+
+impl SeedTestResult {
+    fn worst() -> Self {
+        Self {
+            total_collisions: usize::MAX,
+            total_insertions: 1,
+            bound: Bound::Lower,
+        }
+    }
+
+    fn avg_collisions_per_insertion(&self) -> Option<f64> {
+        if self.total_insertions > 0 {
+            Some(self.total_collisions as f64 / self.total_insertions as f64)
+        }
+        else {
+            None
+        }
+    }
 }
 
 type TT = TranspositionTable<OccupancyIndicator, AlwaysReplace>;
@@ -149,34 +201,32 @@ impl ReplacementStrategy for AlwaysReplace {
     fn should_replace(_existing: &Self::Data, _new: &Self::Data) -> bool { true }
 }
 
-fn test_seed(positions: &mut [Position], rng: &mut SmallRng, tt: &mut TT, max_collisions: usize) -> SeedTestResult {
+fn test_seed(positions: &mut [Position], rng: &mut SmallRng, tt: &mut TT, max: &SeedTestResult) -> SeedTestResult {
     const MAX_DEPTH: usize = 10; // 2^10 = 1024 [nodes/position]
 
     tt.clear();
 
-    let mut bound = Bound::Exact;
-    let mut total_collisions = 0;
-    let mut total_insertions = 0;
+    let mut r = SeedTestResult::default();
 
     for pos in positions.iter_mut() {
-        if total_collisions >= max_collisions {
-            bound = Bound::Lower;
+        if r.total_collisions >= max.total_collisions {
+            r.bound = Bound::Lower;
             break;
         }
 
-        simulate_search(pos, 0, MAX_DEPTH, rng, tt, &mut total_collisions, &mut total_insertions, max_collisions);
-
-        if total_collisions >= max_collisions {
-            bound = Bound::Lower;
-            break;
-        }
+        simulate_search(
+            pos,
+            0,
+            MAX_DEPTH,
+            rng,
+            tt,
+            &mut r.total_collisions,
+            &mut r.total_insertions,
+            max.total_collisions,
+        );
     }
 
-    SeedTestResult {
-        total_collisions,
-        total_insertions,
-        bound,
-    }
+    r
 }
 
 fn simulate_search(
