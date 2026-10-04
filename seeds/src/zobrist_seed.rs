@@ -1,8 +1,6 @@
 #![feature(const_default)]
 #![feature(const_trait_impl)]
-#![feature(control_flow_into_value)]
 #![feature(derive_const)]
-#![feature(anonymous_lifetime_in_impl_trait)]
 
 use engine::{
     core::{
@@ -19,9 +17,9 @@ use engine::{
     uci::tokens::Tokenizer,
 };
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
-use std::{env::var, fs, ops::ControlFlow, path::PathBuf};
+use std::{env::var, fs, path::PathBuf};
 
-fn load_positions() -> Vec<Position> {
+fn load_positions(limit: usize) -> Vec<Position> {
     let epd_lines = {
         let mut path = PathBuf::new();
         path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
@@ -36,55 +34,48 @@ fn load_positions() -> Vec<Position> {
             let (pos, _ops) = EpdLineImport(&mut tok).try_into().ok()?;
             Some(pos)
         })
+        .take(limit)
         .collect()
 }
 
 fn find_seeds() {
     magics::init();
 
-    let mut all_positions: Vec<Position> = load_positions();
-    let n_positions = all_positions.len();
-    println!("Loaded {} positions into memory.", n_positions);
+    const EVAL_POSITIONS: usize = 1000;
+    let mut all_positions: Vec<Position> = load_positions(EVAL_POSITIONS);
+    println!("Loaded {} positions into memory.", all_positions.len());
 
     let moves_rng = || SmallRng::seed_from_u64(0x_dead_beef);
 
-    let mut num_positions = 1;
-    let mut min_collisions = usize::MAX;
+    let mut best_collisions = usize::MAX;
     let mut seed = 9140452822872800724;
     let mut tt = TT::new(1 << 22);
 
     loop {
-        if num_positions > n_positions {
-            println!("reached max available dataset positions ({})!", all_positions.len());
-            break;
-        }
-
         zobrist::force_init(seed);
 
-        let r = test_seed(all_positions[..num_positions].iter_mut(), &mut moves_rng(), &mut tt, min_collisions);
-        if r.total_collisions < min_collisions {
-            min_collisions = r.total_collisions;
+        let r = test_seed(&mut all_positions, &mut moves_rng(), &mut tt, best_collisions);
+
+        if r.bound == Bound::Exact && r.total_collisions < best_collisions {
+            best_collisions = r.total_collisions;
+            let avg_rate = if r.total_insertions > 0 {
+                r.total_collisions as f64 / r.total_insertions as f64
+            }
+            else {
+                0.0
+            };
+
             println!(
-                "[+] seed: {seed}, positions: {num_positions}, collisions: {} ({:?})",
-                r.total_collisions, r.bound
+                "[+] seed: {seed}, collisions: {}, insertions: {}, avg collisions/insertion: {:.8e} ({:?})",
+                r.total_collisions, r.total_insertions, avg_rate, r.bound
             );
         }
 
-        // too good?
-        if min_collisions == 0 {
-            print!("[ ] seed: {seed} perfect for {num_positions} positions. escalating to ");
-            num_positions += 1;
-            min_collisions = test_seed(all_positions[..num_positions].iter_mut(), &mut moves_rng(), &mut tt, usize::MAX).total_collisions;
-            println!("{num_positions} positions with {min_collisions} collisions...");
-        }
-        // too bad?
-        else {
-            seed = SmallRng::seed_from_u64(seed).next_u64();
-        }
+        seed = SmallRng::seed_from_u64(seed).next_u64();
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum Bound {
     Exact,
     Lower,
@@ -92,6 +83,7 @@ enum Bound {
 
 struct SeedTestResult {
     total_collisions: usize,
+    total_insertions: usize,
     bound: Bound,
 }
 
@@ -156,39 +148,47 @@ impl ReplacementStrategy for AlwaysReplace {
     fn should_replace(_existing: &Self::Data, _new: &Self::Data) -> bool { true }
 }
 
-fn test_seed(mut positions: impl Iterator<Item = &mut Position>, rng: &mut SmallRng, tt: &mut TT, min: usize) -> SeedTestResult {
-    const MAX_DEPTH: usize = 10; // 2^10 = 1024[nodes/position]
+fn test_seed(positions: &mut [Position], rng: &mut SmallRng, tt: &mut TT, max_collisions: usize) -> SeedTestResult {
+    const MAX_DEPTH: usize = 10; // 2^10 = 1024 [nodes/position]
 
     tt.clear();
 
     let mut bound = Bound::Exact;
-    let collisions = positions
-        .try_fold(0, |mut collisions, mut pos| {
-            if collisions >= min {
-                bound = Bound::Lower;
-                return ControlFlow::Break(collisions);
-            }
+    let mut total_collisions = 0;
+    let mut total_insertions = 0;
 
-            simulate_search(&mut pos, 0, MAX_DEPTH, rng, tt, &mut collisions, min);
+    for pos in positions.iter_mut() {
+        if total_collisions >= max_collisions {
+            bound = Bound::Lower;
+            break;
+        }
 
-            if collisions >= min {
-                bound = Bound::Lower;
-                ControlFlow::Break(collisions)
-            }
-            else {
-                ControlFlow::Continue(collisions)
-            }
-        })
-        .into_value();
+        simulate_search(pos, 0, MAX_DEPTH, rng, tt, &mut total_collisions, &mut total_insertions, max_collisions);
+
+        if total_collisions >= max_collisions {
+            bound = Bound::Lower;
+            break;
+        }
+    }
 
     SeedTestResult {
-        total_collisions: collisions,
+        total_collisions,
+        total_insertions,
         bound,
     }
 }
 
-fn simulate_search(pos: &mut Position, depth: usize, max_depth: usize, rng: &mut SmallRng, tt: &mut TT, collisions: &mut usize, min: usize) {
-    if *collisions >= min {
+fn simulate_search(
+    pos: &mut Position,
+    depth: usize,
+    max_depth: usize,
+    rng: &mut SmallRng,
+    tt: &mut TT,
+    collisions: &mut usize,
+    insertions: &mut usize,
+    max_collisions: usize,
+) {
+    if *collisions >= max_collisions {
         return;
     }
 
@@ -197,17 +197,15 @@ fn simulate_search(pos: &mut Position, depth: usize, max_depth: usize, rng: &mut
 
     match tt.get(hash) {
         Some(existing_source) => {
-            // Note: Since `tt.get(hash)` guarantees `existing_source.key() == hash`,
-            // we only check if the physical board attributes differ to confirm a Zobrist
-            // collision.
             if &existing_source.src != &current_source && &existing_source.src != &Default::default() {
                 *collisions += 1;
-                if *collisions >= min {
+                if *collisions >= max_collisions {
                     return;
                 }
             }
         }
         None => {
+            *insertions += 1;
             tt.try_insert(OccupancyIndicator { src: current_source, key: hash });
         }
     }
@@ -242,10 +240,10 @@ fn simulate_search(pos: &mut Position, depth: usize, max_depth: usize, rng: &mut
         let mov = slice[idx];
 
         pos.make_move(mov, &mut ());
-        simulate_search(pos, depth + 1, max_depth, rng, tt, collisions, min);
+        simulate_search(pos, depth + 1, max_depth, rng, tt, collisions, insertions, max_collisions);
         pos.unmake_move(mov, &mut ());
 
-        if *collisions >= min {
+        if *collisions >= max_collisions {
             break;
         }
     }
