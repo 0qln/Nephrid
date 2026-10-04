@@ -20,7 +20,7 @@ use engine::{
 use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::{env::var, fs, io::Write, path::PathBuf};
 
-const SEED_BASELINE: u64 = 17472894813261399238;
+const SEED_BASELINE: u64 = 14933185240663103696;
 const EVAL_POSITIONS: usize = 500;
 const TT_SIZE: usize = 22;
 const MAX_DEPTH: usize = 10; // 2^10 = 1024 [nodes/position]
