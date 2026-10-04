@@ -1,6 +1,7 @@
 #![feature(const_default)]
 #![feature(const_trait_impl)]
 #![feature(derive_const)]
+#![allow(clippy::too_many_arguments)]
 
 use engine::{
     core::{
@@ -100,10 +101,10 @@ struct ZobristSource {
 impl Clone for ZobristSource {
     fn clone(&self) -> Self {
         Self {
-            pieces: self.pieces.clone(),
-            turn: self.turn.clone(),
-            castling: self.castling.clone(),
-            ep_capture_square: self.ep_capture_square.clone(),
+            pieces: self.pieces,
+            turn: self.turn,
+            castling: self.castling,
+            ep_capture_square: self.ep_capture_square,
         }
     }
 }
@@ -197,7 +198,7 @@ fn simulate_search(
 
     match tt.get(hash) {
         Some(existing_source) => {
-            if &existing_source.src != &current_source && &existing_source.src != &Default::default() {
+            if existing_source.src != current_source && existing_source.src != Default::default() {
                 *collisions += 1;
                 if *collisions >= max_collisions {
                     return;
