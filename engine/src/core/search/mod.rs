@@ -168,6 +168,7 @@ where
                     ct,
                     &mut self.tt,
                     &mut self.hh,
+                    &mut self.ch,
                     &mut self.eval,
                     Some(ponder),
                     self.params.clone(),

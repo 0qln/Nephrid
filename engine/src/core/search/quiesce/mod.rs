@@ -278,7 +278,7 @@ impl<'a, E: From<TTEntry> + TTKey + TTBound + TTScore + TTMove + TTDepth + TTSta
         // explicitly check for checkmate, such that we can return a score with
         // information about the depth of the mate and not just the stray NEG_INF.
         if num_legal_moves == 0 && in_check {
-            return -Score::mate_in(rel_ply);
+            return (-Score::mate_in(rel_ply), Depth::new(0));
         }
 
         (best_score, best_search_d)
