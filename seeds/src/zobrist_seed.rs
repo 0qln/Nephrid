@@ -123,7 +123,7 @@ const impl Default for ZobristSource {
 impl From<&Position> for ZobristSource {
     fn from(pos: &Position) -> Self {
         Self {
-            pieces: pos.get_pieces().clone(),
+            pieces: *pos.get_pieces(),
             turn: pos.get_turn(),
             castling: pos.get_castling(),
             ep_capture_square: pos.get_ep_capture_square(),
