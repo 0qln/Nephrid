@@ -21,8 +21,9 @@ use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
 use std::{env::var, fs, io::Write, path::PathBuf};
 
 const SEED_BASELINE: u64 = 11656553772269689295;
-const EVAL_POSITIONS: usize = 1000;
+const EVAL_POSITIONS: usize = 500;
 const TT_SIZE: usize = 22;
+const MAX_DEPTH: usize = 10; // 2^10 = 1024 [nodes/position]
 
 fn load_positions(limit: usize) -> Vec<Position> {
     let epd_lines = {
@@ -202,8 +203,6 @@ impl ReplacementStrategy for AlwaysReplace {
 }
 
 fn test_seed(positions: &mut [Position], rng: &mut SmallRng, tt: &mut TT, max: &SeedTestResult) -> SeedTestResult {
-    const MAX_DEPTH: usize = 10; // 2^10 = 1024 [nodes/position]
-
     tt.clear();
 
     let mut r = SeedTestResult::default();
