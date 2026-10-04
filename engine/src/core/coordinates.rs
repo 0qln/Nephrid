@@ -289,7 +289,8 @@ impl From<(EpCaptureSquare, Color)> for EpTargetSquare {
 
 /// En passant capture square is the square on which the pawn captured is beeing
 /// removed.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, PartialEq, Eq)]
+#[derive_const(Clone, Default)]
 pub struct EpCaptureSquare {
     v: Option<Square>,
 }

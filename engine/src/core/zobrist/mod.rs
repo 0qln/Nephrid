@@ -104,7 +104,7 @@ static mut HASHER: Hasher = unsafe { mem::zeroed() };
 static INIT: Once = Once::new();
 
 #[allow(static_mut_refs)]
-pub fn init() { INIT.call_once(|| unsafe { HASHER.init(14278029879823863027) }); }
+pub fn init() { INIT.call_once(|| unsafe { HASHER.init(9140452822872800724) }); }
 
 #[allow(static_mut_refs)]
 pub fn force_init(seed: u64) { unsafe { HASHER.init(seed) }; }
