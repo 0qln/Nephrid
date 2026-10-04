@@ -2,10 +2,7 @@
 #![feature(const_trait_impl)]
 #![feature(control_flow_into_value)]
 #![feature(derive_const)]
-
-use std::{env::var, fs, ops::ControlFlow, path::PathBuf};
-
-use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
+#![feature(anonymous_lifetime_in_impl_trait)]
 
 use engine::{
     core::{
@@ -21,10 +18,10 @@ use engine::{
     },
     uci::tokens::Tokenizer,
 };
+use rand::{Rng, RngCore, SeedableRng, rngs::SmallRng};
+use std::{env::var, fs, ops::ControlFlow, path::PathBuf};
 
-fn find_seeds() {
-    magics::init();
-
+fn load_positions() -> Vec<Position> {
     let epd_lines = {
         let mut path = PathBuf::new();
         path.push(var("PROJECT_ROOT").expect("Set the $PROJECT_ROOT variable"));
@@ -32,34 +29,39 @@ fn find_seeds() {
         fs::read_to_string(&path).expect("Couldn't read path")
     };
 
-    let all_positions: Vec<Position> = epd_lines
+    epd_lines
         .lines()
         .filter_map(|l| {
             let mut tok = Tokenizer::new(l);
             let (pos, _ops) = EpdLineImport(&mut tok).try_into().ok()?;
             Some(pos)
         })
-        .collect();
+        .collect()
+}
 
-    println!("Loaded {} positions into memory.", all_positions.len());
+fn find_seeds() {
+    magics::init();
 
-    let get_positions = |n: usize| all_positions[..n].iter().cloned();
+    let mut all_positions: Vec<Position> = load_positions();
+    let n_positions = all_positions.len();
+    println!("Loaded {} positions into memory.", n_positions);
+
     let moves_rng = || SmallRng::seed_from_u64(0x_dead_beef);
 
     let mut num_positions = 1;
     let mut min_collisions = usize::MAX;
-    let mut seed = 9612274973016456243;
+    let mut seed = 9140452822872800724;
     let mut tt = TT::new(1 << 22);
 
     loop {
-        if num_positions > all_positions.len() {
+        if num_positions > n_positions {
             println!("reached max available dataset positions ({})!", all_positions.len());
             break;
         }
 
         zobrist::force_init(seed);
 
-        let r = test_seed(get_positions(num_positions), &mut moves_rng(), &mut tt, min_collisions);
+        let r = test_seed(all_positions[..num_positions].iter_mut(), &mut moves_rng(), &mut tt, min_collisions);
         if r.total_collisions < min_collisions {
             min_collisions = r.total_collisions;
             println!(
@@ -72,7 +74,7 @@ fn find_seeds() {
         if min_collisions == 0 {
             print!("[ ] seed: {seed} perfect for {num_positions} positions. escalating to ");
             num_positions += 1;
-            min_collisions = test_seed(get_positions(num_positions), &mut moves_rng(), &mut tt, usize::MAX).total_collisions;
+            min_collisions = test_seed(all_positions[..num_positions].iter_mut(), &mut moves_rng(), &mut tt, usize::MAX).total_collisions;
             println!("{num_positions} positions with {min_collisions} collisions...");
         }
         // too bad?
@@ -154,7 +156,7 @@ impl ReplacementStrategy for AlwaysReplace {
     fn should_replace(_existing: &Self::Data, _new: &Self::Data) -> bool { true }
 }
 
-fn test_seed(mut positions: impl Iterator<Item = Position>, rng: &mut SmallRng, tt: &mut TT, min: usize) -> SeedTestResult {
+fn test_seed(mut positions: impl Iterator<Item = &mut Position>, rng: &mut SmallRng, tt: &mut TT, min: usize) -> SeedTestResult {
     const MAX_DEPTH: usize = 10; // 2^10 = 1024[nodes/position]
 
     tt.clear();
