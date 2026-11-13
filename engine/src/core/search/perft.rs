@@ -9,10 +9,13 @@ use crate::{
     misc::{CancellationToken, DebugMode},
 };
 use std::ops::ControlFlow;
+use std::time::Instant;
 
 #[cfg(test)] pub mod test;
 
 pub fn perft<Opt: Options>(pos: &mut Position, limit: &UciLimit, ct: CancellationToken, debug: DebugMode) -> u64 {
+    let start = Instant::now();
+
     let nodes = perft_inner_collect(
         pos,
         limit.depth,
@@ -36,7 +39,18 @@ pub fn perft<Opt: Options>(pos: &mut Position, limit: &UciLimit, ct: Cancellatio
         },
     );
 
-    println!("\nNodes searched: {nodes}\n");
+    let elapsed = start.elapsed();
+    let nps = if elapsed.as_nanos() > 0 {
+        nodes as u128 * 1_000_000_000 / elapsed.as_nanos()
+    }
+    else {
+        0
+    };
+
+    println!("\nNodes searched: {nodes}");
+    println!("Time: {:.2} ms", elapsed.as_secs_f64() * 1e3);
+    println!("Nodes per second: {nps}");
+    println!();
 
     nodes
 }

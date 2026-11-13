@@ -412,6 +412,7 @@ pub fn map_quiets(targets: Bitboard, piece: Square) -> impl Iterator<Item = Move
 /// Maps the specified bits into allowed bits (defined by mask).
 /// If the mask does not specify atleast the number of bits in
 /// needed for a complete mapping, the remaining bits are cut off.
+#[cfg(test)]
 fn map_bits(mut bits: usize, mask: Bitboard) -> Bitboard {
     mask.fold(Bitboard::empty(), |acc, pos| {
         let val = bits & 1;
